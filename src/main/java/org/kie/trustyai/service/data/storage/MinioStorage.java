@@ -5,6 +5,8 @@ import java.nio.ByteBuffer;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 
+import javax.enterprise.context.ApplicationScoped;
+import javax.inject.Inject;
 import javax.inject.Singleton;
 
 import io.minio.GetObjectArgs;
@@ -18,11 +20,13 @@ import io.minio.errors.InvalidResponseException;
 import io.minio.errors.MinioException;
 import io.minio.errors.ServerException;
 import io.minio.errors.XmlParserException;
+import io.quarkus.arc.lookup.LookupIfProperty;
 import org.jboss.logging.Logger;
 import org.kie.trustyai.service.config.readers.MinioConfig;
 import org.kie.trustyai.service.data.exceptions.StorageReadException;
 
-@Singleton
+@LookupIfProperty(name="service.storage.format", stringValue = "MINIO")
+@ApplicationScoped
 public class MinioStorage implements Storage {
 
     private static final Logger LOG = Logger.getLogger(MinioStorage.class);

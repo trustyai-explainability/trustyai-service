@@ -11,7 +11,7 @@ import io.quarkus.scheduler.Scheduled;
 import org.jboss.logging.Logger;
 import org.kie.trustyai.explainability.model.Dataframe;
 import org.kie.trustyai.service.config.ServiceConfig;
-import org.kie.trustyai.service.data.DataParser;
+import org.kie.trustyai.service.data.DataSource;
 import org.kie.trustyai.service.data.exceptions.DataframeCreateException;
 import org.kie.trustyai.service.endpoints.metrics.MetricsCalculator;
 import org.kie.trustyai.service.payloads.spd.GroupStatisticalParityDifferenceRequest;
@@ -23,7 +23,7 @@ public class PrometheusScheduler {
     private final Map<UUID, GroupStatisticalParityDifferenceRequest> spdRequests = new HashMap<>();
     private final Map<UUID, GroupStatisticalParityDifferenceRequest> dirRequests = new HashMap<>();
     @Inject
-    DataParser dataParser;
+    DataSource dataSource;
     @Inject
     PrometheusPublisher publisher;
     @Inject
@@ -43,7 +43,7 @@ public class PrometheusScheduler {
 
         if (hasRequests()) {
             try {
-                final Dataframe df = dataParser.getDataframe();
+                final Dataframe df = dataSource.getDataframe();
 
                 // SPD requests
                 if (!spdRequests.isEmpty()) {

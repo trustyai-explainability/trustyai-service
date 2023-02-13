@@ -48,7 +48,7 @@ and run the container using (either `docker`, `podman`):
 
 ```shell
 docker run -p 8080:8080 \
-    --env SERVICE_STORAGE_FORMAT=CSV \
+    --env SERVICE_DATA_FORMAT=CSV \
     --env SERVICE_MODEL_NAME=example \
     --env SERVICE_STORAGE_FORMAT="MINIO" \
     --env MINIO_BUCKET_NAME="inputs" \
