@@ -1,66 +1,51 @@
 package org.kie.trustyai.service.data;
 
-import java.io.IOException;
-import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
+import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+import javax.enterprise.inject.Instance;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 
 import org.jboss.logging.Logger;
 import org.kie.trustyai.explainability.model.Dataframe;
-import org.kie.trustyai.explainability.model.PredictionInput;
-import org.kie.trustyai.explainability.model.PredictionOutput;
 import org.kie.trustyai.service.config.ServiceConfig;
 import org.kie.trustyai.service.data.exceptions.DataframeCreateException;
 import org.kie.trustyai.service.data.exceptions.StorageReadException;
-import org.kie.trustyai.service.data.storage.MinioStorage;
-import org.kie.trustyai.service.data.utils.CSVUtils;
+import org.kie.trustyai.service.data.parsers.DataParser;
+import org.kie.trustyai.service.data.storage.Storage;
 
 @Singleton
-public class DataParser {
-    private static final Logger LOG = Logger.getLogger(DataParser.class);
-    private static final Charset UTF8 = StandardCharsets.UTF_8;
-    @Inject MinioStorage storage;
+public class DataSource {
+    private static final Logger LOG = Logger.getLogger(DataSource.class);
+
+    @Inject
+    Storage storage;
+
+    @Inject
+    DataParser parser;
 
     @Inject ServiceConfig serviceConfig;
 
     public Dataframe getDataframe() throws DataframeCreateException {
 
-        final String inputData;
+        final ByteBuffer inputsBuffer;
         try {
-            inputData = UTF8.decode(storage.getInputData()).toString();
+             inputsBuffer = storage.getInputData();
         } catch (StorageReadException e) {
-            LOG.error(e.getMessage());
             throw new DataframeCreateException(e.getMessage());
         }
 
-        final String outputData;
+        final ByteBuffer outputsBuffer;
         try {
-            outputData = UTF8.decode(storage.getOutputData()).toString();
+            outputsBuffer = storage.getOutputData();
         } catch (StorageReadException e) {
-            LOG.error(e.getMessage());
             throw new DataframeCreateException(e.getMessage());
         }
 
-        final List<PredictionInput> predictionInputs;
-        try {
-            predictionInputs = CSVUtils.parseInputs(inputData);
-        } catch (IOException e) {
-            throw new DataframeCreateException(e.getMessage());
-        }
-
-        final List<PredictionOutput> predictionOutputs;
-        try {
-            predictionOutputs = CSVUtils.parseOutputs(outputData);
-        } catch (IOException e) {
-            throw new DataframeCreateException(e.getMessage());
-        }
-
-        final Dataframe dataframe = Dataframe.createFrom(predictionInputs, predictionOutputs);
+        final Dataframe dataframe = parser.parse(inputsBuffer, outputsBuffer);
         if (serviceConfig.batchSize().isPresent()) {
             final int batchSize = serviceConfig.batchSize().getAsInt();
             final int rows = dataframe.getRowDimension();
@@ -79,6 +64,9 @@ public class DataParser {
             return dataframe;
 
         }
+
+
     }
+
 
 }

@@ -17,7 +17,7 @@ import org.jboss.logging.Logger;
 import org.jboss.resteasy.reactive.RestResponse;
 import org.kie.trustyai.explainability.model.Dataframe;
 import org.kie.trustyai.service.config.metrics.MetricsConfig;
-import org.kie.trustyai.service.data.DataParser;
+import org.kie.trustyai.service.data.DataSource;
 import org.kie.trustyai.service.data.exceptions.DataframeCreateException;
 import org.kie.trustyai.service.payloads.MetricThreshold;
 import org.kie.trustyai.service.payloads.scheduler.ScheduleId;
@@ -31,7 +31,7 @@ public class GroupStatisticalParityDifferenceEndpoint extends AbstractMetricsEnd
 
     private static final Logger LOG = Logger.getLogger(GroupStatisticalParityDifferenceEndpoint.class);
     @Inject
-    DataParser dataParser;
+    DataSource dataSource;
 
     @Inject
     PrometheusScheduler scheduler;
@@ -56,7 +56,7 @@ public class GroupStatisticalParityDifferenceEndpoint extends AbstractMetricsEnd
     @Produces(MediaType.APPLICATION_JSON)
     public Response spd(GroupStatisticalParityDifferenceRequest request) throws DataframeCreateException {
 
-        final Dataframe df = dataParser.getDataframe();
+        final Dataframe df = dataSource.getDataframe();
 
         final double spd = calculator.calculateSPD(df, request);
 

@@ -8,6 +8,7 @@ services:
       SERVICE_MODEL_NAME: "example"
       SERVICE_KSERVE_TARGET: "localhost"
       SERVICE_STORAGE_FORMAT: "MINIO"
+      SERVICE_DATA_FORMAT: "CSV"
       MINIO_BUCKET_NAME: "inputs"
       MINIO_ENDPOINT: "http://minio:9000"
       MINIO_INPUT_FILENAME: "income-biased-inputs.csv"

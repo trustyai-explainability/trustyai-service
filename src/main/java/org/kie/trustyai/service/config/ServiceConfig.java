@@ -18,5 +18,8 @@ public interface ServiceConfig {
 
     String storageFormat();
 
+    String dataFormat();
+
     String metricsSchedule();
+
 }
