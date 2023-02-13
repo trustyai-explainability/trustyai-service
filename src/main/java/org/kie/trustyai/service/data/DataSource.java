@@ -1,40 +1,31 @@
 package org.kie.trustyai.service.data;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import javax.enterprise.inject.Instance;
-import javax.enterprise.inject.Produces;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 
-import io.quarkus.arc.DefaultBean;
 import org.jboss.logging.Logger;
 import org.kie.trustyai.explainability.model.Dataframe;
-import org.kie.trustyai.explainability.model.PredictionInput;
-import org.kie.trustyai.explainability.model.PredictionOutput;
 import org.kie.trustyai.service.config.ServiceConfig;
 import org.kie.trustyai.service.data.exceptions.DataframeCreateException;
 import org.kie.trustyai.service.data.exceptions.StorageReadException;
 import org.kie.trustyai.service.data.parsers.DataParser;
-import org.kie.trustyai.service.data.storage.MinioStorage;
 import org.kie.trustyai.service.data.storage.Storage;
-import org.kie.trustyai.service.data.utils.CSVUtils;
 
 @Singleton
 public class DataSource {
     private static final Logger LOG = Logger.getLogger(DataSource.class);
 
     @Inject
-    Instance<Storage> storage;
+    Storage storage;
 
     @Inject
-    Instance<DataParser> parser;
+    DataParser parser;
 
     @Inject ServiceConfig serviceConfig;
 
@@ -42,19 +33,19 @@ public class DataSource {
 
         final ByteBuffer inputsBuffer;
         try {
-             inputsBuffer = storage.get().getInputData();
+             inputsBuffer = storage.getInputData();
         } catch (StorageReadException e) {
             throw new DataframeCreateException(e.getMessage());
         }
 
         final ByteBuffer outputsBuffer;
         try {
-            outputsBuffer = storage.get().getOutputData();
+            outputsBuffer = storage.getOutputData();
         } catch (StorageReadException e) {
             throw new DataframeCreateException(e.getMessage());
         }
 
-        final Dataframe dataframe = parser.get().parse(inputsBuffer, outputsBuffer);
+        final Dataframe dataframe = parser.parse(inputsBuffer, outputsBuffer);
         if (serviceConfig.batchSize().isPresent()) {
             final int batchSize = serviceConfig.batchSize().getAsInt();
             final int rows = dataframe.getRowDimension();
