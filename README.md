@@ -1,5 +1,7 @@
 # trustyai-service
 
+**`trustyai-service` is now part of [trustyai-explainability](https://github.com/trustyai-explainability/trustyai-explainability) and this repository is archived.**
+
 ## Running
 
 ### Locally
