@@ -1,22 +1,16 @@
 # endpoints/consumer.py
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Dict, Optional
+from typing import Dict, Optional, Literal
 import logging
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-
-class PartialKind(str):
-    REQUEST = "request"
-    RESPONSE = "response"
-
+PartialKind = Literal["request", "response"]
 
 class PartialPayloadId(BaseModel):
-    predictionId: str
-    kind: PartialKind
-
+    pass
 
 class InferencePartialPayload(BaseModel):
     partialPayloadId: Optional[PartialPayloadId] = None

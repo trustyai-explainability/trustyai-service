@@ -2,18 +2,17 @@
 
 FROM registry.access.redhat.com/ubi8/python-311:latest
 
-# Set the working directory
 WORKDIR /app
 
-# Copy the requirements file and install dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY pyproject.toml poetry.lock* ./
 
-# Copy the rest of the application code
+RUN pip install poetry==1.6.1
+
+RUN poetry export -f requirements.txt --without dev > requirements.txt && \
+    pip install --no-cache-dir -r requirements.txt
+
 COPY . .
 
-# Expose port 8000 for the FastAPI application
 EXPOSE 8080
 
-# Run the FastAPI application with Uvicorn
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8080"]
