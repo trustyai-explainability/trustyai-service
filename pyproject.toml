@@ -51,7 +51,7 @@ output-format = "grouped"
 extend-exclude = ["utilities/manifests"]
 
 [tool.ruff.format]
-exclude = [".git", ".venv", ".mypy_cache", ".tox", "__pycache__", "utilities/manifests"]
+exclude = [".git", ".venv", ".mypy_cache", "__pycache__"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
