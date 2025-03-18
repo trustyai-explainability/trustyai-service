@@ -1,0 +1,27 @@
+[flake8]
+# UFN plugin must be run in serial
+jobs = 0
+max-line-length = 120
+
+exclude =
+    doc,
+    .venv,
+    .git,
+    .yml,
+    Pipfile.*,
+    docs/*,
+
+fcn_exclude_functions =
+    re,
+    logging,
+    LOGGER,
+    os,
+    json,
+    yaml,
+    pytest,
+
+enable-extensions =
+    FCN,
+    UFN,
+    NIC,
+    NIT,
