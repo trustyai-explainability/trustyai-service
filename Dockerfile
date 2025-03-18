@@ -6,13 +6,13 @@ WORKDIR /app
 
 COPY pyproject.toml poetry.lock* ./
 
-RUN pip install poetry==1.6.1
-
-RUN poetry export -f requirements.txt --without dev > requirements.txt && \
+USER root
+RUN pip install poetry==1.6.1 && \
+    poetry export -f requirements.txt --without dev > requirements.txt && \
     pip install --no-cache-dir -r requirements.txt
-
 COPY . .
+USER 1001
+EXPOSE 4443
 
-EXPOSE 8080
-
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8080"]
+#CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "4443", "--ssl-keyfile", "/etc/tls/internal/tls.key", "--ssl-certfile", "/etc/tls/internal/tls.crt", "--log-level", "trace"]
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "4443", "--ssl-keyfile", "/etc/tls/internal/tls.key", "--ssl-certfile", "/etc/tls/internal/tls.crt"]
