@@ -1,3 +1,6 @@
+import os
+
+import uvicorn
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
@@ -17,7 +20,7 @@ from src.endpoints.metrics_info import router as metrics_info_router
 from src.endpoints.data_download import router as data_download_router
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
@@ -76,7 +79,7 @@ async def root():
     return {"message": "Welcome to TrustyAI Explainability Service"}
 
 
-@app.get("/p/metrics")
+@app.get("/q/metrics")
 async def metrics(request: Request):
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
@@ -91,3 +94,8 @@ async def readiness_probe():
 @app.get("/q/health/live")
 async def liveness_probe():
     return JSONResponse(content={"status": "live"}, status_code=200)
+
+
+if __name__ == "__main__":
+    # SERVICE_STORAGE_FORMAT=PVC; STORAGE_DATA_FOLDER=/tmp; STORAGE_DATA_FILENAME=trustyai_test.hdf5
+    uvicorn.run(app=app, host="0.0.0.0", port=8080)
