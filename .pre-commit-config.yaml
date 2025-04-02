@@ -1,0 +1,53 @@
+minimum_pre_commit_version: 3.3.0
+default_install_hook_types: [pre-commit, commit-msg]
+
+default_language_version:
+  python: python3
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: "v5.0.0"
+    hooks:
+      - id: check-merge-conflict
+      - id: debug-statements
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md] # Do not process Markdown files.
+      - id: end-of-file-fixer
+      - id: check-ast
+      - id: check-builtin-literals
+      - id: check-docstring-first
+      - id: check-toml
+
+  - repo: https://github.com/PyCQA/flake8
+    rev: "7.1.2"
+    hooks:
+      - id: flake8
+        args: [--config=.flake8, '--ignore=FCN001,W503']
+        additional_dependencies:
+          [
+            "git+https://github.com/RedHatQE/flake8-plugins.git@v0.0.6",
+            "flake8-mutable",
+          ]
+
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.10
+    hooks:
+      - id: ruff
+      - id: ruff-format
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.24.0
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.15.0
+    hooks:
+      - id: mypy
+        additional_dependencies: ["types-PyYAML", "types-requests"]
+        exclude: ^(docs/|.*/test_.*)
