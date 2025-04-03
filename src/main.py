@@ -8,22 +8,22 @@ from fastapi.middleware.cors import CORSMiddleware
 import logging
 
 # Endpoint routers
-from src.endpoints.consumer import router as consumer_router
-from src.endpoints.dir import router as dir_router
-from src.endpoints.data_upload import router as data_upload_router
+from src.endpoints.consumer.consumer_endpoint import router as consumer_router
+from src.endpoints.metrics.fairness.group.dir import router as dir_router
+from src.endpoints.data.data_upload import router as data_upload_router
 # from src.endpoints.drift_metrics import router as drift_metrics_router
-from src.endpoints.drift_metrics_collection.approx_ks_test import router as drift_approx_ks_test_router
-from src.endpoints.drift_metrics_collection.fourier_mmd import router as drift_fourier_mmd_router
-from src.endpoints.drift_metrics_collection.ks_test import router as drift_ks_test_router
-from src.endpoints.drift_metrics_collection.meanshift import router as drift_meanshift_router
+from src.endpoints.metrics.drift.approx_ks_test import router as drift_approx_ks_test_router
+from src.endpoints.metrics.drift.fourier_mmd import router as drift_fourier_mmd_router
+from src.endpoints.metrics.drift.ks_test import router as drift_ks_test_router
+from src.endpoints.metrics.drift.meanshift import router as drift_meanshift_router
 # from src.endpoints.explainers import router as explainers_router
-from src.endpoints.explainers_collection.global_exp import router as explainers_global_router
-from src.endpoints.explainers_collection.local_exp import router as explainers_local_router
-from src.endpoints.fairness_metrics import router as fairness_metrics_router
-from src.endpoints.identity import router as identity_router
+from src.endpoints.explainers.global_explainer import router as explainers_global_router
+from src.endpoints.explainers.local_explainer import router as explainers_local_router
+from src.endpoints.metrics.fairness.group.spd import router as spd_router
+from src.endpoints.metrics.identity.identity_endpoint import router as identity_router
 from src.endpoints.metadata import router as metadata_router
-from src.endpoints.metrics_info import router as metrics_info_router
-from src.endpoints.data_download import router as data_download_router
+from src.endpoints.metrics.metrics_info import router as metrics_info_router
+from src.endpoints.data.data_download import router as data_download_router
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -87,7 +87,7 @@ app.include_router(
 app.include_router(explainers_global_router, tags=["Explainers: Global"])
 app.include_router(explainers_local_router, tags=["Explainers: Local"])
 app.include_router(
-    fairness_metrics_router,
+    spd_router,
     tags=["Fairness Metrics: Group: Statistical Parity Difference"],
 )
 app.include_router(identity_router, tags=["Identity Endpoint"])
@@ -100,7 +100,7 @@ app.include_router(
     dir_router, prefix="/metrics", tags=["{Legacy}: Disparate Impact Ratio"]
 )
 app.include_router(
-    fairness_metrics_router,
+    spd_router,
     prefix="/metrics",
     tags=["{Legacy}: Statistical Parity Difference"],
 )
