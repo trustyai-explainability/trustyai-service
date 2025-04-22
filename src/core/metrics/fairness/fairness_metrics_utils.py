@@ -1,6 +1,7 @@
+from typing import Callable
 import numpy as np
 
-def filter_rows_by_inputs(data, filter_func):
+def filter_rows_by_inputs(data: np.ndarray, filter_func: Callable[[np.ndarray], bool]):
     return data[np.apply_along_axis(filter_func, 1, data)]
 
 def calculate_confusion_matrix(test: np.array, truth: np.array, positive_class: int) -> dict:

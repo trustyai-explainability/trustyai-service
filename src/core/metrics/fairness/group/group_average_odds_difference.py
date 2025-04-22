@@ -23,8 +23,8 @@ class GroupAverageOddsDifference:
         :param samples a NumPy arrary of inputs to be used for testing fairness
         :param model the model to be tested for fairness
         :param privilege_columns a list of integers specifying the indices of the privileged columns
-        :param privilege_values a list of intergers specifying the privileged values
-        :param postive_class the favorable / desirable outputs
+        :param privilege_values a list of integers specifying the privileged values
+        :param positive_class the favorable / desirable outputs
         :param output_column the column index where the output is located
         return group average odds difference score
         """

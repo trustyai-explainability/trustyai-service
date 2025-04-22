@@ -1,5 +1,5 @@
 # pylint: disable=line-too-long
-from typing import List, Any
+from typing import List, Any, Union
 
 import numpy as np
 
@@ -33,8 +33,8 @@ class DisparateImpactRatio:
 
     @staticmethod
     def calculate(
-        privileged: np.ndarray,
-        unprivileged: np.ndarray,
+        privileged: Union[int, np.ndarray],
+        unprivileged: Union[int, np.ndarray],
         favorable_output: int
         ) -> float:
         """

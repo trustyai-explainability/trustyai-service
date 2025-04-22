@@ -58,5 +58,5 @@ class GroupAveragePredictiveValueDifference:
         utp, utn, ufp, ufn = ucm["tp"], ucm["tn"], ucm["fp"], ucm["fn"]
         ptp, ptn, pfp, pfn = pcm["tp"], pcm["tn"], pcm["fp"], pcm["fn"]
 
-        return (utp / (utp + ufp) - ptp / (ptp + pfp + 1e-10)) / 2 + \
-            (ufn / (ufn + utn) - pfn / (pfn + ptn + 1e-10)) / 2
+        return (utp / (utp + ufp + 1e-10) - ptp / (ptp + pfp + 1e-10)) / 2 + \
+            (ufn / (ufn + utn + 1e-10) - pfn / (pfn + ptn + 1e-10)) / 2

@@ -26,8 +26,8 @@ class GroupStatisticalParityDifference:
         """
         outputs = model.predict(samples)
         data = np.append(samples, outputs, axis=1)
-        privileged = data[np.where(data[:, privilege_columns] == privilege_values)]
-        unprivileged = data[np.where(data[:, privilege_columns] != privilege_values)]
+        privileged = np.all(data[:, privilege_columns] == privilege_values, axis=1)
+        unprivileged = np.all(data[:, privilege_columns] != privilege_values, axis=1)
 
         return GroupStatisticalParityDifference.calculate(privileged, unprivileged, favorable_output)
 
