@@ -25,6 +25,12 @@ from src.endpoints.metadata import router as metadata_router
 from src.endpoints.metrics.metrics_info import router as metrics_info_router
 from src.endpoints.data.data_download import router as data_download_router
 
+try:
+    from src.endpoints.evaluation.lm_evaluation_harness import router as lm_evaluation_harness_router
+    lm_evaluation_harness_available = True
+except ImportError:
+    lm_evaluation_harness_available = False
+
 logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -94,6 +100,9 @@ app.include_router(identity_router, tags=["Identity Endpoint"])
 app.include_router(metadata_router, tags=["Service Metadata"])
 app.include_router(metrics_info_router, tags=["Metrics Information Endpoint"])
 app.include_router(data_download_router, tags=["Download Endpoint"])
+
+if lm_evaluation_harness_available:
+    app.include_router(lm_evaluation_harness_router, tags=["LM Evaluation Harness Endpoint"])
 
 # Deprecated endpoints
 app.include_router(
