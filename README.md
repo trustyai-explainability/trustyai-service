@@ -66,5 +66,5 @@ podman run -t $IMAGE_NAME -p 8080:8080 .
 
 ---
 ## ☎️ API ☎️
-When the service is running, visit [localhost:8080](localhost:8080/docs) to see the OpenAPI documentation!
+When the service is running, visit `localhost:8080/docs` to see the OpenAPI documentation!
 
