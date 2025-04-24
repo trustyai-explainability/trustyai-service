@@ -11,15 +11,13 @@ from typing import Optional, List, Dict
 
 try:
     from lm_eval.__main__ import setup_parser as lm_eval_setup_parser
-    available = True
+    from fastapi_utils.tasks import repeat_every
 except ImportError:
-    available = False
+    raise ImportError("The TrustyAI service was not built with LM-Evaluation-Harness support, use `pip install .[eval]`")
 
 from pydantic import BaseModel, create_model
 
 from fastapi import HTTPException
-from fastapi_utils.tasks import repeat_every
-
 from fastapi import APIRouter
 import subprocess
 import logging
