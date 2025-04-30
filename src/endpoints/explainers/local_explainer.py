@@ -49,16 +49,12 @@ class LimeExplanationRequest(BaseModel):
 async def local_lime_explanation(request: LimeExplanationRequest):
     """Compute a LIME explanation."""
     try:
-        logger.info(
-            f"Computing LIME explanation for prediction: {request.predictionId}"
-        )
+        logger.info(f"Computing LIME explanation for prediction: {request.predictionId}")
         # TODO: Implement
         return {"status": "success", "explanation": {}}
     except Exception as e:
         logger.error(f"Error computing LIME explanation: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Error computing explanation: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error computing explanation: {str(e)}")
 
 
 class LinkType(str, Enum):
@@ -97,16 +93,12 @@ class SHAPExplanationRequest(BaseModel):
 async def local_shap_explanation(request: SHAPExplanationRequest):
     """Compute a SHAP explanation."""
     try:
-        logger.info(
-            f"Computing SHAP explanation for prediction: {request.predictionId}"
-        )
+        logger.info(f"Computing SHAP explanation for prediction: {request.predictionId}")
         # TODO: Implement
         return {"status": "success", "explanation": {}}
     except Exception as e:
         logger.error(f"Error computing SHAP explanation: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Error computing explanation: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error computing explanation: {str(e)}")
 
 
 class CounterfactualExplainerConfig(BaseModel):
@@ -129,16 +121,12 @@ class CounterfactualExplanationRequest(BaseModel):
 async def local_counterfactual_explanation(request: CounterfactualExplanationRequest):
     """Compute a Counterfactual explanation."""
     try:
-        logger.info(
-            f"Computing Counterfactual explanation for prediction: {request.predictionId}"
-        )
+        logger.info(f"Computing Counterfactual explanation for prediction: {request.predictionId}")
         # TODO: Implement
         return {"status": "success", "explanation": {}}
     except Exception as e:
         logger.error(f"Error computing Counterfactual explanation: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Error computing explanation: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error computing explanation: {str(e)}")
 
 
 class TSSaliencyExplainerConfig(BaseModel):
@@ -164,13 +152,9 @@ class TSSaliencyExplanationRequest(BaseModel):
 async def local_tssaliency_explanation(request: TSSaliencyExplanationRequest):
     """Compute a TSSaliency explanation."""
     try:
-        logger.info(
-            f"Computing TSSaliency explanation for predictions: {request.predictionIds}"
-        )
+        logger.info(f"Computing TSSaliency explanation for predictions: {request.predictionIds}")
         # TODO: Implement
         return {"status": "success", "explanation": {}}
     except Exception as e:
         logger.error(f"Error computing TSSaliency explanation: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Error computing explanation: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error computing explanation: {str(e)}")

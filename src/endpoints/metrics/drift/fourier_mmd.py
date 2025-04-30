@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 class ScheduleId(BaseModel):
     requestId: str
 
+
 # FourierMMD
 class FourierMMDParameters(BaseModel):
     nWindow: Optional[int] = None
@@ -67,9 +68,7 @@ async def get_fouriermmd_definition():
 
 
 @router.post("/metrics/drift/fouriermmd/request")
-async def schedule_fouriermmd(
-    request: FourierMMDMetricRequest, background_tasks: BackgroundTasks
-):
+async def schedule_fouriermmd(request: FourierMMDMetricRequest, background_tasks: BackgroundTasks):
     """Schedule a recurring computation of FourierMMD metric."""
     request_id = str(uuid.uuid4())
     logger.info(f"Scheduling FourierMMD computation with ID: {request_id}")
