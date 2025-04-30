@@ -83,7 +83,7 @@ jobs:
 
           if [ -n "$BASE_IMAGES" ]; then
             for img in $BASE_IMAGES; do
-              docker pull $img
+              docker pull "$img"
             done
           fi
       - name: Put expiry date on CI-tagged image
