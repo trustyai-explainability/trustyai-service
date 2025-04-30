@@ -1,0 +1,10 @@
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    assignees:
+      - trustyai-explainability/reviewers
+    reviewers:
+      - trustyai-explainability/reviewers
