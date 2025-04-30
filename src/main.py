@@ -1,5 +1,3 @@
-import os
-
 import uvicorn
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
@@ -11,11 +9,13 @@ import logging
 from src.endpoints.consumer.consumer_endpoint import router as consumer_router
 from src.endpoints.metrics.fairness.group.dir import router as dir_router
 from src.endpoints.data.data_upload import router as data_upload_router
+
 # from src.endpoints.drift_metrics import router as drift_metrics_router
 from src.endpoints.metrics.drift.approx_ks_test import router as drift_approx_ks_test_router
 from src.endpoints.metrics.drift.fourier_mmd import router as drift_fourier_mmd_router
 from src.endpoints.metrics.drift.ks_test import router as drift_ks_test_router
 from src.endpoints.metrics.drift.meanshift import router as drift_meanshift_router
+
 # from src.endpoints.explainers import router as explainers_router
 from src.endpoints.explainers.global_explainer import router as explainers_global_router
 from src.endpoints.explainers.local_explainer import router as explainers_local_router
@@ -27,6 +27,7 @@ from src.endpoints.data.data_download import router as data_download_router
 
 try:
     from src.endpoints.evaluation.lm_evaluation_harness import router as lm_evaluation_harness_router
+
     lm_evaluation_harness_available = True
 except ImportError:
     lm_evaluation_harness_available = False
@@ -105,9 +106,7 @@ if lm_evaluation_harness_available:
     app.include_router(lm_evaluation_harness_router, tags=["LM Evaluation Harness Endpoint"])
 
 # Deprecated endpoints
-app.include_router(
-    dir_router, prefix="/metrics", tags=["{Legacy}: Disparate Impact Ratio"]
-)
+app.include_router(dir_router, prefix="/metrics", tags=["{Legacy}: Disparate Impact Ratio"])
 app.include_router(
     spd_router,
     prefix="/metrics",
