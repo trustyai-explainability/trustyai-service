@@ -1,2 +1,7 @@
 ignore_branches:
   - "dependabot/**"
+
+github:
+  ignore_labels:
+    - sourcery-ignore
+    - dependencies
