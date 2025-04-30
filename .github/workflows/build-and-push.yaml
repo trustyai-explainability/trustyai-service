@@ -77,15 +77,6 @@ jobs:
           echo "IMAGE_NAME=${{ vars.QUAY_RELEASE_REPO }}" >> $GITHUB_ENV
       #
       # Run docker commands
-      - name: Pull prerequisite images
-        run: |
-          BASE_IMAGES=$(grep -o -P '(?<=FROM ).*' Dockerfile | cut -d ' ' -f1)
-
-          if [ -n "$BASE_IMAGES" ]; then
-            for img in $BASE_IMAGES; do
-              docker pull "$img"
-            done
-          fi
       - name: Put expiry date on CI-tagged image
         if:  env.BUILD_CONTEXT == 'ci'
         run: sed -i 's#summary="odh-trustyai-service-python\"#summary="odh-trustyai-service-python" \\ \n      quay.expires-after=7d#' Dockerfile
@@ -126,6 +117,7 @@ jobs:
       # Leave comment
       - uses: peter-evans/find-comment@v3
         name: Find Comment
+        if: env.BUILD_CONTEXT == 'ci'
         id: fc
         with:
           issue-number: ${{ github.event.pull_request.number }}
@@ -133,6 +125,7 @@ jobs:
           body-includes:  PR image build and manifest generation completed successfully
       - uses: peter-evans/create-or-update-comment@v4
         name: Generate/update success message comment
+        if: env.BUILD_CONTEXT == 'ci'
         with:
           comment-id: ${{ steps.fc.outputs.comment-id }}
           issue-number: ${{ github.event.pull_request.number }}
