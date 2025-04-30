@@ -79,8 +79,13 @@ jobs:
       # Run docker commands
       - name: Pull prerequisite images
         run: |
-          docker pull $(cat Dockerfile | grep -o -P '(?<=FROM ).*(?= AS build)')
-          docker pull $(cat Dockerfile | grep -o -P '(?<=FROM ).*(?= AS runtime)')
+          BASE_IMAGES=$(grep -o -P '(?<=FROM ).*' Dockerfile | cut -d ' ' -f1)
+
+          if [ -n "$BASE_IMAGES" ]; then
+            for img in $BASE_IMAGES; do
+              docker pull $img
+            done
+          fi
       - name: Put expiry date on CI-tagged image
         if:  env.BUILD_CONTEXT == 'ci'
         run: sed -i 's#summary="odh-trustyai-service-python\"#summary="odh-trustyai-service-python" \\ \n      quay.expires-after=7d#' Dockerfile
