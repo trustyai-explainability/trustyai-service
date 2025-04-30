@@ -30,7 +30,7 @@ dev = [
     "httpx>=0.25.0,<0.26",
 ]
 eval = [
-    "lm-eval[api]==0.4.4",
+    "lm-eval[api]==0.4.8",
     "fastapi-utils>=0.8.0",
     "typing-inspect==0.9.0",
 ]
