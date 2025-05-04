@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import List, Dict
+from typing import List, Dict, Optional
+from src.service.data.modelmesh_parser import PartialPayload
 
 
 class StorageInterface(ABC):
@@ -31,11 +32,51 @@ class StorageInterface(ABC):
     def get_aliased_column_names(self, dataset_name: str) -> List[str]:
         pass
 
-
     @abstractmethod
     def apply_name_mapping(self, dataset_name: str, name_mapping: Dict[str, str]):
         pass
 
     @abstractmethod
     def delete_dataset(self, dataset_name: str):
+        pass
+
+    @abstractmethod
+    async def persist_modelmesh_payload(
+        self, payload: PartialPayload, request_id: str, is_input: bool
+    ):
+        """
+        Store a ModelMesh partial payload (either input or output) for later reconciliation.
+
+        Args:
+            payload: The partial payload to store
+            request_id: A unique identifier for this inference request
+            is_input: Whether this is an input payload (True) or output payload (False)
+        """
+        pass
+
+    @abstractmethod
+    async def get_modelmesh_payload(
+        self, request_id: str, is_input: bool
+    ) -> Optional[PartialPayload]:
+        """
+        Retrieve a stored ModelMesh payload by request ID.
+
+        Args:
+            request_id: The unique identifier for the inference request
+            is_input: Whether to retrieve an input payload (True) or output payload (False)
+
+        Returns:
+            The retrieved payload, or None if not found
+        """
+        pass
+
+    @abstractmethod
+    async def delete_modelmesh_payload(self, request_id: str, is_input: bool):
+        """
+        Delete a stored ModelMesh payload.
+
+        Args:
+            request_id: The unique identifier for the inference request
+            is_input: Whether to delete an input payload (True) or output payload (False)
+        """
         pass
