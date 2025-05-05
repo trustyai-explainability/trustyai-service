@@ -31,7 +31,6 @@ class StorageInterface(ABC):
     def get_aliased_column_names(self, dataset_name: str) -> List[str]:
         pass
 
-
     @abstractmethod
     def apply_name_mapping(self, dataset_name: str, name_mapping: Dict[str, str]):
         pass

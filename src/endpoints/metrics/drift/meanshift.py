@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional
 import logging
 import uuid
 
@@ -56,9 +56,7 @@ async def get_meanshift_definition():
 
 
 @router.post("/metrics/drift/meanshift/request")
-async def schedule_meanshift(
-    request: MeanshiftMetricRequest, background_tasks: BackgroundTasks
-):
+async def schedule_meanshift(request: MeanshiftMetricRequest, background_tasks: BackgroundTasks):
     """Schedule a recurring computation of Meanshift metric."""
     request_id = str(uuid.uuid4())
     logger.info(f"Scheduling Meanshift computation with ID: {request_id}")
