@@ -45,9 +45,7 @@ async def get_kstest_definition():
 
 
 @router.post("/metrics/drift/kstest/request")
-async def schedule_kstest(
-    request: KSTestMetricRequest, background_tasks: BackgroundTasks
-):
+async def schedule_kstest(request: KSTestMetricRequest, background_tasks: BackgroundTasks):
     """Schedule a recurring computation of KSTest metric."""
     request_id = str(uuid.uuid4())
     logger.info(f"Scheduling KSTest computation with ID: {request_id}")

@@ -84,9 +84,7 @@ async def interpret_spd_value(request: GroupDefinitionRequest):
         return {"interpretation": "The SPD value indicates a small bias in the model."}
     except Exception as e:
         logger.error(f"Error interpreting SPD value: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Error interpreting value: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error interpreting value: {str(e)}")
 
 
 @router.post("/metrics/group/fairness/spd/request")
@@ -142,9 +140,7 @@ async def interpret_spd_value_deprecated(request: GroupDefinitionRequest):
 
 
 @router.post("/spd/request", deprecated=True)
-async def schedule_spd_deprecated(
-    request: GroupMetricRequest, background_tasks: BackgroundTasks
-):
+async def schedule_spd_deprecated(request: GroupMetricRequest, background_tasks: BackgroundTasks):
     """Schedule a recurring computation of SPD metric (deprecated).
 
     This endpoint is deprecated. Please use /metrics/group/fairness/spd/request instead.
