@@ -15,6 +15,4 @@ async def get_all_metric_requests(type: Optional[str] = None):
         return {"requests": []}
     except Exception as e:
         logger.error(f"Error retrieving metric requests: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Error retrieving metric requests: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error retrieving metric requests: {str(e)}")

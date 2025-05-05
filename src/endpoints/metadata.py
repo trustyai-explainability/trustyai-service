@@ -26,9 +26,7 @@ async def get_service_info():
         return {"models": [], "metrics": [], "version": "1.0.0rc0"}
     except Exception as e:
         logger.error(f"Error retrieving service info: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Error retrieving service info: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error retrieving service info: {str(e)}")
 
 
 @router.get("/info/inference/ids/{model}")
@@ -40,9 +38,7 @@ async def get_inference_ids(model: str, type: str = "all"):
         return {"inferenceIds": []}
     except Exception as e:
         logger.error(f"Error retrieving inference IDs: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Error retrieving inference IDs: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error retrieving inference IDs: {str(e)}")
 
 
 @router.post("/info/names")
@@ -54,9 +50,7 @@ async def apply_column_names(name_mapping: NameMapping):
         return {"status": "success", "message": "Column names applied successfully"}
     except Exception as e:
         logger.error(f"Error applying column names: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Error applying column names: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error applying column names: {str(e)}")
 
 
 @router.delete("/info/names")
@@ -68,9 +62,7 @@ async def remove_column_names(model_id: str):
         return {"status": "success", "message": "Column names removed successfully"}
     except Exception as e:
         logger.error(f"Error removing column names: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Error removing column names: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error removing column names: {str(e)}")
 
 
 @router.get("/info/tags")

@@ -68,15 +68,15 @@ async def consume_inference_payload(payload: InferencePartialPayload):
         return {"status": "success", "message": "Payload processed successfully"}
     except Exception as e:
         logger.error(f"Error processing inference payload: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Error processing payload: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error processing payload: {str(e)}")
 
 
 def reconcile_mismatching_shape_error(shape_tuples, payload_type, payload_id):
-    msg = (f"Could not reconcile KServe Inference {payload_id}, because {payload_type} shapes were mismatched. "
-           f"When using multiple {payload_type}s to describe data columns, all shapes must match."
-           f"However, the following tensor shapes were found:")
+    msg = (
+        f"Could not reconcile KServe Inference {payload_id}, because {payload_type} shapes were mismatched. "
+        f"When using multiple {payload_type}s to describe data columns, all shapes must match."
+        f"However, the following tensor shapes were found:"
+    )
     for i, (name, shape) in enumerate(shape_tuples):
         msg += f"\n{i}:\t{name}:\t{shape}"
     logger.error(msg)
@@ -84,9 +84,11 @@ def reconcile_mismatching_shape_error(shape_tuples, payload_type, payload_id):
 
 
 def reconcile_mismatching_row_count_error(payload_id, input_shape, output_shape):
-    msg = (f"Could not reconcile KServe Inference {payload_id}, because the number of "
-           f"output rows ({output_shape}) did not match the number of input rows "
-           f"({input_shape}).")
+    msg = (
+        f"Could not reconcile KServe Inference {payload_id}, because the number of "
+        f"output rows ({output_shape}) did not match the number of input rows "
+        f"({input_shape})."
+    )
     logger.error(msg)
     raise HTTPException(status_code=400, detail=msg)
 
@@ -112,9 +114,7 @@ def process_payload(payload, get_data: Callable, enforced_first_shape: int = Non
                 return np.array(data).T, column_names
         else:
             reconcile_mismatching_shape_error(
-                shape_tuples,
-                "input" if enforced_first_shape is None else "output",
-                payload.id
+                shape_tuples, "input" if enforced_first_shape is None else "output", payload.id
             )
     else:  # single tensor case: we have one tensor of shape [nrows, d1, d2, ...., dN]
         kserve_data: KServeData = get_data(payload)[0]
@@ -153,18 +153,23 @@ async def reconcile(input_payload: KServeInferenceRequest, output_payload: KServ
         tg.create_task(storage_inferface.write_data(output_dataset, output_array, output_names))
         tg.create_task(storage_inferface.write_data(metadata_dataset, metadata, metadata_names))
 
-    shapes = await (ModelData(output_payload.model_name).shapes())
-    logger.info(f"Successfully reconciled KServe inference {input_payload.id}, "
-                f"consisting of {input_array.shape[0]:,} rows from {output_payload.model_name}.")
-    logger.debug(f"Current storage shapes for {output_payload.model_name}: "
-                 f"Inputs={shapes[0]}, "
-                 f"Outputs={shapes[1]}, "
-                 f"Metadata={shapes[2]}")
+    shapes = await ModelData(output_payload.model_name).shapes()
+    logger.info(
+        f"Successfully reconciled KServe inference {input_payload.id}, "
+        f"consisting of {input_array.shape[0]:,} rows from {output_payload.model_name}."
+    )
+    logger.debug(
+        f"Current storage shapes for {output_payload.model_name}: "
+        f"Inputs={shapes[0]}, "
+        f"Outputs={shapes[1]}, "
+        f"Metadata={shapes[2]}"
+    )
 
 
 @router.post("/")
-async def consume_cloud_event(payload: Union[KServeInferenceRequest, KServeInferenceResponse],
-                              ce_id: Annotated[str | None, Header()] = None):
+async def consume_cloud_event(
+    payload: Union[KServeInferenceRequest, KServeInferenceResponse], ce_id: Annotated[str | None, Header()] = None
+):
     # set payload if from cloud event header
     payload.id = ce_id
 
@@ -185,8 +190,10 @@ async def consume_cloud_event(payload: Union[KServeInferenceRequest, KServeInfer
 
     elif isinstance(payload, KServeInferenceResponse):
         if len(payload.outputs) == 0:
-            msg = (f"KServe Inference Output {payload.id} received from model={payload.model_name}, "
-                   f"but data field was empty. Payload will not be saved.")
+            msg = (
+                f"KServe Inference Output {payload.id} received from model={payload.model_name}, "
+                f"but data field was empty. Payload will not be saved."
+            )
             logger.error(msg)
             raise HTTPException(status_code=400, detail=msg)
         else:
