@@ -11,11 +11,15 @@ import logging
 from src.endpoints.consumer.consumer_endpoint import router as consumer_router
 from src.endpoints.metrics.fairness.group.dir import router as dir_router
 from src.endpoints.data.data_upload import router as data_upload_router
+
 # from src.endpoints.drift_metrics import router as drift_metrics_router
-from src.endpoints.metrics.drift.approx_ks_test import router as drift_approx_ks_test_router
+from src.endpoints.metrics.drift.approx_ks_test import (
+    router as drift_approx_ks_test_router,
+)
 from src.endpoints.metrics.drift.fourier_mmd import router as drift_fourier_mmd_router
 from src.endpoints.metrics.drift.ks_test import router as drift_ks_test_router
 from src.endpoints.metrics.drift.meanshift import router as drift_meanshift_router
+
 # from src.endpoints.explainers import router as explainers_router
 from src.endpoints.explainers.global_explainer import router as explainers_global_router
 from src.endpoints.explainers.local_explainer import router as explainers_local_router
@@ -26,7 +30,10 @@ from src.endpoints.metrics.metrics_info import router as metrics_info_router
 from src.endpoints.data.data_download import router as data_download_router
 
 try:
-    from src.endpoints.evaluation.lm_evaluation_harness import router as lm_evaluation_harness_router
+    from src.endpoints.evaluation.lm_evaluation_harness import (
+        router as lm_evaluation_harness_router,
+    )
+
     lm_evaluation_harness_available = True
 except ImportError:
     lm_evaluation_harness_available = False
@@ -53,7 +60,10 @@ app.add_middleware(
 )
 
 # Include all routers
-app.include_router(consumer_router, tags=["{Internal Only} Inference Consumer"])
+app.include_router(
+    consumer_router,
+    tags=["{Internal Only} Inference Consumer", "{Internal Only} ModelMesh Consumer"],
+)
 app.include_router(dir_router, tags=["Fairness Metrics: Group: Disparate Impact Ratio"])
 app.include_router(data_upload_router, tags=["Data Upload"])
 # app.include_router(
@@ -102,7 +112,9 @@ app.include_router(metrics_info_router, tags=["Metrics Information Endpoint"])
 app.include_router(data_download_router, tags=["Download Endpoint"])
 
 if lm_evaluation_harness_available:
-    app.include_router(lm_evaluation_harness_router, tags=["LM Evaluation Harness Endpoint"])
+    app.include_router(
+        lm_evaluation_harness_router, tags=["LM Evaluation Harness Endpoint"]
+    )
 
 # Deprecated endpoints
 app.include_router(

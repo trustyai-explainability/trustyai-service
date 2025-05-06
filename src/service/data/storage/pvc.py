@@ -1,5 +1,5 @@
 import asyncio
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 import numpy as np
 import os
@@ -10,6 +10,7 @@ import pickle as pkl
 from src.service.utils import list_utils
 from .storage_interface import StorageInterface
 from src.service.constants import PROTECTED_DATASET_SUFFIX, PARTIAL_PAYLOAD_DATASET_NAME
+from src.service.data.modelmesh_parser import PartialPayload
 
 logger = logging.getLogger(__name__)
 COLUMN_NAMES_ATTRIBUTE = "column_names"
@@ -17,11 +18,20 @@ COLUMN_ALIAS_ATTRIBUTE = "column_aliases"
 BYTES_ATTRIBUTE = "is_bytes"
 
 PARTIAL_INPUT_NAME = PROTECTED_DATASET_SUFFIX + PARTIAL_PAYLOAD_DATASET_NAME + "_inputs"
-PARTIAL_OUTPUT_NAME = PROTECTED_DATASET_SUFFIX + PARTIAL_PAYLOAD_DATASET_NAME + "_outputs"
+PARTIAL_OUTPUT_NAME = (
+    PROTECTED_DATASET_SUFFIX + PARTIAL_PAYLOAD_DATASET_NAME + "_outputs"
+)
+MODELMESH_INPUT_NAME = (
+    f"{PROTECTED_DATASET_SUFFIX}modelmesh_partial_payloads_inputs"
+)
+MODELMESH_OUTPUT_NAME = (
+    f"{PROTECTED_DATASET_SUFFIX}modelmesh_partial_payloads_outputs"
+)
 
 
 class H5PYContext:
     """Open the corresponding H5PY file for a dataset and manage its context`"""
+
     def __init__(self, parent_class, dataset_name, mode):
         self.parent_class = parent_class
         self.mode = mode
@@ -29,7 +39,7 @@ class H5PYContext:
         self.filename = parent_class._get_filename(self.dataset_name)
 
     def __enter__(self):
-        if self.mode == 'r' and not os.path.exists(self.filename):
+        if self.mode == "r" and not os.path.exists(self.filename):
             raise MissingH5PYDataException(self.dataset_name)
         self.db = h5py.File(self.filename, mode=self.mode)
         return self.db
@@ -39,7 +49,8 @@ class H5PYContext:
 
 
 class MissingH5PYDataException(Exception):
-    """Raised when a dataset that does not exist is accessed """
+    """Raised when a dataset that does not exist is accessed"""
+
     def __init__(self, dataset_name):
         self.dataset_name = dataset_name
 
@@ -57,14 +68,17 @@ class PVCStorage(StorageInterface):
         # one_file_per_dataset=True minimizes the ramifications of file corruption
         # one_file_per_dataset=True also allows read/write concurrence between different datasets
         self.one_file_per_dataset = True
-        self.locks = {fname: asyncio.Lock() for
-                      fname in os.listdir(self.data_directory) if self.data_file in fname}
+        self.locks = {
+            fname: asyncio.Lock()
+            for fname in os.listdir(self.data_directory)
+            if self.data_file in fname
+        }
         self.global_lock = asyncio.Lock()
 
     def _get_filename(self, dataset_name):
         """Get the H5PY filename of a particular dataset"""
         if self.one_file_per_dataset:
-            return os.path.join(self.data_directory, dataset_name + "_" + self.data_file)
+            return os.path.join(self.data_directory, f"{dataset_name}_{self.data_file}")
         else:
             return self.data_path
 
@@ -116,8 +130,13 @@ class PVCStorage(StorageInterface):
                 else:
                     raise MissingH5PYDataException(allocated_dataset_name)
 
-    async def _write_raw_data(self, dataset_name: str, new_rows: np.ndarray, column_names: list[str],
-                              is_bytes: bool = False) -> None:
+    async def _write_raw_data(
+        self,
+        dataset_name: str,
+        new_rows: np.ndarray,
+        column_names: list[str],
+        is_bytes: bool = False,
+    ) -> None:
         """Write new data to file. Axis 0 of the data is the row dimension, and data shape must
         align on all subsequent axes"""
         allocated_dataset_name = self.allocate_valid_dataset_name(dataset_name)
@@ -134,71 +153,104 @@ class PVCStorage(StorageInterface):
         if dataset_exists:  # if we've already got saved inferences for this model
             if existing_shape[1:] == inbound_shape[1:]:  # shapes match
                 async with self.get_lock(allocated_dataset_name):
-                    with H5PYContext(self, allocated_dataset_name, 'a') as db:
+                    with H5PYContext(self, allocated_dataset_name, "a") as db:
                         dataset = db[allocated_dataset_name]
 
-                        if dataset.attrs[BYTES_ATTRIBUTE] != is_bytes:  # data storage paradigm mismatch
+                        if (
+                            dataset.attrs[BYTES_ATTRIBUTE] != is_bytes
+                        ):  # data storage paradigm mismatch
                             msg = f"Error when saving inference data for {allocated_dataset_name}: "
                             if dataset.attrs[BYTES_ATTRIBUTE]:
-                                msg += ("Dataset was previously saved as serialized tabular data, but has "
-                                        "now received a purely numeric payload.")
+                                msg += (
+                                    "Dataset was previously saved as serialized tabular data, but has "
+                                    "now received a purely numeric payload."
+                                )
                             else:
-                                msg += ("Dataset was previously saved as numeric data, but has now received "
-                                        "a serialized tabular payload.")
+                                msg += (
+                                    "Dataset was previously saved as numeric data, but has now received "
+                                    "a serialized tabular payload."
+                                )
                             logger.error(msg)
                             raise ValueError(msg)
 
                         # add new lines to dataset and write new data
                         dataset.resize(existing_shape[0] + inbound_shape[0], axis=0)
-                        dataset[existing_shape[0]:] = new_rows
+                        dataset[existing_shape[0] :] = new_rows
             else:
-                existing_shape_str = ", ".join([":"] + [str(x) for x in existing_shape[1:]])
-                inbound_shape_str = ", ".join([":"] + [str(x) for x in inbound_shape[1:]])
+                existing_shape_str = ", ".join(
+                    [":"] + [str(x) for x in existing_shape[1:]]
+                )
+                inbound_shape_str = ", ".join(
+                    [":"] + [str(x) for x in inbound_shape[1:]]
+                )
 
-                raise ValueError(f"Error when saving inference data for {allocated_dataset_name}: "
-                                 f"Mismatch between existing data shape=({existing_shape_str}) vs "
-                                 f"inbound data shape=({inbound_shape_str})")
+                raise ValueError(
+                    f"Error when saving inference data for {allocated_dataset_name}: "
+                    f"Mismatch between existing data shape=({existing_shape_str}) vs "
+                    f"inbound data shape=({inbound_shape_str})"
+                )
         else:  # first observation of inferences from this model
             async with self.get_lock(allocated_dataset_name):
                 with H5PYContext(self, allocated_dataset_name, "a") as db:
 
                     # create new dataset
-                    max_shape = [None] + list(new_rows.shape)[1:]  # to-do: tune this value?
-                    dataset = db.create_dataset(allocated_dataset_name, data=new_rows, maxshape=max_shape, chunks=True)
+                    max_shape = [None] + list(new_rows.shape)[
+                        1:
+                    ]  # to-do: tune this value?
+                    dataset = db.create_dataset(
+                        allocated_dataset_name,
+                        data=new_rows,
+                        maxshape=max_shape,
+                        chunks=True,
+                    )
                     dataset.attrs[COLUMN_NAMES_ATTRIBUTE] = column_names
                     dataset.attrs[BYTES_ATTRIBUTE] = is_bytes
 
     async def write_data(self, dataset_name: str, new_rows, column_names: List[str]):
         """Write new data to a dataset, automatically serializing any non-numeric data"""
-        if isinstance(new_rows, np.ndarray):
-            if not list_utils.contains_non_numeric(new_rows):
-                await self._write_raw_data(dataset_name, new_rows, column_names)
-            else:
-                await self._write_raw_data(dataset_name, list_utils.serialize_rows(new_rows), column_names)
-        elif not list_utils.contains_non_numeric(new_rows):
-            await self._write_raw_data(dataset_name, np.array(new_rows), column_names)
+        if isinstance(
+            new_rows, np.ndarray
+        ) and not list_utils.contains_non_numeric(new_rows):
+            await self._write_raw_data(dataset_name, new_rows, column_names)
+        elif (
+            isinstance(new_rows, np.ndarray)
+            and list_utils.contains_non_numeric(new_rows)
+            or not isinstance(new_rows, np.ndarray)
+            and list_utils.contains_non_numeric(new_rows)
+        ):
+            await self._write_raw_data(
+                dataset_name, list_utils.serialize_rows(new_rows), column_names
+            )
         else:
-            await self._write_raw_data(dataset_name, list_utils.serialize_rows(new_rows), column_names)
+            await self._write_raw_data(dataset_name, np.array(new_rows), column_names)
 
-    async def _read_raw_data(self, dataset_name: str, start_row: int = None, n_rows: int = None) -> (np.ndarray, List[str]):
+    async def _read_raw_data(
+        self, dataset_name: str, start_row: int = None, n_rows: int = None
+    ) -> (np.ndarray, List[str]):
         """Read raw data from a dataset- does not deserialize any bytes data"""
         allocated_dataset_name = self.allocate_valid_dataset_name(dataset_name)
         async with self.get_lock(allocated_dataset_name):
             with H5PYContext(self, dataset_name, "r") as db:
-                if allocated_dataset_name in db:
-                    start_row = 0 if start_row is None else start_row
-                    end_row = None if n_rows is None else start_row + n_rows
-                    dataset = db[allocated_dataset_name]
-                    if start_row > dataset.shape[0]:
-                        logger.warning(f"Requested a data read from start_row={start_row}, but dataset "
-                                       f"only has {dataset.shape[0]} rows. An empty array will be returned.")
-                    return dataset[start_row:end_row], dataset.attrs[COLUMN_NAMES_ATTRIBUTE]
-                else:
+                if allocated_dataset_name not in db:
                     raise MissingH5PYDataException(allocated_dataset_name)
+                start_row = 0 if start_row is None else start_row
+                end_row = None if n_rows is None else start_row + n_rows
+                dataset = db[allocated_dataset_name]
+                if start_row > dataset.shape[0]:
+                    logger.warning(
+                        f"Requested a data read from start_row={start_row}, but dataset "
+                        f"only has {dataset.shape[0]} rows. An empty array will be returned."
+                    )
+                return (
+                    dataset[start_row:end_row],
+                    dataset.attrs[COLUMN_NAMES_ATTRIBUTE],
+                )
 
-    async def read_data(self, dataset_name: str, start_row: int = None, n_rows: int = None) -> (np.ndarray, List[str]):
+    async def read_data(
+        self, dataset_name: str, start_row: int = None, n_rows: int = None
+    ) -> (np.ndarray, List[str]):
         """Read data from a dataset, automatically deserializing any byte data"""
-        read, column_names = (await self._read_raw_data(dataset_name, start_row, n_rows))
+        read, column_names = await self._read_raw_data(dataset_name, start_row, n_rows)
         if len(read) and read[0].dtype.type in {np.bytes_, np.void}:
             return list_utils.deserialize_rows(read), column_names
         else:
@@ -209,7 +261,7 @@ class PVCStorage(StorageInterface):
         allocated_dataset_name = self.allocate_valid_dataset_name(dataset_name)
         async with self.get_lock(allocated_dataset_name):
             try:
-                with H5PYContext(self, dataset_name, 'a') as db:
+                with H5PYContext(self, dataset_name, "a") as db:
                     if allocated_dataset_name in db:
                         del db[allocated_dataset_name]
                     if allocated_dataset_name in self.locks:
@@ -221,7 +273,7 @@ class PVCStorage(StorageInterface):
         """Get the original column names associated with this model, prior to any name mapping"""
         allocated_dataset_name = self.allocate_valid_dataset_name(dataset_name)
         async with self.get_lock(allocated_dataset_name):
-            with H5PYContext(self, dataset_name, 'r') as db:
+            with H5PYContext(self, dataset_name, "r") as db:
                 if allocated_dataset_name in db:
                     return db[allocated_dataset_name].attrs[COLUMN_NAMES_ATTRIBUTE]
                 else:
@@ -231,7 +283,7 @@ class PVCStorage(StorageInterface):
         """Get an up-to-date set of column names, including any aliases that might have been applied"""
         allocated_dataset_name = self.allocate_valid_dataset_name(dataset_name)
         async with self.get_lock(allocated_dataset_name):
-            with H5PYContext(self, dataset_name, 'r') as db:
+            with H5PYContext(self, dataset_name, "r") as db:
                 if allocated_dataset_name in db:
                     if COLUMN_ALIAS_ATTRIBUTE in db[dataset_name].attrs:
                         return db[allocated_dataset_name].attrs[COLUMN_ALIAS_ATTRIBUTE]
@@ -244,7 +296,7 @@ class PVCStorage(StorageInterface):
         """Apply a new name mapping to a dataset"""
         allocated_dataset_name = self.allocate_valid_dataset_name(dataset_name)
         async with self.get_lock(allocated_dataset_name):
-            with H5PYContext(self, dataset_name, 'a') as db:
+            with H5PYContext(self, dataset_name, "a") as db:
                 curr_names = db[allocated_dataset_name].attrs[COLUMN_NAMES_ATTRIBUTE]
                 aliased_names = [name_mapping.get(name, name) for name in curr_names]
                 db[allocated_dataset_name].attrs[COLUMN_ALIAS_ATTRIBUTE] = aliased_names
@@ -255,9 +307,15 @@ class PVCStorage(StorageInterface):
         # lock to prevent simultaneous read/writes
         partial_dataset_name = PARTIAL_INPUT_NAME if is_input else PARTIAL_OUTPUT_NAME
         async with self.get_lock(partial_dataset_name):
-            with H5PYContext(self, partial_dataset_name, 'a',) as db:
+            with H5PYContext(
+                self,
+                partial_dataset_name,
+                "a",
+            ) as db:
                 if partial_dataset_name not in db:
-                    dataset = db.create_dataset(partial_dataset_name, dtype="f", track_order=True)
+                    dataset = db.create_dataset(
+                        partial_dataset_name, dtype="f", track_order=True
+                    )
                 else:
                     dataset = db[partial_dataset_name]
                 dataset.attrs[payload.id] = np.void(pkl.dumps(payload))
@@ -272,10 +330,127 @@ class PVCStorage(StorageInterface):
                 with H5PYContext(self, partial_dataset_name, "r") as db:
                     if partial_dataset_name not in db:
                         return None
-                    else:
-                        recovered_bytes = db[partial_dataset_name].attrs.get(payload_id)
-                        return None if recovered_bytes is None else pkl.loads(recovered_bytes)
+                    recovered_bytes = db[partial_dataset_name].attrs.get(payload_id)
+                    return (
+                        None
+                        if recovered_bytes is None
+                        else pkl.loads(recovered_bytes)
+                    )
             except MissingH5PYDataException:
                 return None
 
+    async def persist_modelmesh_payload(
+        self, payload: PartialPayload, request_id: str, is_input: bool
+    ):
+        """
+        Persist a ModelMesh payload.
 
+        Args:
+            payload: The payload to persist
+            request_id: The unique identifier for the inference request
+            is_input: Whether this is an input payload (True) or output payload (False)
+        """
+        dataset_name = MODELMESH_INPUT_NAME if is_input else MODELMESH_OUTPUT_NAME
+
+        serialized_data = pkl.dumps(payload.model_dump())
+
+        async with self.get_lock(dataset_name):
+            try:
+                with H5PYContext(self, dataset_name, "a") as db:
+                    if dataset_name not in db:
+                        dataset = db.create_dataset(dataset_name, data=np.array([0]))
+                        dataset.attrs["request_ids"] = []
+
+                    dataset = db[dataset_name]
+                    request_ids = list(dataset.attrs["request_ids"])
+
+                    dataset.attrs[request_id] = np.void(serialized_data)
+
+                    if request_id not in request_ids:
+                        request_ids.append(request_id)
+                        dataset.attrs["request_ids"] = request_ids
+
+                logger.debug(
+                    f"Stored ModelMesh {'input' if is_input else 'output'} payload for request ID: {request_id}"
+                )
+            except Exception as e:
+                logger.error(f"Error storing ModelMesh payload: {str(e)}")
+                raise
+
+    async def get_modelmesh_payload(
+        self, request_id: str, is_input: bool
+    ) -> Optional[PartialPayload]:
+        """
+        Retrieve a stored ModelMesh payload by request ID.
+
+        Args:
+            request_id: The unique identifier for the inference request
+            is_input: Whether to retrieve an input payload (True) or output payload (False)
+
+        Returns:
+            The retrieved payload, or None if not found
+        """
+        dataset_name = MODELMESH_INPUT_NAME if is_input else MODELMESH_OUTPUT_NAME
+
+        try:
+            async with self.get_lock(dataset_name):
+                with H5PYContext(self, dataset_name, "r") as db:
+                    if dataset_name not in db:
+                        return None
+
+                    dataset = db[dataset_name]
+                    if request_id not in dataset.attrs:
+                        return None
+
+                    serialized_data = dataset.attrs[request_id]
+
+                    try:
+                        payload_dict = pkl.loads(serialized_data)
+                        return PartialPayload(**payload_dict)
+                    except Exception as e:
+                        logger.error(f"Error unpickling payload: {str(e)}")
+                        return None
+        except MissingH5PYDataException:
+            return None
+        except Exception as e:
+            logger.error(f"Error retrieving ModelMesh payload: {str(e)}")
+            return None
+
+    async def delete_modelmesh_payload(self, request_id: str, is_input: bool):
+        """
+        Delete a stored ModelMesh payload.
+
+        Args:
+            request_id: The unique identifier for the inference request
+            is_input: Whether to delete an input payload (True) or output payload (False)
+        """
+        dataset_name = MODELMESH_INPUT_NAME if is_input else MODELMESH_OUTPUT_NAME
+
+        try:
+            async with self.get_lock(dataset_name):
+                with H5PYContext(self, dataset_name, "a") as db:
+                    if dataset_name not in db:
+                        return
+
+                    dataset = db[dataset_name]
+                    request_ids = list(dataset.attrs["request_ids"])
+
+                    if request_id not in request_ids:
+                        return
+
+                    if request_id in dataset.attrs:
+                        del dataset.attrs[request_id]
+
+                    request_ids.remove(request_id)
+                    dataset.attrs["request_ids"] = request_ids
+
+                    if not request_ids:
+                        del db[dataset_name]
+
+            logger.debug(
+                f"Deleted ModelMesh {'input' if is_input else 'output'} payload for request ID: {request_id}"
+            )
+        except MissingH5PYDataException:
+            return
+        except Exception as e:
+            logger.error(f"Error deleting ModelMesh payload: {str(e)}")

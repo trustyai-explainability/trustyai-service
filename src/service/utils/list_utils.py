@@ -4,10 +4,7 @@ import pickle
 
 def get_list_shape(l: list):
     """Get the shape of a nested list, assuming the sublists are not jagged"""
-    if isinstance(l, list):
-        return [len(l)] + get_list_shape(l[0])
-    else:
-        return []
+    return [len(l)] + get_list_shape(l[0]) if isinstance(l, list) else []
 
 
 def contains_non_numeric(l: list) -> bool:
@@ -20,15 +17,11 @@ def contains_non_numeric(l: list) -> bool:
 
 def serialize_rows(l: list):
     """Convert a nested list to a 1D numpy array, where the nth element contains a bytes serialization of the nth row"""
-    serialized = []
-    for row in l:
-        serialized.append(np.void(pickle.dumps(row)))
+    serialized = [np.void(pickle.dumps(row)) for row in l]
     return np.array(serialized)
 
 
 def deserialize_rows(serialized: np.ndarray):
     """Convert a 1D numpy array from `serialize_rows` to a numpy object array"""
-    deserialized = []
-    for row in serialized:
-        deserialized.append(pickle.loads(row))
+    deserialized = [pickle.loads(row) for row in serialized]
     return np.array(deserialized, dtype="O")
