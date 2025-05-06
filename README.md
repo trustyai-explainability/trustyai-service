@@ -89,7 +89,7 @@ python -m pytest --cov=src
 
 ---
 ## 🔄 Protobuf Support 🔄
-TrustyAI can parse ModelMesh protobuf payloads for model inference data processing.
+To process model inference data from ModelMesh models, you can install protobuf support. Otherwise, only KServe models will be supported.
 
 ### Installing Dependencies
 Install the required dependencies for protobuf support:

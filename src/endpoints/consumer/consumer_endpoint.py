@@ -211,6 +211,9 @@ async def consume_inference_payload(
             "message": f"Payload for {payload_id} processed successfully",
         }
 
+    except HTTPException:
+        # HTTPException always goes through
+        raise
     except Exception as e:
         logger.error(f"Error processing payload: {str(e)}")
         raise HTTPException(
