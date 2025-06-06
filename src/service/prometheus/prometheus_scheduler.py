@@ -168,7 +168,7 @@ class PrometheusScheduler:
         RequestReconciler.reconcile(request, self.data_source)
         with self._requests_lock:
             if metric_name not in self.requests:
-                self.requests[metric_name] = defaultdict(dict)
+                self.requests[metric_name] = {}
             self.requests[metric_name][id] = request
 
     def delete(self, metric_name: str, id: uuid.UUID) -> None:

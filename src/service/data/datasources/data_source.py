@@ -83,29 +83,17 @@ class DataSource:
         try:
             model_data = ModelData(model_id)
 
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+            input_rows, output_rows, metadata_rows = asyncio.run(model_data.row_counts())
 
-            try:
-                input_rows, output_rows, metadata_rows = loop.run_until_complete(
-                    model_data.row_counts()
-                )
+            available_rows = min(input_rows, output_rows, metadata_rows)
 
-                available_rows = min(input_rows, output_rows, metadata_rows)
+            start_row = max(0, available_rows - batch_size)
+            n_rows = min(batch_size, available_rows)
 
-                start_row = max(0, available_rows - batch_size)
-                n_rows = min(batch_size, available_rows)
+            input_data, output_data, metadata = asyncio.run(model_data.data(start_row=start_row, n_rows=n_rows))
 
-                input_data, output_data, metadata = loop.run_until_complete(
-                    model_data.data(start_row=start_row, n_rows=n_rows)
-                )
+            input_names, output_names, metadata_names = asyncio.run(model_data.column_names())
 
-                input_names, output_names, metadata_names = loop.run_until_complete(
-                    model_data.column_names()
-                )
-
-            finally:
-                loop.close()
 
             # Combine the data into a single dataframe
             df_data = {}
@@ -176,18 +164,8 @@ class DataSource:
         try:
             model_data = ModelData(model_id)
 
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-            try:
-                input_rows, output_rows, metadata_rows = loop.run_until_complete(
-                    model_data.row_counts()
-                )
-                input_names, output_names, metadata_names = loop.run_until_complete(
-                    model_data.column_names()
-                )
-            finally:
-                loop.close()
+            input_rows, output_rows, metadata_rows = asyncio.run(model_data.row_counts())
+            input_names, output_names, metadata_names = asyncio.run(model_data.column_names())
 
             input_items = {}
             for i, name in enumerate(input_names):
@@ -228,9 +206,9 @@ class DataSource:
             True if metadata exists, False otherwise
         """
         try:
-            self.get_metadata(model_id)
-            return True
-        except (StorageReadException, Exception):
+            return self.get_metadata(model_id) is not None
+        except Exception as e:
+            logger.error(f"Error checking if metadata exists for model={model_id}: {str(e)}")
             return False
 
     # DATAFRAME QUERIES
