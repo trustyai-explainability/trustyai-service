@@ -1,16 +1,33 @@
 import threading
 import uuid
+from typing import Dict
 from unittest.mock import Mock, patch
 
 import pandas as pd
 import pytest
 from prometheus_client import CollectorRegistry, generate_latest
 from src.service.data.datasources.data_source import DataSource
+from src.service.payloads.metrics.base_metric_request import BaseMetricRequest
 from src.service.prometheus.metric_value_carrier import MetricValueCarrier
 from src.service.prometheus.prometheus_publisher import PrometheusPublisher
-
 from src.service.prometheus.prometheus_scheduler import PrometheusScheduler
-from tests.service.prometheus.test_prometheus_publisher import MockMetricRequest
+
+
+class MockMetricRequest(BaseMetricRequest):
+    """Mock implementation of BaseMetricRequest for testing."""
+
+    def __init__(
+        self, model_id: str = "test_model", metric_name: str = "test_metric"
+    ) -> None:
+        super().__init__(
+            model_id=model_id,
+            metric_name=metric_name,
+            request_name="test_request",
+            batch_size=100,
+        )
+
+    def retrieve_tags(self) -> Dict[str, str]:
+        return {"custom_tag": "custom_value"}
 
 
 class TestPrometheusScheduler:

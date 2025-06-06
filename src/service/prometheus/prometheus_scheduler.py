@@ -51,7 +51,7 @@ class PrometheusScheduler:
     def get_requests(self, metric_name: str) -> Dict[uuid.UUID, BaseMetricRequest]:
         """Get all requests for a specific metric."""
         with self._requests_lock:
-            return self.requests.get(metric_name, {})
+            return dict(self.requests.get(metric_name, {}))
 
     def get_all_requests_flat(self) -> Dict[uuid.UUID, BaseMetricRequest]:
         """Get all requests across all metrics as a flat dictionary."""
