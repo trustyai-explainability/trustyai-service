@@ -1,18 +1,22 @@
-import os
+import logging
+from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi_utils.tasks import repeat_every
-from contextlib import asynccontextmanager
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
-from fastapi.middleware.cors import CORSMiddleware
-import logging
 
 # Endpoint routers
 from src.endpoints.consumer.consumer_endpoint import router as consumer_router
-from src.endpoints.metrics.fairness.group.dir import router as dir_router
+from src.endpoints.data.data_download import router as data_download_router
 from src.endpoints.data.data_upload import router as data_upload_router
+
+# from src.endpoints.explainers import router as explainers_router
+from src.endpoints.explainers.global_explainer import router as explainers_global_router
+from src.endpoints.explainers.local_explainer import router as explainers_local_router
+from src.endpoints.metadata import router as metadata_router
 
 # from src.endpoints.drift_metrics import router as drift_metrics_router
 from src.endpoints.metrics.drift.approx_ks_test import (
@@ -21,15 +25,10 @@ from src.endpoints.metrics.drift.approx_ks_test import (
 from src.endpoints.metrics.drift.fourier_mmd import router as drift_fourier_mmd_router
 from src.endpoints.metrics.drift.ks_test import router as drift_ks_test_router
 from src.endpoints.metrics.drift.meanshift import router as drift_meanshift_router
-
-# from src.endpoints.explainers import router as explainers_router
-from src.endpoints.explainers.global_explainer import router as explainers_global_router
-from src.endpoints.explainers.local_explainer import router as explainers_local_router
+from src.endpoints.metrics.fairness.group.dir import router as dir_router
 from src.endpoints.metrics.fairness.group.spd import router as spd_router
 from src.endpoints.metrics.identity.identity_endpoint import router as identity_router
-from src.endpoints.metadata import router as metadata_router
 from src.endpoints.metrics.metrics_info import router as metrics_info_router
-from src.endpoints.data.data_download import router as data_download_router
 
 from src.service.prometheus.prometheus_scheduler import PrometheusScheduler
 
@@ -50,16 +49,20 @@ logger = logging.getLogger(__name__)
 
 prometheus_scheduler = PrometheusScheduler()
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
 
-    @repeat_every(seconds=prometheus_scheduler.service_config.get("metrics_schedule", 30))
+    @repeat_every(
+        seconds=prometheus_scheduler.service_config.get("metrics_schedule", 30)
+    )
     async def schedule_metrics_calculation():
         prometheus_scheduler.calculate()
-    
+
     await schedule_metrics_calculation()
-    
+
     yield
+
 
 app = FastAPI(
     title="TrustyAI Service API",

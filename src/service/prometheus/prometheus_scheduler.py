@@ -1,16 +1,18 @@
 import logging
-import uuid
 import os
-from typing import Dict, Set, Optional
 import threading
+import uuid
 from collections import defaultdict
-from src.service.prometheus.prometheus_publisher import PrometheusPublisher
-from src.service.payloads.metrics.base_metric_request import BaseMetricRequest
+from typing import Dict, Optional, Set
+
 from src.endpoints.metrics.metrics_directory import MetricsDirectory
-from src.service.payloads.metrics.request_reconciler import RequestReconciler
 from src.service.data.datasources.data_source import DataSource
+from src.service.payloads.metrics.base_metric_request import BaseMetricRequest
+from src.service.payloads.metrics.request_reconciler import RequestReconciler
+from src.service.prometheus.prometheus_publisher import PrometheusPublisher
 
 logger: logging.Logger = logging.getLogger(__name__)
+
 
 class PrometheusScheduler:
 
@@ -30,12 +32,13 @@ class PrometheusScheduler:
         else:
             interval = 30  # Default to 30 seconds
 
-        return {
-            "batch_size": batch_size,
-            "metrics_schedule": interval
-        }
+        return {"batch_size": batch_size, "metrics_schedule": interval}
 
-    def __init__(self, publisher: Optional[PrometheusPublisher] = None, data_source: Optional[DataSource] = None) -> None:
+    def __init__(
+        self,
+        publisher: Optional[PrometheusPublisher] = None,
+        data_source: Optional[DataSource] = None,
+    ) -> None:
         self.requests: Dict[str, Dict[uuid.UUID, BaseMetricRequest]] = defaultdict(dict)
         self.has_logged_skipped_request_message: Set[str] = set()
         self.metrics_directory: MetricsDirectory = MetricsDirectory()
@@ -44,7 +47,6 @@ class PrometheusScheduler:
         self.service_config: Dict = self.get_service_config()
         self._logged_skipped_request_message_lock: threading.Lock = threading.Lock()
         self._requests_lock: threading.Lock = threading.Lock()
-
 
     def get_requests(self, metric_name: str) -> Dict[uuid.UUID, BaseMetricRequest]:
         """Get all requests for a specific metric."""
@@ -66,22 +68,22 @@ class PrometheusScheduler:
     def calculate_manual(self, throw_errors: bool = True) -> None:
         """
         Calculate scheduled metrics.
-        
+
         Args:
             throw_errors: If True, errors will be thrown. If False, they will just be logged.
         """
         try:
             verified_models = self.data_source.get_verified_models()
-            
+
             # Global service statistic
             self.publisher.gauge(
                 model_name="",
                 id=PrometheusPublisher.generate_uuid("model_count"),
                 metric_name="MODEL_COUNT_TOTAL",
-                value=len(verified_models)
+                value=len(verified_models),
             )
             requested_models = self.get_model_ids()
-            
+
             for model_id in verified_models:
                 # Global model statistics
                 total_observations = self.data_source.get_num_observations(model_id)
@@ -89,66 +91,79 @@ class PrometheusScheduler:
                     model_name=model_id,
                     id=PrometheusPublisher.generate_uuid(model_id),
                     metric_name="MODEL_OBSERVATIONS_TOTAL",
-                    value=total_observations
+                    value=total_observations,
                 )
-                
-                has_recorded_inferences = self.data_source.has_recorded_inferences(model_id)
-                
+
+                has_recorded_inferences = self.data_source.has_recorded_inferences(
+                    model_id
+                )
+
                 if not has_recorded_inferences:
                     with self._logged_skipped_request_message_lock:
                         if model_id not in self.has_logged_skipped_request_message:
-                            logger.info(f"Skipping metric calculation for model={model_id}, as no inference data has yet been recorded. "
-                                        "Once inference data arrives, metric calculation will resume.")
+                            logger.info(
+                                f"Skipping metric calculation for model={model_id}, "
+                                "as no inference data has yet been recorded. "
+                                "Once inference data arrives, metric calculation "
+                                "will resume."
+                            )
                             self.has_logged_skipped_request_message.add(model_id)
                         continue
-                
+
                 if self.has_requests() and model_id in requested_models:
                     requests_for_model = [
-                        (req_id, request) for req_id, request in self.get_all_requests_flat().items()
+                        (req_id, request)
+                        for req_id, request in self.get_all_requests_flat().items()
                         if request.model_id == model_id
                     ]
-                    
+
                     max_batch_size = max(
-                        [request.batch_size for _, request in requests_for_model], 
-                        default=self.service_config.get("batch_size", 100)
+                        [request.batch_size for _, request in requests_for_model],
+                        default=self.service_config.get("batch_size", 100),
                     )
-                    
-                    df = self.data_source.get_organic_dataframe(model_id, max_batch_size)
-                    
+
+                    df = self.data_source.get_organic_dataframe(
+                        model_id, max_batch_size
+                    )
+
                     for req_id, request in requests_for_model:
                         batch_size = min(request.batch_size, df.shape[0])
                         batch = df.tail(batch_size)
-                        
+
                         metric_name = request.metric_name
                         calculator = self.metrics_directory.get_calculator(metric_name)
-                        
+
                         if calculator:
                             value = calculator(batch, request)
-                            
+
                             if value.is_single():
                                 self.publisher.gauge(
                                     model_name=model_id,
                                     id=req_id,
                                     request=request,
-                                    value=value.get_value()
+                                    value=value.get_value(),
                                 )
                             else:
                                 self.publisher.gauge(
                                     model_name=model_id,
                                     id=req_id,
                                     request=request,
-                                    named_values=value.get_named_values()
+                                    named_values=value.get_named_values(),
                                 )
                         else:
-                            logger.warning(f"No calculator found for metric {metric_name}")
-                    
+                            logger.warning(
+                                f"No calculator found for metric {metric_name}"
+                            )
+
         except Exception as e:
             if throw_errors:
                 raise e
             else:
                 logger.error(f"Error calculating metrics: {e}")
 
-    def register(self, metric_name: str, id: uuid.UUID, request: BaseMetricRequest) -> None:
+    def register(
+        self, metric_name: str, id: uuid.UUID, request: BaseMetricRequest
+    ) -> None:
         """Register a metric request."""
         RequestReconciler.reconcile(request, self.data_source)
         with self._requests_lock:
@@ -161,7 +176,7 @@ class PrometheusScheduler:
         with self._requests_lock:
             if metric_name in self.requests and id in self.requests[metric_name]:
                 del self.requests[metric_name][id]
-        
+
         self.publisher.remove_gauge(metric_name, id)
 
     def has_requests(self) -> bool:
@@ -175,4 +190,3 @@ class PrometheusScheduler:
         for request in self.get_all_requests_flat().values():
             model_ids.add(request.model_id)
         return model_ids
-    

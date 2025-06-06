@@ -1,9 +1,11 @@
 from enum import Enum
 
+
 class DataType(str, Enum):
     """
     Enumeration of supported data types.
     """
+
     BOOL = "BOOL"
     FLOAT = "FLOAT"
     DOUBLE = "DOUBLE"
