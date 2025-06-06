@@ -3,6 +3,8 @@ import os
 import uvicorn
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
+from fastapi_utils.tasks import repeat_every
+from contextlib import asynccontextmanager
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from fastapi.middleware.cors import CORSMiddleware
 import logging
@@ -29,6 +31,8 @@ from src.endpoints.metadata import router as metadata_router
 from src.endpoints.metrics.metrics_info import router as metrics_info_router
 from src.endpoints.data.data_download import router as data_download_router
 
+from src.service.prometheus.prometheus_scheduler import PrometheusScheduler
+
 try:
     from src.endpoints.evaluation.lm_evaluation_harness import (
         router as lm_evaluation_harness_router,
@@ -44,10 +48,24 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+prometheus_scheduler = PrometheusScheduler()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+
+    @repeat_every(seconds=prometheus_scheduler.service_config.get("metrics_schedule", 30))
+    async def schedule_metrics_calculation():
+        prometheus_scheduler.calculate()
+    
+    await schedule_metrics_calculation()
+    
+    yield
+
 app = FastAPI(
     title="TrustyAI Service API",
     version="1.0.0rc0",
     description="TrustyAI Service API",
+    lifespan=lifespan,
 )
 
 # CORS
