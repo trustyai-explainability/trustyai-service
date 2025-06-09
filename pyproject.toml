@@ -28,6 +28,7 @@ dev = [
 ]
 eval = ["lm-eval[api]==0.4.4", "fastapi-utils>=0.8.0", "typing-inspect==0.9.0"]
 protobuf = ["numpy>=1.24.0,<2", "grpcio>=1.62.1,<2", "grpcio-tools>=1.62.1,<2"]
+mariadb = ["mariadb>=1.1.12", "javaobj-py3==0.4.4"]
 
 [tool.hatch.build.targets.sdist]
 include = ["src"]
