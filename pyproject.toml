@@ -24,7 +24,7 @@ dev = [
     "flake8>=6.1.0,<7",
     "mypy>=1.5.1,<2",
     "pytest-cov>=4.1.0,<5",
-    "httpx>=0.25.0,<0.26",
+    "httpx>=0.25.0,<0.29",
 ]
 eval = ["lm-eval[api]==0.4.4", "fastapi-utils>=0.8.0", "typing-inspect==0.9.0"]
 protobuf = ["numpy>=1.24.0,<2", "grpcio>=1.62.1,<2", "grpcio-tools>=1.62.1,<2"]
