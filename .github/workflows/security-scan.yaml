@@ -44,7 +44,7 @@ jobs:
           python -m pip install bandit[toml]
 
       - name: Run Bandit Security Scan
-        uses: PyCQA/bandit-action@v2
+        uses: PyCQA/bandit-action@v1
         with:
           targets: "src/"
           output_format: sarif
