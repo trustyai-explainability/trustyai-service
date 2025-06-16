@@ -35,7 +35,7 @@ jobs:
           fi
 
       - name: Run Bandit Security Scan
-        uses: PyCQA/bandit-action@v1
+        uses: PyCQA/bandit-action@v2
         with:
           targets: "src/"
           ini: ".bandit"
