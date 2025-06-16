@@ -47,20 +47,18 @@ jobs:
         uses: PyCQA/bandit-action@v1
         with:
           targets: "src/"
-          output_format: sarif
-          output_file: bandit-results.sarif
 
       - name: Upload SARIF results to GitHub Security tab
         if: github.ref == 'refs/heads/main'
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: bandit-results.sarif
+          sarif_file: results.sarif
         continue-on-error: true
 
       - name: Upload SARIF as artifact
         uses: actions/upload-artifact@v4
         with:
           name: bandit-sarif-results
-          path: bandit-results.sarif
+          path: results.sarif
           retention-days: 30
         continue-on-error: true
