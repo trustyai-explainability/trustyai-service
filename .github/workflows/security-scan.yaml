@@ -53,6 +53,7 @@ jobs:
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: results.sarif
+          category: bandit-security-scan
         continue-on-error: true
 
       - name: Upload SARIF as artifact
