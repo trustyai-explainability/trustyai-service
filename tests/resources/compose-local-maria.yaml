@@ -1,0 +1,39 @@
+### Use this to run the mariadb tests locally: `podman compose -f compose-local-maria.yaml up
+
+x-common-variables: &global-variables
+  MARIADB_ROOT_PASSWORD: root
+  MARIADB_USER: trustyai
+  MARIADB_PASSWORD: trustyai
+  MARIADB_DATABASE: trustyai-database
+
+services:
+  trustyai-db-container:
+    networks:
+      - data-connection
+    container_name: trustyai-db-container
+    healthcheck:
+      interval: 30s
+      retries: 3
+      test:
+        [
+          "CMD",
+          "healthcheck.sh",
+          "--su-mysql",
+          "--connect",
+          "--innodb_initialized"
+        ]
+      timeout: 30s
+    ports:
+      - 3306:3306
+    expose:
+      - 3306
+    volumes:
+      - trustyai-db-container:/var/lib/mysql/
+      - ./legacy_database_dump.sql:/docker-entrypoint-initdb.d/init.sql
+    environment:
+      <<: *global-variables
+    image: mariadb
+volumes:
+  trustyai-db-container:
+networks:
+  data-connection:

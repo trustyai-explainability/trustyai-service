@@ -110,6 +110,12 @@ class PVCStorage(StorageInterface):
             except MissingH5PYDataException:
                 return False
 
+
+    def list_all_datasets(self) -> List[str]:
+        """ List all datasets known by the dataset """
+        return [fname.replace(f"_{self.data_file}", "") for fname in os.listdir(self.data_directory) if self.data_file in fname]
+
+
     async def dataset_rows(self, dataset_name: str) -> int:
         """Number of data rows in dataset, returns a FileNotFoundError if the dataset does not exist"""
         allocated_dataset_name = self.allocate_valid_dataset_name(dataset_name)
@@ -320,25 +326,6 @@ class PVCStorage(StorageInterface):
                     dataset = db[partial_dataset_name]
                 dataset.attrs[payload.id] = np.void(pkl.dumps(payload))
 
-    async def get_partial_payload(self, payload_id: str, is_input: bool):
-        """Looks up a partial payload by id. Returns None if no matching id exists"""
-
-        # lock to prevent simultaneous read/writes
-        partial_dataset_name = PARTIAL_INPUT_NAME if is_input else PARTIAL_OUTPUT_NAME
-        async with self.get_lock(partial_dataset_name):
-            try:
-                with H5PYContext(self, partial_dataset_name, "r") as db:
-                    if partial_dataset_name not in db:
-                        return None
-                    recovered_bytes = db[partial_dataset_name].attrs.get(payload_id)
-                    return (
-                        None
-                        if recovered_bytes is None
-                        else pkl.loads(recovered_bytes)
-                    )
-            except MissingH5PYDataException:
-                return None
-
     async def persist_modelmesh_payload(
         self, payload: PartialPayload, request_id: str, is_input: bool
     ):
@@ -415,6 +402,25 @@ class PVCStorage(StorageInterface):
         except Exception as e:
             logger.error(f"Error retrieving ModelMesh payload: {str(e)}")
             return None
+
+    async def get_partial_payload(self, payload_id: str, is_input: bool):
+        """Looks up a partial payload by id. Returns None if no matching id exists"""
+
+        # lock to prevent simultaneous read/writes
+        partial_dataset_name = PARTIAL_INPUT_NAME if is_input else PARTIAL_OUTPUT_NAME
+        async with self.get_lock(partial_dataset_name):
+            try:
+                with H5PYContext(self, partial_dataset_name, "r") as db:
+                    if partial_dataset_name not in db:
+                        return None
+                    recovered_bytes = db[partial_dataset_name].attrs.get(payload_id)
+                    return (
+                        None
+                        if recovered_bytes is None
+                        else pkl.loads(recovered_bytes)
+                    )
+            except MissingH5PYDataException:
+                return None
 
     async def delete_modelmesh_payload(self, request_id: str, is_input: bool):
         """

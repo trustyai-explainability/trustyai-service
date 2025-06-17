@@ -9,6 +9,10 @@ class StorageInterface(ABC):
         pass
 
     @abstractmethod
+    def list_all_datasets(self) -> List[str]:
+        pass
+
+    @abstractmethod
     def dataset_rows(self, dataset_name: str) -> int:
         pass
 
@@ -39,6 +43,15 @@ class StorageInterface(ABC):
     @abstractmethod
     def delete_dataset(self, dataset_name: str):
         pass
+
+    @abstractmethod
+    async def persist_partial_payload(self, payload, is_input: bool):
+        pass
+
+    @abstractmethod
+    async def get_partial_payload(self, payload_id: str, is_input: bool):
+        pass
+
 
     @abstractmethod
     async def persist_modelmesh_payload(

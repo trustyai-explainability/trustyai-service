@@ -32,31 +32,27 @@ environment, a Jupyter Notebook, or in Kubernetes.
 
 ---
 ## 📦 Building 📦
-### Locally (Without Eval Support)
+### Locally
 ```bash
-uv pip install .
-````
+uv pip install ".[$EXTRAS]"
+```
 
-### Locally (With Eval Support)
+### Container
 ```bash
-uv pip install .[eval]
-````
+podman build -t $IMAGE_NAME --build-arg EXTRAS="$EXTRAS" .
+```
 
-### Container (Without Eval Support)
+### Available Extras
+Pass these extras as a comma separated list, e.g., `"mariadb,protobuf"`
+* `protobuf`: To process model inference data from ModelMesh models, you can install with `protobuf` support. Otherwise, only KServe models will be supported.
+* `eval`: To enable the Language Model Evaluation servers, install with `eval` support.
+* `mariadb` (If installing locally, install the [MariaDB Connector/C](https://mariadb.com/docs/server/connect/programming-languages/c/install/) first.)
+
+### Examples
 ```bash
-podman build -t $IMAGE_NAME .
-````
-
-### Container (With Eval Support)
-```bash
-podman build -t $IMAGE_NAME --build-arg EXTRAS=eval .
-````
-
-### Locally (With ModelMesh/Protobuf Support)
-```bash
-uv pip install .[protobuf]
-````
-
+uv pip install ".[mariadb,protobuf,eval]"
+podman build -t $IMAGE_NAME --build-arg EXTRAS="mariadb,protobuf,eval" .
+```
 
 ## 🏃Running 🏃‍♀️
 ### Locally
@@ -90,12 +86,6 @@ python -m pytest --cov=src
 ---
 ## 🔄 Protobuf Support 🔄
 To process model inference data from ModelMesh models, you can install protobuf support. Otherwise, only KServe models will be supported.
-
-### Installing Dependencies
-Install the required dependencies for protobuf support:
-```bash
-uv pip install -e ".[protobuf]"
-```
 
 ### Generating Protobuf Code
 After installing dependencies, generate Python code from the protobuf definitions:

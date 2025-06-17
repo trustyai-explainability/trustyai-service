@@ -27,7 +27,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 PartialKind = Literal["request", "response"]
-storage_inferface = get_storage_interface()
+storage_interface = get_storage_interface()
 unreconciled_inputs = {}
 unreconciled_outputs = {}
 
@@ -160,11 +160,11 @@ async def consume_inference_payload(
                 ) from e
 
             # Store the input payload
-            await storage_inferface.persist_modelmesh_payload(
+            await storage_interface.persist_modelmesh_payload(
                 partial_payload, payload_id, is_input
             )
 
-            output_payload = await storage_inferface.get_modelmesh_payload(
+            output_payload = await storage_interface.get_modelmesh_payload(
                 payload_id, False
             )
 
@@ -188,11 +188,11 @@ async def consume_inference_payload(
                 ) from e
 
             # Store the output payload
-            await storage_inferface.persist_modelmesh_payload(
+            await storage_interface.persist_modelmesh_payload(
                 partial_payload, payload_id, is_input
             )
 
-            input_payload = await storage_inferface.get_modelmesh_payload(
+            input_payload = await storage_interface.get_modelmesh_payload(
                 payload_id, True
             )
 
@@ -253,11 +253,11 @@ async def reconcile_modelmesh_payloads(
     metadata_cols = ["iso_time", "unix_timestamp", "tags"]
 
     await asyncio.gather(
-        storage_inferface.write_data(input_dataset, df[input_cols].values, input_cols),
-        storage_inferface.write_data(
+        storage_interface.write_data(input_dataset, df[input_cols].values, input_cols),
+        storage_interface.write_data(
             output_dataset, df[output_cols].values, output_cols
         ),
-        storage_inferface.write_data(metadata_dataset, metadata, metadata_cols),
+        storage_interface.write_data(metadata_dataset, metadata, metadata_cols),
     )
 
     shapes = await ModelData(model_id).shapes()
@@ -273,8 +273,8 @@ async def reconcile_modelmesh_payloads(
     )
 
     # Clean up
-    await storage_inferface.delete_modelmesh_payload(request_id, True)
-    await storage_inferface.delete_modelmesh_payload(request_id, False)
+    await storage_interface.delete_modelmesh_payload(request_id, True)
+    await storage_interface.delete_modelmesh_payload(request_id, False)
 
 
 def reconcile_mismatching_shape_error(shape_tuples, payload_type, payload_id):
@@ -377,9 +377,9 @@ async def reconcile(
     metadata_dataset = output_payload.model_name + METADATA_SUFFIX
 
     await asyncio.gather(
-        storage_inferface.write_data(input_dataset, input_array, input_names),
-        storage_inferface.write_data(output_dataset, output_array, output_names),
-        storage_inferface.write_data(metadata_dataset, metadata, metadata_names),
+        storage_interface.write_data(input_dataset, input_array, input_names),
+        storage_interface.write_data(output_dataset, output_array, output_names),
+        storage_interface.write_data(metadata_dataset, metadata, metadata_names),
     )
 
     shapes = await ModelData(output_payload.model_name).shapes()
@@ -411,13 +411,13 @@ async def consume_cloud_event(
         else:
             logger.info(f"KServe Inference Input {payload.id} received.")
             # if a match is found, the payload is auto-deleted from data
-            partial_output = await storage_inferface.get_partial_payload(
+            partial_output = await storage_interface.get_partial_payload(
                 payload.id, is_input=False
             )
             if partial_output is not None:
                 await reconcile(payload, partial_output)
             else:
-                await storage_inferface.persist_partial_payload(payload, is_input=True)
+                await storage_interface.persist_partial_payload(payload, is_input=True)
             return {
                 "status": "success",
                 "message": f"Input payload {payload.id} processed successfully",
@@ -435,13 +435,13 @@ async def consume_cloud_event(
             logger.info(
                 f"KServe Inference Output {payload.id} received from model={payload.model_name}."
             )
-            partial_input = await storage_inferface.get_partial_payload(
+            partial_input = await storage_interface.get_partial_payload(
                 payload.id, is_input=True
             )
             if partial_input is not None:
                 await reconcile(partial_input, payload)
             else:
-                await storage_inferface.persist_partial_payload(payload, is_input=False)
+                await storage_interface.persist_partial_payload(payload, is_input=False)
 
         return {
             "status": "success",
