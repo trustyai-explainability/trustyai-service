@@ -27,7 +27,7 @@ dev = [
     "httpx>=0.25.0,<0.29",
 ]
 eval = ["lm-eval[api]==0.4.4", "fastapi-utils>=0.8.0", "typing-inspect==0.9.0"]
-protobuf = ["numpy>=1.24.0,<2", "grpcio>=1.62.1,<2", "grpcio-tools>=1.62.1,<2"]
+protobuf = ["numpy>=1.24.0,<3", "grpcio>=1.62.1,<2", "grpcio-tools>=1.62.1,<2"]
 
 [tool.hatch.build.targets.sdist]
 include = ["src"]
