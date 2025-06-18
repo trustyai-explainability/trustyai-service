@@ -1,32 +1,32 @@
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from typing import List, Any, Optional
 import logging
+
+import pandas as pd
+from fastapi import APIRouter, HTTPException
+
+from src.service.utils.download import (
+    DataRequestPayload,
+    DataResponsePayload,
+    apply_filters,  # ← New utility function
+    load_model_dataframe,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-class RowMatcher(BaseModel):
-    columnName: str
-    operation: str
-    values: List[Any]
-
-
-class DataRequestPayload(BaseModel):
-    modelId: str
-    matchAny: Optional[List[RowMatcher]] = None
-    matchAll: Optional[List[RowMatcher]] = None
-    matchNone: Optional[List[RowMatcher]] = None
-
-
 @router.post("/data/download")
-async def download_data(payload: DataRequestPayload):
-    """Download model data."""
+async def download_data(payload: DataRequestPayload) -> DataResponsePayload:
+    """Download model data with filtering."""
     try:
         logger.info(f"Received data download request for model: {payload.modelId}")
-        # TODO: Implement
-        return {"status": "success", "data": []}
+        df = await load_model_dataframe(payload.modelId)
+        if df.empty:
+            return DataResponsePayload(dataCSV="")
+        df = apply_filters(df, payload)
+        csv_data = df.to_csv(index=False)
+        return DataResponsePayload(dataCSV=csv_data)
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error downloading data: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error downloading data: {str(e)}")
