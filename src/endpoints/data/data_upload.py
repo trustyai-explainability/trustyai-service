@@ -1,16 +1,18 @@
+import asyncio
 import logging
-import uuid
-from datetime import datetime
+import traceback
 from typing import Any, Dict, List, Optional
 
 import numpy as np
+import uuid
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from src.service.constants import INPUT_SUFFIX, METADATA_SUFFIX, OUTPUT_SUFFIX
-from src.service.data.modelmesh_parser import ModelMeshPayloadParser
-from src.service.data.storage import get_storage_interface
-from src.service.utils.upload import process_upload_request
+from src.endpoints.consumer.consumer_endpoint import (reconcile_kserve, consume_cloud_event)
+from src.endpoints.consumer import KServeInferenceRequest, KServeInferenceResponse
+from src.service.constants import TRUSTYAI_TAG_PREFIX
+from src.service.data.model_data import ModelData
+
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -20,20 +22,64 @@ class UploadPayload(BaseModel):
     model_name: str
     data_tag: Optional[str] = None
     is_ground_truth: bool = False
-    request: Dict[str, Any]
-    response:  Optional[Dict[str, Any]] = None
+    request: KServeInferenceRequest
+    response:  KServeInferenceResponse
 
+
+def validate_data_tag(tag: str) -> Optional[str]:
+    """Validate data tag format and content."""
+    if not tag:
+        return None
+    if tag.startswith(TRUSTYAI_TAG_PREFIX):
+        return (
+            f"The tag prefix '{TRUSTYAI_TAG_PREFIX}' is reserved for internal TrustyAI use only. "
+            f"Provided tag '{tag}' violates this restriction."
+        )
+    return None
 
 @router.post("/data/upload")
 async def upload(payload: UploadPayload) -> Dict[str, str]:
     """Upload model data - regular or ground truth."""
+    error_msgs = []
+
+    # validate tag
+    tag_validation_msg = validate_data_tag(payload.data_tag)
+    if tag_validation_msg:
+        raise HTTPException(status_code=400, detail=tag_validation_msg)
     try:
         logger.info(f"Received upload request for model: {payload.model_name}")
-        result = await process_upload_request(payload)
+
+        # overwrite response model name with provided model name
+        payload.response.model_name = payload.model_name
+
+        req_id = str(uuid.uuid4())
+        try:
+            model_data = ModelData(payload.model_name)
+            previous_data_points = (await model_data.row_counts())[0]
+        except:
+            previous_data_points = 0
+
+        await consume_cloud_event(payload.response, req_id),
+        await consume_cloud_event(payload.request, req_id, tag=payload.data_tag)
+
+        model_data =  ModelData(payload.model_name)
+        new_data_points = (await model_data.row_counts())[0]
+
         logger.info(f"Upload completed for model: {payload.model_name}")
-        return result
-    except HTTPException:
-        raise
+
+        return {
+            "status": "success",
+            "message": f"{new_data_points-previous_data_points} datapoints successfully added to {payload.model_name} data."
+        }
+
+    except HTTPException as e:
+        if "Could not reconcile_kserve KServe Inference" in str(e):
+            new_msg = e.detail.replace("Could not reconcile_kserve KServe Inference",
+                                       "Could not upload payload")
+            raise HTTPException(status_code=400, detail=new_msg)
+        else:
+            raise
     except Exception as e:
+        traceback.print_exc()
         logger.error(f"Unexpected error in upload endpoint for model {payload.model_name}: {str(e)}", exc_info=True)
         raise HTTPException(500, f"Internal server error: {str(e)}")

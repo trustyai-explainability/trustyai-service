@@ -5,14 +5,14 @@ import mariadb
 
 def require_existing_dataset(func):
     """Annotation to assert that a given function requires a valid dataset name as the first non-self argument"""
-
-    def validate_dataset_exists(*args, **kwargs):
+    async def validate_dataset_exists(*args, **kwargs):
         storage, dataset_name = args[0], args[1]
-        if not storage.dataset_exists(dataset_name):
+        if not await storage.dataset_exists(dataset_name):
             raise ValueError(f"Error when calling {func.__name__}: Dataset '{dataset_name}' does not exist.")
-        return func(*args, **kwargs)
+        return await func(*args, **kwargs)
 
     return validate_dataset_exists
+
 
 
 def get_clean_column_names(column_names) -> List[str]:
