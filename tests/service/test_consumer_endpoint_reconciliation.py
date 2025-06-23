@@ -26,7 +26,7 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
 
         self.storage_patch = mock.patch(
-            "src.endpoints.consumer.consumer_endpoint.storage_inferface"
+            "src.endpoints.consumer.consumer_endpoint.storage_interface"
         )
         self.mock_storage = self.storage_patch.start()
 
