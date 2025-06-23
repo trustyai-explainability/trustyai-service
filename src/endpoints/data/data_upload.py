@@ -39,8 +39,7 @@ def validate_data_tag(tag: str) -> Optional[str]:
 
 @router.post("/data/upload")
 async def upload(payload: UploadPayload) -> Dict[str, str]:
-    """Upload model data - regular or ground truth."""
-    error_msgs = []
+    """Upload model data"""
 
     # validate tag
     tag_validation_msg = validate_data_tag(payload.data_tag)
@@ -53,13 +52,15 @@ async def upload(payload: UploadPayload) -> Dict[str, str]:
         payload.response.model_name = payload.model_name
 
         req_id = str(uuid.uuid4())
-        try:
-            model_data = ModelData(payload.model_name)
+        model_data = ModelData(payload.model_name)
+        datasets_exist = await model_data.datasets_exist()
+
+        if all(datasets_exist):
             previous_data_points = (await model_data.row_counts())[0]
-        except:
+        else:
             previous_data_points = 0
 
-        await consume_cloud_event(payload.response, req_id),
+        await consume_cloud_event(payload.response, req_id)
         await consume_cloud_event(payload.request, req_id, tag=payload.data_tag)
 
         model_data =  ModelData(payload.model_name)
@@ -74,12 +75,8 @@ async def upload(payload: UploadPayload) -> Dict[str, str]:
 
     except HTTPException as e:
         if "Could not reconcile_kserve KServe Inference" in str(e):
-            new_msg = e.detail.replace("Could not reconcile_kserve KServe Inference",
-                                       "Could not upload payload")
-            raise HTTPException(status_code=400, detail=new_msg)
-        else:
-            raise
+            raise HTTPException(status_code=400, detail=f"Could not upload payload for model {payload.model_name}.") from e
+        raise e
     except Exception as e:
-        traceback.print_exc()
         logger.error(f"Unexpected error in upload endpoint for model {payload.model_name}: {str(e)}", exc_info=True)
-        raise HTTPException(500, f"Internal server error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
