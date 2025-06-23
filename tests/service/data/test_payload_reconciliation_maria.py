@@ -1,7 +1,7 @@
 """
 Tests for ModelMesh payload reconciliation.MariaDBStorage("root", "root", "127.0.0.1", 3306, "trustyai_database_v2")
 """
-
+import asyncio
 import unittest
 import uuid
 
@@ -47,7 +47,7 @@ class TestMariaPayloadReconciliation(TestPayloadReconciliation):
 
     def tearDown(self):
         """Clean up after tests."""
-        self.storage.reset_database()
+        asyncio.run(self.storage.reset_database())
 
 
 if __name__ == "__main__":

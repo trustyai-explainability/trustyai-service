@@ -276,6 +276,7 @@ class TestUploadEndpointPVC(unittest.TestCase):
         payload = generate_mismatched_shape_no_unique_name_multi_input_payload(250, 4, 3, "FP64", "TRAINING")
         response = self.client.post("/data/upload", json=payload)
         self.assertEqual(response.status_code,400)
+        print(response.text)
         self.assertIn("input shapes were mismatched", response.text)
         self.assertIn("[250, 4]", response.text)
 
