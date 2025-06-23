@@ -5,7 +5,6 @@ Tests for MoariaDB storage
 import asyncio
 import datetime
 import unittest
-
 import numpy as np
 import pytest
 
