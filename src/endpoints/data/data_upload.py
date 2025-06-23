@@ -72,7 +72,7 @@ async def upload(payload: UploadPayload) -> Dict[str, str]:
 
     except HTTPException as e:
         if "Could not reconcile_kserve KServe Inference" in str(e):
-            raise HTTPException(status_code=400, detail=f"Could not upload payload for model {payload.model_name}.") from e
+            raise HTTPException(status_code=400, detail=f"Could not upload payload for model {payload.model_name}: {str(e)}") from e
         raise e
     except Exception as e:
         logger.error(f"Unexpected error in upload endpoint for model {payload.model_name}: {str(e)}", exc_info=True)
