@@ -15,10 +15,10 @@ def contains_non_numeric(lst: list) -> bool:
         return isinstance(lst, (bool, str))
 
 
-def serialize_rows(lst: list):
+def serialize_rows(lst: list, max_void_type_length):
     """Convert a nested list to a 1D numpy array, where the nth element contains a bytes serialization of the nth row"""
     serialized = [np.void(pickle.dumps(row)) for row in lst]
-    return np.array(serialized)
+    return np.array(serialized, dtype=f"V{max_void_type_length}")
 
 
 def deserialize_rows(serialized: np.ndarray):
