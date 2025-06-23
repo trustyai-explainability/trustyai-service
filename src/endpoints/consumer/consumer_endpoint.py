@@ -1,7 +1,7 @@
 # endpoints/consumer.py
 import asyncio
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 import numpy as np
 from fastapi import APIRouter, HTTPException, Header
@@ -157,7 +157,7 @@ async def write_reconciled_data(
         model_id, tags, id_):
     storage_interface = get_global_storage_interface()
 
-    iso_time = datetime.isoformat(datetime.utcnow())
+    iso_time = datetime.now(timezone.utc).isoformat()
     unix_timestamp = time.time()
     metadata = np.array(
         [[None, iso_time, unix_timestamp, tags]] * len(input_array), dtype="O"
@@ -198,8 +198,6 @@ async def reconcile_modelmesh_payloads(
     request_id: str,
     model_id: str,
 ):
-    storage_interface = get_global_storage_interface()
-
     """Reconcile the input and output ModelMesh payloads into dataset entries."""
     df = ModelMeshPayloadParser.payloads_to_dataframe(
         input_payload, output_payload, request_id, model_id
