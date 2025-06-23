@@ -1,14 +1,11 @@
-import asyncio
 import logging
-import traceback
-from typing import Any, Dict, List, Optional
+from typing import Dict, Optional
 
-import numpy as np
 import uuid
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from src.endpoints.consumer.consumer_endpoint import (reconcile_kserve, consume_cloud_event)
+from src.endpoints.consumer.consumer_endpoint import consume_cloud_event
 from src.endpoints.consumer import KServeInferenceRequest, KServeInferenceResponse
 from src.service.constants import TRUSTYAI_TAG_PREFIX
 from src.service.data.model_data import ModelData

@@ -5,7 +5,6 @@ import shutil
 import tempfile
 import unittest
 import uuid
-import time
 
 from fastapi.testclient import TestClient
 
@@ -190,7 +189,7 @@ class TestUploadEndpointPVC(unittest.TestCase):
                     print(f"Response JSON: {response.json()}")
                 except:
                     pass
-            print(f"==================")
+            print("==================")
 
         self.assertEqual(response.status_code, expected_status_code)
         return response
