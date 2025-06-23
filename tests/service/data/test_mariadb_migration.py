@@ -5,8 +5,6 @@ Tests for MoariaDB storage
 import asyncio
 import datetime
 import unittest
-import os
-import logging
 import numpy as np
 
 from src.service.data.storage.maria.maria import MariaDBStorage

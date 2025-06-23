@@ -4,9 +4,7 @@ Tests for MoariaDB storage
 
 import asyncio
 import unittest
-import os
 import numpy as np
-from sympy import print_tree
 
 from src.service.data.storage.maria.maria import MariaDBStorage
 

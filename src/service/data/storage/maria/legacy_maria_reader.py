@@ -1,4 +1,3 @@
-import asyncio
 import javaobj
 import logging
 import pandas as pd
