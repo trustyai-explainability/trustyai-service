@@ -1,7 +1,7 @@
 """
 Tests for ModelMesh payload reconciliation with MariaDB storage.
 """
-
+import asyncio
 import unittest
 import uuid
 
@@ -41,7 +41,7 @@ class TestMariaPayloadReconciliation(TestPayloadReconciliation):
 
     def tearDown(self):
         """Clean up after tests."""
-        self.storage.reset_database()
+        asyncio.run(self.storage.reset_database())
 
 
 if __name__ == "__main__":
