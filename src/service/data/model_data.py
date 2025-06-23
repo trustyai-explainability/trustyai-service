@@ -1,12 +1,11 @@
+import asyncio
 from typing import List, Optional
 
 import numpy as np
+import pandas as pd
 
-from src.service.data.storage import get_storage_interface
 from src.service.constants import *
-
-storage_interface = get_storage_interface()
-
+from src.service.data.storage import get_global_storage_interface
 
 class ModelDataContainer:
     def __init__(self, model_name: str, input_data: np.ndarray, input_names: List[str], output_data: np.ndarray,
@@ -37,6 +36,7 @@ class ModelData:
         """
         Get the number of input, output, and metadata rows that exist in a model dataset
         """
+        storage_interface = get_global_storage_interface()
         input_rows = await storage_interface.dataset_rows(self.input_dataset)
         output_rows = await storage_interface.dataset_rows(self.output_dataset)
         metadata_rows = await storage_interface.dataset_rows(self.metadata_dataset)
@@ -46,28 +46,30 @@ class ModelData:
         """
         Get the shapes of the input, output, and metadata datasets that exist in a model dataset
         """
+        storage_interface = get_global_storage_interface()
         input_shape = await storage_interface.dataset_shape(self.input_dataset)
         output_shape = await storage_interface.dataset_shape(self.output_dataset)
         metadata_shape = await storage_interface.dataset_shape(self.metadata_dataset)
         return input_shape, output_shape, metadata_shape
 
     async def column_names(self) -> tuple[List[str], List[str], List[str]]:
+        storage_interface = get_global_storage_interface()
         input_names = await storage_interface.get_aliased_column_names(self.input_dataset)
         output_names = await storage_interface.get_aliased_column_names(self.output_dataset)
-
         # these can't be aliased
         metadata_names = await storage_interface.get_original_column_names(self.metadata_dataset)
 
         return input_names, output_names, metadata_names
 
     async def original_column_names(self) -> tuple[List[str], List[str], List[str]]:
+        storage_interface = get_global_storage_interface()
         input_names = await storage_interface.get_original_column_names(self.input_dataset)
         output_names = await storage_interface.get_original_column_names(self.output_dataset)
         metadata_names = await storage_interface.get_original_column_names(self.metadata_dataset)
 
         return input_names, output_names, metadata_names
 
-    async def data(self, start_row=None, n_rows=None, get_input=True, get_output=True, get_metadata=True) \
+    async def data(self, start_row=0, n_rows=None, get_input=True, get_output=True, get_metadata=True) \
             -> tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray]]:
         """
         Get data from a saved model
@@ -78,6 +80,8 @@ class ModelData:
         * get_output: whether to retrieve output data <- use this to reduce file reads
         * get_metadata: whether to retrieve metadata <- use this to reduce file reads
         """
+        storage_interface = get_global_storage_interface()
+
         if get_input:
             input_data = await storage_interface.read_data(self.input_dataset, start_row, n_rows)
         else:
@@ -92,6 +96,13 @@ class ModelData:
             metadata = None
 
         return input_data, output_data, metadata
+
+    async def get_metadata_as_df(self):
+        _, _, metadata = await self.data(get_input=False, get_output=False)
+        metadata_cols = (await self.column_names())[2]
+        return pd.DataFrame(metadata, columns=metadata_cols)
+
+
 
     async def summary_string(self):
         out = f"=== {self.model_name} Data ==="

@@ -27,7 +27,7 @@ from src.endpoints.metrics.fairness.group.spd import router as spd_router
 from src.endpoints.metrics.identity.identity_endpoint import router as identity_router
 from src.endpoints.metadata import router as metadata_router
 from src.endpoints.metrics.metrics_info import router as metrics_info_router
-from src.endpoints.data.data_download import router as data_download_router
+from src.service.data.storage import get_global_storage_interface
 
 try:
     from src.endpoints.evaluation.lm_evaluation_harness import (
@@ -109,7 +109,6 @@ app.include_router(
 app.include_router(identity_router, tags=["Identity Endpoint"])
 app.include_router(metadata_router, tags=["Service Metadata"])
 app.include_router(metrics_info_router, tags=["Metrics Information Endpoint"])
-app.include_router(data_download_router, tags=["Download Endpoint"])
 
 if lm_evaluation_harness_available:
     app.include_router(
@@ -147,6 +146,8 @@ async def readiness_probe():
 @app.get("/q/health/live")
 async def liveness_probe():
     return JSONResponse(content={"status": "live"}, status_code=200)
+
+
 
 
 if __name__ == "__main__":
