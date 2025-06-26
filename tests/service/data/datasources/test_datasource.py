@@ -63,24 +63,26 @@ class TestDataSource:
         assert len(data_source.metadata_cache) == 0
         assert data_source.executor is not None
 
-    def test_add_model_to_known(self, data_source: DataSource) -> None:
+    @pytest.mark.asyncio
+    async def test_add_model_to_known(self, data_source: DataSource) -> None:
         """Test adding model to known models."""
 
         model_id = "test_model"
-        data_source.add_model_to_known(model_id)
+        await data_source.add_model_to_known(model_id)
 
         assert model_id in data_source.known_models
         assert len(data_source.known_models) == 1
 
-    def test_get_known_models(self, data_source: DataSource) -> None:
+    @pytest.mark.asyncio
+    async def test_get_known_models(self, data_source: DataSource) -> None:
         """Test getting known models."""
 
         model_ids = ["model1", "model2", "model3"]
 
         for model_id in model_ids:
-            data_source.add_model_to_known(model_id)
+            await data_source.add_model_to_known(model_id)
 
-        known = data_source.get_known_models()
+        known = await data_source.get_known_models()
         assert known == set(model_ids)
 
         # Ensure it's a copy (not the original set)
@@ -88,7 +90,8 @@ class TestDataSource:
         assert "new_model" not in data_source.known_models
 
     @patch("src.service.data.datasources.data_source.ModelData")
-    def test_get_dataframe_with_batch_size_success(
+    @pytest.mark.asyncio
+    async def test_get_dataframe_with_batch_size_success(
         self,
         mock_model_data_class: Mock,
         data_source: DataSource,
@@ -104,7 +107,7 @@ class TestDataSource:
             np.array([["meta1"], ["meta2"]]),
         )
 
-        df = data_source.get_dataframe_with_batch_size("test_model", 50)
+        df = await data_source.get_dataframe_with_batch_size("test_model", 50)
 
         assert isinstance(df, pd.DataFrame)
         assert len(df) == 2
@@ -119,7 +122,8 @@ class TestDataSource:
         mock_model_data.data.assert_called_once()
 
     @patch("src.service.data.datasources.data_source.ModelData")
-    def test_get_dataframe_default_batch_size(
+    @pytest.mark.asyncio
+    async def test_get_dataframe_default_batch_size(
         self,
         mock_model_data_class: Mock,
         data_source: DataSource,
@@ -136,13 +140,14 @@ class TestDataSource:
         )
 
         with patch.dict("os.environ", {"SERVICE_BATCH_SIZE": "200"}):
-            df = data_source.get_dataframe("test_model")
+            df = await data_source.get_dataframe("test_model")
 
         assert isinstance(df, pd.DataFrame)
         mock_model_data.data.assert_called_once()
 
     @patch("src.service.data.datasources.data_source.ModelData")
-    def test_get_dataframe_handles_exceptions(
+    @pytest.mark.asyncio
+    async def test_get_dataframe_handles_exceptions(
         self, mock_model_data_class: Mock, data_source: DataSource
     ) -> None:
         """Test that dataframe creation exceptions are handled properly."""
@@ -155,10 +160,11 @@ class TestDataSource:
             DataframeCreateException,
             match="Error creating dataframe for model=test_model",
         ):
-            data_source.get_dataframe("test_model")
+            await data_source.get_dataframe("test_model")
 
     @patch("src.service.data.datasources.data_source.ModelData")
-    def test_get_organic_dataframe_filters_unlabeled(
+    @pytest.mark.asyncio
+    async def test_get_organic_dataframe_filters_unlabeled(
         self,
         mock_model_data_class: Mock,
         data_source: DataSource,
@@ -180,14 +186,15 @@ class TestDataSource:
             np.array([[False], [True], [False]]),  # Second row is synthetic
         )
 
-        df = data_source.get_organic_dataframe("test_model", 100)
+        df = await data_source.get_organic_dataframe("test_model", 100)
 
         # Should filter out synthetic rows
         assert len(df) == 2  # Should exclude the synthetic row
         assert not df[UNLABELED_TAG].any()  # No True values should remain
 
     @patch("src.service.data.datasources.data_source.ModelData")
-    def test_get_metadata_creates_and_caches(
+    @pytest.mark.asyncio
+    async def test_get_metadata_creates_and_caches(
         self,
         mock_model_data_class: Mock,
         data_source: DataSource,
@@ -197,18 +204,19 @@ class TestDataSource:
 
         mock_model_data_class.return_value = mock_model_data
 
-        metadata = data_source.get_metadata("test_model")
+        metadata = await data_source.get_metadata("test_model")
 
         assert isinstance(metadata, StorageMetadata)
         assert metadata.get_model_id() == "test_model"
         assert "test_model" in data_source.metadata_cache
 
         # Second call should use cache
-        metadata2 = data_source.get_metadata("test_model")
+        metadata2 = await data_source.get_metadata("test_model")
         assert metadata2 is metadata  # Same object from cache
 
     @patch("src.service.data.datasources.data_source.ModelData")
-    def test_get_metadata_handles_exceptions(
+    @pytest.mark.asyncio
+    async def test_get_metadata_handles_exceptions(
         self, mock_model_data_class: Mock, data_source: DataSource
     ) -> None:
         """Test metadata retrieval exception handling."""
@@ -220,19 +228,21 @@ class TestDataSource:
         with pytest.raises(
             StorageReadException, match="Error getting metadata for model=test_model"
         ):
-            data_source.get_metadata("test_model")
+            await data_source.get_metadata("test_model")
 
-    def test_has_metadata_true(
+    @pytest.mark.asyncio
+    async def test_has_metadata_true(
         self, data_source: DataSource, sample_metadata: StorageMetadata
     ) -> None:
         """Test has_metadata returns True when metadata exists."""
 
         data_source.metadata_cache["test_model"] = sample_metadata
 
-        assert data_source.has_metadata("test_model") is True
+        assert await data_source.has_metadata("test_model") is True
 
     @patch("src.service.data.datasources.data_source.ModelData")
-    def test_has_metadata_false(
+    @pytest.mark.asyncio
+    async def test_has_metadata_false(
         self, mock_model_data_class: Mock, data_source: DataSource
     ) -> None:
         """Test has_metadata returns False when metadata doesn't exist."""
@@ -241,45 +251,49 @@ class TestDataSource:
         mock_model_data.row_counts.side_effect = Exception("Not found")
         mock_model_data_class.return_value = mock_model_data
 
-        assert data_source.has_metadata("nonexistent_model") is False
+        assert await data_source.has_metadata("nonexistent_model") is False
 
-    def test_get_num_observations(
+    @pytest.mark.asyncio
+    async def test_get_num_observations(
         self, data_source: DataSource, sample_metadata: StorageMetadata
     ) -> None:
         """Test getting number of observations."""
 
         data_source.metadata_cache["test_model"] = sample_metadata
 
-        count = data_source.get_num_observations("test_model")
+        count = await data_source.get_num_observations("test_model")
         assert count == 100
 
-    def test_has_recorded_inferences(
+    @pytest.mark.asyncio
+    async def test_has_recorded_inferences(
         self, data_source: DataSource, sample_metadata: StorageMetadata
     ) -> None:
         """Test checking for recorded inferences."""
 
         data_source.metadata_cache["test_model"] = sample_metadata
 
-        has_inferences = data_source.has_recorded_inferences("test_model")
+        has_inferences = await data_source.has_recorded_inferences("test_model")
         assert has_inferences is True
 
-    def test_get_verified_models_from_known(
+    @pytest.mark.asyncio
+    async def test_get_verified_models_from_known(
         self, data_source: DataSource, sample_metadata: StorageMetadata
     ) -> None:
         """Test getting verified models from known models."""
 
-        data_source.add_model_to_known("test_model")
-        data_source.add_model_to_known("invalid_model")
+        await data_source.add_model_to_known("test_model")
+        await data_source.add_model_to_known("invalid_model")
         data_source.metadata_cache["test_model"] = sample_metadata
 
-        verified = data_source.get_verified_models()
+        verified = await data_source.get_verified_models()
         assert "test_model" in verified
         assert "invalid_model" not in verified
         assert len(verified) == 1
 
     @patch.dict("os.environ", {"TEST_MODEL_ID": "discovered_model"})
     @patch("src.service.data.datasources.data_source.ModelData")
-    def test_get_verified_models_discovers_from_storage(
+    @pytest.mark.asyncio
+    async def test_get_verified_models_discovers_from_storage(
         self,
         mock_model_data_class: Mock,
         data_source: DataSource,
@@ -289,7 +303,7 @@ class TestDataSource:
 
         mock_model_data_class.return_value = mock_model_data
 
-        verified = data_source.get_verified_models()
+        verified = await data_source.get_verified_models()
 
         assert "discovered_model" in verified
         assert "discovered_model" in data_source.known_models
@@ -299,7 +313,8 @@ class TestDataSource:
         name = DataSource.get_ground_truth_name("test_model")
         assert name == "test_model-ground-truths"
 
-    def test_has_ground_truths(
+    @pytest.mark.asyncio
+    async def test_has_ground_truths(
         self, data_source: DataSource, sample_metadata: StorageMetadata
     ) -> None:
         """Test checking for ground truths."""
@@ -307,14 +322,15 @@ class TestDataSource:
         gt_name = DataSource.get_ground_truth_name("test_model")
         data_source.metadata_cache[gt_name] = sample_metadata
 
-        has_gt = data_source.has_ground_truths("test_model")
+        has_gt = await data_source.has_ground_truths("test_model")
         assert has_gt is True
 
-        has_gt_missing = data_source.has_ground_truths("missing_model")
+        has_gt_missing = await data_source.has_ground_truths("missing_model")
         assert has_gt_missing is False
 
     @patch("src.service.data.datasources.data_source.ModelData")
-    def test_get_ground_truths(
+    @pytest.mark.asyncio
+    async def test_get_ground_truths(
         self,
         mock_model_data_class: Mock,
         data_source: DataSource,
@@ -329,19 +345,20 @@ class TestDataSource:
             np.array([["ground_truth"]]),
         )
 
-        gt_df = data_source.get_ground_truths("test_model")
+        gt_df = await data_source.get_ground_truths("test_model")
         assert isinstance(gt_df, pd.DataFrame)
 
         # Verify correct model name was used
         expected_gt_name = DataSource.get_ground_truth_name("test_model")
         mock_model_data_class.assert_called_with(expected_gt_name)
 
-    def test_save_dataframe(self, data_source: DataSource) -> None:
+    @pytest.mark.asyncio
+    async def test_save_dataframe(self, data_source: DataSource) -> None:
         """Test saving dataframe."""
 
         df = pd.DataFrame({"feature": [1, 2, 3], "target": [0, 1, 0]})
 
-        data_source.save_dataframe(df, "test_model", overwrite=True)
+        await data_source.save_dataframe(df, "test_model", overwrite=True)
 
         # Should add model to known models
         assert "test_model" in data_source.known_models
@@ -358,7 +375,8 @@ class TestDataSource:
         assert data_source.metadata_cache["test_model"] == sample_metadata
 
     @patch("src.service.data.datasources.data_source.ModelData")
-    def test_batch_size_calculation_with_limited_data(
+    @pytest.mark.asyncio
+    async def test_batch_size_calculation_with_limited_data(
         self,
         mock_model_data_class: Mock,
         data_source: DataSource,
@@ -376,7 +394,7 @@ class TestDataSource:
         )
 
         # Request more data than available
-        df = data_source.get_dataframe_with_batch_size("test_model", 100)
+        df = await data_source.get_dataframe_with_batch_size("test_model", 100)
 
         # Should get all available data
         assert len(df) == 10

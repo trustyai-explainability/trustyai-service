@@ -61,11 +61,11 @@ class PrometheusScheduler:
                 result.update(metric_dict)
         return result
 
-    def calculate(self) -> None:
+    async def calculate(self) -> None:
         """Calculate scheduled metrics."""
-        self.calculate_manual(False)
+        await self.calculate_manual(False)
 
-    def calculate_manual(self, throw_errors: bool = True) -> None:
+    async def calculate_manual(self, throw_errors: bool = True) -> None:
         """
         Calculate scheduled metrics.
 
@@ -73,7 +73,7 @@ class PrometheusScheduler:
             throw_errors: If True, errors will be thrown. If False, they will just be logged.
         """
         try:
-            verified_models = self.data_source.get_verified_models()
+            verified_models = await self.data_source.get_verified_models()
 
             # Global service statistic
             self.publisher.gauge(
@@ -86,7 +86,7 @@ class PrometheusScheduler:
 
             for model_id in verified_models:
                 # Global model statistics
-                total_observations = self.data_source.get_num_observations(model_id)
+                total_observations = await self.data_source.get_num_observations(model_id)
                 self.publisher.gauge(
                     model_name=model_id,
                     id=PrometheusPublisher.generate_uuid(model_id),
@@ -94,7 +94,7 @@ class PrometheusScheduler:
                     value=total_observations,
                 )
 
-                has_recorded_inferences = self.data_source.has_recorded_inferences(
+                has_recorded_inferences = await self.data_source.has_recorded_inferences(
                     model_id
                 )
 
@@ -122,7 +122,7 @@ class PrometheusScheduler:
                         default=self.service_config.get("batch_size", 100),
                     )
 
-                    df = self.data_source.get_organic_dataframe(
+                    df = await self.data_source.get_organic_dataframe(
                         model_id, max_batch_size
                     )
 
@@ -161,17 +161,17 @@ class PrometheusScheduler:
             else:
                 logger.error(f"Error calculating metrics: {e}")
 
-    def register(
+    async def register(
         self, metric_name: str, id: uuid.UUID, request: BaseMetricRequest
     ) -> None:
         """Register a metric request."""
-        RequestReconciler.reconcile(request, self.data_source)
+        await RequestReconciler.reconcile(request, self.data_source)
         with self._requests_lock:
             if metric_name not in self.requests:
                 self.requests[metric_name] = {}
             self.requests[metric_name][id] = request
 
-    def delete(self, metric_name: str, id: uuid.UUID) -> None:
+    async def delete(self, metric_name: str, id: uuid.UUID) -> None:
         """Delete a metric request."""
         with self._requests_lock:
             if metric_name in self.requests and id in self.requests[metric_name]:

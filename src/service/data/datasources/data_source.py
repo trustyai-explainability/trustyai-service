@@ -38,17 +38,17 @@ class DataSource:
 
     # MODEL TRACKING OPERATIONS
 
-    def get_known_models(self) -> Set[str]:
+    async def get_known_models(self) -> Set[str]:
         """Get the set of known model IDs."""
         return self.known_models.copy()
 
-    def add_model_to_known(self, model_id: str) -> None:
+    async def add_model_to_known(self, model_id: str) -> None:
         """Add a model to the known models set."""
         self.known_models.add(model_id)
 
     # DATAFRAME READS
 
-    def get_dataframe(self, model_id: str) -> pd.DataFrame:
+    async def get_dataframe(self, model_id: str) -> pd.DataFrame:
         """
         Get a dataframe for the given model ID using the default batch size.
 
@@ -62,9 +62,9 @@ class DataSource:
             DataframeCreateException: If the dataframe cannot be created
         """
         batch_size = int(os.environ.get("SERVICE_BATCH_SIZE", "100"))
-        return self.get_dataframe_with_batch_size(model_id, batch_size)
+        return await self.get_dataframe_with_batch_size(model_id, batch_size)
 
-    def get_dataframe_with_batch_size(
+    async def get_dataframe_with_batch_size(
         self, model_id: str, batch_size: int
     ) -> pd.DataFrame:
         """
@@ -83,16 +83,16 @@ class DataSource:
         try:
             model_data = ModelData(model_id)
 
-            input_rows, output_rows, metadata_rows = asyncio.run(model_data.row_counts())
+            input_rows, output_rows, metadata_rows = await model_data.row_counts()
 
             available_rows = min(input_rows, output_rows, metadata_rows)
 
             start_row = max(0, available_rows - batch_size)
             n_rows = min(batch_size, available_rows)
 
-            input_data, output_data, metadata = asyncio.run(model_data.data(start_row=start_row, n_rows=n_rows))
+            input_data, output_data, metadata = await model_data.data(start_row=start_row, n_rows=n_rows)
 
-            input_names, output_names, metadata_names = asyncio.run(model_data.column_names())
+            input_names, output_names, metadata_names = await model_data.column_names()
 
 
             # Combine the data into a single dataframe
@@ -121,7 +121,7 @@ class DataSource:
                 f"Error creating dataframe for model={model_id}: {str(e)}"
             )
 
-    def get_organic_dataframe(self, model_id: str, batch_size: int) -> pd.DataFrame:
+    async def get_organic_dataframe(self, model_id: str, batch_size: int) -> pd.DataFrame:
         """
         Get a dataframe with only organic data (not synthetic).
 
@@ -135,7 +135,7 @@ class DataSource:
         Raises:
             DataframeCreateException: If the dataframe cannot be created
         """
-        df = self.get_dataframe_with_batch_size(model_id, batch_size)
+        df = await self.get_dataframe_with_batch_size(model_id, batch_size)
 
         # Filter out any rows with the unlabeled tag (synthetic data)
         if UNLABELED_TAG in df.columns:
@@ -145,7 +145,7 @@ class DataSource:
 
     # METADATA READS
 
-    def get_metadata(self, model_id: str) -> StorageMetadata:
+    async def get_metadata(self, model_id: str) -> StorageMetadata:
         """
         Get metadata for the given model ID.
 
@@ -164,8 +164,8 @@ class DataSource:
         try:
             model_data = ModelData(model_id)
 
-            input_rows, output_rows, metadata_rows = asyncio.run(model_data.row_counts())
-            input_names, output_names, metadata_names = asyncio.run(model_data.column_names())
+            input_rows, output_rows, metadata_rows = await model_data.row_counts()
+            input_names, output_names, metadata_names = await model_data.column_names()
 
             input_items = {}
             for i, name in enumerate(input_names):
@@ -195,7 +195,7 @@ class DataSource:
                 f"Error getting metadata for model={model_id}: {str(e)}"
             )
 
-    def has_metadata(self, model_id: str) -> bool:
+    async def has_metadata(self, model_id: str) -> bool:
         """
         Check if metadata exists for the given model ID.
 
@@ -206,14 +206,14 @@ class DataSource:
             True if metadata exists, False otherwise
         """
         try:
-            return self.get_metadata(model_id) is not None
+            return await self.get_metadata(model_id) is not None
         except Exception as e:
             logger.error(f"Error checking if metadata exists for model={model_id}: {str(e)}")
             return False
 
     # DATAFRAME QUERIES
 
-    def get_num_observations(self, model_id: str) -> int:
+    async def get_num_observations(self, model_id: str) -> int:
         """
         Get the number of observations for the corresponding model.
 
@@ -223,10 +223,10 @@ class DataSource:
         Returns:
             The number of observations
         """
-        metadata = self.get_metadata(model_id)
+        metadata: StorageMetadata = await self.get_metadata(model_id)
         return metadata.get_observations()
 
-    def has_recorded_inferences(self, model_id: str) -> bool:
+    async def has_recorded_inferences(self, model_id: str) -> bool:
         """
         Check to see if a particular model has recorded inferences.
 
@@ -236,10 +236,10 @@ class DataSource:
         Returns:
             True if the model has received inference data
         """
-        metadata = self.get_metadata(model_id)
+        metadata: StorageMetadata = await self.get_metadata(model_id)
         return metadata.is_recorded_inferences()
 
-    def get_verified_models(self) -> List[str]:
+    async def get_verified_models(self) -> List[str]:
         """
         Get the list of model IDs that are confirmed to have metadata in storage.
 
@@ -250,19 +250,19 @@ class DataSource:
 
         # Check all known models for metadata
         for model_id in self.known_models:
-            if self.has_metadata(model_id):
+            if await self.has_metadata(model_id):
                 verified_models.append(model_id)
 
         if not verified_models:
-            discovered_models = self._discover_models_from_storage()
+            discovered_models = await self._discover_models_from_storage()
             for model_id in discovered_models:
-                if self.has_metadata(model_id):
-                    self.add_model_to_known(model_id)
+                if await self.has_metadata(model_id):
+                    await self.add_model_to_known(model_id)
                     verified_models.append(model_id)
 
         return verified_models
 
-    def _discover_models_from_storage(self) -> List[str]:
+    async def _discover_models_from_storage(self) -> List[str]:
         """
         Discover model IDs from storage.
 
@@ -294,7 +294,7 @@ class DataSource:
         """
         return model_id + DataSource.GROUND_TRUTH_SUFFIX
 
-    def has_ground_truths(self, model_id: str) -> bool:
+    async def has_ground_truths(self, model_id: str) -> bool:
         """
         Check if ground truths exist for a model.
 
@@ -304,9 +304,9 @@ class DataSource:
         Returns:
             True if ground truths exist, False otherwise
         """
-        return self.has_metadata(self.get_ground_truth_name(model_id))
+        return await self.has_metadata(self.get_ground_truth_name(model_id))
 
-    def get_ground_truths(self, model_id: str) -> pd.DataFrame:
+    async def get_ground_truths(self, model_id: str) -> pd.DataFrame:
         """
         Get ground-truth dataframe for this particular model.
 
@@ -316,11 +316,11 @@ class DataSource:
         Returns:
             The ground-truth dataframe
         """
-        return self.get_dataframe(self.get_ground_truth_name(model_id))
+        return await self.get_dataframe(self.get_ground_truth_name(model_id))
 
     # UTILITY METHODS
 
-    def save_dataframe(
+    async def save_dataframe(
         self, dataframe: pd.DataFrame, model_id: str, overwrite: bool = False
     ) -> None:
         """
@@ -332,7 +332,7 @@ class DataSource:
             overwrite: If true, overwrite existing data. Otherwise, append.
         """
         # Add to known models
-        self.add_model_to_known(model_id)
+        await self.add_model_to_known(model_id)
 
         # TODO: In a full implementation, this would save the dataframe to storage
         logger.info(f"Saving dataframe for model {model_id} (overwrite={overwrite})")

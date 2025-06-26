@@ -82,7 +82,8 @@ class TestRequestReconciler:
         """Create mock reconcilable request."""
         return MockReconcilableRequest()
 
-    def test_reconcile_calls_get_metadata(
+    @pytest.mark.asyncio
+    async def test_reconcile_calls_get_metadata(
         self, mock_data_source: Mock, mock_storage_metadata: Mock
     ) -> None:
         """Test that reconcile calls get_metadata on data source."""
@@ -90,7 +91,7 @@ class TestRequestReconciler:
         mock_data_source.get_metadata.return_value = mock_storage_metadata
         request = MockReconcilableRequest("test_model")
 
-        RequestReconciler.reconcile(request=request, data_source=mock_data_source)
+        await RequestReconciler.reconcile(request=request, data_source=mock_data_source)
 
         mock_data_source.get_metadata.assert_called_once_with("test_model")
 
@@ -263,7 +264,8 @@ class TestRequestReconciler:
         with pytest.raises(Exception):  # KeyError or similar
             RequestReconciler.reconcile_with_metadata(mock_request, metadata)
 
-    def test_reconcile_logs_success(
+    @pytest.mark.asyncio
+    async def test_reconcile_logs_success(
         self,
         mock_data_source: Mock,
         mock_storage_metadata: Mock,
@@ -276,7 +278,7 @@ class TestRequestReconciler:
         with patch(
             "src.service.payloads.metrics.request_reconciler.logger"
         ) as mock_logger:
-            RequestReconciler.reconcile(mock_request, mock_data_source)
+            await RequestReconciler.reconcile(mock_request, mock_data_source)
 
             mock_logger.info.assert_called_with(
                 f"Reconciled request for model {mock_request.model_id}"

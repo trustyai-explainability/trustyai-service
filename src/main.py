@@ -56,7 +56,7 @@ prometheus_scheduler = PrometheusScheduler()
     raise_exceptions=False
 )
 async def schedule_metrics_calculation():
-    prometheus_scheduler.calculate()
+    await prometheus_scheduler.calculate()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

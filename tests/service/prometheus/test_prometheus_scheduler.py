@@ -1,8 +1,8 @@
 import threading
 import uuid
 from typing import Dict
-from unittest.mock import Mock, patch
-
+from unittest.mock import AsyncMock, Mock, patch
+import asyncio
 import pandas as pd
 import pytest
 from prometheus_client import CollectorRegistry, generate_latest
@@ -44,12 +44,12 @@ class TestPrometheusScheduler:
     def mock_data_source(self) -> Mock:
         """Create mock DataSource."""
         mock = Mock(spec=DataSource)
-        mock.get_verified_models.return_value = ["model1", "model2"]
-        mock.get_num_observations.return_value = 1000
-        mock.has_recorded_inferences.return_value = True
-        mock.get_organic_dataframe.return_value = pd.DataFrame(
+        mock.get_verified_models = AsyncMock(return_value=["model1", "model2"])
+        mock.get_num_observations = AsyncMock(return_value=1000)
+        mock.has_recorded_inferences = AsyncMock(return_value=True)
+        mock.get_organic_dataframe = AsyncMock(return_value=pd.DataFrame(
             {"feature": [1, 2, 3], "target": [0, 1, 0]}
-        )
+        ))
         return mock
 
     @pytest.fixture
@@ -102,55 +102,59 @@ class TestPrometheusScheduler:
             config = PrometheusScheduler.get_service_config()
             assert config["metrics_schedule"] == 3600  # 3600 seconds
 
-    def test_register_request(
+    @pytest.mark.asyncio
+    async def test_register_request(
         self, scheduler: PrometheusScheduler, mock_request: MockMetricRequest
     ) -> None:
         """Test registering a metric request."""
         test_id = uuid.uuid4()
 
-        scheduler.register(metric_name="test_metric", id=test_id, request=mock_request)
+        await scheduler.register(metric_name="test_metric", id=test_id, request=mock_request)
 
         # Verify request is stored
         assert "test_metric" in scheduler.requests
         assert test_id in scheduler.requests["test_metric"]
         assert scheduler.requests["test_metric"][test_id] == mock_request
 
-    def test_register_multiple_requests(self, scheduler: PrometheusScheduler) -> None:
+    @pytest.mark.asyncio
+    async def test_register_multiple_requests(self, scheduler: PrometheusScheduler) -> None:
         """Test registering multiple requests for same metric."""
         request1 = MockMetricRequest(model_id="model1")
         request2 = MockMetricRequest(model_id="model2")
         id1 = uuid.uuid4()
         id2 = uuid.uuid4()
 
-        scheduler.register(metric_name="test_metric", id=id1, request=request1)
-        scheduler.register(metric_name="test_metric", id=id2, request=request2)
+        await scheduler.register(metric_name="test_metric", id=id1, request=request1)
+        await scheduler.register(metric_name="test_metric", id=id2, request=request2)
 
         assert len(scheduler.requests["test_metric"]) == 2
         assert scheduler.requests["test_metric"][id1] == request1
         assert scheduler.requests["test_metric"][id2] == request2
 
-    def test_delete_request(
+    @pytest.mark.asyncio
+    async def test_delete_request(
         self, scheduler: PrometheusScheduler, mock_request: MockMetricRequest
     ) -> None:
         """Test deleting a metric request."""
         test_id = uuid.uuid4()
 
         # Register then delete
-        scheduler.register(metric_name="test_metric", id=test_id, request=mock_request)
+        await scheduler.register(metric_name="test_metric", id=test_id, request=mock_request)
         assert test_id in scheduler.requests["test_metric"]
 
-        scheduler.delete(metric_name="test_metric", id=test_id)
+        await scheduler.delete(metric_name="test_metric", id=test_id)
         assert test_id not in scheduler.requests["test_metric"]
 
         # Verify publisher.remove_gauge was called
         scheduler.publisher.remove_gauge.assert_called_once_with("test_metric", test_id)
 
-    def test_get_requests(
+    @pytest.mark.asyncio
+    async def test_get_requests(
         self, scheduler: PrometheusScheduler, mock_request: MockMetricRequest
     ) -> None:
         """Test getting requests for a metric."""
         test_id = uuid.uuid4()
-        scheduler.register(metric_name="test_metric", id=test_id, request=mock_request)
+        await scheduler.register(metric_name="test_metric", id=test_id, request=mock_request)
 
         requests = scheduler.get_requests("test_metric")
         assert len(requests) == 1
@@ -161,72 +165,78 @@ class TestPrometheusScheduler:
         empty_requests = scheduler.get_requests("non_existent")
         assert len(empty_requests) == 0
 
-    def test_get_all_requests_flat(self, scheduler: PrometheusScheduler) -> None:
+    @pytest.mark.asyncio
+    async def test_get_all_requests_flat(self, scheduler: PrometheusScheduler) -> None:
         """Test getting all requests flattened."""
         request1 = MockMetricRequest(model_id="model1")
         request2 = MockMetricRequest(model_id="model2")
         id1 = uuid.uuid4()
         id2 = uuid.uuid4()
 
-        scheduler.register(metric_name="metric1", id=id1, request=request1)
-        scheduler.register(metric_name="metric2", id=id2, request=request2)
+        await scheduler.register(metric_name="metric1", id=id1, request=request1)
+        await scheduler.register(metric_name="metric2", id=id2, request=request2)
 
         all_requests = scheduler.get_all_requests_flat()
         assert len(all_requests) == 2
         assert all_requests[id1] == request1
         assert all_requests[id2] == request2
 
-    def test_has_requests(
+    @pytest.mark.asyncio
+    async def test_has_requests(
         self, scheduler: PrometheusScheduler, mock_request: MockMetricRequest
     ) -> None:
         """Test has_requests functionality."""
         assert scheduler.has_requests() is False
 
         test_id = uuid.uuid4()
-        scheduler.register(metric_name="test_metric", id=test_id, request=mock_request)
+        await scheduler.register(metric_name="test_metric", id=test_id, request=mock_request)
         assert scheduler.has_requests() is True
 
-        scheduler.delete(metric_name="test_metric", id=test_id)
+        await scheduler.delete(metric_name="test_metric", id=test_id)
         assert scheduler.has_requests() is False
 
-    def test_get_model_ids(self, scheduler: PrometheusScheduler) -> None:
+    @pytest.mark.asyncio
+    async def test_get_model_ids(self, scheduler: PrometheusScheduler) -> None:
         """Test getting unique model IDs."""
         request1 = MockMetricRequest(model_id="model1")
         request2 = MockMetricRequest(model_id="model2")
         request3 = MockMetricRequest(model_id="model1")  # Duplicate
 
-        scheduler.register(metric_name="metric1", id=uuid.uuid4(), request=request1)
-        scheduler.register(metric_name="metric2", id=uuid.uuid4(), request=request2)
-        scheduler.register(metric_name="metric3", id=uuid.uuid4(), request=request3)
+        await scheduler.register(metric_name="metric1", id=uuid.uuid4(), request=request1)
+        await scheduler.register(metric_name="metric2", id=uuid.uuid4(), request=request2)
+        await scheduler.register(metric_name="metric3", id=uuid.uuid4(), request=request3)
 
         model_ids = scheduler.get_model_ids()
         assert model_ids == {"model1", "model2"}
 
-    def test_calculate_with_no_requests(self, scheduler: PrometheusScheduler) -> None:
+    @pytest.mark.asyncio
+    async def test_calculate_with_no_requests(self, scheduler: PrometheusScheduler) -> None:
         """Test calculate when no requests are registered."""
-        scheduler.calculate()
+        await scheduler.calculate()
 
         # Should still publish global metrics
         # MODEL_COUNT_TOTAL (1 publish) + MODEL_OBSERVATIONS_TOTAL per model (2 publishes)
         assert scheduler.publisher.gauge.call_count == 3
 
-    def test_calculate_with_no_inferences(
+    @pytest.mark.asyncio
+    async def test_calculate_with_no_inferences(
         self, scheduler: PrometheusScheduler, mock_data_source: Mock
     ) -> None:
         """Test calculate when model has no recorded inferences."""
         mock_data_source.has_recorded_inferences.return_value = False
 
         mock_request = MockMetricRequest(model_id="model1")
-        scheduler.register(
+        await scheduler.register(
             metric_name="test_metric", id=uuid.uuid4(), request=mock_request
         )
 
-        scheduler.calculate()
+        await scheduler.calculate()
 
         # Should log skipped message
         assert "model1" in scheduler.has_logged_skipped_request_message
 
-    def test_calculate_error_handling(
+    @pytest.mark.asyncio
+    async def test_calculate_error_handling(
         self, scheduler: PrometheusScheduler, mock_data_source: Mock
     ) -> None:
         """Test error handling in calculate method."""
@@ -234,34 +244,27 @@ class TestPrometheusScheduler:
         mock_data_source.get_verified_models.side_effect = Exception("Test error")
 
         # Should not raise when throw_errors=False
-        scheduler.calculate_manual(throw_errors=False)
+        await scheduler.calculate_manual(throw_errors=False)
 
         # Should raise when throw_errors=True
         with pytest.raises(Exception, match="Test error"):
-            scheduler.calculate_manual(throw_errors=True)
+            await scheduler.calculate_manual(throw_errors=True)
 
-    def test_thread_safety(self, scheduler: PrometheusScheduler) -> None:
+    @pytest.mark.asyncio
+    async def test_thread_safety(self, scheduler: PrometheusScheduler) -> None:
         """Test thread safety of scheduler operations."""
         requests_created = {}
         threads = []
 
-        def register_request(thread_id):
+        async def register_request(thread_id):
             request = MockMetricRequest(model_id=f"model_{thread_id}")
             test_id = uuid.uuid4()
             requests_created[thread_id] = (test_id, request)
-            scheduler.register(
+            await scheduler.register(
                 metric_name=f"metric_{thread_id}", id=test_id, request=request
             )
 
-        # Create multiple threads
-        for i in range(10):
-            thread = threading.Thread(target=register_request, args=(i,))
-            threads.append(thread)
-            thread.start()
-
-        # Wait for all threads to complete
-        for thread in threads:
-            thread.join()
+        await asyncio.gather(*[register_request(i) for i in range(10)])
 
         # Verify all requests were registered correctly
         for thread_id, (test_id, request) in requests_created.items():
@@ -270,7 +273,8 @@ class TestPrometheusScheduler:
             assert test_id in scheduler.requests[metric_name]
             assert scheduler.requests[metric_name][test_id] == request
 
-    def test_calculate_with_requests(
+    @pytest.mark.asyncio
+    async def test_calculate_with_requests(
         self,
         scheduler_with_publisher: PrometheusScheduler,
         test_registry: CollectorRegistry,
@@ -286,11 +290,11 @@ class TestPrometheusScheduler:
         # Register a request
         mock_request = MockMetricRequest(model_id="model1", metric_name="test_metric")
         test_id = uuid.uuid4()
-        scheduler_with_publisher.register(
+        await scheduler_with_publisher.register(
             metric_name="test_metric", id=test_id, request=mock_request
         )
 
-        scheduler_with_publisher.calculate()
+        await scheduler_with_publisher.calculate()
 
         # Verify calculator was called
         mock_calculator.assert_called()
@@ -301,7 +305,8 @@ class TestPrometheusScheduler:
         assert f'request="{test_id}"' in metrics_output
         assert "0.5" in metrics_output
 
-    def test_calculate_with_multiple_requests_same_metric(
+    @pytest.mark.asyncio
+    async def test_calculate_with_multiple_requests_same_metric(
         self,
         scheduler_with_publisher: PrometheusScheduler,
         test_registry: CollectorRegistry,
@@ -324,11 +329,11 @@ class TestPrometheusScheduler:
         id1 = uuid.uuid4()
         id2 = uuid.uuid4()
 
-        scheduler_with_publisher.register(metric_name="spd", id=id1, request=request1)
-        scheduler_with_publisher.register(metric_name="spd", id=id2, request=request2)
+        await scheduler_with_publisher.register(metric_name="spd", id=id1, request=request1)
+        await scheduler_with_publisher.register(metric_name="spd", id=id2, request=request2)
 
         # Calculate metrics
-        scheduler_with_publisher.calculate()
+        await scheduler_with_publisher.calculate()
 
         # Get Prometheus output
         metrics_output = generate_latest(test_registry).decode("utf-8")

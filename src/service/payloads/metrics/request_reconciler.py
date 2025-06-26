@@ -16,7 +16,7 @@ logger: logging.Logger = logging.getLogger(__name__)
 
 class RequestReconciler:
     @staticmethod
-    def reconcile(request: BaseMetricRequest, data_source: DataSource) -> None:
+    async def reconcile(request: BaseMetricRequest, data_source: DataSource) -> None:
         """
         Reconcile a metric request with the data source.
 
@@ -24,7 +24,7 @@ class RequestReconciler:
             request: The metric request to reconcile
             data_source: The data source to use for reconciliation
         """
-        storage_metadata: StorageMetadata = data_source.get_metadata(request.model_id)
+        storage_metadata: StorageMetadata = await data_source.get_metadata(request.model_id)
         RequestReconciler.reconcile_with_metadata(request, storage_metadata)
 
     @staticmethod
