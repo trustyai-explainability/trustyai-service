@@ -23,6 +23,11 @@ class MetricsDirectory:
         if name not in self.calculator_directory:
             self.calculator_directory[name] = calculator
             logger.debug(f"Registered calculator for metric: {name}")
+        else:
+            logger.warning(
+                f"Attempted to register duplicate calculator for metric: {name}. "
+                "Ignoring duplicate registration."
+            )
 
     def get_calculator(
         self, name: str
