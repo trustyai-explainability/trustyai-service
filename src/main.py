@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -49,19 +50,25 @@ logger = logging.getLogger(__name__)
 
 prometheus_scheduler = PrometheusScheduler()
 
+@repeat_every(
+    seconds=prometheus_scheduler.service_config.get("metrics_schedule", 30),
+    logger=logger,
+    raise_exceptions=False
+)
+async def schedule_metrics_calculation():
+    prometheus_scheduler.calculate()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-
-    @repeat_every(
-        seconds=prometheus_scheduler.service_config.get("metrics_schedule", 30)
-    )
-    async def schedule_metrics_calculation():
-        prometheus_scheduler.calculate()
-
-    await schedule_metrics_calculation()
+    task = asyncio.create_task(schedule_metrics_calculation())
 
     yield
+
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        logger.info("Prometheus metrics calculation task cancelled during shutdown")
 
 
 app = FastAPI(
