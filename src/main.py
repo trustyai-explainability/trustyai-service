@@ -1,5 +1,5 @@
-import logging
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -50,13 +50,15 @@ logger = logging.getLogger(__name__)
 
 prometheus_scheduler = PrometheusScheduler()
 
+
 @repeat_every(
     seconds=prometheus_scheduler.service_config.get("metrics_schedule", 30),
     logger=logger,
-    raise_exceptions=False
+    raise_exceptions=False,
 )
 async def schedule_metrics_calculation():
     await prometheus_scheduler.calculate()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

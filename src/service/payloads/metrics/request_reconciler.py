@@ -24,7 +24,9 @@ class RequestReconciler:
             request: The metric request to reconcile
             data_source: The data source to use for reconciliation
         """
-        storage_metadata: StorageMetadata = await data_source.get_metadata(request.model_id)
+        storage_metadata: StorageMetadata = await data_source.get_metadata(
+            request.model_id
+        )
         RequestReconciler.reconcile_with_metadata(request, storage_metadata)
 
     @staticmethod

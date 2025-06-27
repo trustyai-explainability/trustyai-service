@@ -245,19 +245,19 @@ class TestPrometheusPublisher:
             match="Either 'request' or 'metric_name' & 'value' must be provided",
         ):
             publisher.gauge(model_name="test_model", id=test_id, value=0.5)
-    
+
     def test_valid_metric_names(self, publisher: PrometheusPublisher):
         """Test validation of valid Prometheus metric names."""
         valid_names = [
             "simple_metric",
             "metric_with_numbers123",
-            "UPPERCASE_METRIC", # we convert to lowercase
+            "UPPERCASE_METRIC",  # we convert to lowercase
             "metric:with:colons",
             "_underscore_start",
             "a1b2c3",
-            "metric_name_with_3underscores"
+            "metric_name_with_3underscores",
         ]
-        
+
         for name in valid_names:
             full_name = publisher._get_full_metric_name(name)
             expected = f"{PROMETHEUS_METRIC_PREFIX}{name.lower()}"
@@ -273,9 +273,9 @@ class TestPrometheusPublisher:
             "metric#with#hash",
             "metric%with%percent",
             "-starts_with_hyphen",
-            "metric/with/slashes"
+            "metric/with/slashes",
         ]
-        
+
         for name in invalid_names:
             with pytest.raises(ValueError, match="Invalid Prometheus metric name"):
                 publisher._get_full_metric_name(name)
@@ -288,14 +288,14 @@ class TestPrometheusPublisher:
         self, publisher: PrometheusPublisher, mock_request: MockMetricRequest
     ):
         mock_request.metric_name = "invalid-metric-name"
-        
+
         test_id = uuid.uuid4()
         test_value = 0.5
-        
+
         with pytest.raises(ValueError, match="Invalid Prometheus metric name"):
             publisher.gauge(
-                model_name="test_model", 
-                id=test_id, 
-                value=test_value, 
-                request=mock_request
+                model_name="test_model",
+                id=test_id,
+                value=test_value,
+                request=mock_request,
             )

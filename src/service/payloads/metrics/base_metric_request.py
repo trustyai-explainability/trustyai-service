@@ -1,5 +1,6 @@
 from abc import abstractmethod
 from typing import Dict, Optional
+
 from pydantic import BaseModel, ConfigDict
 
 
@@ -7,8 +8,9 @@ class BaseMetricRequest(BaseModel):
     """
     Abstract base class for metric requests.
     """
+
     # To allow extra fields to be set on instances
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra="allow")
 
     model_id: str
     metric_name: str

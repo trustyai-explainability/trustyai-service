@@ -15,7 +15,8 @@ logger: logging.Logger = logging.getLogger(__name__)
 # Must start with letter, underscore, or colon
 # Can contain letters, numbers, underscores, and colons
 # Lowercase only (shall we allow uppercase?)
-PROMETHEUS_METRIC_NAME_REGEX = re.compile(r'^[a-z_:][a-z0-9_:]*$')
+PROMETHEUS_METRIC_NAME_REGEX = re.compile(r"^[a-z_:][a-z0-9_:]*$")
+
 
 class PrometheusPublisher:
     def __init__(self, registry: CollectorRegistry = REGISTRY) -> None:
@@ -68,7 +69,7 @@ class PrometheusPublisher:
 
             if full_name in self._gauges:
                 gauge = self._gauges[full_name]
-                
+
                 # IMPORTANT: Accessing private attributes of prometheus_client.Gauge
                 # This is necessary because the prometheus_client library does not provide
                 # public methods to:
@@ -184,7 +185,7 @@ class PrometheusPublisher:
                 f"underscore, or colon, and contain only lowercase letters, "
                 f"numbers, underscores, and colons."
             )
-        
+
         return full_name
 
     @staticmethod

@@ -1,5 +1,7 @@
-from src.service.payloads.values.data_type import DataType
 from dataclasses import dataclass
+
+from src.service.payloads.values.data_type import DataType
+
 
 @dataclass
 class SchemaItem:

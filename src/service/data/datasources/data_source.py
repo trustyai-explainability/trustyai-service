@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
@@ -90,10 +89,11 @@ class DataSource:
             start_row = max(0, available_rows - batch_size)
             n_rows = min(batch_size, available_rows)
 
-            input_data, output_data, metadata = await model_data.data(start_row=start_row, n_rows=n_rows)
+            input_data, output_data, metadata = await model_data.data(
+                start_row=start_row, n_rows=n_rows
+            )
 
             input_names, output_names, metadata_names = await model_data.column_names()
-
 
             # Combine the data into a single dataframe
             df_data = {}
@@ -121,7 +121,9 @@ class DataSource:
                 f"Error creating dataframe for model={model_id}: {str(e)}"
             )
 
-    async def get_organic_dataframe(self, model_id: str, batch_size: int) -> pd.DataFrame:
+    async def get_organic_dataframe(
+        self, model_id: str, batch_size: int
+    ) -> pd.DataFrame:
         """
         Get a dataframe with only organic data (not synthetic).
 
@@ -208,7 +210,9 @@ class DataSource:
         try:
             return await self.get_metadata(model_id) is not None
         except Exception as e:
-            logger.error(f"Error checking if metadata exists for model={model_id}: {str(e)}")
+            logger.error(
+                f"Error checking if metadata exists for model={model_id}: {str(e)}"
+            )
             return False
 
     # DATAFRAME QUERIES
