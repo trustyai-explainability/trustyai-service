@@ -1,5 +1,6 @@
 import hashlib
 import logging
+import re
 import threading
 import uuid
 from typing import Dict, Optional
@@ -10,6 +11,11 @@ from src.service.payloads.metrics.base_metric_request import BaseMetricRequest
 
 logger: logging.Logger = logging.getLogger(__name__)
 
+# Prometheus metric name validation regex
+# Must start with letter, underscore, or colon
+# Can contain letters, numbers, underscores, and colons
+# Lowercase only (shall we allow uppercase?)
+PROMETHEUS_METRIC_NAME_REGEX = re.compile(r'^[a-z_:][a-z0-9_:]*$')
 
 class PrometheusPublisher:
     def __init__(self, registry: CollectorRegistry = REGISTRY) -> None:
@@ -164,7 +170,22 @@ class PrometheusPublisher:
             )
 
     def _get_full_metric_name(self, metric_name: str) -> str:
-        return f"{PROMETHEUS_METRIC_PREFIX}{metric_name.lower()}"
+        if not PROMETHEUS_METRIC_PREFIX.strip():
+            raise ValueError("Prometheus metric prefix cannot be empty")
+        if not metric_name.strip():
+            raise ValueError("Metric name cannot be empty")
+
+        full_name = f"{PROMETHEUS_METRIC_PREFIX}{metric_name.lower()}"
+        # Validate the full metric name against the regex
+        if not PROMETHEUS_METRIC_NAME_REGEX.match(full_name):
+            raise ValueError(
+                f"Invalid Prometheus metric name: '{metric_name}'. "
+                f"Metric names must start with a lowercase letter, "
+                f"underscore, or colon, and contain only lowercase letters, "
+                f"numbers, underscores, and colons."
+            )
+        
+        return full_name
 
     @staticmethod
     def generate_uuid(content: str) -> uuid.UUID:
