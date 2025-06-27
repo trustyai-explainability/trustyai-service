@@ -62,6 +62,16 @@ class PrometheusPublisher:
 
             if full_name in self._gauges:
                 gauge = self._gauges[full_name]
+                
+                # IMPORTANT: Accessing private attributes of prometheus_client.Gauge
+                # This is necessary because the prometheus_client library does not provide
+                # public methods to:
+                # 1. List existing metrics with their labels (_metrics.items())
+                # 2. Access label names for a gauge (_labelnames)
+                # We need this functionality to selectively remove gauge metrics
+                # based on the "request" label matching the provided ID.
+                # If prometheus_client adds public APIs for this in the future,
+                # this should be refactored to use those instead.
                 for labels, _ in gauge._metrics.items():
                     labels_dict = dict(zip(gauge._labelnames, labels))
                     if labels_dict.get("request") == str(id):
