@@ -1,23 +1,19 @@
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from typing import Dict, Optional
+from pydantic import BaseModel, ConfigDict
 
 
-class BaseMetricRequest(ABC):
+class BaseMetricRequest(BaseModel):
     """
     Abstract base class for metric requests.
     """
+    # To allow extra fields to be set on instances
+    model_config = ConfigDict(extra='allow')
 
-    def __init__(
-        self,
-        model_id: str,
-        metric_name: str,
-        request_name: Optional[str],
-        batch_size: Optional[int],
-    ) -> None:
-        self.model_id: str = model_id
-        self.metric_name: str = metric_name
-        self.request_name: str = request_name
-        self.batch_size: int = batch_size
+    model_id: str
+    metric_name: str
+    request_name: Optional[str] = None
+    batch_size: Optional[int] = None
 
     def retrieve_default_tags(self) -> Dict[str, str]:
         output: Dict[str, str] = {}

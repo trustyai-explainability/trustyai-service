@@ -39,7 +39,12 @@ class RequestReconciler:
             storage_metadata: The storage metadata to use for reconciliation
         """
         try:
-            for name in dir(request.__class__):
+            # Get both model fields and dynamically added instance attributes
+            model_field_names = set(request.__class__.model_fields.keys())
+            instance_attribute_names = set(request.__dict__.keys())
+            all_field_names = model_field_names.union(instance_attribute_names)
+
+            for name in all_field_names:
                 if name.startswith("_"):
                     continue
 

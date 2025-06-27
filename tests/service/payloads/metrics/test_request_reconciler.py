@@ -21,7 +21,12 @@ class MockReconcilableRequest(BaseMetricRequest):
     """Mock request class with reconcilable fields."""
 
     def __init__(self, model_id: str = "test_model"):
-        super().__init__(model_id, "test_metric", "test_request", 100)
+        super().__init__(
+            model_id=model_id,
+            metric_name="test_metric",
+            request_name="test_request",
+            batch_size=100,
+        )
 
         # Create reconcilable feature field
         self.protected_attribute = ReconcilableFeature(
