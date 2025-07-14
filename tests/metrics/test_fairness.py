@@ -21,13 +21,34 @@ from src.core.metrics.fairness.group.group_average_predictive_value_difference i
 from src.core.metrics.fairness.group.group_statistical_parity_difference import GroupStatisticalParityDifference
 from src.core.metrics.fairness.individual.individual_consistency import IndividualConsistency
 
-df = pd.read_csv(
-    "tests/data/bank_churn_train.csv",
-)
+# generate synthetic bank churn data for testing
+np.random.seed(42)
+n_rows = 1000
+
+data = {
+    "CreditScore": np.random.randint(350, 850, n_rows),
+    "Geography": np.random.choice(["France", "Germany", "Spain"], n_rows),
+    "Gender": np.random.choice(["Male", "Female"], n_rows),
+    "Age": np.random.randint(18, 80, n_rows),
+    "Tenure": np.random.randint(0, 10, n_rows),
+    "Balance": np.round(np.random.uniform(0, 200000, n_rows), 2),
+    "NumOfProducts": np.random.randint(1, 4, n_rows),
+    "EstimatedSalary": np.round(np.random.uniform(500, 200000, n_rows), 2),
+    "Card Type": np.random.choice(["SILVER", "GOLD", "PLATINUM", "DIAMOND"], n_rows),
+    "Point Earned": np.random.randint(200, 1000, n_rows),
+    "HasCrCard": np.random.randint(0, 2, n_rows),
+    "IsActiveMember": np.random.randint(0, 2, n_rows),
+    "Exited": np.random.randint(0, 2, n_rows),
+    "Complain": np.random.randint(0, 2, n_rows),
+    "Satisfaction Score": np.random.randint(1, 6, n_rows),
+}
+
+df = pd.DataFrame(data)
+
 X = df.drop(columns=["Exited"], axis=1)
 y = df["Exited"]
 
-def train_model():
+def train_model(X: pd.DataFrame = X, y: pd.Series = y):
     categorical_features = ['Geography', 'Gender', 'Card Type', 'HasCrCard', 'IsActiveMember', 'Complain']
     label_encoders = {}
     for feature in categorical_features:
@@ -37,20 +58,20 @@ def train_model():
 
     return pd.DataFrame(lr.predict(X))
 
-def truth_predict_output():
+def truth_predict_output(X: pd.DataFrame = X, y: pd.Series = y):
     y.index = X["Gender"]
     y_pred = pd.DataFrame(train_model())
     y_pred.index = X["Gender"]
     return y, y_pred
 
-def get_privileged_unprivleged_split():
+def get_privileged_unprivleged_split(df: pd.DataFrame = df):
     data = df[[col for col in df.columns if col != "Exited"] + ["Exited"]]
     data = data.to_numpy()
     privileged = data[np.where(data[:, 2] == "Male")]
     unprivileged = data[np.where(data[:, 2] == "Female")]
     return privileged, unprivileged
 
-def get_labeled_data():
+def get_labeled_data(df: pd.DataFrame = df):
     data = df[[col for col in df.columns if col != "Exited"] + ["Exited"]]
     data = data.to_numpy()
     y_pred = pd.DataFrame(train_model())
@@ -76,7 +97,7 @@ def get_k_neighbors_function(k_value=5):
     return find_neighbors
 
 
-def get_processed_data(sample_size=None):
+def get_processed_data(X: pd.DataFrame = X, sample_size=None):
     """Process data for testing individual consistency."""
     categorical_features = ['Geography', 'Gender', 'Card Type', 'HasCrCard', 'IsActiveMember', 'Complain']
     X_processed = X.copy()
@@ -196,13 +217,13 @@ def test_individual_consistency():
     k = 5
     cs_score = consistency_score(X_sample, y_pred_sample.flatten())
 
-    prediction_provider = MockPredictionProvider(y_pred_sample)
+    model = MockPredictionProvider(y_pred_sample)
     proximity_function = get_k_neighbors_function(k)
 
     score = IndividualConsistency.calculate(
         proximity_function=proximity_function,
         samples=X_sample,
-        prediction_provider=prediction_provider
+        model=model
     )
 
     assert score == approx(cs_score, abs=0.2)
@@ -221,7 +242,7 @@ def test_individual_consistency_perfect():
     consistency = IndividualConsistency.calculate(
         proximity_function=proximity_function,
         samples=X_sample,
-        prediction_provider=PerfectConsistencyProvider()
+        model=PerfectConsistencyProvider()
     )
 
     assert consistency == approx(cs_score, abs=0.2)
@@ -241,7 +262,7 @@ def test_individual_consistency_imperfect():
     consistency = IndividualConsistency.calculate(
         proximity_function=proximity_function,
         samples=X_sample,
-        prediction_provider=RandomPredictionProvider(seed=42)
+        model=RandomPredictionProvider(seed=42)
     )
 
     assert consistency == approx(cs_score, abs=0.2)

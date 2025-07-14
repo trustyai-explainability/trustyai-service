@@ -2,6 +2,7 @@
 from typing import List
 
 import numpy as np
+from sklearn.base import ClassifierMixin
 
 class GroupStatisticalParityDifference:
     """
@@ -10,7 +11,7 @@ class GroupStatisticalParityDifference:
     @staticmethod
     def calculate_model(
         samples: np.ndarray,
-        model,
+        model: ClassifierMixin,
         privilege_columns: List[int],
         privilege_values: List[int],
         favorable_output,

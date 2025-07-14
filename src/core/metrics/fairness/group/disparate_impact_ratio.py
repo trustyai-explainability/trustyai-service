@@ -1,7 +1,8 @@
 # pylint: disable=line-too-long
-from typing import List, Any, Union
+from typing import List, Union
 
 import numpy as np
+from sklearn.base import ClassifierMixin
 
 class DisparateImpactRatio:
     """
@@ -10,7 +11,7 @@ class DisparateImpactRatio:
     @staticmethod
     def calculate_model(
         samples: np.ndarray,
-        model: Any,
+        model: ClassifierMixin,
         privilege_columns: List[int],
         privilege_values: List[int],
         favorable_output: np.ndarray
