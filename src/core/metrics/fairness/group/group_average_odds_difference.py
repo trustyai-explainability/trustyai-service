@@ -1,7 +1,8 @@
 # pylint: disable=line-too-long, too-many-arguments
-from typing import List, Any
+from typing import List
 
 import numpy as np
+from sklearn.base import ClassifierMixin
 
 from src.core.metrics.fairness.fairness_metrics_utils import filter_rows_by_inputs, calculate_confusion_matrix
 
@@ -12,7 +13,7 @@ class GroupAverageOddsDifference:
     @ staticmethod
     def calculate_model(
         samples: np.ndarray,
-        model: Any,
+        model: ClassifierMixin,
         privilege_columns: List[int],
         privilege_values: List[int],
         postive_class: List[int],
