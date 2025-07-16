@@ -11,7 +11,6 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 # Endpoint routers
 from src.endpoints.consumer.consumer_endpoint import router as consumer_router
-from src.endpoints.data.data_download import router as data_download_router
 from src.endpoints.data.data_upload import router as data_upload_router
 
 # from src.endpoints.explainers import router as explainers_router
@@ -139,7 +138,6 @@ app.include_router(
 app.include_router(identity_router, tags=["Identity Endpoint"])
 app.include_router(metadata_router, tags=["Service Metadata"])
 app.include_router(metrics_info_router, tags=["Metrics Information Endpoint"])
-app.include_router(data_download_router, tags=["Download Endpoint"])
 
 if lm_evaluation_harness_available:
     app.include_router(
@@ -177,6 +175,8 @@ async def readiness_probe():
 @app.get("/q/health/live")
 async def liveness_probe():
     return JSONResponse(content={"status": "live"}, status_code=200)
+
+
 
 
 if __name__ == "__main__":
