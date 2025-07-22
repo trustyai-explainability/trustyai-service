@@ -17,6 +17,8 @@ dependencies = [
     "h5py>=3.13.0,<4",
     "scikit-learn",
     "aif360",
+    "hypothesis>=6.136.2",
+    "pytest>=8.4.1",
 ]
 
 [project.optional-dependencies]
