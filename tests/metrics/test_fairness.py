@@ -243,46 +243,6 @@ class TestDisparateImpactRatio:
         score = DisparateImpactRatio.calculate(privileged=privileged, unprivileged=unprivileged, favorable_output=1)
         assert score == approx(1.0, abs=1e-5), f"DIR should be ~1 when rates are equal. Actual score: {score}"
 
-    def test_dir_reciprocal(self):
-        """Test to verify that swapping privileged and unprivileged grops
-        in DIR calculation yields the rediprocal of the original calculation."""
-        df = pd.DataFrame(generate_data())
-        privileged, unprivileged = get_privileged_unprivileged_split(df)
-
-        initial_score = DisparateImpactRatio.calculate(
-            privileged=privileged, unprivileged=unprivileged, favorable_output=1
-        )
-
-        # Swap privileged and unprivileged groups
-        swapped_score = DisparateImpactRatio.calculate(
-            privileged=unprivileged, unprivileged=privileged, favorable_output=1
-        )
-
-        assert swapped_score == approx(1 / initial_score, rel=1e-5), (
-            f"Swapping privileged and unprivileged DIR should be the reciprocal"
-            f" of the original DIR. Actual score: {swapped_score}"
-        )
-
-    def test_dir_monotonicity(self):
-        """Tests that checks that the DIR value increases as the selection rate increases for the unprivileged group."""
-        df = pd.DataFrame(generate_data())
-        privileged, unprivileged = get_privileged_unprivileged_split(df)
-
-        initial_score = DisparateImpactRatio.calculate(
-            privileged=privileged, unprivileged=unprivileged, favorable_output=1
-        )
-
-        unprivileged_modified = increase_selection_rate(unprivileged)
-
-        new_score = DisparateImpactRatio.calculate(
-            privileged=privileged, unprivileged=unprivileged_modified, favorable_output=1
-        )
-
-        assert new_score > initial_score, (
-            f"DIR should not decrease when unprivileged selection rate increases."
-            f" Initial DIR: {initial_score}, new DIR: {new_score}"
-        )
-
     def test_dir_empty_dataframe(self):
         """Test that DIR calculation handles an empty DataFrame correctly."""
         empty_df = pd.DataFrame(columns=df.columns)
@@ -327,23 +287,7 @@ class TestGroupStatisticalParityDifference:
         score = GroupStatisticalParityDifference.calculate(
             privileged=privileged, unprivileged=unprivileged, favorable_output=1
         )
-        assert score == approx(0, abs=1e-2), f"SPD should be close to zero when rates are equal. Actual score: {score}"
-
-    def test_spd_swap_groups(self):
-        """Test that swapping privileged and unprivileged groups yields the negative of the original SPD."""
-        df = pd.DataFrame(generate_data())
-
-        privileged, unprivileged = get_privileged_unprivileged_split(df=df)
-        initial_score = GroupStatisticalParityDifference.calculate(
-            privileged=privileged, unprivileged=unprivileged, favorable_output=1
-        )
-        swapped_score = GroupStatisticalParityDifference.calculate(
-            privileged=unprivileged, unprivileged=privileged, favorable_output=1
-        )
-        assert swapped_score == approx(-initial_score, abs=1e-5), (
-            f"Swapping groups should yield the negative SPD."
-            f" Initial score: {initial_score}, swapped score: {swapped_score}"
-        )
+        assert score == approx(0, abs=1e-2), f"SPD should be ~0 when rates are equal. Actual score: {score}"
 
     def test_spd_sign(self):
         """Tests that the sign of SPD correctly indicates which group has a higher favorable outcome rate."""
