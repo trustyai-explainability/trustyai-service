@@ -231,7 +231,7 @@ class TestDisparateImpactRatio:
         )
 
     def test_dir_equal_favorable_rates(self):
-        """Property-based test to check that the result of DIR calculation
+        """Test to check that the result of DIR calculation
         is 1.0 when favorable outcome rates are equal between groups."""
         df = pd.DataFrame(generate_data())
         privileged, unprivileged = get_privileged_unprivileged_split(df=df)
