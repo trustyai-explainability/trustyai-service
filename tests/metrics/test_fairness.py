@@ -173,20 +173,6 @@ def set_favorable_outcomes(group: np.ndarray, target_rate: float = 0.5) -> None:
         group[indices, -1] = 1
 
 
-def increase_selection_rate(group: np.ndarray, increase_factor: float = 0.75) -> np.ndarray:
-    modified_group = group.copy()
-
-    unfavorable_indices = np.where(modified_group[:, -1] == 0)[0]
-
-    num_to_flip = int(len(unfavorable_indices) * increase_factor)
-
-    if num_to_flip > 0:
-        indices_to_flip = np.random.choice(unfavorable_indices, size=num_to_flip, replace=False)
-        modified_group[indices_to_flip, -1] = 1
-
-    return modified_group
-
-
 y, y_pred = truth_predict_output()
 privileged, unprivileged = get_privileged_unprivileged_split()
 data, data_pred = get_labeled_data()
