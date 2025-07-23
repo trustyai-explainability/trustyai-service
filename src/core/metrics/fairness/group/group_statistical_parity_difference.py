@@ -4,10 +4,14 @@ from typing import List
 import numpy as np
 from sklearn.base import ClassifierMixin
 
+from src.core.metrics.fairness.fairness_metrics_utils import validate_fairness_groups
+
+
 class GroupStatisticalParityDifference:
     """
     Calculate group statistical parity difference (SPD).
     """
+
     @staticmethod
     def calculate_model(
         samples: np.ndarray,
@@ -15,7 +19,7 @@ class GroupStatisticalParityDifference:
         privilege_columns: List[int],
         privilege_values: List[int],
         favorable_output,
-        ) -> float:
+    ) -> float:
         """
         Calculate group statistical parity difference (SPD) for model outputs.
         :param samples a NumPy array of inputs to be used for testing fairness
@@ -37,14 +41,16 @@ class GroupStatisticalParityDifference:
         privileged,
         unprivileged,
         favorable_output,
-        ) -> float:
+    ) -> float:
         """
         Calculate statistical/demographic parity difference (SPD) when the labels are pre-calculated.
         :param priviledged numPy array with the privileged groups
         :param unpriviledged numPy array with the unpriviledged groups
         :param favorableOutput an output that is considered favorable / desirable
-        return SPD, between 0 and 1
+        return SPD, between -1 and 1
         """
+        validate_fairness_groups(privileged=privileged, unprivileged=unprivileged)
+
         probability_privileged = np.sum(privileged[:, -1] == favorable_output) / len(privileged)
         probability_unprivileged = np.sum(unprivileged[:, -1] == favorable_output) / len(unprivileged)
         return probability_unprivileged - probability_privileged
