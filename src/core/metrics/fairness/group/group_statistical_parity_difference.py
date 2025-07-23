@@ -4,6 +4,8 @@ from typing import List
 import numpy as np
 from sklearn.base import ClassifierMixin
 
+from src.core.metrics.fairness.fairness_metrics_utils import validate_fairness_groups
+
 
 class GroupStatisticalParityDifference:
     """
@@ -47,6 +49,8 @@ class GroupStatisticalParityDifference:
         :param favorableOutput an output that is considered favorable / desirable
         return SPD, between -1 and 1
         """
+        validate_fairness_groups(privileged=privileged, unprivileged=unprivileged)
+
         probability_privileged = np.sum(privileged[:, -1] == favorable_output) / len(privileged)
         probability_unprivileged = np.sum(unprivileged[:, -1] == favorable_output) / len(unprivileged)
         return probability_unprivileged - probability_privileged

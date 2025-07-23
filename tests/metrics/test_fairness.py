@@ -1,6 +1,6 @@
 # pylint: disable=line-too-long, missing-function-docstring
-import math
 
+import pytest
 from pytest import approx
 import numpy as np
 import pandas as pd
@@ -234,9 +234,8 @@ class TestDisparateImpactRatio:
         empty_df = pd.DataFrame(columns=df.columns)
         privileged, unprivileged = get_privileged_unprivileged_split(df=empty_df)
 
-        score = DisparateImpactRatio.calculate(privileged=privileged, unprivileged=unprivileged, favorable_output=1)
-
-        assert math.isnan(score)
+        with pytest.raises(ValueError):
+            DisparateImpactRatio.calculate(privileged=privileged, unprivileged=unprivileged, favorable_output=1)
 
 
 class TestGroupStatisticalParityDifference:
@@ -305,11 +304,10 @@ class TestGroupStatisticalParityDifference:
         empty_df = pd.DataFrame(columns=df.columns)
         privileged, unprivileged = get_privileged_unprivileged_split(df=empty_df)
 
-        score = GroupStatisticalParityDifference.calculate(
-            privileged=privileged, unprivileged=unprivileged, favorable_output=1
-        )
-
-        assert math.isnan(score)
+        with pytest.raises(ValueError):
+            GroupStatisticalParityDifference.calculate(
+                privileged=privileged, unprivileged=unprivileged, favorable_output=1
+            )
 
 
 def test_average_odds_difference():

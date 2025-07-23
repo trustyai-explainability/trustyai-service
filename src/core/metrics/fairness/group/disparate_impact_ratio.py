@@ -4,18 +4,22 @@ from typing import List, Union
 import numpy as np
 from sklearn.base import ClassifierMixin
 
+from src.core.metrics.fairness.fairness_metrics_utils import validate_fairness_groups
+
+
 class DisparateImpactRatio:
     """
     Calculate disparate impact ratio (DIR).
     """
+
     @staticmethod
     def calculate_model(
         samples: np.ndarray,
         model: ClassifierMixin,
         privilege_columns: List[int],
         privilege_values: List[int],
-        favorable_output: np.ndarray
-        ) -> float:
+        favorable_output: np.ndarray,
+    ) -> float:
         """
         Calculate disparate impact ratio (DIR) for model outputs.
         :param samples a NumPy array of inputs to be used for testing fairness
@@ -34,10 +38,8 @@ class DisparateImpactRatio:
 
     @staticmethod
     def calculate(
-        privileged: Union[int, np.ndarray],
-        unprivileged: Union[int, np.ndarray],
-        favorable_output: int
-        ) -> float:
+        privileged: Union[int, np.ndarray], unprivileged: Union[int, np.ndarray], favorable_output: int
+    ) -> float:
         """
         Calculate disparate impact ratio (DIR) when the labels are pre-calculated.
         :param privileged a NumPy array with the privileged groups
@@ -45,6 +47,8 @@ class DisparateImpactRatio:
         :param favorableOutput an output that is considered favorable / desirable
         return DIR, between 0 and 1
         """
+        validate_fairness_groups(privileged=privileged, unprivileged=unprivileged)
+
         probability_privileged = np.sum(privileged[:, -1] == favorable_output) / len(privileged)
         probability_unprivileged = np.sum(unprivileged[:, -1] == favorable_output) / len(unprivileged)
         return probability_unprivileged / probability_privileged
