@@ -3,10 +3,7 @@ Tests for the ModelMesh protobuf parser.
 """
 
 import unittest
-from typing import Dict, Optional
-
 import pandas as pd
-from pydantic import BaseModel
 
 from src.service.data.modelmesh_parser import ModelMeshPayloadParser, PartialPayload
 from tests.service.data.test_utils import ModelMeshTestData
