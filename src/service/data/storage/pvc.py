@@ -105,13 +105,16 @@ class PVCStorage(StorageInterface):
             except MissingH5PYDataException:
                 return False
 
-    def list_all_datasets(self) -> List[str]:
-        """List all datasets known by the dataset"""
+    def _list_all_datasets_sync(self) -> List[str]:
         return [
             fname.replace(f"_{self.data_file}", "")
             for fname in os.listdir(self.data_directory)
             if self.data_file in fname
         ]
+
+    async def list_all_datasets(self) -> List[str]:
+        """List all datasets known by the dataset"""
+        return await asyncio.to_thread(self._list_all_datasets_sync)
 
     async def dataset_rows(self, dataset_name: str) -> int:
         """Number of data rows in dataset, returns a FileNotFoundError if the dataset does not exist"""
@@ -206,6 +209,7 @@ class PVCStorage(StorageInterface):
                         data=new_rows,
                         maxshape=max_shape,
                         chunks=True,
+                        dtype=new_rows.dtype  # use the dtype of the data
                     )
                     dataset.attrs[COLUMN_NAMES_ATTRIBUTE] = column_names
                     dataset.attrs[BYTES_ATTRIBUTE] = is_bytes
@@ -220,9 +224,16 @@ class PVCStorage(StorageInterface):
             or not isinstance(new_rows, np.ndarray)
             and list_utils.contains_non_numeric(new_rows)
         ):
+            serialized = list_utils.serialize_rows(new_rows, MAX_VOID_TYPE_LENGTH)
+            arr = np.array(serialized)
+            if arr.ndim == 1:
+                arr = arr.reshape(-1, 1)
             await self._write_raw_data(
-                dataset_name, list_utils.serialize_rows(new_rows, MAX_VOID_TYPE_LENGTH), column_names
-            )
+                dataset_name,
+                arr,
+                column_names,
+                is_bytes=True,
+)
         else:
             await self._write_raw_data(dataset_name, np.array(new_rows), column_names)
 

@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from src.endpoints.consumer.consumer_endpoint import consume_cloud_event
-from src.endpoints.consumer import KServeInferenceRequest, KServeInferenceResponse
+from src.endpoints.consumer import KServeInferenceRequest, KServeInferenceResponse, KServeData
 from src.service.constants import TRUSTYAI_TAG_PREFIX
 from src.service.data.model_data import ModelData
 
@@ -34,6 +34,8 @@ def validate_data_tag(tag: str) -> Optional[str]:
         )
     return None
 
+
+
 @router.post("/data/upload")
 async def upload(payload: UploadPayload) -> Dict[str, str]:
     """Upload model data"""
@@ -46,7 +48,9 @@ async def upload(payload: UploadPayload) -> Dict[str, str]:
         logger.info(f"Received upload request for model: {payload.model_name}")
 
         # overwrite response model name with provided model name
-        payload.response.model_name = payload.model_name
+        if payload.response.model_name != payload.model_name:
+            logger.warning(f"Response model name '{payload.response.model_name}' differs from request model name '{payload.model_name}'. Using '{payload.model_name}'.")  
+            payload.response.model_name = payload.model_name
 
         req_id = str(uuid.uuid4())
         model_data = ModelData(payload.model_name)

@@ -11,7 +11,7 @@ class StorageInterface(ABC):
         pass
 
     @abstractmethod
-    def list_all_datasets(self) -> List[str]:
+    async def list_all_datasets(self) -> List[str]:
         pass
 
     @abstractmethod
