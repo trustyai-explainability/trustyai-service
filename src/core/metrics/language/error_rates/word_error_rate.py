@@ -1,5 +1,5 @@
 from typing import Callable, Optional
-from levenshtein import Levenshtein
+from src.core.metrics.language.levenshtein import Levenshtein
 from .base_result import ErrorRateResult
 
 class WordErrorRate:

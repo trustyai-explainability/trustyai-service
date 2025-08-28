@@ -1,7 +1,7 @@
 from typing import Callable, List, Union
 from dataclasses import dataclass
-from nltk.metrics.distance import edit_distance_align
-from utils import clean_text
+from nltk.metrics.distance import edit_distance, edit_distance_align
+from src.core.metrics.language.utils import clean_text
 
 
 
@@ -63,7 +63,14 @@ class Levenshtein:
             ref_seq = list(clean_ref)
             hyp_seq = list(clean_hyp)
 
-        _, aligned_ref, aligned_hyp = edit_distance_align(ref_seq, hyp_seq)
+        alignment = edit_distance_align(ref_seq, hyp_seq)
+
+        aligned_ref = []
+        aligned_hyp = []
+        for i, j in alignment:
+            aligned_ref.append(ref_seq[i] if i < len(ref_seq) else '*')
+            aligned_hyp.append(hyp_seq[j] if j < len(hyp_seq) else '*')
+
 
         insertions = deletions = substitutions = 0
         for r, h in zip(aligned_ref, aligned_hyp):

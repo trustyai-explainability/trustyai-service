@@ -1,6 +1,6 @@
 from typing import List, Optional, Callable
-from bleu import BLEU
-from levenshtein import WordErrorRate
+from src.core.metrics.language.bleu.bleu import BLEUMetric as BLEU
+from src.core.metrics.language.error_rates.word_error_rate import WordErrorRate
 from difflib import SequenceMatcher
 
 
@@ -23,6 +23,7 @@ class FuzzyMatch:
         """
         wer_metric = WordErrorRate(tokenizer=self.tokenizer)
         wer = wer_metric.calculate(reference, input_str).value
+        print(f"[calculate_wer] reference: {reference}\ninput_str: {input_str}\nWER: {wer}\nthreshold: {threshold}")
         return wer < threshold
 
     def calculate_bleu(self, references: List[str], input_str: str, threshold: float) -> bool:
@@ -57,7 +58,7 @@ class FuzzyMatch:
         return score > threshold
 
 
-     def calculate_similarity(self, reference: str, input_str: str) -> float:
+    def calculate_similarity(self, reference: str, input_str: str) -> float:
         """
         Return a similarity score between 0 and 1 using difflib's SequenceMatcher.
         """

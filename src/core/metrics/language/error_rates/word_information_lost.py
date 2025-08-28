@@ -1,5 +1,6 @@
 from typing import Callable, Optional
-from levenshtein import Levenshtein
+from src.core.metrics.language.levenshtein import Levenshtein
+from .word_information_preserved import WordInformationPreserved
 from .base_result import ErrorRateResult
 
 class WordInformationLost:
@@ -7,10 +8,6 @@ class WordInformationLost:
         self.tokenizer = tokenizer or (lambda x: x.split())
 
     def calculate(self, reference: str, hypothesis: str) -> ErrorRateResult:
-        counters = Levenshtein.compute_with_counter(reference, hypothesis, tokenizer=self.tokenizer)
-        S, D, I = counters.substitutions, counters.deletions, counters.insertions
-        N = counters.reference_length
-        C = N - S - D
-        denom = N + C
-        value = (S + D + I) / denom if denom else 1.0
-        return ErrorRateResult(value, I, D, S, C, N)
+        wip = WordInformationPreserved(self.tokenizer).calculate(reference, hypothesis).value
+        value = 1.0 - wip
+        return ErrorRateResult(value, 0, 0, 0, 0, 0)

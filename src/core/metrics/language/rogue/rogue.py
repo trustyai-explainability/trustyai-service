@@ -1,8 +1,8 @@
 import re
 from rouge_score import rouge_scorer
-from nltk.tokenize import sent_tokenize, word_tokenize
+from nltk.tokenize import sent_tokenize
 from typing import Literal, List
-from utils import clean_text
+from src.core.metrics.language.utils import clean_text
 
 class ROUGEMetric:
     def __init__(self, rouge_type: Literal["rouge1", "rouge2", "rougeL", "rougeLsum"] = "rougeL"):
@@ -16,6 +16,12 @@ class ROUGEMetric:
         """
         self.rouge_type = rouge_type
         self.scorer = rouge_scorer.RougeScorer([rouge_type], use_stemmer=True)
+
+    @staticmethod
+    def simple_sent_tokenize(text: str) -> list[str]:
+        # Split on sentence-ending punctuation followed by a space and a capital letter
+        pattern = re.compile(r'(?<=[.!?])\s+(?=[A-Z])')
+        return re.split(pattern, text)
 
     def calculate(self, reference: str, hypothesis: str) -> float:
         """
@@ -41,15 +47,15 @@ class ROUGEMetric:
         :param hypothesis: A hypothesis paragraph consisting of multiple sentences.
         :return: The average ROUGE-L F1 score over aligned sentence pairs.
         """
-        reference = clean_text(reference)
-        hypothesis = clean_text(hypothesis)
-        ref_sents = sent_tokenize(reference)
-        hyp_sents = sent_tokenize(hypothesis)
+        ref_sents = self.simple_sent_tokenize(reference)
+        hyp_sents = self.simple_sent_tokenize(hypothesis)
+        ref_sents_cleaned = [clean_text(s) for s in ref_sents]
+        hyp_sents_cleaned = [clean_text(s) for s in hyp_sents]
 
         total_score = 0.0
-        count = min(len(ref_sents), len(hyp_sents))
+        count = min(len(ref_sents_cleaned), len(hyp_sents_cleaned))
         for i in range(count):
-            score = self.scorer.score(ref_sents[i], hyp_sents[i])
+            score = self.scorer.score(ref_sents_cleaned[i], hyp_sents_cleaned[i])
             total_score += score["rougeLsum"].fmeasure
 
         return total_score / count if count > 0 else 0.0
