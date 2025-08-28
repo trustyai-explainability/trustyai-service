@@ -2,11 +2,13 @@ import asyncio
 import io
 import json
 import logging
+
 import mariadb
 import numpy as np
 import pickle as pkl
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Union
 
+from src.endpoints.consumer import KServeInferenceRequest, KServeInferenceResponse
 from src.service.data.modelmesh_parser import PartialPayload
 from src.service.data.storage import LegacyMariaDBStorageReader
 from src.service.data.storage.maria.utils import MariaConnectionManager, require_existing_dataset, \
@@ -65,14 +67,17 @@ class MariaDBStorage(StorageInterface):
             cursor.execute(f"CREATE TABLE IF NOT EXISTS `{self.partial_payload_table}` (payload_id varchar(255), is_input BOOLEAN, payload_data LONGBLOB)")
 
         if attempt_migration:
-            self._migrate_from_legacy_db()
+            # Schedule the migration to run asynchronously
+            import asyncio
+            loop = asyncio.get_event_loop()
+            loop.create_task(self._migrate_from_legacy_db())
 
     # === MIGRATORS ================================================================================
-    def _migrate_from_legacy_db(self):
+    async def _migrate_from_legacy_db(self):
         legacy_reader = LegacyMariaDBStorageReader(user=self.user, password=self.password, host=self.host, port=self.port, database=self.database)
         if legacy_reader.legacy_data_exists():
             logger.info("Legacy TrustyAI v1 data exists in database, checking if a migration is necessary.")
-            asyncio.run(legacy_reader.migrate_data(self))
+            await legacy_reader.migrate_data(self)
 
 
     # === INTERNAL HELPER FUNCTIONS ================================================================
@@ -80,7 +85,7 @@ class MariaDBStorage(StorageInterface):
         return f"{self.schema_prefix}_dataset_{index}"
 
     @require_existing_dataset
-    def _get_clean_table_name(self, dataset_name: str) -> str:
+    async def _get_clean_table_name(self, dataset_name: str) -> str:
         """
         Get a generated table name corresponding to a particular dataset.
         This avoids possible SQL injection from within the model names.
@@ -91,7 +96,7 @@ class MariaDBStorage(StorageInterface):
 
 
     @require_existing_dataset
-    def _get_dataset_metadata(self, dataset_name: str) -> Optional[Dict]:
+    async def _get_dataset_metadata(self, dataset_name: str) -> Optional[Dict]:
         """
         Return the metadata field from a particular dataset within the dataset_reference_table.
         """
@@ -102,7 +107,7 @@ class MariaDBStorage(StorageInterface):
 
 
     #=== DATASET QUERYING ==========================================================================
-    def dataset_exists(self, dataset_name: str) -> bool:
+    async def dataset_exists(self, dataset_name: str) -> bool:
         """
         Check if a dataset exists within the TrustyAI model data.
         """
@@ -113,18 +118,20 @@ class MariaDBStorage(StorageInterface):
         except mariadb.ProgrammingError:
             return False
 
-    def list_all_datasets(self):
-        """
-        List all available datasets in the database.
-        """
+    def _list_all_datasets_sync(self):
         with self.connection_manager as (conn, cursor):
             cursor.execute(f"SELECT dataset_name FROM `{self.dataset_reference_table}`")
-            results = [x[0] for x in cursor.fetchall()]
-        return results
+            return [x[0] for x in cursor.fetchall()]
+
+    async def list_all_datasets(self):
+        """
+        List all datasets in the database.
+        """
+        return await asyncio.to_thread(self._list_all_datasets_sync)
 
 
     @require_existing_dataset
-    def dataset_rows(self, dataset_name: str) -> int:
+    async def dataset_rows(self, dataset_name: str) -> int:
         """
         Get the number of rows in a stored dataset (equivalent to data.shape[0])
         """
@@ -135,23 +142,23 @@ class MariaDBStorage(StorageInterface):
 
 
     @require_existing_dataset
-    def dataset_cols(self, dataset_name: str) -> int:
+    async def dataset_cols(self, dataset_name: str) -> int:
         """
         Get the number of columns in a stored dataset (equivalent to data.shape[1])
         """
-        table_name = self._get_clean_table_name(dataset_name)
+        table_name = await self._get_clean_table_name(dataset_name)
         with self.connection_manager as (conn, cursor):
             cursor.execute(f"SHOW COLUMNS FROM {table_name}")
             return len(cursor.fetchall()) - 1
 
 
     @require_existing_dataset
-    def dataset_shape(self, dataset_name: str) -> tuple[int]:
+    async def dataset_shape(self, dataset_name: str) -> tuple[int]:
         """
         Get the whole shape of a stored dataset (equivalent to data.shape)
         """
-        rows = self.dataset_rows(dataset_name)
-        shape = self._get_dataset_metadata(dataset_name)["shape"]
+        rows = await self.dataset_rows(dataset_name)
+        shape = (await self._get_dataset_metadata(dataset_name))["shape"]
         shape[0] = rows
         return tuple(shape)
 
@@ -172,9 +179,9 @@ class MariaDBStorage(StorageInterface):
         if len(new_rows) == 0:
             raise ValueError(f"No data provided! `new_rows`=={new_rows}.")
 
-        # if received a single row, reshape into a single-row matrix
+        # if received a single row, reshape into a single-column matrix
         if new_rows.ndim < 2:
-            new_rows = new_rows.reshape(1, -1)
+            new_rows = new_rows.reshape(-1, 1)
 
         # validate that the number of provided column names matches the shape of the provided array
         if new_rows.shape[1] != len(column_names):
@@ -182,7 +189,7 @@ class MariaDBStorage(StorageInterface):
                 f"Shape mismatch: Number of provided column names ({len(column_names)}) does not match number of columns in provided array ({new_rows.shape[1]}).")
 
         # if this is the first time we've seen this dataset, set up its tables inside the DB
-        if not self.dataset_exists(dataset_name):
+        if not await self.dataset_exists(dataset_name):
             with self.connection_manager as (conn, cursor):
 
                 # create an entry in `trustyai_v2_table_reference`
@@ -212,10 +219,10 @@ class MariaDBStorage(StorageInterface):
             nrows = 0
         else:
             # if dataset already exists, grab its current shape and information
-            stored_shape = self.dataset_shape(dataset_name)
+            stored_shape = await self.dataset_shape(dataset_name)
             ncols = stored_shape[1]
-            nrows = self.dataset_rows(dataset_name)
-            table_name = self._get_clean_table_name(dataset_name)
+            nrows = await self.dataset_rows(dataset_name)
+            table_name = await self._get_clean_table_name(dataset_name)
             cleaned_names = get_clean_column_names(column_names)
 
             # validate that the number of columns in the saved DB matched the provided column names
@@ -255,9 +262,9 @@ class MariaDBStorage(StorageInterface):
 
 
     @require_existing_dataset
-    def read_data(self, dataset_name: str, start_row: int = 0, n_rows: int = None):
+    async def read_data(self, dataset_name: str, start_row: int = 0, n_rows: int = None):
         """
-        Read saved data from the database, from `start_row` to `start_row + n_rows` (inclusive)
+        Read saved data from the database, from `start_row` to `start_row + n_rows` (inclusive)wait storage.dataset_exists(dataset_name):
 
         `dataset_name`: the name of the dataset to read. This is NOT the table name;
             see `trustyai_v2_table_reference.dataset_name` or use list_all_datasets() for the available dataset_names.
@@ -265,16 +272,16 @@ class MariaDBStorage(StorageInterface):
         `n_rows`: The total number of rows to read. If not specified, read all rows.
 
         """
-        table_name = self._get_clean_table_name(dataset_name)
+        table_name = await self._get_clean_table_name(dataset_name)
 
         if n_rows is None:
-            n_rows = self.dataset_rows(dataset_name)
+            n_rows = await self.dataset_rows(dataset_name)
 
         with self.connection_manager as (conn, cursor):
             # grab matching data
             cursor.execute(
-                f"SELECT * FROM `{table_name}` WHERE row_idx>? AND row_idx<=?",
-                (start_row, start_row+n_rows)
+                f"SELECT * FROM `{table_name}` ORDER BY row_idx ASC LIMIT ? OFFSET ?",
+                (n_rows, start_row)
             )
 
             # parse saved data back to Numpy array
@@ -297,15 +304,15 @@ class MariaDBStorage(StorageInterface):
 
     # === COLUMN NAMES =============================================================================
     @require_existing_dataset
-    def get_original_column_names(self, dataset_name: str) -> Optional[List[str]]:
-        return self._get_dataset_metadata(dataset_name).get("column_names")
+    async def get_original_column_names(self, dataset_name: str) -> Optional[List[str]]:
+        return (await self._get_dataset_metadata(dataset_name)).get("column_names")
 
     @require_existing_dataset
-    def get_aliased_column_names(self, dataset_name: str) -> List[str]:
-        return self._get_dataset_metadata(dataset_name).get("aliased_names")
+    async def get_aliased_column_names(self, dataset_name: str) -> List[str]:
+        return (await self._get_dataset_metadata(dataset_name)).get("aliased_names")
 
     @require_existing_dataset
-    def apply_name_mapping(self, dataset_name: str, name_mapping: Dict[str, str]):
+    async def apply_name_mapping(self, dataset_name: str, name_mapping: Dict[str, str]):
         """Apply a name mapping to a dataset.
 
         `dataset_name`: the name of the dataset to read. This is NOT the table name;
@@ -314,8 +321,8 @@ class MariaDBStorage(StorageInterface):
             to original column names and values should correspond to the desired new names.
         """
 
-        original_names = self.get_original_column_names(dataset_name)
-        aliased_names = self.get_aliased_column_names(dataset_name)
+        original_names = await self.get_original_column_names(dataset_name)
+        aliased_names = await self.get_aliased_column_names(dataset_name)
 
         # get the new set of optionaly-aliased column names
         for col_idx, original_name in enumerate(original_names):
@@ -334,67 +341,56 @@ class MariaDBStorage(StorageInterface):
 
 
     # === PARTIAL PAYLOADS =========================================================================
-    async def _persist_payload(self, payload, is_input: bool, request_id: Optional[str] = None):
+    async def persist_partial_payload(self,
+                                      payload: Union[PartialPayload, KServeInferenceRequest, KServeInferenceResponse],
+                                      payload_id, is_input: bool):
         """Save a partial payload to the database."""
         with self.connection_manager as (conn, cursor):
-            if request_id is None:
-                request_id = payload.id
-
             cursor.execute(
                 f"INSERT INTO `{self.partial_payload_table}` (payload_id, is_input, payload_data) VALUES (?, ?, ?)",
-                (request_id, is_input, pkl.dumps(payload)))
+                (payload_id, is_input, pkl.dumps(payload.model_dump())))
             conn.commit()
 
-    async def _get_partial_payload(self, payload_id: str, is_input: bool):
+    async def get_partial_payload(self, payload_id: str, is_input: bool, is_modelmesh: bool) -> Union[PartialPayload, KServeInferenceRequest, KServeInferenceResponse]:
         """Retrieve a partial payload from the database."""
         with self.connection_manager as (conn, cursor):
             cursor.execute(f"SELECT payload_data FROM `{self.partial_payload_table}` WHERE payload_id=? AND is_input=?", (payload_id, is_input))
             result = cursor.fetchone()
         if result is None or len(result) == 0:
             return None
-        payload_data = result[0]
-        return pkl.loads(payload_data)
+        payload_dict = pkl.loads(result[0])
+        if is_modelmesh:
+            return PartialPayload(**payload_dict)
+        elif is_input:  # kserve input
+            return KServeInferenceRequest(**payload_dict)
+        else:  # kserve output
+            return KServeInferenceResponse(**payload_dict)
 
 
-    async def persist_partial_payload(self, payload, is_input: bool):
-        await self._persist_payload(payload, is_input)
-
-
-    async def persist_modelmesh_payload(self, payload: PartialPayload, request_id: str, is_input: bool):
-        await self._persist_payload(payload, is_input, request_id=request_id)
-
-
-    async def get_partial_payload(self, payload_id: str, is_input: bool):
-        return await self._get_partial_payload(payload_id, is_input)
-
-
-    async def get_modelmesh_payload(self, request_id: str, is_input: bool) -> Optional[PartialPayload]:
-        return await self._get_partial_payload(request_id, is_input)
-
-
-    async def delete_modelmesh_payload(self, request_id: str, is_input: bool):
+    async def delete_partial_payload(self, payload_id: str, is_input: bool):
         with self.connection_manager as (conn, cursor):
-            cursor.execute(f"DELETE FROM {self.partial_payload_table} WHERE payload_id=? AND is_input=?", (request_id, is_input))
+            cursor.execute(f"DELETE FROM {self.partial_payload_table} WHERE payload_id=? AND is_input=?", (payload_id, is_input))
             conn.commit()
 
 
     # === DATABASE CLEANUP =========================================================================
     @require_existing_dataset
-    def delete_dataset(self, dataset_name: str):
-        table_name = self._get_clean_table_name(dataset_name)
+    async def delete_dataset(self, dataset_name: str):
+        table_name = await self._get_clean_table_name(dataset_name)
+        logger.info(f"Deleting table={table_name} to delete dataset={dataset_name}.")
         with self.connection_manager as (conn, cursor):
             cursor.execute(f"DELETE FROM `{self.dataset_reference_table}` WHERE dataset_name=?", (dataset_name,))
             cursor.execute(f"DROP TABLE IF EXISTS `{table_name}`")
             conn.commit()
 
-    def delete_all_datasets(self):
-        for dataset_name in self.list_all_datasets():
+    async def delete_all_datasets(self):
+        for dataset_name in await self.list_all_datasets():
             logger.warning(f"Deleting dataset {dataset_name}")
-            self.delete_dataset(dataset_name)
+            await self.delete_dataset(dataset_name)
 
-    def reset_database(self):
+    async def reset_database(self):
         logger.warning(f"Fully resetting TrustyAI V2 database.")
-        self.delete_all_datasets()
+        await self.delete_all_datasets()
         with self.connection_manager as (conn, cursor):
             cursor.execute(f"DROP TABLE IF EXISTS `{self.dataset_reference_table}`")
             cursor.execute(f"DROP TABLE IF EXISTS `{self.partial_payload_table}`")

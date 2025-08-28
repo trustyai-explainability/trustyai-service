@@ -1,5 +1,5 @@
 import asyncio
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Union
 
 import numpy as np
 import os
@@ -7,6 +7,7 @@ import h5py
 import logging
 import pickle as pkl
 
+from src.endpoints.consumer import KServeInferenceRequest, KServeInferenceResponse
 from src.service.utils import list_utils
 from .storage_interface import StorageInterface
 from src.service.constants import PROTECTED_DATASET_SUFFIX, PARTIAL_PAYLOAD_DATASET_NAME
@@ -21,13 +22,7 @@ PARTIAL_INPUT_NAME = PROTECTED_DATASET_SUFFIX + PARTIAL_PAYLOAD_DATASET_NAME + "
 PARTIAL_OUTPUT_NAME = (
     PROTECTED_DATASET_SUFFIX + PARTIAL_PAYLOAD_DATASET_NAME + "_outputs"
 )
-MODELMESH_INPUT_NAME = (
-    f"{PROTECTED_DATASET_SUFFIX}modelmesh_partial_payloads_inputs"
-)
-MODELMESH_OUTPUT_NAME = (
-    f"{PROTECTED_DATASET_SUFFIX}modelmesh_partial_payloads_outputs"
-)
-
+MAX_VOID_TYPE_LENGTH=1024
 
 class H5PYContext:
     """Open the corresponding H5PY file for a dataset and manage its context`"""
@@ -111,10 +106,15 @@ class PVCStorage(StorageInterface):
                 return False
 
 
-    def list_all_datasets(self) -> List[str]:
-        """ List all datasets known by the dataset """
-        return [fname.replace(f"_{self.data_file}", "") for fname in os.listdir(self.data_directory) if self.data_file in fname]
+    def _list_all_datasets_sync(self) -> List[str]:
+        return [
+            fname.replace(f"_{self.data_file}", "")
+            for fname in os.listdir(self.data_directory)
+            if self.data_file in fname
+        ]
 
+    async def list_all_datasets(self) -> List[str]:
+        return await asyncio.to_thread(self._list_all_datasets_sync)
 
     async def dataset_rows(self, dataset_name: str) -> int:
         """Number of data rows in dataset, returns a FileNotFoundError if the dataset does not exist"""
@@ -155,6 +155,13 @@ class PVCStorage(StorageInterface):
         except MissingH5PYDataException:
             existing_shape = None
             dataset_exists = False
+
+        # standardize serialized rows to prevent metadata serialization failures
+        if isinstance(new_rows.dtype, np.dtypes.VoidDType):
+            if new_rows.dtype.itemsize > MAX_VOID_TYPE_LENGTH:
+                raise ValueError(f"The datatype of the array to be serialized is {new_rows.dtype}- the largest serializable void type is V{MAX_VOID_TYPE_LENGTH}")
+            new_rows = new_rows.astype(f"V{MAX_VOID_TYPE_LENGTH}") # this might cause bugs later
+
 
         if dataset_exists:  # if we've already got saved inferences for this model
             if existing_shape[1:] == inbound_shape[1:]:  # shapes match
@@ -203,11 +210,17 @@ class PVCStorage(StorageInterface):
                     max_shape = [None] + list(new_rows.shape)[
                         1:
                     ]  # to-do: tune this value?
+
+
+                    # if isinstance(new_rows.data, np.dtypes.VoidDType):
+                    #     new_rows = new_rows.astype("V400")
+
                     dataset = db.create_dataset(
                         allocated_dataset_name,
                         data=new_rows,
                         maxshape=max_shape,
                         chunks=True,
+                        dtype=new_rows.dtype  # use the dtype of the data
                     )
                     dataset.attrs[COLUMN_NAMES_ATTRIBUTE] = column_names
                     dataset.attrs[BYTES_ATTRIBUTE] = is_bytes
@@ -224,9 +237,16 @@ class PVCStorage(StorageInterface):
             or not isinstance(new_rows, np.ndarray)
             and list_utils.contains_non_numeric(new_rows)
         ):
+            serialized = list_utils.serialize_rows(new_rows, MAX_VOID_TYPE_LENGTH)
+            arr = np.array(serialized)
+            if arr.ndim == 1:
+                arr = arr.reshape(-1, 1)
             await self._write_raw_data(
-                dataset_name, list_utils.serialize_rows(new_rows), column_names
-            )
+                dataset_name,
+                arr,
+                column_names,
+                is_bytes=True,
+)
         else:
             await self._write_raw_data(dataset_name, np.array(new_rows), column_names)
 
@@ -247,20 +267,18 @@ class PVCStorage(StorageInterface):
                         f"Requested a data read from start_row={start_row}, but dataset "
                         f"only has {dataset.shape[0]} rows. An empty array will be returned."
                     )
-                return (
-                    dataset[start_row:end_row],
-                    dataset.attrs[COLUMN_NAMES_ATTRIBUTE],
-                )
+                return dataset[start_row:end_row]
+
 
     async def read_data(
-        self, dataset_name: str, start_row: int = None, n_rows: int = None
+        self, dataset_name: str, start_row: int = 0, n_rows: int = None
     ) -> (np.ndarray, List[str]):
         """Read data from a dataset, automatically deserializing any byte data"""
-        read, column_names = await self._read_raw_data(dataset_name, start_row, n_rows)
+        read  = await self._read_raw_data(dataset_name, start_row, n_rows)
         if len(read) and read[0].dtype.type in {np.bytes_, np.void}:
-            return list_utils.deserialize_rows(read), column_names
+            return list_utils.deserialize_rows(read)
         else:
-            return read, column_names
+            return read
 
     async def delete_dataset(self, dataset_name: str):
         """Delete dataset data, ignoring non-existent datasets"""
@@ -307,77 +325,34 @@ class PVCStorage(StorageInterface):
                 aliased_names = [name_mapping.get(name, name) for name in curr_names]
                 db[allocated_dataset_name].attrs[COLUMN_ALIAS_ATTRIBUTE] = aliased_names
 
-    async def persist_partial_payload(self, payload, is_input: bool):
-        """Save a partial payload to disk. Returns None if no matching id exists"""
 
-        # lock to prevent simultaneous read/writes
-        partial_dataset_name = PARTIAL_INPUT_NAME if is_input else PARTIAL_OUTPUT_NAME
-        async with self.get_lock(partial_dataset_name):
-            with H5PYContext(
-                self,
-                partial_dataset_name,
-                "a",
-            ) as db:
-                if partial_dataset_name not in db:
-                    dataset = db.create_dataset(
-                        partial_dataset_name, dtype="f", track_order=True
-                    )
-                else:
-                    dataset = db[partial_dataset_name]
-                dataset.attrs[payload.id] = np.void(pkl.dumps(payload))
-
-    async def persist_modelmesh_payload(
-        self, payload: PartialPayload, request_id: str, is_input: bool
-    ):
+    async def persist_partial_payload(self, payload: Union[PartialPayload, KServeInferenceRequest, KServeInferenceResponse],  payload_id: str,  is_input: bool):
         """
-        Persist a ModelMesh payload.
-
-        Args:
-            payload: The payload to persist
-            request_id: The unique identifier for the inference request
-            is_input: Whether this is an input payload (True) or output payload (False)
+        Save a KServe or ModelMesh payload to disk.
         """
-        dataset_name = MODELMESH_INPUT_NAME if is_input else MODELMESH_OUTPUT_NAME
-
+        dataset_name = PARTIAL_INPUT_NAME if is_input else PARTIAL_OUTPUT_NAME
         serialized_data = pkl.dumps(payload.model_dump())
+        is_modelmesh = isinstance(payload, PartialPayload)
 
         async with self.get_lock(dataset_name):
             try:
                 with H5PYContext(self, dataset_name, "a") as db:
                     if dataset_name not in db:
-                        dataset = db.create_dataset(dataset_name, data=np.array([0]))
-                        dataset.attrs["request_ids"] = []
-
-                    dataset = db[dataset_name]
-                    request_ids = list(dataset.attrs["request_ids"])
-
-                    dataset.attrs[request_id] = np.void(serialized_data)
-
-                    if request_id not in request_ids:
-                        request_ids.append(request_id)
-                        dataset.attrs["request_ids"] = request_ids
+                        dataset = db.create_dataset(dataset_name, dtype="f", track_order=True)
+                    else:
+                        dataset = db[dataset_name]
+                    dataset.attrs[payload_id] = np.void(serialized_data)
 
                 logger.debug(
-                    f"Stored ModelMesh {'input' if is_input else 'output'} payload for request ID: {request_id}"
+                    f"Stored {'ModelMesh' if is_modelmesh else 'KServe'} {'input' if is_input else 'output'} payload for request ID: {payload_id}"
                 )
             except Exception as e:
-                logger.error(f"Error storing ModelMesh payload: {str(e)}")
+                logger.error(f"Error storing {'ModelMesh' if is_modelmesh else 'KServe'} payload: {str(e)}")
                 raise
 
-    async def get_modelmesh_payload(
-        self, request_id: str, is_input: bool
-    ) -> Optional[PartialPayload]:
-        """
-        Retrieve a stored ModelMesh payload by request ID.
-
-        Args:
-            request_id: The unique identifier for the inference request
-            is_input: Whether to retrieve an input payload (True) or output payload (False)
-
-        Returns:
-            The retrieved payload, or None if not found
-        """
-        dataset_name = MODELMESH_INPUT_NAME if is_input else MODELMESH_OUTPUT_NAME
+    async def get_partial_payload(self, payload_id: str, is_input: bool, is_modelmesh: bool) -> Optional[
+        Union[PartialPayload, KServeInferenceRequest, KServeInferenceResponse]]:
+        dataset_name = PARTIAL_INPUT_NAME if is_input else PARTIAL_OUTPUT_NAME
 
         try:
             async with self.get_lock(dataset_name):
@@ -386,51 +361,38 @@ class PVCStorage(StorageInterface):
                         return None
 
                     dataset = db[dataset_name]
-                    if request_id not in dataset.attrs:
+                    if payload_id not in dataset.attrs:
                         return None
 
-                    serialized_data = dataset.attrs[request_id]
+                    serialized_data = dataset.attrs[payload_id]
 
                     try:
                         payload_dict = pkl.loads(serialized_data)
-                        return PartialPayload(**payload_dict)
+                        if is_modelmesh:
+                            return PartialPayload(**payload_dict)
+                        elif is_input: # kserve input
+                            return KServeInferenceRequest(**payload_dict)
+                        else: # kserve output
+                            return KServeInferenceResponse(**payload_dict)
                     except Exception as e:
                         logger.error(f"Error unpickling payload: {str(e)}")
                         return None
         except MissingH5PYDataException:
             return None
         except Exception as e:
-            logger.error(f"Error retrieving ModelMesh payload: {str(e)}")
+            logger.error(f"Error retrieving {'ModelMesh' if is_modelmesh else 'KServe'} payload: {str(e)}")
             return None
 
-    async def get_partial_payload(self, payload_id: str, is_input: bool):
-        """Looks up a partial payload by id. Returns None if no matching id exists"""
 
-        # lock to prevent simultaneous read/writes
-        partial_dataset_name = PARTIAL_INPUT_NAME if is_input else PARTIAL_OUTPUT_NAME
-        async with self.get_lock(partial_dataset_name):
-            try:
-                with H5PYContext(self, partial_dataset_name, "r") as db:
-                    if partial_dataset_name not in db:
-                        return None
-                    recovered_bytes = db[partial_dataset_name].attrs.get(payload_id)
-                    return (
-                        None
-                        if recovered_bytes is None
-                        else pkl.loads(recovered_bytes)
-                    )
-            except MissingH5PYDataException:
-                return None
-
-    async def delete_modelmesh_payload(self, request_id: str, is_input: bool):
+    async def delete_partial_payload(self, request_id: str, is_input: bool):
         """
-        Delete a stored ModelMesh payload.
+        Delete a stored partial payload.
 
         Args:
             request_id: The unique identifier for the inference request
             is_input: Whether to delete an input payload (True) or output payload (False)
         """
-        dataset_name = MODELMESH_INPUT_NAME if is_input else MODELMESH_OUTPUT_NAME
+        dataset_name = PARTIAL_INPUT_NAME if is_input else PARTIAL_OUTPUT_NAME
 
         try:
             async with self.get_lock(dataset_name):
@@ -439,24 +401,20 @@ class PVCStorage(StorageInterface):
                         return
 
                     dataset = db[dataset_name]
-                    request_ids = list(dataset.attrs["request_ids"])
 
-                    if request_id not in request_ids:
+                    if request_id not in dataset.attrs:
                         return
 
                     if request_id in dataset.attrs:
                         del dataset.attrs[request_id]
 
-                    request_ids.remove(request_id)
-                    dataset.attrs["request_ids"] = request_ids
-
-                    if not request_ids:
+                    if not dataset.attrs:
                         del db[dataset_name]
 
             logger.debug(
-                f"Deleted ModelMesh {'input' if is_input else 'output'} payload for request ID: {request_id}"
+                f"Deleted {'input' if is_input else 'output'} payload for request ID: {request_id}"
             )
         except MissingH5PYDataException:
             return
         except Exception as e:
-            logger.error(f"Error deleting ModelMesh payload: {str(e)}")
+            logger.error(f"Error deleting payload: {str(e)}")

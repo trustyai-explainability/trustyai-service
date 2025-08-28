@@ -1,4 +1,3 @@
-import asyncio
 import javaobj
 import logging
 import pandas as pd
@@ -174,13 +173,15 @@ class LegacyMariaDBStorageReader:
                                                                        output_df.columns.values)
 
                 if not input_has_migrated:
-                    await new_maria_storage.write_data(input_dataset, input_df.to_numpy(), list(input_df.columns.values))
-                    new_maria_storage.apply_name_mapping(input_dataset, input_mapping)
+                    await new_maria_storage.write_data(input_dataset, input_df.to_numpy(), input_df.columns.to_list())
+                    await new_maria_storage.apply_name_mapping(input_dataset, input_mapping)
                 if not output_has_migrated:
-                    await new_maria_storage.write_data(output_dataset, output_df.to_numpy(), list(output_df.columns.values))
-                    new_maria_storage.apply_name_mapping(output_dataset, output_mapping)
+                    await new_maria_storage.write_data(output_dataset, output_df.to_numpy(),
+                                                       output_df.columns.to_list())
+                    await new_maria_storage.apply_name_mapping(output_dataset, output_mapping)
                 if not metadata_has_migrated:
-                    await new_maria_storage.write_data(metadata_dataset, metadata_df.to_numpy(), list(metadata_df.columns.values))
+                    await new_maria_storage.write_data(metadata_dataset, metadata_df.to_numpy(),
+                                                       metadata_df.columns.to_list())
                 migrations.append(True)
                 logger.info(f"Dataset {dataset_name} successfully migrated.")
 
