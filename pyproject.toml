@@ -18,6 +18,7 @@ dependencies = [
     "h5py>=3.13.0,<4",
     "scikit-learn",
     "aif360",
+    "typing_inspect>=0.9",
 ]
 
 [project.optional-dependencies]

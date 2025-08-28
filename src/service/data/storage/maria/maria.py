@@ -67,14 +67,17 @@ class MariaDBStorage(StorageInterface):
             cursor.execute(f"CREATE TABLE IF NOT EXISTS `{self.partial_payload_table}` (payload_id varchar(255), is_input BOOLEAN, payload_data LONGBLOB)")
 
         if attempt_migration:
-            self._migrate_from_legacy_db()
+            # Schedule the migration to run asynchronously
+            import asyncio
+            loop = asyncio.get_event_loop()
+            loop.create_task(self._migrate_from_legacy_db())
 
     # === MIGRATORS ================================================================================
-    def _migrate_from_legacy_db(self):
+    async def _migrate_from_legacy_db(self):
         legacy_reader = LegacyMariaDBStorageReader(user=self.user, password=self.password, host=self.host, port=self.port, database=self.database)
         if legacy_reader.legacy_data_exists():
             logger.info("Legacy TrustyAI v1 data exists in database, checking if a migration is necessary.")
-            asyncio.run(legacy_reader.migrate_data(self))
+            await legacy_reader.migrate_data(self)
 
 
     # === INTERNAL HELPER FUNCTIONS ================================================================
@@ -115,14 +118,16 @@ class MariaDBStorage(StorageInterface):
         except mariadb.ProgrammingError:
             return False
 
-    def list_all_datasets(self):
-        """
-        List all available datasets in the database.
-        """
+    def _list_all_datasets_sync(self):
         with self.connection_manager as (conn, cursor):
             cursor.execute(f"SELECT dataset_name FROM `{self.dataset_reference_table}`")
-            results = [x[0] for x in cursor.fetchall()]
-        return results
+            return [x[0] for x in cursor.fetchall()]
+
+    async def list_all_datasets(self):
+        """
+        List all datasets in the database.
+        """
+        return await asyncio.to_thread(self._list_all_datasets_sync)
 
 
     @require_existing_dataset
@@ -379,7 +384,7 @@ class MariaDBStorage(StorageInterface):
             conn.commit()
 
     async def delete_all_datasets(self):
-        for dataset_name in self.list_all_datasets():
+        for dataset_name in await self.list_all_datasets():
             logger.warning(f"Deleting dataset {dataset_name}")
             await self.delete_dataset(dataset_name)
 
