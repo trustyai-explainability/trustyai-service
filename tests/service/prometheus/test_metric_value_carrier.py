@@ -6,7 +6,6 @@ from src.service.prometheus.metric_value_carrier import (
 
 
 class TestMetricValueCarrier:
-
     def test_single_value_construction(self):
         """Test creation with single float value."""
         carrier = MetricValueCarrier(0.5)
@@ -36,9 +35,7 @@ class TestMetricValueCarrier:
         assert carrier.is_single() is False
         assert carrier.get_named_values() == named_values
 
-        with pytest.raises(
-            UnsupportedOperationException, match="must be accessed via .get_value()"
-        ):
+        with pytest.raises(UnsupportedOperationException, match="must be accessed via .get_value()"):
             carrier.get_value()
 
     def test_empty_named_values(self):

@@ -20,7 +20,6 @@ logger: logging.Logger = logging.getLogger(__name__)
 
 
 class PrometheusScheduler:
-
     @staticmethod
     def get_service_config() -> Dict:
         """Get service configuration from environment variables."""
@@ -88,13 +87,9 @@ class PrometheusScheduler:
                 await self._process_model(model_id, throw_errors)
 
         except Exception as e:
-            self._handle_error(
-                e, "Unexpected error during metric calculation", throw_errors
-            )
+            self._handle_error(e, "Unexpected error during metric calculation", throw_errors)
 
-    async def register(
-        self, metric_name: str, id: uuid.UUID, request: BaseMetricRequest
-    ) -> None:
+    async def register(self, metric_name: str, id: uuid.UUID, request: BaseMetricRequest) -> None:
         """Register a metric request."""
         await RequestReconciler.reconcile(request, self.data_source)
         with self._requests_lock:
@@ -152,19 +147,13 @@ class PrometheusScheduler:
         try:
             return await self.data_source.get_verified_models()
         except (StorageReadException, MissingH5PYDataException) as e:
-            self._handle_error(
-                e, "Failed to retrieve verified models from data source", throw_errors
-            )
+            self._handle_error(e, "Failed to retrieve verified models from data source", throw_errors)
             return []
         except (OSError, IOError) as e:
-            self._handle_error(
-                e, "File system error while retrieving verified models", throw_errors
-            )
+            self._handle_error(e, "File system error while retrieving verified models", throw_errors)
             return []
 
-    def _publish_global_statistics(
-        self, verified_models: List[str], throw_errors: bool
-    ) -> None:
+    def _publish_global_statistics(self, verified_models: List[str], throw_errors: bool) -> None:
         """
         Publish global service statistics.
 
@@ -204,9 +193,7 @@ class PrometheusScheduler:
                 await self._process_model_requests(model_id, throw_errors)
 
         except Exception as e:
-            self._handle_error(
-                e, f"Unexpected error processing model={model_id}", throw_errors
-            )
+            self._handle_error(e, f"Unexpected error processing model={model_id}", throw_errors)
 
     async def _should_process_model(self, model_id: str, throw_errors: bool) -> bool:
         """
@@ -220,9 +207,7 @@ class PrometheusScheduler:
             True if model should be processed, False otherwise.
         """
         try:
-            has_recorded_inferences = await self.data_source.has_recorded_inferences(
-                model_id
-            )
+            has_recorded_inferences = await self.data_source.has_recorded_inferences(model_id)
 
             if not has_recorded_inferences:
                 self._log_skipped_model(model_id)
@@ -256,9 +241,7 @@ class PrometheusScheduler:
                 )
                 self.has_logged_skipped_request_message.add(model_id)
 
-    async def _publish_model_statistics(
-        self, model_id: str, throw_errors: bool
-    ) -> None:
+    async def _publish_model_statistics(self, model_id: str, throw_errors: bool) -> None:
         """
         Publish basic statistics for a model.
 
@@ -285,9 +268,7 @@ class PrometheusScheduler:
                 throw_errors,
             )
 
-    async def _get_observation_count(
-        self, model_id: str, throw_errors: bool
-    ) -> Optional[int]:
+    async def _get_observation_count(self, model_id: str, throw_errors: bool) -> Optional[int]:
         """
         Get the number of observations for a model.
 
@@ -301,19 +282,13 @@ class PrometheusScheduler:
         try:
             return await self.data_source.get_num_observations(model_id)
         except (StorageReadException, MissingH5PYDataException) as e:
-            self._handle_error(
-                e, f"Failed to get observation count for model={model_id}", throw_errors
-            )
+            self._handle_error(e, f"Failed to get observation count for model={model_id}", throw_errors)
             return None
         except KeyError as e:
-            self._handle_error(
-                e, f"Missing metadata/schema for model={model_id}", throw_errors
-            )
+            self._handle_error(e, f"Missing metadata/schema for model={model_id}", throw_errors)
             return None
         except (OSError, IOError) as e:
-            self._handle_error(
-                e, f"File system error for model={model_id}", throw_errors
-            )
+            self._handle_error(e, f"File system error for model={model_id}", throw_errors)
             return None
 
     async def _process_model_requests(self, model_id: str, throw_errors: bool) -> None:
@@ -327,9 +302,7 @@ class PrometheusScheduler:
         try:
             requests_for_model = self._get_requests_for_model(model_id)
             if not requests_for_model:
-                logger.warning(
-                    f"No requests found for model={model_id}, skipping calculations"
-                )
+                logger.warning(f"No requests found for model={model_id}, skipping calculations")
                 return
 
             max_batch_size = self._calculate_max_batch_size(requests_for_model)
@@ -338,9 +311,7 @@ class PrometheusScheduler:
                 return
 
             for req_id, request in requests_for_model:
-                await self._process_single_request(
-                    model_id, req_id, request, df, throw_errors
-                )
+                await self._process_single_request(model_id, req_id, request, df, throw_errors)
 
         except Exception as e:
             self._handle_error(
@@ -349,9 +320,7 @@ class PrometheusScheduler:
                 throw_errors,
             )
 
-    def _get_requests_for_model(
-        self, model_id: str
-    ) -> List[Tuple[uuid.UUID, BaseMetricRequest]]:
+    def _get_requests_for_model(self, model_id: str) -> List[Tuple[uuid.UUID, BaseMetricRequest]]:
         """Get all requests for a specific model."""
         return [
             (req_id, request)
@@ -359,18 +328,14 @@ class PrometheusScheduler:
             if request.model_id == model_id
         ]
 
-    def _calculate_max_batch_size(
-        self, requests: List[Tuple[uuid.UUID, BaseMetricRequest]]
-    ) -> int:
+    def _calculate_max_batch_size(self, requests: List[Tuple[uuid.UUID, BaseMetricRequest]]) -> int:
         """Calculate the maximum batch size needed for all requests."""
         return max(
             [request.batch_size for _, request in requests],
             default=self.service_config.get("batch_size", 100),
         )
 
-    async def _get_model_dataframe(
-        self, model_id: str, batch_size: int, throw_errors: bool
-    ) -> Optional[DataFrame]:
+    async def _get_model_dataframe(self, model_id: str, batch_size: int, throw_errors: bool) -> Optional[DataFrame]:
         """
         Get the dataframe for a model.
 
@@ -385,21 +350,15 @@ class PrometheusScheduler:
         try:
             df = await self.data_source.get_organic_dataframe(model_id, batch_size)
             if df.empty:
-                logger.warning(
-                    f"Empty dataframe returned for model={model_id}, skipping calculations"
-                )
+                logger.warning(f"Empty dataframe returned for model={model_id}, skipping calculations")
                 return None
             return df
 
         except DataframeCreateException as e:
-            self._handle_error(
-                e, f"Failed to create dataframe for model={model_id}", throw_errors
-            )
+            self._handle_error(e, f"Failed to create dataframe for model={model_id}", throw_errors)
             return None
         except DataError as e:
-            self._handle_error(
-                e, f"Pandas data error for model={model_id}", throw_errors
-            )
+            self._handle_error(e, f"Pandas data error for model={model_id}", throw_errors)
             return None
         except (MissingH5PYDataException, OSError, IOError) as e:
             self._handle_error(
@@ -432,9 +391,7 @@ class PrometheusScheduler:
             batch = df.tail(batch_size)
 
             metric_name = request.metric_name
-            value = self._calculate_metric(
-                model_id, metric_name, batch, request, throw_errors
-            )
+            value = self._calculate_metric(model_id, metric_name, batch, request, throw_errors)
             if value is None:
                 return
 

@@ -8,14 +8,18 @@ import pickle as pkl
 from typing import Optional, Dict, List
 
 from src.service.data.modelmesh_parser import PartialPayload
-from src.service.data.storage import LegacyMariaDBStorageReader
-from src.service.data.storage.maria.utils import MariaConnectionManager, require_existing_dataset, \
-    get_clean_column_names
+from src.service.data.storage.maria.legacy_maria_reader import LegacyMariaDBStorageReader
+from src.service.data.storage.maria.utils import (
+    MariaConnectionManager,
+    require_existing_dataset,
+    get_clean_column_names,
+)
 from src.service.data.storage.storage_interface import StorageInterface
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.StreamHandler())
 logger.setLevel(logging.INFO)
+
 
 class MariaDBStorage(StorageInterface):
     """
@@ -47,7 +51,6 @@ class MariaDBStorage(StorageInterface):
      - `column_n`, LONGBLOB: the pickled data for the final column of this row, e.g., arr[$row][n]
     """
 
-
     def __init__(self, user: str, password: str, host: str, port: int, database: str, attempt_migration=True):
         self.user = user
         self.password = password
@@ -58,22 +61,27 @@ class MariaDBStorage(StorageInterface):
 
         self.schema_prefix = "trustyai_v2"
         self.dataset_reference_table = f"{self.schema_prefix}_table_reference"
-        self.partial_payload_table = f"{self.schema_prefix}_partial_payloads" # stores partial payloads
+        self.partial_payload_table = f"{self.schema_prefix}_partial_payloads"  # stores partial payloads
 
         with self.connection_manager as (conn, cursor):
-            cursor.execute(f"CREATE TABLE IF NOT EXISTS `{self.dataset_reference_table}` (table_idx BIGINT AUTO_INCREMENT, dataset_name varchar(255), metadata JSON, n_rows BIGINT, PRIMARY KEY (table_idx))")
-            cursor.execute(f"CREATE TABLE IF NOT EXISTS `{self.partial_payload_table}` (payload_id varchar(255), is_input BOOLEAN, payload_data LONGBLOB)")
+            cursor.execute(
+                f"CREATE TABLE IF NOT EXISTS `{self.dataset_reference_table}` (table_idx BIGINT AUTO_INCREMENT, dataset_name varchar(255), metadata JSON, n_rows BIGINT, PRIMARY KEY (table_idx))"
+            )
+            cursor.execute(
+                f"CREATE TABLE IF NOT EXISTS `{self.partial_payload_table}` (payload_id varchar(255), is_input BOOLEAN, payload_data LONGBLOB)"
+            )
 
         if attempt_migration:
             self._migrate_from_legacy_db()
 
     # === MIGRATORS ================================================================================
     def _migrate_from_legacy_db(self):
-        legacy_reader = LegacyMariaDBStorageReader(user=self.user, password=self.password, host=self.host, port=self.port, database=self.database)
+        legacy_reader = LegacyMariaDBStorageReader(
+            user=self.user, password=self.password, host=self.host, port=self.port, database=self.database
+        )
         if legacy_reader.legacy_data_exists():
             logger.info("Legacy TrustyAI v1 data exists in database, checking if a migration is necessary.")
             asyncio.run(legacy_reader.migrate_data(self))
-
 
     # === INTERNAL HELPER FUNCTIONS ================================================================
     def _build_table_name(self, index):
@@ -86,9 +94,10 @@ class MariaDBStorage(StorageInterface):
         This avoids possible SQL injection from within the model names.
         """
         with self.connection_manager as (conn, cursor):
-            cursor.execute(f"SELECT table_idx FROM `{self.dataset_reference_table}` WHERE dataset_name=?", (dataset_name,))
+            cursor.execute(
+                f"SELECT table_idx FROM `{self.dataset_reference_table}` WHERE dataset_name=?", (dataset_name,)
+            )
             return self._build_table_name(cursor.fetchone()[0])
-
 
     @require_existing_dataset
     def _get_dataset_metadata(self, dataset_name: str) -> Optional[Dict]:
@@ -96,19 +105,22 @@ class MariaDBStorage(StorageInterface):
         Return the metadata field from a particular dataset within the dataset_reference_table.
         """
         with self.connection_manager as (conn, cursor):
-            cursor.execute(f"SELECT metadata FROM `{self.dataset_reference_table}` WHERE dataset_name=?", (dataset_name,))
+            cursor.execute(
+                f"SELECT metadata FROM `{self.dataset_reference_table}` WHERE dataset_name=?", (dataset_name,)
+            )
             metadata = cursor.fetchone()[0]
         return json.loads(metadata)
 
-
-    #=== DATASET QUERYING ==========================================================================
+    # === DATASET QUERYING ==========================================================================
     def dataset_exists(self, dataset_name: str) -> bool:
         """
         Check if a dataset exists within the TrustyAI model data.
         """
         try:
             with self.connection_manager as (conn, cursor):
-                cursor.execute(f"SELECT dataset_name FROM `{self.dataset_reference_table}` WHERE dataset_name=?", (dataset_name,))
+                cursor.execute(
+                    f"SELECT dataset_name FROM `{self.dataset_reference_table}` WHERE dataset_name=?", (dataset_name,)
+                )
                 return cursor.fetchone() is not None
         except mariadb.ProgrammingError:
             return False
@@ -122,7 +134,6 @@ class MariaDBStorage(StorageInterface):
             results = [x[0] for x in cursor.fetchall()]
         return results
 
-
     @require_existing_dataset
     def dataset_rows(self, dataset_name: str) -> int:
         """
@@ -132,7 +143,6 @@ class MariaDBStorage(StorageInterface):
         with self.connection_manager as (conn, cursor):
             cursor.execute(f"SELECT n_rows FROM `{self.dataset_reference_table}` WHERE dataset_name=?", (dataset_name,))
             return cursor.fetchone()[0]
-
 
     @require_existing_dataset
     def dataset_cols(self, dataset_name: str) -> int:
@@ -144,7 +154,6 @@ class MariaDBStorage(StorageInterface):
             cursor.execute(f"SHOW COLUMNS FROM {table_name}")
             return len(cursor.fetchall()) - 1
 
-
     @require_existing_dataset
     def dataset_shape(self, dataset_name: str) -> tuple[int]:
         """
@@ -154,8 +163,6 @@ class MariaDBStorage(StorageInterface):
         shape = self._get_dataset_metadata(dataset_name)["shape"]
         shape[0] = rows
         return tuple(shape)
-
-
 
     # === DATASET READING AND WRITING ===============================================================
     async def write_data(self, dataset_name: str, new_rows: np.ndarray, column_names: List[str]):
@@ -179,24 +186,32 @@ class MariaDBStorage(StorageInterface):
         # validate that the number of provided column names matches the shape of the provided array
         if new_rows.shape[1] != len(column_names):
             raise ValueError(
-                f"Shape mismatch: Number of provided column names ({len(column_names)}) does not match number of columns in provided array ({new_rows.shape[1]}).")
+                f"Shape mismatch: Number of provided column names ({len(column_names)}) does not match number of columns in provided array ({new_rows.shape[1]})."
+            )
 
         # if this is the first time we've seen this dataset, set up its tables inside the DB
         if not self.dataset_exists(dataset_name):
             with self.connection_manager as (conn, cursor):
-
                 # create an entry in `trustyai_v2_table_reference`
-                metadata = {"column_names": column_names, "aliased_names": column_names, "shape": (-1, *new_rows.shape[1:])}
-                cursor.execute(f"INSERT INTO `{self.dataset_reference_table}` (dataset_name, metadata, n_rows) VALUES (?, ?, 0)",
-                               (dataset_name, json.dumps(metadata)))
+                metadata = {
+                    "column_names": column_names,
+                    "aliased_names": column_names,
+                    "shape": (-1, *new_rows.shape[1:]),
+                }
+                cursor.execute(
+                    f"INSERT INTO `{self.dataset_reference_table}` (dataset_name, metadata, n_rows) VALUES (?, ?, 0)",
+                    (dataset_name, json.dumps(metadata)),
+                )
 
                 # retrieve the DB-provided table index, to get an SQL-safe name for the dataset storage table
-                cursor.execute(f"SELECT table_idx FROM `{self.dataset_reference_table}` WHERE dataset_name=?", (dataset_name,))
+                cursor.execute(
+                    f"SELECT table_idx FROM `{self.dataset_reference_table}` WHERE dataset_name=?", (dataset_name,)
+                )
                 table_name = self._build_table_name(cursor.fetchone()[0])
 
                 # create SQL-safe column names for the dataset storage table
                 cleaned_names = get_clean_column_names(column_names)
-                column_name_creator= ", ".join([f"{name} LONGBLOB" for name in cleaned_names])
+                column_name_creator = ", ".join([f"{name} LONGBLOB" for name in cleaned_names])
 
                 # create the dataset storage table for this dataset
                 logger.info(f"Creating table = {table_name} to store data from {dataset_name}.")
@@ -220,13 +235,17 @@ class MariaDBStorage(StorageInterface):
 
             # validate that the number of columns in the saved DB matched the provided column names
             if ncols != len(column_names):
-                raise ValueError(f"Shape mismatch: Number of provided column names ({len(column_names)})"
-                                 f" does not match number of columns in existing database ({ncols}).")
+                raise ValueError(
+                    f"Shape mismatch: Number of provided column names ({len(column_names)})"
+                    f" does not match number of columns in existing database ({ncols})."
+                )
 
             # validate that the shape of the inbound data is compatible with the stored data shape
             if list(stored_shape[1:]) != list(new_rows.shape[1:]):
-                raise ValueError(f"Shape mismatch: new_rows.shape[1:] ({new_rows.shape[1:]}) does not"
-                                 f" match shape of existing database ({stored_shape[1:]}).")
+                raise ValueError(
+                    f"Shape mismatch: new_rows.shape[1:] ({new_rows.shape[1:]}) does not"
+                    f" match shape of existing database ({stored_shape[1:]})."
+                )
 
         value_formatter = ",".join(["?" for _ in range(ncols)])
         with self.connection_manager as (conn, cursor):
@@ -242,17 +261,18 @@ class MariaDBStorage(StorageInterface):
 
             # place the byte_matrix into the DB
             cursor.executemany(
-                f"INSERT INTO `{table_name}` ({','.join(cleaned_names)}) VALUES ({value_formatter})",
-                    byte_matrix
+                f"INSERT INTO `{table_name}` ({','.join(cleaned_names)}) VALUES ({value_formatter})", byte_matrix
             )
             cursor.execute(
                 f"UPDATE `{self.dataset_reference_table}` SET n_rows=? WHERE dataset_name=?",
-                (nrows+len(new_rows), dataset_name, )
+                (
+                    nrows + len(new_rows),
+                    dataset_name,
+                ),
             )
 
             # commit as one single transaction
             conn.commit()
-
 
     @require_existing_dataset
     def read_data(self, dataset_name: str, start_row: int = 0, n_rows: int = None):
@@ -273,8 +293,7 @@ class MariaDBStorage(StorageInterface):
         with self.connection_manager as (conn, cursor):
             # grab matching data
             cursor.execute(
-                f"SELECT * FROM `{table_name}` WHERE row_idx>? AND row_idx<=?",
-                (start_row, start_row+n_rows)
+                f"SELECT * FROM `{table_name}` WHERE row_idx>? AND row_idx<=?", (start_row, start_row + n_rows)
             )
 
             # parse saved data back to Numpy array
@@ -291,9 +310,8 @@ class MariaDBStorage(StorageInterface):
                 arr.append(row_values)
 
             # if all objects have the same dtype, use it, else use object
-            arr = np.array(arr, dtype=dtypes.pop() if len(dtypes)==1 else object)
+            arr = np.array(arr, dtype=dtypes.pop() if len(dtypes) == 1 else object)
             return arr
-
 
     # === COLUMN NAMES =============================================================================
     @require_existing_dataset
@@ -328,10 +346,12 @@ class MariaDBStorage(StorageInterface):
             array_parameters = ", ".join(["?" for _ in aliased_names])
             cursor.execute(
                 f"UPDATE `{self.dataset_reference_table}` SET metadata=JSON_SET(metadata, '$.aliased_names', JSON_ARRAY({array_parameters})) WHERE dataset_name=?",
-                (*aliased_names, dataset_name,))
+                (
+                    *aliased_names,
+                    dataset_name,
+                ),
+            )
             conn.commit()
-
-
 
     # === PARTIAL PAYLOADS =========================================================================
     async def _persist_payload(self, payload, is_input: bool, request_id: Optional[str] = None):
@@ -342,41 +362,41 @@ class MariaDBStorage(StorageInterface):
 
             cursor.execute(
                 f"INSERT INTO `{self.partial_payload_table}` (payload_id, is_input, payload_data) VALUES (?, ?, ?)",
-                (request_id, is_input, pkl.dumps(payload)))
+                (request_id, is_input, pkl.dumps(payload)),
+            )
             conn.commit()
 
     async def _get_partial_payload(self, payload_id: str, is_input: bool):
         """Retrieve a partial payload from the database."""
         with self.connection_manager as (conn, cursor):
-            cursor.execute(f"SELECT payload_data FROM `{self.partial_payload_table}` WHERE payload_id=? AND is_input=?", (payload_id, is_input))
+            cursor.execute(
+                f"SELECT payload_data FROM `{self.partial_payload_table}` WHERE payload_id=? AND is_input=?",
+                (payload_id, is_input),
+            )
             result = cursor.fetchone()
         if result is None or len(result) == 0:
             return None
         payload_data = result[0]
         return pkl.loads(payload_data)
 
-
     async def persist_partial_payload(self, payload, is_input: bool):
         await self._persist_payload(payload, is_input)
-
 
     async def persist_modelmesh_payload(self, payload: PartialPayload, request_id: str, is_input: bool):
         await self._persist_payload(payload, is_input, request_id=request_id)
 
-
     async def get_partial_payload(self, payload_id: str, is_input: bool):
         return await self._get_partial_payload(payload_id, is_input)
-
 
     async def get_modelmesh_payload(self, request_id: str, is_input: bool) -> Optional[PartialPayload]:
         return await self._get_partial_payload(request_id, is_input)
 
-
     async def delete_modelmesh_payload(self, request_id: str, is_input: bool):
         with self.connection_manager as (conn, cursor):
-            cursor.execute(f"DELETE FROM {self.partial_payload_table} WHERE payload_id=? AND is_input=?", (request_id, is_input))
+            cursor.execute(
+                f"DELETE FROM {self.partial_payload_table} WHERE payload_id=? AND is_input=?", (request_id, is_input)
+            )
             conn.commit()
-
 
     # === DATABASE CLEANUP =========================================================================
     @require_existing_dataset
@@ -393,10 +413,9 @@ class MariaDBStorage(StorageInterface):
             self.delete_dataset(dataset_name)
 
     def reset_database(self):
-        logger.warning(f"Fully resetting TrustyAI V2 database.")
+        logger.warning("Fully resetting TrustyAI V2 database.")
         self.delete_all_datasets()
         with self.connection_manager as (conn, cursor):
             cursor.execute(f"DROP TABLE IF EXISTS `{self.dataset_reference_table}`")
             cursor.execute(f"DROP TABLE IF EXISTS `{self.partial_payload_table}`")
             conn.commit()
-

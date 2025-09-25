@@ -3,10 +3,8 @@ Tests for the ModelMesh protobuf parser.
 """
 
 import unittest
-from typing import Dict, Optional
 
 import pandas as pd
-from pydantic import BaseModel
 
 from src.service.data.modelmesh_parser import ModelMeshPayloadParser, PartialPayload
 from tests.service.data.test_utils import ModelMeshTestData
@@ -20,14 +18,10 @@ class TestModelMeshParser(unittest.TestCase):
     def test_standardize_model_id(self):
         """Test the standardize_model_id method."""
         model_id = "my-model__isvc-123456"
-        self.assertEqual(
-            ModelMeshPayloadParser.standardize_model_id(model_id), "my-model"
-        )
+        self.assertEqual(ModelMeshPayloadParser.standardize_model_id(model_id), "my-model")
 
         model_id = "my-model"
-        self.assertEqual(
-            ModelMeshPayloadParser.standardize_model_id(model_id), "my-model"
-        )
+        self.assertEqual(ModelMeshPayloadParser.standardize_model_id(model_id), "my-model")
 
         self.assertEqual(ModelMeshPayloadParser.standardize_model_id(None), None)
 
@@ -37,9 +31,7 @@ class TestModelMeshParser(unittest.TestCase):
         input_specs = [("input", 5, 10, "INT32", 0, None)]
         output_specs = [("output", 5, 1, "INT32", 0)]
 
-        input_payload_dict, _, _, _ = ModelMeshTestData.generate_test_payloads(
-            model_name, input_specs, output_specs
-        )
+        input_payload_dict, _, _, _ = ModelMeshTestData.generate_test_payloads(model_name, input_specs, output_specs)
 
         input_payload = PartialPayload(**input_payload_dict)
 
@@ -59,9 +51,7 @@ class TestModelMeshParser(unittest.TestCase):
         input_specs = [("input", 5, 10, "INT32", 0, None)]
         output_specs = [("output", 5, 1, "INT32", 0)]
 
-        _, output_payload_dict, _, _ = ModelMeshTestData.generate_test_payloads(
-            model_name, input_specs, output_specs
-        )
+        _, output_payload_dict, _, _ = ModelMeshTestData.generate_test_payloads(model_name, input_specs, output_specs)
 
         output_payload = PartialPayload(**output_payload_dict)
 
@@ -95,18 +85,14 @@ class TestModelMeshParser(unittest.TestCase):
         input_specs = [("input", 5, 10, "INT32", 0, bias_ignore_params)]
         output_specs = [("output", 5, 1, "INT32", 0)]
 
-        input_payload_dict, output_payload_dict, input_data, output_data = (
-            ModelMeshTestData.generate_test_payloads(
-                model_name, input_specs, output_specs
-            )
+        input_payload_dict, output_payload_dict, input_data, output_data = ModelMeshTestData.generate_test_payloads(
+            model_name, input_specs, output_specs
         )
 
         input_payload = PartialPayload(**input_payload_dict)
         output_payload = PartialPayload(**output_payload_dict)
 
-        df = ModelMeshPayloadParser.payloads_to_dataframe(
-            input_payload, output_payload, "test-id", model_name
-        )
+        df = ModelMeshPayloadParser.payloads_to_dataframe(input_payload, output_payload, "test-id", model_name)
 
         self.assertTrue(all(df["synthetic"]))
 
@@ -115,26 +101,18 @@ class TestModelMeshParser(unittest.TestCase):
         model_name = "test-model"
         n_rows, n_input_cols, n_output_cols = 5, 3, 2
 
-        input_specs = [
-            (f"input_{i}", n_rows, 1, datatype, i, None) for i in range(n_input_cols)
-        ]
+        input_specs = [(f"input_{i}", n_rows, 1, datatype, i, None) for i in range(n_input_cols)]
 
-        output_specs = [
-            (f"output_{i}", n_rows, 1, datatype, i) for i in range(n_output_cols)
-        ]
+        output_specs = [(f"output_{i}", n_rows, 1, datatype, i) for i in range(n_output_cols)]
 
-        input_payload_dict, output_payload_dict, input_data, output_data = (
-            ModelMeshTestData.generate_test_payloads(
-                model_name, input_specs, output_specs
-            )
+        input_payload_dict, output_payload_dict, input_data, output_data = ModelMeshTestData.generate_test_payloads(
+            model_name, input_specs, output_specs
         )
 
         input_payload = PartialPayload(**input_payload_dict)
         output_payload = PartialPayload(**output_payload_dict)
 
-        df = ModelMeshPayloadParser.payloads_to_dataframe(
-            input_payload, output_payload, "test-id", model_name
-        )
+        df = ModelMeshPayloadParser.payloads_to_dataframe(input_payload, output_payload, "test-id", model_name)
 
         self.assertIsInstance(df, pd.DataFrame)
         self.assertEqual(len(df), n_rows)

@@ -13,7 +13,9 @@ try:
     from lm_eval.__main__ import setup_parser as lm_eval_setup_parser
     from fastapi_utils.tasks import repeat_every
 except ImportError:
-    raise ImportError("The TrustyAI service was not built with LM-Evaluation-Harness support, use `pip install .[eval]`")
+    raise ImportError(
+        "The TrustyAI service was not built with LM-Evaluation-Harness support, use `pip install .[eval]`"
+    )
 
 from pydantic import BaseModel, create_model
 
@@ -26,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-API_PREFIX= "/eval/lm-evaluation-harness"
+API_PREFIX = "/eval/lm-evaluation-harness"
 
 
 # === STATIC API OBJECTS ===========================================================================
@@ -36,6 +38,7 @@ class JobStatus(Enum):
     COMPLETED = "Completed"
     QUEUED = "Queued"
     STOPPED = "Stopped"
+
 
 class LMEvalJobSummary(BaseModel):
     job_id: int
@@ -56,10 +59,8 @@ class AllLMEvalJobs(BaseModel):
 
 
 # === Dynamic API Object from LM-Eval CLI ==========================================================
-NON_CLI_ARGUMENTS = {
-    "env_vars": (Dict[str, str], {}),
-    "lm_eval_path": (str, f"{sys.executable} -m lm_eval")
-}
+NON_CLI_ARGUMENTS = {"env_vars": (Dict[str, str], {}), "lm_eval_path": (str, f"{sys.executable} -m lm_eval")}
+
 
 def get_lm_eval_arguments():
     """Grab all fields from an argparse specification into a dictionary"""
@@ -67,7 +68,7 @@ def get_lm_eval_arguments():
 
     args = {}
     for action in parser._positionals._actions:
-        arg = {"cli": action.option_strings[0], "argparse_type":action.__class__.__name__}
+        arg = {"cli": action.option_strings[0], "argparse_type": action.__class__.__name__}
         if action.__class__.__name__ == "_StoreTrueAction":
             arg["type"] = bool
             arg["default"] = False
@@ -86,9 +87,10 @@ def get_lm_eval_arguments():
 def get_model():
     """Build a Pydantic model from the lm-eval argparse arguments, adding in a few config variables of our own as well"""
     args = get_lm_eval_arguments()
-    model_args = {k:(v['type'],v['default']) for k,v in args.items()}
+    model_args = {k: (v["type"], v["default"]) for k, v in args.items()}
     model_args.update(NON_CLI_ARGUMENTS)
     return create_model("LMEvalRequest", **model_args)
+
 
 # Dynamically create the lm-eval-harness job request from the library's argparse
 LMEvalRequest = get_model()
@@ -147,8 +149,8 @@ def convert_to_cli(request: LMEvalRequest):
 
         cli_cmd += " "
         arg = args[field]
-        if arg['argparse_type'] in {"_StoreTrueAction", "_StoreFalseAction"}:
-            cli_cmd += args[field]['cli']
+        if arg["argparse_type"] in {"_StoreTrueAction", "_StoreFalseAction"}:
+            cli_cmd += args[field]["cli"]
         else:
             field_value = getattr(request, field)
             field_value = shlex.quote(field_value) if isinstance(field_value, str) else field_value
@@ -216,10 +218,7 @@ def _launch_job(job: LMEvalJob):
     os.set_blocking(p.stderr.fileno(), False)
 
     # register the subprocess in the global registry
-    job_registry[job.job_id].mark_launch(
-        process=p,
-        start_time=datetime.datetime.now(datetime.timezone.utc).isoformat()
-    )
+    job_registry[job.job_id].mark_launch(process=p, start_time=datetime.datetime.now(datetime.timezone.utc).isoformat())
 
 
 # === ROUTER =======================================================================================
@@ -244,11 +243,7 @@ def lm_eval_job(request: LMEvalRequest):
 
     # store job
     job_id = _generate_job_id()
-    queued_job = LMEvalJob(
-        job_id=job_id,
-        request=request,
-        argument=cli_cmd
-    )
+    queued_job = LMEvalJob(job_id=job_id, request=request, argument=cli_cmd)
     job_queue.put(job_id)
     job_registry[job_id] = queued_job
 
@@ -256,7 +251,7 @@ def lm_eval_job(request: LMEvalRequest):
 
 
 # === METADATA =====================================================================================
-@router.get(API_PREFIX+"/jobs", summary="List all running jobs")
+@router.get(API_PREFIX + "/jobs", summary="List all running jobs")
 def list_running_lm_eval_jobs(include_finished: bool = True) -> AllLMEvalJobs:
     """Provide a list of all lm-evaluation-harness jobs with attached summary information"""
 
@@ -271,7 +266,7 @@ def list_running_lm_eval_jobs(include_finished: bool = True) -> AllLMEvalJobs:
     return AllLMEvalJobs(jobs=jobs)
 
 
-@router.get(API_PREFIX+"/job/{job_id}", summary="Get information about a specific job")
+@router.get(API_PREFIX + "/job/{job_id}", summary="Get information about a specific job")
 def check_lm_eval_job(job_id: int) -> LMEvalJobDetail:
     """Get detailed report of an lm-evaluation-harness job by ID"""
 
@@ -301,12 +296,12 @@ def check_lm_eval_job(job_id: int) -> LMEvalJobDetail:
         exit_code=status_code,
         inference_progress_pct=job.progress,
         stdout=job.cumulative_out,
-        stderr=job.cumulative_err
+        stderr=job.cumulative_err,
     )
 
 
 # === DELETE DATA ==================================================================================
-@router.delete(API_PREFIX+"/job/{id}", summary="Delete an lm-evaluation-harness job's data from the server.")
+@router.delete(API_PREFIX + "/job/{id}", summary="Delete an lm-evaluation-harness job's data from the server.")
 def delete_lm_eval_job(job_id: int):
     """Delete an lm-evaluation-harness job's data from the server by ID, terminating the job if it's still running"""
     if job_id not in job_registry:
@@ -317,7 +312,7 @@ def delete_lm_eval_job(job_id: int):
     return {"status": "success", "message": f"Job {job_id} deleted successfully."}
 
 
-@router.delete(API_PREFIX+"/jobs", summary="Delete data from all lm-evaluation-harness jobs from the server.")
+@router.delete(API_PREFIX + "/jobs", summary="Delete data from all lm-evaluation-harness jobs from the server.")
 def delete_all_lm_eval_job():
     """Delete data from all lm-evaluation-harness job's data from the server, terminating any job that its still running"""
 
@@ -330,7 +325,7 @@ def delete_all_lm_eval_job():
 
 
 # === STOP JOBS ====================================================================================
-@router.get(API_PREFIX+"/job/{job_id}/dequeue", summary="Stop a running lm-evaluation-harness job.")
+@router.get(API_PREFIX + "/job/{job_id}/dequeue", summary="Stop a running lm-evaluation-harness job.")
 def stop_lm_eval_job(job_id: int):
     """Stop an lm-evaluation-harness job by ID"""
 
@@ -350,7 +345,7 @@ def stop_lm_eval_job(job_id: int):
             return {"status": "success", "message": f"Job {job_id} has already completed."}
 
 
-@router.get(API_PREFIX+"/jobs/dequeue", summary="Stop all running lm-evaluation-harness jobs.")
+@router.get(API_PREFIX + "/jobs/dequeue", summary="Stop all running lm-evaluation-harness jobs.")
 def stop_all_lm_eval_job():
     """Stop all lm-evaluation-harness jobs"""
 

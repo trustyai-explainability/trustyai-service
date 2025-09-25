@@ -42,9 +42,7 @@ class PrometheusPublisher:
             if id in self.values:
                 del self.values[id]
 
-    def _create_or_update_gauge(
-        self, name: str, tags: Dict[str, str], id: uuid.UUID
-    ) -> None:
+    def _create_or_update_gauge(self, name: str, tags: Dict[str, str], id: uuid.UUID) -> None:
         with self._gauges_lock:
             # We need to track gauges because prometheus_client doesn't provide
             # a way to retrieve an existing gauge by name from the registry
@@ -127,13 +125,9 @@ class PrometheusPublisher:
             if value is not None:
                 # gauge(model_name, id, request, value)
                 self._set_value(id, value)
-                tags = self._generate_tags(
-                    model_name=model_name, id=id, request=request
-                )
+                tags = self._generate_tags(model_name=model_name, id=id, request=request)
                 self._create_or_update_gauge(name=full_metric_name, tags=tags, id=id)
-                logger.debug(
-                    f"Scheduled request for {request.metric_name} id={id}, value={value}"
-                )
+                logger.debug(f"Scheduled request for {request.metric_name} id={id}, value={value}")
 
             elif named_values is not None:
                 # gauge(model_name, id, request, named_values)
@@ -142,16 +136,10 @@ class PrometheusPublisher:
                     new_id = self.generate_uuid(concat_string)
                     self._set_value(new_id, val)
 
-                    tags = self._generate_tags(
-                        model_name=model_name, id=id, request=request
-                    )
+                    tags = self._generate_tags(model_name=model_name, id=id, request=request)
                     tags["subcategory"] = key
-                    self._create_or_update_gauge(
-                        name=full_metric_name, tags=tags, id=new_id
-                    )
-                logger.debug(
-                    f"Scheduled request for {request.metric_name} id={id}, value={named_values}"
-                )
+                    self._create_or_update_gauge(name=full_metric_name, tags=tags, id=new_id)
+                logger.debug(f"Scheduled request for {request.metric_name} id={id}, value={named_values}")
             else:
                 raise ValueError("Either 'value' or 'named_values' must be provided")
 
@@ -166,9 +154,7 @@ class PrometheusPublisher:
             logger.debug(f"Scheduled request for {metric_name} id={id}, value={value}")
 
         else:
-            raise ValueError(
-                "Either 'request' or 'metric_name' & 'value' must be provided"
-            )
+            raise ValueError("Either 'request' or 'metric_name' & 'value' must be provided")
 
     def _get_full_metric_name(self, metric_name: str) -> str:
         if not PROMETHEUS_METRIC_PREFIX.strip():

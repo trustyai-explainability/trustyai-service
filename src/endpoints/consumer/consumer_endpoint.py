@@ -120,9 +120,7 @@ async def consume_inference_payload(
     """
     try:
         if not payload.modelid:
-            raise HTTPException(
-                status_code=400, detail="Payload requires 'modelid' field"
-            )
+            raise HTTPException(status_code=400, detail="Payload requires 'modelid' field")
 
         payload_id = payload.get_id()
         payload_kind = payload.get_kind()
@@ -146,65 +144,43 @@ async def consume_inference_payload(
         partial_payload = PartialPayload(data=payload.data)
 
         if payload_kind == "request":
-            logger.info(
-                f"Received partial input payload from model={model_id}, id={payload_id}"
-            )
+            logger.info(f"Received partial input payload from model={model_id}, id={payload_id}")
 
             try:
                 ModelMeshPayloadParser.parse_input_payload(partial_payload)
                 is_input = True
             except Exception as e:
                 logger.error(f"Invalid input payload: {str(e)}")
-                raise HTTPException(
-                    status_code=400, detail=f"Invalid input payload: {str(e)}"
-                ) from e
+                raise HTTPException(status_code=400, detail=f"Invalid input payload: {str(e)}") from e
 
             # Store the input payload
-            await storage_interface.persist_modelmesh_payload(
-                partial_payload, payload_id, is_input
-            )
+            await storage_interface.persist_modelmesh_payload(partial_payload, payload_id, is_input)
 
-            output_payload = await storage_interface.get_modelmesh_payload(
-                payload_id, False
-            )
+            output_payload = await storage_interface.get_modelmesh_payload(payload_id, False)
 
             if output_payload:
-                await reconcile_modelmesh_payloads(
-                    partial_payload, output_payload, payload_id, model_id
-                )
+                await reconcile_modelmesh_payloads(partial_payload, output_payload, payload_id, model_id)
 
         elif payload_kind == "response":
-            logger.info(
-                f"Received partial output payload from model={model_id}, id={payload_id}"
-            )
+            logger.info(f"Received partial output payload from model={model_id}, id={payload_id}")
 
             try:
                 ModelMeshPayloadParser.parse_output_payload(partial_payload)
                 is_input = False
             except Exception as e:
                 logger.error(f"Invalid output payload: {str(e)}")
-                raise HTTPException(
-                    status_code=400, detail=f"Invalid output payload: {str(e)}"
-                ) from e
+                raise HTTPException(status_code=400, detail=f"Invalid output payload: {str(e)}") from e
 
             # Store the output payload
-            await storage_interface.persist_modelmesh_payload(
-                partial_payload, payload_id, is_input
-            )
+            await storage_interface.persist_modelmesh_payload(partial_payload, payload_id, is_input)
 
-            input_payload = await storage_interface.get_modelmesh_payload(
-                payload_id, True
-            )
+            input_payload = await storage_interface.get_modelmesh_payload(payload_id, True)
 
             if input_payload:
                 # We have both input and output. Reconcile them
-                await reconcile_modelmesh_payloads(
-                    input_payload, partial_payload, payload_id, model_id
-                )
+                await reconcile_modelmesh_payloads(input_payload, partial_payload, payload_id, model_id)
         else:
-            raise HTTPException(
-                status_code=400, detail=f"Unsupported payload kind={payload_kind}"
-            )
+            raise HTTPException(status_code=400, detail=f"Unsupported payload kind={payload_kind}")
 
         return {
             "status": "success",
@@ -216,9 +192,7 @@ async def consume_inference_payload(
         raise
     except Exception as e:
         logger.error(f"Error processing payload: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Error processing payload: {str(e)}"
-        ) from e
+        raise HTTPException(status_code=500, detail=f"Error processing payload: {str(e)}") from e
 
 
 async def reconcile_modelmesh_payloads(
@@ -228,14 +202,10 @@ async def reconcile_modelmesh_payloads(
     model_id: str,
 ):
     """Reconcile the input and output ModelMesh payloads into dataset entries."""
-    df = ModelMeshPayloadParser.payloads_to_dataframe(
-        input_payload, output_payload, request_id, model_id
-    )
+    df = ModelMeshPayloadParser.payloads_to_dataframe(input_payload, output_payload, request_id, model_id)
 
     input_cols = [
-        col
-        for col in df.columns
-        if not col.startswith("output_") and col not in ["id", "model_id", "synthetic"]
+        col for col in df.columns if not col.startswith("output_") and col not in ["id", "model_id", "synthetic"]
     ]
     output_cols = [col for col in df.columns if col.startswith("output_")]
 
@@ -254,22 +224,16 @@ async def reconcile_modelmesh_payloads(
 
     await asyncio.gather(
         storage_interface.write_data(input_dataset, df[input_cols].values, input_cols),
-        storage_interface.write_data(
-            output_dataset, df[output_cols].values, output_cols
-        ),
+        storage_interface.write_data(output_dataset, df[output_cols].values, output_cols),
         storage_interface.write_data(metadata_dataset, metadata, metadata_cols),
     )
 
     shapes = await ModelData(model_id).shapes()
     logger.info(
-        f"Successfully reconciled ModelMesh inference {request_id}, "
-        f"consisting of {len(df):,} rows from {model_id}."
+        f"Successfully reconciled ModelMesh inference {request_id}, consisting of {len(df):,} rows from {model_id}."
     )
     logger.debug(
-        f"Current storage shapes for {model_id}: "
-        f"Inputs={shapes[0]}, "
-        f"Outputs={shapes[1]}, "
-        f"Metadata={shapes[2]}"
+        f"Current storage shapes for {model_id}: Inputs={shapes[0]}, Outputs={shapes[1]}, Metadata={shapes[2]}"
     )
 
     # Clean up
@@ -300,9 +264,7 @@ def reconcile_mismatching_row_count_error(payload_id, input_shape, output_shape)
 
 
 def process_payload(payload, get_data: Callable, enforced_first_shape: int = None):
-    if (
-        len(get_data(payload)) > 1
-    ):  # multi tensor case: we have ncols of data of shape [nrows]
+    if len(get_data(payload)) > 1:  # multi tensor case: we have ncols of data of shape [nrows]
         data = []
         shapes = set()
         shape_tuples = []
@@ -315,9 +277,7 @@ def process_payload(payload, get_data: Callable, enforced_first_shape: int = Non
         if len(shapes) == 1:
             row_count = list(shapes)[0][0]
             if enforced_first_shape is not None and row_count != enforced_first_shape:
-                reconcile_mismatching_row_count_error(
-                    payload.id, enforced_first_shape, row_count
-                )
+                reconcile_mismatching_row_count_error(payload.id, enforced_first_shape, row_count)
             if list_utils.contains_non_numeric(data):
                 return np.array(data, dtype="O").T, column_names
             else:
@@ -330,18 +290,11 @@ def process_payload(payload, get_data: Callable, enforced_first_shape: int = Non
             )
     else:  # single tensor case: we have one tensor of shape [nrows, d1, d2, ...., dN]
         kserve_data: KServeData = get_data(payload)[0]
-        if (
-            enforced_first_shape is not None
-            and kserve_data.shape[0] != enforced_first_shape
-        ):
-            reconcile_mismatching_row_count_error(
-                payload.id, enforced_first_shape, kserve_data.shape[0]
-            )
+        if enforced_first_shape is not None and kserve_data.shape[0] != enforced_first_shape:
+            reconcile_mismatching_row_count_error(payload.id, enforced_first_shape, kserve_data.shape[0])
 
         if len(kserve_data.shape) > 1:
-            column_names = [
-                "{}-{}".format(kserve_data.name, i) for i in range(kserve_data.shape[1])
-            ]
+            column_names = ["{}-{}".format(kserve_data.name, i) for i in range(kserve_data.shape[1])]
         else:
             column_names = [kserve_data.name]
         if list_utils.contains_non_numeric(kserve_data.data):
@@ -350,27 +303,18 @@ def process_payload(payload, get_data: Callable, enforced_first_shape: int = Non
             return np.array(kserve_data.data), column_names
 
 
-async def reconcile(
-    input_payload: KServeInferenceRequest, output_payload: KServeInferenceResponse
-):
+async def reconcile(input_payload: KServeInferenceRequest, output_payload: KServeInferenceResponse):
     input_array, input_names = process_payload(input_payload, lambda p: p.inputs)
-    output_array, output_names = process_payload(
-        output_payload, lambda p: p.outputs, input_array.shape[0]
-    )
+    output_array, output_names = process_payload(output_payload, lambda p: p.outputs, input_array.shape[0])
 
     metadata_names = ["iso_time", "unix_timestamp", "tags"]
-    if (
-        input_payload.parameters is not None
-        and input_payload.parameters.get(BIAS_IGNORE_PARAM, "false") == "true"
-    ):
+    if input_payload.parameters is not None and input_payload.parameters.get(BIAS_IGNORE_PARAM, "false") == "true":
         tags = [SYNTHETIC_TAG]
     else:
         tags = [UNLABELED_TAG]
     iso_time = datetime.isoformat(datetime.utcnow())
     unix_timestamp = time.time()
-    metadata = np.array(
-        [[iso_time, unix_timestamp, tags]] * len(input_array), dtype="O"
-    )
+    metadata = np.array([[iso_time, unix_timestamp, tags]] * len(input_array), dtype="O")
 
     input_dataset = output_payload.model_name + INPUT_SUFFIX
     output_dataset = output_payload.model_name + OUTPUT_SUFFIX
@@ -411,9 +355,7 @@ async def consume_cloud_event(
         else:
             logger.info(f"KServe Inference Input {payload.id} received.")
             # if a match is found, the payload is auto-deleted from data
-            partial_output = await storage_interface.get_partial_payload(
-                payload.id, is_input=False
-            )
+            partial_output = await storage_interface.get_partial_payload(payload.id, is_input=False)
             if partial_output is not None:
                 await reconcile(payload, partial_output)
             else:
@@ -432,12 +374,8 @@ async def consume_cloud_event(
             logger.error(msg)
             raise HTTPException(status_code=400, detail=msg)
         else:
-            logger.info(
-                f"KServe Inference Output {payload.id} received from model={payload.model_name}."
-            )
-            partial_input = await storage_interface.get_partial_payload(
-                payload.id, is_input=True
-            )
+            logger.info(f"KServe Inference Output {payload.id} received from model={payload.model_name}.")
+            partial_input = await storage_interface.get_partial_payload(payload.id, is_input=True)
             if partial_input is not None:
                 await reconcile(partial_input, payload)
             else:

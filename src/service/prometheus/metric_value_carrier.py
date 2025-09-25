@@ -9,9 +9,7 @@ class MetricValueCarrier:
     single: bool
 
     def __init__(self, value_or_named_values: Union[float, Dict[str, float]]) -> None:
-        if value_or_named_values is None or not isinstance(
-            value_or_named_values, (int, float, dict)
-        ):
+        if value_or_named_values is None or not isinstance(value_or_named_values, (int, float, dict)):
             raise ValueError("Value must be a number or dictionary")
 
         if isinstance(value_or_named_values, (int, float)):

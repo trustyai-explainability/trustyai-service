@@ -5,6 +5,7 @@ import mariadb
 
 def require_existing_dataset(func):
     """Annotation to assert that a given function requires a valid dataset name as the first non-self argument"""
+
     def validate_dataset_exists(*args, **kwargs):
         storage, dataset_name = args[0], args[1]
         if not storage.dataset_exists(dataset_name):
@@ -33,11 +34,7 @@ class MariaConnectionManager:
     def __enter__(self):
         try:
             self.conn = mariadb.connect(
-                user=self.user,
-                password=self.password,
-                host=self.host,
-                port=self.port,
-                database=self.database
+                user=self.user, password=self.password, host=self.host, port=self.port, database=self.database
             )
         except mariadb.Error as e:
             print(f"Error connecting to MariaDB Platform: {e}")

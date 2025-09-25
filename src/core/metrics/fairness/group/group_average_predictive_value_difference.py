@@ -6,10 +6,12 @@ from sklearn.base import ClassifierMixin
 
 from src.core.metrics.fairness.fairness_metrics_utils import filter_rows_by_inputs, calculate_confusion_matrix
 
+
 class GroupAveragePredictiveValueDifference:
     """
     Calculate group average predictive value difference.
     """
+
     @staticmethod
     def calculate_model(
         samples: np.ndarray,
@@ -17,7 +19,7 @@ class GroupAveragePredictiveValueDifference:
         privilege_columns: List[int],
         privilege_values: List[int],
         positive_class: int,
-        output_column: int
+        output_column: int,
     ) -> float:
         """
         Calculate group average predictive value difference for model outputs.
@@ -30,7 +32,9 @@ class GroupAveragePredictiveValueDifference:
         """
         outputs = model.predict(samples)
         truth = np.append(samples, outputs, axis=1)
-        return GroupAveragePredictiveValueDifference.calculate(samples, truth, privilege_columns, privilege_values, positive_class, output_column)
+        return GroupAveragePredictiveValueDifference.calculate(
+            samples, truth, privilege_columns, privilege_values, positive_class, output_column
+        )
 
     @staticmethod
     def calculate(test, truth, privilege_columns, privilege_values, positive_class, output_column):
@@ -44,6 +48,7 @@ class GroupAveragePredictiveValueDifference:
         :param output_column the column where the output is located
         return group average predictive value difference, between -1 and 1
         """
+
         def privilege_filter(row):
             return np.array_equal(row[privilege_columns], privilege_values)
 
@@ -53,11 +58,16 @@ class GroupAveragePredictiveValueDifference:
         truth_privileged = filter_rows_by_inputs(truth, privilege_filter)
         truth_unprivileged = filter_rows_by_inputs(truth, lambda row: not privilege_filter(row))
 
-        ucm = calculate_confusion_matrix(test_unprivileged[:, output_column], truth_unprivileged[:, output_column], positive_class)
-        pcm = calculate_confusion_matrix(test_privileged[:, output_column], truth_privileged[:, output_column], positive_class)
+        ucm = calculate_confusion_matrix(
+            test_unprivileged[:, output_column], truth_unprivileged[:, output_column], positive_class
+        )
+        pcm = calculate_confusion_matrix(
+            test_privileged[:, output_column], truth_privileged[:, output_column], positive_class
+        )
 
         utp, utn, ufp, ufn = ucm["tp"], ucm["tn"], ucm["fp"], ucm["fn"]
         ptp, ptn, pfp, pfn = pcm["tp"], pcm["tn"], pcm["fp"], pcm["fn"]
 
-        return (utp / (utp + ufp + 1e-10) - ptp / (ptp + pfp + 1e-10)) / 2 + \
-            (ufn / (ufn + utn + 1e-10) - pfn / (pfn + ptn + 1e-10)) / 2
+        return (utp / (utp + ufp + 1e-10) - ptp / (ptp + pfp + 1e-10)) / 2 + (
+            ufn / (ufn + utn + 1e-10) - pfn / (pfn + ptn + 1e-10)
+        ) / 2

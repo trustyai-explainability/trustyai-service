@@ -5,7 +5,6 @@ from src.service.payloads.service.schema import Schema
 
 
 class StorageMetadata:
-
     def __init__(
         self,
         model_id: str,
@@ -73,16 +72,12 @@ class StorageMetadata:
     def merge_input_schema(self, other_schema: Schema) -> None:
         """Merge another schema with the input schema."""
         if other_schema != self.input_schema:
-            raise InvalidSchemaException(
-                "Original schema and schema-to-merge are not compatible"
-            )
+            raise InvalidSchemaException("Original schema and schema-to-merge are not compatible")
 
     def merge_output_schema(self, other_schema: Schema) -> None:
         """Merge another schema with the output schema."""
         if other_schema != self.output_schema:
-            raise InvalidSchemaException(
-                "Original schema and schema-to-merge are not compatible"
-            )
+            raise InvalidSchemaException("Original schema and schema-to-merge are not compatible")
 
     def get_joint_name_aliases(self) -> Dict[str, str]:
         """Get combined name mappings from input and output schemas."""

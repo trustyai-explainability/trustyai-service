@@ -52,11 +52,8 @@ class StorageInterface(ABC):
     async def get_partial_payload(self, payload_id: str, is_input: bool):
         pass
 
-
     @abstractmethod
-    async def persist_modelmesh_payload(
-        self, payload: PartialPayload, request_id: str, is_input: bool
-    ):
+    async def persist_modelmesh_payload(self, payload: PartialPayload, request_id: str, is_input: bool):
         """
         Store a ModelMesh partial payload (either input or output) for later reconciliation.
 
@@ -68,9 +65,7 @@ class StorageInterface(ABC):
         pass
 
     @abstractmethod
-    async def get_modelmesh_payload(
-        self, request_id: str, is_input: bool
-    ) -> Optional[PartialPayload]:
+    async def get_modelmesh_payload(self, request_id: str, is_input: bool) -> Optional[PartialPayload]:
         """
         Retrieve a stored ModelMesh payload by request ID.
 

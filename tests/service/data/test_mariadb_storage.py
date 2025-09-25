@@ -4,13 +4,13 @@ Tests for MoariaDB storage
 
 import asyncio
 import unittest
-import os
 import numpy as np
 
 from src.service.data.storage.maria.maria import MariaDBStorage
 
 
 alphabet = "abcdefghijklmnopqrstuvwxz"
+
 
 class TestMariaDBStorage(unittest.TestCase):
     """
@@ -19,13 +19,8 @@ class TestMariaDBStorage(unittest.TestCase):
 
     def setUp(self):
         self.storage = MariaDBStorage(
-            "trustyai",
-            "trustyai",
-            "127.0.0.1",
-            3306,
-            "trustyai-database",
-            attempt_migration=False)
-
+            "trustyai", "trustyai", "127.0.0.1", 3306, "trustyai-database", attempt_migration=False
+        )
 
     def tearDown(self):
         self.storage.reset_database()
@@ -44,7 +39,7 @@ class TestMariaDBStorage(unittest.TestCase):
             original_dataset, _, dataset_name = await self._store_dataset(dataset_idx)
 
             start_idx = dataset_idx
-            n_rows =  dataset_idx * 2
+            n_rows = dataset_idx * 2
             retrieved_full_dataset = self.storage.read_data(dataset_name)
             retrieved_partial_dataset = self.storage.read_data(dataset_name, start_idx, n_rows)
 
@@ -52,10 +47,10 @@ class TestMariaDBStorage(unittest.TestCase):
             self.assertEqual(original_dataset.shape, self.storage.dataset_shape(dataset_name))
             self.assertEqual(original_dataset.shape[0], self.storage.dataset_rows(dataset_name))
             self.assertEqual(original_dataset.shape[1], self.storage.dataset_cols(dataset_name))
-            self.assertTrue(np.array_equal(retrieved_partial_dataset, original_dataset[start_idx:start_idx+n_rows]))
+            self.assertTrue(np.array_equal(retrieved_partial_dataset, original_dataset[start_idx : start_idx + n_rows]))
 
     async def _test_big_insert(self):
-        original_dataset, _, dataset_name = await self._store_dataset(0,  5000, 10)
+        original_dataset, _, dataset_name = await self._store_dataset(0, 5000, 10)
         retrieved_full_dataset = self.storage.read_data(dataset_name)
 
         self.assertTrue(np.array_equal(retrieved_full_dataset, original_dataset))
@@ -64,14 +59,13 @@ class TestMariaDBStorage(unittest.TestCase):
         self.assertEqual(original_dataset.shape[1], self.storage.dataset_cols(dataset_name))
 
     async def _test_single_row_insert(self):
-        original_dataset, _, dataset_name = await self._store_dataset(0,  1, 10)
+        original_dataset, _, dataset_name = await self._store_dataset(0, 1, 10)
         retrieved_full_dataset = self.storage.read_data(dataset_name, 0, 1)
 
         self.assertTrue(np.array_equal(retrieved_full_dataset, original_dataset))
         self.assertEqual(original_dataset.shape, self.storage.dataset_shape(dataset_name))
         self.assertEqual(original_dataset.shape[0], self.storage.dataset_rows(dataset_name))
         self.assertEqual(original_dataset.shape[1], self.storage.dataset_cols(dataset_name))
-
 
     async def _test_single_row_retrieval(self):
         original_dataset = np.arange(0, 10).reshape(1, 10)
@@ -94,32 +88,21 @@ class TestMariaDBStorage(unittest.TestCase):
             self.assertEqual(column_names, self.storage.get_original_column_names(dataset_name))
             self.assertEqual(expected_mapping, self.storage.get_aliased_column_names(dataset_name))
 
+
 def run_async_test(coro):
     """Helper function to run async tests."""
     loop = asyncio.new_event_loop()
     return loop.run_until_complete(coro)
 
 
-TestMariaDBStorage.test_retrieve_data = lambda self: run_async_test(
-    self._test_retrieve_data()
-)
-TestMariaDBStorage.test_name_mapping = lambda self: run_async_test(
-    self._test_name_mapping()
-)
+TestMariaDBStorage.test_retrieve_data = lambda self: run_async_test(self._test_retrieve_data())
+TestMariaDBStorage.test_name_mapping = lambda self: run_async_test(self._test_name_mapping())
 
-TestMariaDBStorage.test_big_insert = lambda self: run_async_test(
-    self._test_big_insert()
-)
+TestMariaDBStorage.test_big_insert = lambda self: run_async_test(self._test_big_insert())
 
-TestMariaDBStorage.test_single_row_insert = lambda self: run_async_test(
-    self._test_single_row_insert()
-)
+TestMariaDBStorage.test_single_row_insert = lambda self: run_async_test(self._test_single_row_insert())
 
-TestMariaDBStorage._test_single_row_retrieval = lambda self: run_async_test(
-    self._test_single_row_retrieval()
-)
-
-
+TestMariaDBStorage._test_single_row_retrieval = lambda self: run_async_test(self._test_single_row_retrieval())
 
 
 if __name__ == "__main__":

@@ -24,15 +24,11 @@ class RequestReconciler:
             request: The metric request to reconcile
             data_source: The data source to use for reconciliation
         """
-        storage_metadata: StorageMetadata = await data_source.get_metadata(
-            request.model_id
-        )
+        storage_metadata: StorageMetadata = await data_source.get_metadata(request.model_id)
         RequestReconciler.reconcile_with_metadata(request, storage_metadata)
 
     @staticmethod
-    def reconcile_with_metadata(
-        request: BaseMetricRequest, storage_metadata: StorageMetadata
-    ) -> None:
+    def reconcile_with_metadata(request: BaseMetricRequest, storage_metadata: StorageMetadata) -> None:
         """
         Reconcile a metric request with the provided storage metadata.
 
@@ -78,10 +74,7 @@ class RequestReconciler:
 
                         # Get the data type from input schema
                         field_data_type: DataType = (
-                            storage_metadata.get_input_schema()
-                            .get_name_mapped_items()
-                            .get(provided_name)
-                            .get_type()
+                            storage_metadata.get_input_schema().get_name_mapped_items().get(provided_name).get_type()
                         )
                         tvs = []
 
@@ -110,9 +103,7 @@ class RequestReconciler:
 
                         # Get the data type from output schema
                         field_data_type = (
-                            storage_metadata.get_output_schema()
-                            .get_name_mapped_items()[provided_name]
-                            .get_type()
+                            storage_metadata.get_output_schema().get_name_mapped_items()[provided_name].get_type()
                         )
                         tvs = []
 
