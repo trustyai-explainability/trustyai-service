@@ -8,7 +8,7 @@ import pickle as pkl
 from typing import Optional, Dict, List
 
 from src.service.data.modelmesh_parser import PartialPayload
-from src.service.data.storage import LegacyMariaDBStorageReader
+from src.service.data.storage.maria.legacy_maria_reader import LegacyMariaDBStorageReader
 from src.service.data.storage.maria.utils import (
     MariaConnectionManager,
     require_existing_dataset,
