@@ -37,47 +37,33 @@ class ModelMeshTestData:
         return param
 
     @staticmethod
-    def generate_data(
-        rows: int, cols: int, datatype: str, offset: int = 0
-    ) -> Tuple[np.ndarray, Any]:
+    def generate_data(rows: int, cols: int, datatype: str, offset: int = 0) -> Tuple[np.ndarray, Any]:
         """
         Create test data based on the datatype.
         Returns the NumPy array and the corresponding value for InferTensorContents.
         """
         if datatype == "BOOL":
-            data = np.array(
-                [(i + offset) % 2 == 0 for i in range(rows * cols)]
-            ).reshape(rows, cols)
+            data = np.array([(i + offset) % 2 == 0 for i in range(rows * cols)]).reshape(rows, cols)
             tensor_data = data.flatten().tolist()
             return data, tensor_data
         elif datatype in {"INT8", "INT16", "INT32"}:
-            data = np.array(
-                [i + offset for i in range(rows * cols)], dtype=np.int32
-            ).reshape(rows, cols)
+            data = np.array([i + offset for i in range(rows * cols)], dtype=np.int32).reshape(rows, cols)
             tensor_data = data.flatten().tolist()
             return data, tensor_data
         elif datatype == "INT64":
-            data = np.array(
-                [i + offset for i in range(rows * cols)], dtype=np.int64
-            ).reshape(rows, cols)
+            data = np.array([i + offset for i in range(rows * cols)], dtype=np.int64).reshape(rows, cols)
             tensor_data = data.flatten().tolist()
             return data, tensor_data
         elif datatype == "FP32":
-            data = np.array(
-                [float(i + offset) for i in range(rows * cols)], dtype=np.float32
-            ).reshape(rows, cols)
+            data = np.array([float(i + offset) for i in range(rows * cols)], dtype=np.float32).reshape(rows, cols)
             tensor_data = data.flatten().tolist()
             return data, tensor_data
         elif datatype == "FP64":
-            data = np.array(
-                [(i + offset) / 2.0 for i in range(rows * cols)], dtype=np.float64
-            ).reshape(rows, cols)
+            data = np.array([(i + offset) / 2.0 for i in range(rows * cols)], dtype=np.float64).reshape(rows, cols)
             tensor_data = data.flatten().tolist()
             return data, tensor_data
         elif datatype == "BYTES":
-            data = np.array(
-                [str(i + offset).encode() for i in range(rows * cols)]
-            ).reshape(rows, cols)
+            data = np.array([str(i + offset).encode() for i in range(rows * cols)]).reshape(rows, cols)
             tensor_data = data.flatten().tolist()
             return data, tensor_data
         else:
@@ -124,17 +110,11 @@ class ModelMeshTestData:
 
         if parameters:
             for key, value in parameters.items():
-                tensor.parameters[key].CopyFrom(
-                    ModelMeshTestData.create_infer_parameter(value)
-                )
+                tensor.parameters[key].CopyFrom(ModelMeshTestData.create_infer_parameter(value))
 
-        data_np, tensor_data = ModelMeshTestData.generate_data(
-            rows, cols, datatype, offset
-        )
+        data_np, tensor_data = ModelMeshTestData.generate_data(rows, cols, datatype, offset)
 
-        tensor.contents.CopyFrom(
-            ModelMeshTestData.create_tensor_contents(datatype, tensor_data)
-        )
+        tensor.contents.CopyFrom(ModelMeshTestData.create_tensor_contents(datatype, tensor_data))
 
         return tensor, data_np
 
@@ -148,13 +128,9 @@ class ModelMeshTestData:
         tensor.datatype = datatype
         tensor.shape.extend([rows, cols])
 
-        data_np, tensor_data = ModelMeshTestData.generate_data(
-            rows, cols, datatype, offset
-        )
+        data_np, tensor_data = ModelMeshTestData.generate_data(rows, cols, datatype, offset)
 
-        tensor.contents.CopyFrom(
-            ModelMeshTestData.create_tensor_contents(datatype, tensor_data)
-        )
+        tensor.contents.CopyFrom(ModelMeshTestData.create_tensor_contents(datatype, tensor_data))
 
         return tensor, data_np
 
@@ -174,9 +150,7 @@ class ModelMeshTestData:
 
         for tensor_spec in input_tensors:
             name, rows, cols, datatype, offset, params = tensor_spec
-            tensor, data_np = ModelMeshTestData.generate_input_tensor(
-                name, rows, cols, datatype, offset, params
-            )
+            tensor, data_np = ModelMeshTestData.generate_input_tensor(name, rows, cols, datatype, offset, params)
             request.inputs.append(tensor)
             data_dict[name] = data_np
 
@@ -201,9 +175,7 @@ class ModelMeshTestData:
 
         for tensor_spec in output_tensors:
             name, rows, cols, datatype, offset = tensor_spec
-            tensor, data_np = ModelMeshTestData.generate_output_tensor(
-                name, rows, cols, datatype, offset
-            )
+            tensor, data_np = ModelMeshTestData.generate_output_tensor(name, rows, cols, datatype, offset)
             response.outputs.append(tensor)
             data_dict[name] = data_np
 
@@ -212,17 +184,13 @@ class ModelMeshTestData:
     @staticmethod
     def generate_test_payloads(
         model_name: str,
-        input_tensor_specs: List[
-            Tuple[str, int, int, str, int, Optional[Dict[str, Any]]]
-        ],
+        input_tensor_specs: List[Tuple[str, int, int, str, int, Optional[Dict[str, Any]]]],
         output_tensor_specs: List[Tuple[str, int, int, str, int]],
     ) -> Tuple[dict, dict, dict, dict]:
         """
         Generate test input and output payloads for ModelMesh testing.
         """
-        request, input_data_dict = ModelMeshTestData.generate_model_infer_request(
-            model_name, input_tensor_specs
-        )
+        request, input_data_dict = ModelMeshTestData.generate_model_infer_request(model_name, input_tensor_specs)
 
         response, output_data_dict = ModelMeshTestData.generate_model_infer_response(
             f"{model_name}__isvc-123456",  # Add ModelMesh suffix

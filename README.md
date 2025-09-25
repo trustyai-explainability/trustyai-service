@@ -65,6 +65,24 @@ uv run uvicorn src.main --host 0.0.0.0 --port 8080
 podman run -t $IMAGE_NAME -p 8080:8080 .
 ```
 
+### 🔐 TLS Support
+The service supports TLS encryption and automatically detects certificates at startup:
+
+- **With TLS certificates**: Runs on port 4443 (HTTPS)
+- **Without TLS certificates**: Runs on port 8080 (HTTP)
+
+**Certificate locations** (configurable via environment variables):
+- Certificate: `/etc/tls/internal/tls.crt` (or `TLS_CERT_FILE`)
+- Private key: `/etc/tls/internal/tls.key` (or `TLS_KEY_FILE`)
+
+**Environment variables**:
+- `TLS_CERT_FILE`: Path to TLS certificate file
+- `TLS_KEY_FILE`: Path to TLS private key file
+- `SSL_PORT`: HTTPS port (default: 4443)
+- `HTTP_PORT`: HTTP port (default: 8080)
+
+The TLS implementation is fully compatible with the TrustyAI operator for seamless Kubernetes deployment.
+
 ## 🧪 Testing 🧪
 ### Running All Tests
 To run all tests in the project:

@@ -16,9 +16,7 @@ try:
         InferTensorContents,
     )
 except ImportError as e:
-    raise ImportError(
-        "Protobuf modules not found. Make sure to run the generate_protos.py script first."
-    ) from e
+    raise ImportError("Protobuf modules not found. Make sure to run the generate_protos.py script first.") from e
 
 
 class PartialPayload(BaseModel):
@@ -144,9 +142,7 @@ class ModelMeshPayloadParser:
             tensor_type = ModelMeshPayloadParser._get_tensor_type(tensor.datatype)
             shape = list(tensor.shape)
 
-            data = ModelMeshPayloadParser._get_tensor_data(
-                tensor, tensor_type, input_request
-            )
+            data = ModelMeshPayloadParser._get_tensor_data(tensor, tensor_type, input_request)
 
             if len(shape) > 1:
                 data = data.reshape(shape)
@@ -175,15 +171,9 @@ class ModelMeshPayloadParser:
         """Extract data from a tensor."""
         if ModelMeshPayloadParser._has_tensor_data(tensor):
             return ModelMeshPayloadParser._extract_tensor_data(tensor, tensor_type)
-        elif (
-            hasattr(request_obj, "raw_input_contents")
-            and request_obj.raw_input_contents
-        ):
+        elif hasattr(request_obj, "raw_input_contents") and request_obj.raw_input_contents:
             raise NotImplementedError("Raw input contents parsing not yet implemented")
-        elif (
-            hasattr(request_obj, "raw_output_contents")
-            and request_obj.raw_output_contents
-        ):
+        elif hasattr(request_obj, "raw_output_contents") and request_obj.raw_output_contents:
             raise NotImplementedError("Raw output contents parsing not yet implemented")
         else:
             raise ValueError(f"No data found in tensor {tensor.name}")
@@ -200,9 +190,7 @@ class ModelMeshPayloadParser:
             tensor_type = ModelMeshPayloadParser._get_tensor_type(tensor.datatype)
             shape = list(tensor.shape)
 
-            data = ModelMeshPayloadParser._get_tensor_data(
-                tensor, tensor_type, output_response
-            )
+            data = ModelMeshPayloadParser._get_tensor_data(tensor, tensor_type, output_response)
 
             if len(shape) > 1:
                 data = data.reshape(shape)
@@ -261,12 +249,8 @@ class ModelMeshPayloadParser:
         output_response = ModelMeshPayloadParser.parse_output_payload(output_payload)
 
         # Extract input and output tensor data
-        input_features, input_names, synthetic_flags = (
-            ModelMeshPayloadParser._extract_input_tensors(input_request)
-        )
-        output_features, output_names = ModelMeshPayloadParser._extract_output_tensors(
-            output_response
-        )
+        input_features, input_names, synthetic_flags = ModelMeshPayloadParser._extract_input_tensors(input_request)
+        output_features, output_names = ModelMeshPayloadParser._extract_output_tensors(output_response)
 
         # Determine batch size
         batch_size = 1

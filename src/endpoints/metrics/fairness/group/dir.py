@@ -81,12 +81,12 @@ def calculate_disparate_impact_ratio(
     privileged_group = df[df[protected_attr].isin(privileged)]
     unprivileged_group = df[df[protected_attr].isin(unprivileged)]
 
-    priv_outcome_ratio = len(
-        privileged_group[privileged_group[outcome_name].isin(favorable_outcome)]
-    ) / len(privileged_group)
-    unpriv_outcome_ratio = len(
-        unprivileged_group[unprivileged_group[outcome_name].isin(favorable_outcome)]
-    ) / len(unprivileged_group)
+    priv_outcome_ratio = len(privileged_group[privileged_group[outcome_name].isin(favorable_outcome)]) / len(
+        privileged_group
+    )
+    unpriv_outcome_ratio = len(unprivileged_group[unprivileged_group[outcome_name].isin(favorable_outcome)]) / len(
+        unprivileged_group
+    )
 
     if priv_outcome_ratio == 0:
         return 0.0
@@ -112,6 +112,7 @@ async def get_disparate_impact_ratio(request: GroupMetricRequest, delta: Optiona
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error calculating DIR: {str(e)}")
 
+
 class DIRRequest(BaseModel):
     modelid: str
     protected_attribute: str
@@ -121,9 +122,11 @@ class DIRRequest(BaseModel):
     favorable_outcome: List[str]
     batch_size: int
 
+
 # Dictionary to store DIR requests
 active_dir_requests = {}
-dir_metric_gauge = Gauge('dir_metric', 'Stored DIR Metric Values', ['request_id'])
+dir_metric_gauge = Gauge("dir_metric", "Stored DIR Metric Values", ["request_id"])
+
 
 def calculate_and_update_dir_metric(request_id: str):
     while request_id in active_dir_requests:
@@ -137,7 +140,7 @@ def calculate_and_update_dir_metric(request_id: str):
                 request.outcome_name,
                 request.favorable_outcome,
                 [request.privileged_attribute],
-                [request.unprivileged_attribute]
+                [request.unprivileged_attribute],
             )
             dir_metric_gauge.labels(request_id=request_id).set(dir_value)
             time.sleep(30)
@@ -145,12 +148,14 @@ def calculate_and_update_dir_metric(request_id: str):
             print(f"Error calculating DIR for request {request_id}: {e}")
             break
 
+
 @router.post("/metrics/group/fairness/dir/request")
 async def register_dir_request(request: DIRRequest, background_tasks: BackgroundTasks):
     request_id = str(uuid.uuid4())
     active_dir_requests[request_id] = request
     background_tasks.add_task(calculate_and_update_dir_metric, request_id)
     return {"request_id": request_id}
+
 
 @router.delete("/metrics/group/fairness/dir/request/{request_id}")
 async def delete_dir_request(request_id: str):
@@ -160,6 +165,7 @@ async def delete_dir_request(request_id: str):
         return {"detail": f"Request {request_id} has been deleted."}
     else:
         raise HTTPException(status_code=404, detail="Request ID not found.")
+
 
 # Disparate Impact Ratio
 @router.post("/metrics/group/fairness/dir")
@@ -192,9 +198,7 @@ async def interpret_dir_value(request: GroupDefinitionRequest):
         return {"interpretation": "The DIR value..."}
     except Exception as e:
         logger.error(f"Error interpreting DIR value: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Error interpreting value: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error interpreting value: {str(e)}")
 
 
 @router.post("/metrics/group/fairness/dir/request")
@@ -250,9 +254,7 @@ async def interpret_dir_value_deprecated(request: GroupDefinitionRequest):
 
 
 @router.post("/dir/request", deprecated=True)
-async def schedule_dir_deprecated(
-    request: GroupMetricRequest, background_tasks: BackgroundTasks
-):
+async def schedule_dir_deprecated(request: GroupMetricRequest, background_tasks: BackgroundTasks):
     """Schedule a recurring computation of DIR metric (deprecated).
 
     This endpoint is deprecated. Please use /metrics/group/fairness/dir/request instead.

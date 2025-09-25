@@ -8,9 +8,7 @@ class ReconcilableField:
     Base class for reconcilable fields that need type reconciliation.
     """
 
-    def __init__(
-        self, raw_value_node: Union[Dict[str, Any], List[Dict[str, Any]]]
-    ) -> None:
+    def __init__(self, raw_value_node: Union[Dict[str, Any], List[Dict[str, Any]]]) -> None:
         """
         Initialize with a raw value node or list of nodes.
 
@@ -51,9 +49,7 @@ class ReconcilableField:
         if not self.is_multiple_valued():
             return self.raw_value_node
         else:
-            raise ValueError(
-                "Cannot return single value of multiple-valued ReconcilableField"
-            )
+            raise ValueError("Cannot return single value of multiple-valued ReconcilableField")
 
     def is_multiple_valued(self) -> bool:
         """
