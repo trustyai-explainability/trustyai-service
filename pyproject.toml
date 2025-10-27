@@ -21,6 +21,8 @@ dependencies = [
     "aif360",
     "hypothesis>=6.136.2",
     "pytest>=8.4.1",
+    "nltk>=3.8",
+    "rouge-score>=0.1.2",
 ]
 
 [project.optional-dependencies]
