@@ -6,7 +6,7 @@ authors = [{ name = "Rui Vieira" }, { name = "TrustyAI team" }]
 requires-python = "~=3.11"
 readme = "README.md"
 dependencies = [
-    "fastapi>=0.115.9,<0.119",
+    "fastapi>=0.115.9,<0.120",
     "pandas>=2.2.3,<3",
     "prometheus-client>=0.21.1,<0.24",
     "pydantic>=2.4.2,<3",
