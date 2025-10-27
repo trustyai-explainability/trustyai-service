@@ -11,9 +11,7 @@ logger: logging.Logger = logging.getLogger(__name__)
 
 class MetricsDirectory:
     def __init__(self) -> None:
-        self.calculator_directory: Dict[
-            str, Callable[[DataFrame, BaseMetricRequest], MetricValueCarrier]
-        ] = {}
+        self.calculator_directory: Dict[str, Callable[[DataFrame, BaseMetricRequest], MetricValueCarrier]] = {}
 
     def register(
         self,
@@ -25,11 +23,8 @@ class MetricsDirectory:
             logger.debug(f"Registered calculator for metric: {name}")
         else:
             logger.warning(
-                f"Attempted to register duplicate calculator for metric: {name}. "
-                "Ignoring duplicate registration."
+                f"Attempted to register duplicate calculator for metric: {name}. Ignoring duplicate registration."
             )
 
-    def get_calculator(
-        self, name: str
-    ) -> Callable[[DataFrame, BaseMetricRequest], MetricValueCarrier]:
+    def get_calculator(self, name: str) -> Callable[[DataFrame, BaseMetricRequest], MetricValueCarrier]:
         return self.calculator_directory.get(name)

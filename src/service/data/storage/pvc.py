@@ -18,15 +18,9 @@ COLUMN_ALIAS_ATTRIBUTE = "column_aliases"
 BYTES_ATTRIBUTE = "is_bytes"
 
 PARTIAL_INPUT_NAME = PROTECTED_DATASET_SUFFIX + PARTIAL_PAYLOAD_DATASET_NAME + "_inputs"
-PARTIAL_OUTPUT_NAME = (
-    PROTECTED_DATASET_SUFFIX + PARTIAL_PAYLOAD_DATASET_NAME + "_outputs"
-)
-MODELMESH_INPUT_NAME = (
-    f"{PROTECTED_DATASET_SUFFIX}modelmesh_partial_payloads_inputs"
-)
-MODELMESH_OUTPUT_NAME = (
-    f"{PROTECTED_DATASET_SUFFIX}modelmesh_partial_payloads_outputs"
-)
+PARTIAL_OUTPUT_NAME = PROTECTED_DATASET_SUFFIX + PARTIAL_PAYLOAD_DATASET_NAME + "_outputs"
+MODELMESH_INPUT_NAME = f"{PROTECTED_DATASET_SUFFIX}modelmesh_partial_payloads_inputs"
+MODELMESH_OUTPUT_NAME = f"{PROTECTED_DATASET_SUFFIX}modelmesh_partial_payloads_outputs"
 
 
 class H5PYContext:
@@ -68,11 +62,7 @@ class PVCStorage(StorageInterface):
         # one_file_per_dataset=True minimizes the ramifications of file corruption
         # one_file_per_dataset=True also allows read/write concurrence between different datasets
         self.one_file_per_dataset = True
-        self.locks = {
-            fname: asyncio.Lock()
-            for fname in os.listdir(self.data_directory)
-            if self.data_file in fname
-        }
+        self.locks = {fname: asyncio.Lock() for fname in os.listdir(self.data_directory) if self.data_file in fname}
         self.global_lock = asyncio.Lock()
 
     def _get_filename(self, dataset_name):
@@ -110,11 +100,13 @@ class PVCStorage(StorageInterface):
             except MissingH5PYDataException:
                 return False
 
-
     def list_all_datasets(self) -> List[str]:
-        """ List all datasets known by the dataset """
-        return [fname.replace(f"_{self.data_file}", "") for fname in os.listdir(self.data_directory) if self.data_file in fname]
-
+        """List all datasets known by the dataset"""
+        return [
+            fname.replace(f"_{self.data_file}", "")
+            for fname in os.listdir(self.data_directory)
+            if self.data_file in fname
+        ]
 
     async def dataset_rows(self, dataset_name: str) -> int:
         """Number of data rows in dataset, returns a FileNotFoundError if the dataset does not exist"""
@@ -162,9 +154,7 @@ class PVCStorage(StorageInterface):
                     with H5PYContext(self, allocated_dataset_name, "a") as db:
                         dataset = db[allocated_dataset_name]
 
-                        if (
-                            dataset.attrs[BYTES_ATTRIBUTE] != is_bytes
-                        ):  # data storage paradigm mismatch
+                        if dataset.attrs[BYTES_ATTRIBUTE] != is_bytes:  # data storage paradigm mismatch
                             msg = f"Error when saving inference data for {allocated_dataset_name}: "
                             if dataset.attrs[BYTES_ATTRIBUTE]:
                                 msg += (
@@ -183,12 +173,8 @@ class PVCStorage(StorageInterface):
                         dataset.resize(existing_shape[0] + inbound_shape[0], axis=0)
                         dataset[existing_shape[0] :] = new_rows
             else:
-                existing_shape_str = ", ".join(
-                    [":"] + [str(x) for x in existing_shape[1:]]
-                )
-                inbound_shape_str = ", ".join(
-                    [":"] + [str(x) for x in inbound_shape[1:]]
-                )
+                existing_shape_str = ", ".join([":"] + [str(x) for x in existing_shape[1:]])
+                inbound_shape_str = ", ".join([":"] + [str(x) for x in inbound_shape[1:]])
 
                 raise ValueError(
                     f"Error when saving inference data for {allocated_dataset_name}: "
@@ -198,11 +184,8 @@ class PVCStorage(StorageInterface):
         else:  # first observation of inferences from this model
             async with self.get_lock(allocated_dataset_name):
                 with H5PYContext(self, allocated_dataset_name, "a") as db:
-
                     # create new dataset
-                    max_shape = [None] + list(new_rows.shape)[
-                        1:
-                    ]  # to-do: tune this value?
+                    max_shape = [None] + list(new_rows.shape)[1:]  # to-do: tune this value?
                     dataset = db.create_dataset(
                         allocated_dataset_name,
                         data=new_rows,
@@ -214,9 +197,7 @@ class PVCStorage(StorageInterface):
 
     async def write_data(self, dataset_name: str, new_rows, column_names: List[str]):
         """Write new data to a dataset, automatically serializing any non-numeric data"""
-        if isinstance(
-            new_rows, np.ndarray
-        ) and not list_utils.contains_non_numeric(new_rows):
+        if isinstance(new_rows, np.ndarray) and not list_utils.contains_non_numeric(new_rows):
             await self._write_raw_data(dataset_name, new_rows, column_names)
         elif (
             isinstance(new_rows, np.ndarray)
@@ -224,9 +205,7 @@ class PVCStorage(StorageInterface):
             or not isinstance(new_rows, np.ndarray)
             and list_utils.contains_non_numeric(new_rows)
         ):
-            await self._write_raw_data(
-                dataset_name, list_utils.serialize_rows(new_rows), column_names
-            )
+            await self._write_raw_data(dataset_name, list_utils.serialize_rows(new_rows), column_names)
         else:
             await self._write_raw_data(dataset_name, np.array(new_rows), column_names)
 
@@ -252,9 +231,7 @@ class PVCStorage(StorageInterface):
                     dataset.attrs[COLUMN_NAMES_ATTRIBUTE],
                 )
 
-    async def read_data(
-        self, dataset_name: str, start_row: int = None, n_rows: int = None
-    ) -> (np.ndarray, List[str]):
+    async def read_data(self, dataset_name: str, start_row: int = None, n_rows: int = None) -> (np.ndarray, List[str]):
         """Read data from a dataset, automatically deserializing any byte data"""
         read, column_names = await self._read_raw_data(dataset_name, start_row, n_rows)
         if len(read) and read[0].dtype.type in {np.bytes_, np.void}:
@@ -319,16 +296,12 @@ class PVCStorage(StorageInterface):
                 "a",
             ) as db:
                 if partial_dataset_name not in db:
-                    dataset = db.create_dataset(
-                        partial_dataset_name, dtype="f", track_order=True
-                    )
+                    dataset = db.create_dataset(partial_dataset_name, dtype="f", track_order=True)
                 else:
                     dataset = db[partial_dataset_name]
                 dataset.attrs[payload.id] = np.void(pkl.dumps(payload))
 
-    async def persist_modelmesh_payload(
-        self, payload: PartialPayload, request_id: str, is_input: bool
-    ):
+    async def persist_modelmesh_payload(self, payload: PartialPayload, request_id: str, is_input: bool):
         """
         Persist a ModelMesh payload.
 
@@ -364,9 +337,7 @@ class PVCStorage(StorageInterface):
                 logger.error(f"Error storing ModelMesh payload: {str(e)}")
                 raise
 
-    async def get_modelmesh_payload(
-        self, request_id: str, is_input: bool
-    ) -> Optional[PartialPayload]:
+    async def get_modelmesh_payload(self, request_id: str, is_input: bool) -> Optional[PartialPayload]:
         """
         Retrieve a stored ModelMesh payload by request ID.
 
@@ -414,11 +385,7 @@ class PVCStorage(StorageInterface):
                     if partial_dataset_name not in db:
                         return None
                     recovered_bytes = db[partial_dataset_name].attrs.get(payload_id)
-                    return (
-                        None
-                        if recovered_bytes is None
-                        else pkl.loads(recovered_bytes)
-                    )
+                    return None if recovered_bytes is None else pkl.loads(recovered_bytes)
             except MissingH5PYDataException:
                 return None
 
@@ -453,9 +420,7 @@ class PVCStorage(StorageInterface):
                     if not request_ids:
                         del db[dataset_name]
 
-            logger.debug(
-                f"Deleted ModelMesh {'input' if is_input else 'output'} payload for request ID: {request_id}"
-            )
+            logger.debug(f"Deleted ModelMesh {'input' if is_input else 'output'} payload for request ID: {request_id}")
         except MissingH5PYDataException:
             return
         except Exception as e:

@@ -26,12 +26,8 @@ class TestDataSource:
 
         # Mock async methods
         mock.row_counts = AsyncMock(return_value=(100, 100, 100))
-        mock.column_names = AsyncMock(
-            return_value=(["feature1", "feature2"], ["target"], ["metadata1"])
-        )
-        mock.data = AsyncMock(
-            return_value=([[1, 2], [3, 4]], [[0], [1]], [["meta1"], ["meta2"]])
-        )
+        mock.column_names = AsyncMock(return_value=(["feature1", "feature2"], ["target"], ["metadata1"]))
+        mock.data = AsyncMock(return_value=([[1, 2], [3, 4]], [[0], [1]], [["meta1"], ["meta2"]]))
 
         return mock
 
@@ -147,9 +143,7 @@ class TestDataSource:
 
     @patch("src.service.data.datasources.data_source.ModelData")
     @pytest.mark.asyncio
-    async def test_get_dataframe_handles_exceptions(
-        self, mock_model_data_class: Mock, data_source: DataSource
-    ) -> None:
+    async def test_get_dataframe_handles_exceptions(self, mock_model_data_class: Mock, data_source: DataSource) -> None:
         """Test that dataframe creation exceptions are handled properly."""
 
         mock_model_data = Mock()
@@ -216,24 +210,18 @@ class TestDataSource:
 
     @patch("src.service.data.datasources.data_source.ModelData")
     @pytest.mark.asyncio
-    async def test_get_metadata_handles_exceptions(
-        self, mock_model_data_class: Mock, data_source: DataSource
-    ) -> None:
+    async def test_get_metadata_handles_exceptions(self, mock_model_data_class: Mock, data_source: DataSource) -> None:
         """Test metadata retrieval exception handling."""
 
         mock_model_data = Mock()
         mock_model_data.row_counts.side_effect = Exception("Test error")
         mock_model_data_class.return_value = mock_model_data
 
-        with pytest.raises(
-            StorageReadException, match="Error getting metadata for model=test_model"
-        ):
+        with pytest.raises(StorageReadException, match="Error getting metadata for model=test_model"):
             await data_source.get_metadata("test_model")
 
     @pytest.mark.asyncio
-    async def test_has_metadata_true(
-        self, data_source: DataSource, sample_metadata: StorageMetadata
-    ) -> None:
+    async def test_has_metadata_true(self, data_source: DataSource, sample_metadata: StorageMetadata) -> None:
         """Test has_metadata returns True when metadata exists."""
 
         data_source.metadata_cache["test_model"] = sample_metadata
@@ -242,9 +230,7 @@ class TestDataSource:
 
     @patch("src.service.data.datasources.data_source.ModelData")
     @pytest.mark.asyncio
-    async def test_has_metadata_false(
-        self, mock_model_data_class: Mock, data_source: DataSource
-    ) -> None:
+    async def test_has_metadata_false(self, mock_model_data_class: Mock, data_source: DataSource) -> None:
         """Test has_metadata returns False when metadata doesn't exist."""
 
         mock_model_data = Mock()
@@ -254,9 +240,7 @@ class TestDataSource:
         assert await data_source.has_metadata("nonexistent_model") is False
 
     @pytest.mark.asyncio
-    async def test_get_num_observations(
-        self, data_source: DataSource, sample_metadata: StorageMetadata
-    ) -> None:
+    async def test_get_num_observations(self, data_source: DataSource, sample_metadata: StorageMetadata) -> None:
         """Test getting number of observations."""
 
         data_source.metadata_cache["test_model"] = sample_metadata
@@ -265,9 +249,7 @@ class TestDataSource:
         assert count == 100
 
     @pytest.mark.asyncio
-    async def test_has_recorded_inferences(
-        self, data_source: DataSource, sample_metadata: StorageMetadata
-    ) -> None:
+    async def test_has_recorded_inferences(self, data_source: DataSource, sample_metadata: StorageMetadata) -> None:
         """Test checking for recorded inferences."""
 
         data_source.metadata_cache["test_model"] = sample_metadata
@@ -314,9 +296,7 @@ class TestDataSource:
         assert name == "test_model-ground-truths"
 
     @pytest.mark.asyncio
-    async def test_has_ground_truths(
-        self, data_source: DataSource, sample_metadata: StorageMetadata
-    ) -> None:
+    async def test_has_ground_truths(self, data_source: DataSource, sample_metadata: StorageMetadata) -> None:
         """Test checking for ground truths."""
 
         gt_name = DataSource.get_ground_truth_name("test_model")
@@ -363,9 +343,7 @@ class TestDataSource:
         # Should add model to known models
         assert "test_model" in data_source.known_models
 
-    def test_save_metadata(
-        self, data_source: DataSource, sample_metadata: StorageMetadata
-    ) -> None:
+    def test_save_metadata(self, data_source: DataSource, sample_metadata: StorageMetadata) -> None:
         """Test saving metadata."""
 
         data_source.save_metadata(sample_metadata, "test_model")

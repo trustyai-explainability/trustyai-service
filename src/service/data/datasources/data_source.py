@@ -63,9 +63,7 @@ class DataSource:
         batch_size = int(os.environ.get("SERVICE_BATCH_SIZE", "100"))
         return await self.get_dataframe_with_batch_size(model_id, batch_size)
 
-    async def get_dataframe_with_batch_size(
-        self, model_id: str, batch_size: int
-    ) -> pd.DataFrame:
+    async def get_dataframe_with_batch_size(self, model_id: str, batch_size: int) -> pd.DataFrame:
         """
         Get a dataframe consisting of the last `batch_size` rows of data from the corresponding model.
 
@@ -89,9 +87,7 @@ class DataSource:
             start_row = max(0, available_rows - batch_size)
             n_rows = min(batch_size, available_rows)
 
-            input_data, output_data, metadata = await model_data.data(
-                start_row=start_row, n_rows=n_rows
-            )
+            input_data, output_data, metadata = await model_data.data(start_row=start_row, n_rows=n_rows)
 
             input_names, output_names, metadata_names = await model_data.column_names()
 
@@ -117,13 +113,9 @@ class DataSource:
 
         except Exception as e:
             logger.error(f"Error creating dataframe for model={model_id}: {str(e)}")
-            raise DataframeCreateException(
-                f"Error creating dataframe for model={model_id}: {str(e)}"
-            )
+            raise DataframeCreateException(f"Error creating dataframe for model={model_id}: {str(e)}")
 
-    async def get_organic_dataframe(
-        self, model_id: str, batch_size: int
-    ) -> pd.DataFrame:
+    async def get_organic_dataframe(self, model_id: str, batch_size: int) -> pd.DataFrame:
         """
         Get a dataframe with only organic data (not synthetic).
 
@@ -193,9 +185,7 @@ class DataSource:
 
         except Exception as e:
             logger.error(f"Error getting metadata for model={model_id}: {str(e)}")
-            raise StorageReadException(
-                f"Error getting metadata for model={model_id}: {str(e)}"
-            )
+            raise StorageReadException(f"Error getting metadata for model={model_id}: {str(e)}")
 
     async def has_metadata(self, model_id: str) -> bool:
         """
@@ -210,9 +200,7 @@ class DataSource:
         try:
             return await self.get_metadata(model_id) is not None
         except Exception as e:
-            logger.error(
-                f"Error checking if metadata exists for model={model_id}: {str(e)}"
-            )
+            logger.error(f"Error checking if metadata exists for model={model_id}: {str(e)}")
             return False
 
     # DATAFRAME QUERIES
@@ -324,9 +312,7 @@ class DataSource:
 
     # UTILITY METHODS
 
-    async def save_dataframe(
-        self, dataframe: pd.DataFrame, model_id: str, overwrite: bool = False
-    ) -> None:
+    async def save_dataframe(self, dataframe: pd.DataFrame, model_id: str, overwrite: bool = False) -> None:
         """
         Save a dataframe for the given model ID.
 

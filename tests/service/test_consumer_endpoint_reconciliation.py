@@ -8,7 +8,6 @@ import tempfile
 import uuid
 from unittest import mock
 
-import pytest
 from fastapi.testclient import TestClient
 
 from src.service.data.modelmesh_parser import ModelMeshPayloadParser, PartialPayload
@@ -25,29 +24,19 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
         """Set up the test environment."""
         self.temp_dir = tempfile.TemporaryDirectory()
 
-        self.storage_patch = mock.patch(
-            "src.endpoints.consumer.consumer_endpoint.storage_interface"
-        )
+        self.storage_patch = mock.patch("src.endpoints.consumer.consumer_endpoint.storage_interface")
         self.mock_storage = self.storage_patch.start()
 
-        self.parser_patch = mock.patch.object(
-            ModelMeshPayloadParser, "parse_input_payload"
-        )
+        self.parser_patch = mock.patch.object(ModelMeshPayloadParser, "parse_input_payload")
         self.mock_parse_input = self.parser_patch.start()
 
-        self.parser_output_patch = mock.patch.object(
-            ModelMeshPayloadParser, "parse_output_payload"
-        )
+        self.parser_output_patch = mock.patch.object(ModelMeshPayloadParser, "parse_output_payload")
         self.mock_parse_output = self.parser_output_patch.start()
 
-        self.parser_dataframe_patch = mock.patch.object(
-            ModelMeshPayloadParser, "payloads_to_dataframe"
-        )
+        self.parser_dataframe_patch = mock.patch.object(ModelMeshPayloadParser, "payloads_to_dataframe")
         self.mock_to_dataframe = self.parser_dataframe_patch.start()
 
-        self.model_data_patch = mock.patch(
-            "src.endpoints.consumer.consumer_endpoint.ModelData"
-        )
+        self.model_data_patch = mock.patch("src.endpoints.consumer.consumer_endpoint.ModelData")
         self.mock_model_data = self.model_data_patch.start()
         self.mock_model_data.return_value.shapes.return_value = [
             (5, 10),
@@ -67,10 +56,8 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
         input_specs = [("input", 5, 10, "INT32", 0, None)]
         output_specs = [("output", 5, 1, "INT32", 0)]
 
-        self.input_payload_dict, self.output_payload_dict, _, _ = (
-            ModelMeshTestData.generate_test_payloads(
-                self.model_name, input_specs, output_specs
-            )
+        self.input_payload_dict, self.output_payload_dict, _, _ = ModelMeshTestData.generate_test_payloads(
+            self.model_name, input_specs, output_specs
         )
 
         self.input_payload = PartialPayload(**self.input_payload_dict)
@@ -182,6 +169,7 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
                 new=mock.AsyncMock(),
             ) as mock_reconcile,
         ):
+
             async def mock_gather_impl(*args, **kwargs):
                 results = []
                 for coro in args:
@@ -200,9 +188,7 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
                 },
             }
 
-            response_input = self.client.post(
-                "/consumer/kserve/v2", json=input_inference_payload
-            )
+            response_input = self.client.post("/consumer/kserve/v2", json=input_inference_payload)
 
             self.assertEqual(response_input.status_code, 200)
             self.assertEqual(
@@ -233,9 +219,7 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
                 },
             }
 
-            response_output = self.client.post(
-                "/consumer/kserve/v2", json=output_inference_payload
-            )
+            response_output = self.client.post("/consumer/kserve/v2", json=output_inference_payload)
 
             self.assertEqual(response_output.status_code, 200)
             self.assertEqual(
@@ -266,14 +250,14 @@ def run_async_test(coro):
         loop.close()
 
 
-TestConsumerEndpointReconciliation.test_consume_input_payload = (
-    lambda self: run_async_test(self._test_consume_input_payload())
+TestConsumerEndpointReconciliation.test_consume_input_payload = lambda self: run_async_test(
+    self._test_consume_input_payload()
 )
-TestConsumerEndpointReconciliation.test_consume_output_payload = (
-    lambda self: run_async_test(self._test_consume_output_payload())
+TestConsumerEndpointReconciliation.test_consume_output_payload = lambda self: run_async_test(
+    self._test_consume_output_payload()
 )
-TestConsumerEndpointReconciliation.test_reconcile_payloads = (
-    lambda self: run_async_test(self._test_reconcile_payloads())
+TestConsumerEndpointReconciliation.test_reconcile_payloads = lambda self: run_async_test(
+    self._test_reconcile_payloads()
 )
 
 

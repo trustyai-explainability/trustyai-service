@@ -29,21 +29,15 @@ class MockReconcilableRequest(BaseMetricRequest):
         )
 
         # Create reconcilable feature field
-        self.protected_attribute = ReconcilableFeature(
-            {"type": "STRING", "value": "gender"}
-        )
+        self.protected_attribute = ReconcilableFeature({"type": "STRING", "value": "gender"})
         self.favorable_outcome = ReconcilableOutput({"type": "DOUBLE", "value": 1.0})
 
         # Add reconciler matcher annotations
         self.__class__.protected_attribute = Mock()
-        self.__class__.protected_attribute._reconciler_matcher = ReconcilerMatcher(
-            "get_protected_attribute"
-        )
+        self.__class__.protected_attribute._reconciler_matcher = ReconcilerMatcher("get_protected_attribute")
 
         self.__class__.favorable_outcome = Mock()
-        self.__class__.favorable_outcome._reconciler_matcher = ReconcilerMatcher(
-            "get_outcome_name"
-        )
+        self.__class__.favorable_outcome._reconciler_matcher = ReconcilerMatcher("get_outcome_name")
 
     def get_protected_attribute(self):
         return "gender"
@@ -88,9 +82,7 @@ class TestRequestReconciler:
         return MockReconcilableRequest()
 
     @pytest.mark.asyncio
-    async def test_reconcile_calls_get_metadata(
-        self, mock_data_source: Mock, mock_storage_metadata: Mock
-    ) -> None:
+    async def test_reconcile_calls_get_metadata(self, mock_data_source: Mock, mock_storage_metadata: Mock) -> None:
         """Test that reconcile calls get_metadata on data source."""
 
         mock_data_source.get_metadata.return_value = mock_storage_metadata
@@ -108,9 +100,7 @@ class TestRequestReconciler:
         # Ensure the feature was not already reconciled
         assert mock_request.protected_attribute.get_reconciled_type() is None
 
-        RequestReconciler.reconcile_with_metadata(
-            request=mock_request, storage_metadata=mock_storage_metadata
-        )
+        RequestReconciler.reconcile_with_metadata(request=mock_request, storage_metadata=mock_storage_metadata)
 
         # Verify the feature is reconciled
         reconciled = mock_request.protected_attribute.get_reconciled_type()
@@ -126,9 +116,7 @@ class TestRequestReconciler:
         # Ensure the output was not already reconciled
         assert mock_request.favorable_outcome.get_reconciled_type() is None
 
-        RequestReconciler.reconcile_with_metadata(
-            request=mock_request, storage_metadata=mock_storage_metadata
-        )
+        RequestReconciler.reconcile_with_metadata(request=mock_request, storage_metadata=mock_storage_metadata)
 
         # Verify the output is reconciled
         reconciled = mock_request.favorable_outcome.get_reconciled_type()
@@ -148,16 +136,12 @@ class TestRequestReconciler:
 
         initial_reconciled = mock_request.protected_attribute.get_reconciled_type()
 
-        RequestReconciler.reconcile_with_metadata(
-            request=mock_request, storage_metadata=mock_storage_metadata
-        )
+        RequestReconciler.reconcile_with_metadata(request=mock_request, storage_metadata=mock_storage_metadata)
 
         final_reconciled = mock_request.protected_attribute.get_reconciled_type()
         assert final_reconciled == initial_reconciled
 
-    def test_reconcile_with_multiple_value_nodes(
-        self, mock_storage_metadata: Mock
-    ) -> None:
+    def test_reconcile_with_multiple_value_nodes(self, mock_storage_metadata: Mock) -> None:
         """Test reconciling field with multiple value nodes."""
 
         request = MockReconcilableRequest()
@@ -176,39 +160,27 @@ class TestRequestReconciler:
         assert len(reconciled) == 2
         assert all(tv.get_type() == DataType.STRING for tv in reconciled)
 
-    def test_reconcile_with_non_callable_name_provider(
-        self, mock_storage_metadata: Mock
-    ) -> None:
+    def test_reconcile_with_non_callable_name_provider(self, mock_storage_metadata: Mock) -> None:
         """Test error when name provider is not callable."""
 
         request = MockReconcilableRequest()
 
         # Set name provider to a non-callable attribute
         request.non_callable_attribute = "not_a_method"
-        request.__class__.protected_attribute._reconciler_matcher = ReconcilerMatcher(
-            "non_callable_attribute"
-        )
+        request.__class__.protected_attribute._reconciler_matcher = ReconcilerMatcher("non_callable_attribute")
 
-        with pytest.raises(
-            IllegalArgumentError, match="name-providing-method that does not exist"
-        ):
+        with pytest.raises(IllegalArgumentError, match="name-providing-method that does not exist"):
             RequestReconciler.reconcile_with_metadata(request, mock_storage_metadata)
 
-    def test_reconcile_ignores_private_fields(
-        self, mock_storage_metadata: Mock
-    ) -> None:
+    def test_reconcile_ignores_private_fields(self, mock_storage_metadata: Mock) -> None:
         """Test that private fields (starting with _) are ignored."""
 
         request = MockReconcilableRequest()
 
         # Add a private field with reconciler matcher
-        request._private_field = ReconcilableFeature(
-            {"type": "STRING", "value": "test"}
-        )
+        request._private_field = ReconcilableFeature({"type": "STRING", "value": "test"})
         request.__class__._private_field = Mock()
-        request.__class__._private_field._reconciler_matcher = ReconcilerMatcher(
-            "get_protected_attribute"
-        )
+        request.__class__._private_field._reconciler_matcher = ReconcilerMatcher("get_protected_attribute")
 
         # Should not raise any errors
         RequestReconciler.reconcile_with_metadata(request, mock_storage_metadata)
@@ -216,9 +188,7 @@ class TestRequestReconciler:
         # Private field should not be reconciled
         assert request._private_field.get_reconciled_type() is None
 
-    def test_reconcile_ignores_fields_without_reconciler_matcher(
-        self, mock_storage_metadata: Mock
-    ) -> None:
+    def test_reconcile_ignores_fields_without_reconciler_matcher(self, mock_storage_metadata: Mock) -> None:
         """Test that fields without reconciler matcher annotation are ignored."""
 
         request = MockReconcilableRequest()
@@ -232,9 +202,7 @@ class TestRequestReconciler:
         # Field without matcher should not be reconciled
         assert request.normal_field.get_reconciled_type() is None
 
-    def test_reconcile_ignores_none_field_values(
-        self, mock_storage_metadata: Mock
-    ) -> None:
+    def test_reconcile_ignores_none_field_values(self, mock_storage_metadata: Mock) -> None:
         """Test that None field values are ignored."""
 
         request = MockReconcilableRequest()
@@ -245,20 +213,14 @@ class TestRequestReconciler:
         # Should not raise any errors
         RequestReconciler.reconcile_with_metadata(request, mock_storage_metadata)
 
-    def test_reconcile_with_missing_schema_field_raises_error(
-        self, mock_request: MockReconcilableRequest
-    ) -> None:
+    def test_reconcile_with_missing_schema_field_raises_error(self, mock_request: MockReconcilableRequest) -> None:
         """Test error when field name not found in schema."""
 
         # Create metadata with different field names
-        input_items = {
-            "different_field": SchemaItem(DataType.STRING, "different_field", 0)
-        }
+        input_items = {"different_field": SchemaItem(DataType.STRING, "different_field", 0)}
         input_schema = Schema(input_items)
 
-        output_items = {
-            "different_output": SchemaItem(DataType.DOUBLE, "different_output", 0)
-        }
+        output_items = {"different_output": SchemaItem(DataType.DOUBLE, "different_output", 0)}
         output_schema = Schema(output_items)
 
         metadata = Mock(spec=StorageMetadata)
@@ -280,11 +242,7 @@ class TestRequestReconciler:
 
         mock_data_source.get_metadata.return_value = mock_storage_metadata
 
-        with patch(
-            "src.service.payloads.metrics.request_reconciler.logger"
-        ) as mock_logger:
+        with patch("src.service.payloads.metrics.request_reconciler.logger") as mock_logger:
             await RequestReconciler.reconcile(mock_request, mock_data_source)
 
-            mock_logger.info.assert_called_with(
-                f"Reconciled request for model {mock_request.model_id}"
-            )
+            mock_logger.info.assert_called_with(f"Reconciled request for model {mock_request.model_id}")

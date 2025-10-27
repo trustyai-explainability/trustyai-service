@@ -14,9 +14,7 @@ from src.service.prometheus.prometheus_publisher import PrometheusPublisher
 class MockMetricRequest(BaseMetricRequest):
     """Mock implementation of BaseMetricRequest for testing."""
 
-    def __init__(
-        self, model_id: str = "test_model", metric_name: str = "test_metric"
-    ) -> None:
+    def __init__(self, model_id: str = "test_model", metric_name: str = "test_metric") -> None:
         super().__init__(
             model_id=model_id,
             metric_name=metric_name,
@@ -29,7 +27,6 @@ class MockMetricRequest(BaseMetricRequest):
 
 
 class TestPrometheusPublisher:
-
     @pytest.fixture
     def test_registry(self) -> CollectorRegistry:
         """Create a fresh registry for each test."""
@@ -45,16 +42,12 @@ class TestPrometheusPublisher:
         """Create a mock metric request."""
         return MockMetricRequest()
 
-    def test_single_value_gauge_with_request(
-        self, publisher: PrometheusPublisher, mock_request: MockMetricRequest
-    ):
+    def test_single_value_gauge_with_request(self, publisher: PrometheusPublisher, mock_request: MockMetricRequest):
         """Test publishing single value gauge with request object."""
         test_id = uuid.uuid4()
         test_value = 0.5
 
-        publisher.gauge(
-            model_name="test_model", id=test_id, value=test_value, request=mock_request
-        )
+        publisher.gauge(model_name="test_model", id=test_id, value=test_value, request=mock_request)
 
         # Verify value is stored
         assert test_id in publisher.values
@@ -68,17 +61,13 @@ class TestPrometheusPublisher:
         expected_labels: list[str] = list(
             mock_request.retrieve_default_tags().keys()
         )  # default labels (metricName, modelId, requestName)
-        expected_labels.extend(
-            list(mock_request.retrieve_tags().keys())
-        )  # custom tags (custom_tag)
+        expected_labels.extend(list(mock_request.retrieve_tags().keys()))  # custom tags (custom_tag)
         expected_labels.append("request")  # request id (request)
 
         gauge: Gauge = publisher.registry._names_to_collectors[metric_name]
         assert set(gauge._labelnames) == set(expected_labels)
 
-    def test_named_values_gauge_with_request(
-        self, publisher: PrometheusPublisher, mock_request: MockMetricRequest
-    ):
+    def test_named_values_gauge_with_request(self, publisher: PrometheusPublisher, mock_request: MockMetricRequest):
         """Test publishing named values gauge with request object."""
         test_id = uuid.uuid4()
         test_named_values = {"feature1": 0.3, "feature2": 0.7}
@@ -126,9 +115,7 @@ class TestPrometheusPublisher:
         metric_name = f"{PROMETHEUS_METRIC_PREFIX}simple_metric"
         assert metric_name in publisher.registry._names_to_collectors
 
-    def test_thread_safety(
-        self, publisher: PrometheusPublisher, mock_request: MockMetricRequest
-    ):
+    def test_thread_safety(self, publisher: PrometheusPublisher, mock_request: MockMetricRequest):
         """Test thread safety of gauge operations."""
         test_values = {}
         threads: list[threading.Thread] = []
@@ -159,39 +146,29 @@ class TestPrometheusPublisher:
             assert test_id in publisher.values
             assert publisher.values[test_id] == test_value
 
-    def test_remove_gauge(
-        self, publisher: PrometheusPublisher, mock_request: MockMetricRequest
-    ):
+    def test_remove_gauge(self, publisher: PrometheusPublisher, mock_request: MockMetricRequest):
         """Test gauge removal functionality."""
         test_id = uuid.uuid4()
         test_value = 0.5
 
         # Create gauge
-        publisher.gauge(
-            model_name="test_model", id=test_id, value=test_value, request=mock_request
-        )
+        publisher.gauge(model_name="test_model", id=test_id, value=test_value, request=mock_request)
         assert test_id in publisher.values
 
         # Remove gauge
         publisher.remove_gauge(name=mock_request.metric_name, id=test_id)
         assert test_id not in publisher.values
 
-    def test_duplicate_gauge_creation(
-        self, publisher: PrometheusPublisher, mock_request: MockMetricRequest
-    ):
+    def test_duplicate_gauge_creation(self, publisher: PrometheusPublisher, mock_request: MockMetricRequest):
         """Test that creating gauges with same name but different labels."""
         test_id1 = uuid.uuid4()
         test_id2 = uuid.uuid4()
 
         # Create first gauge
-        publisher.gauge(
-            model_name="test_model", id=test_id1, value=0.5, request=mock_request
-        )
+        publisher.gauge(model_name="test_model", id=test_id1, value=0.5, request=mock_request)
 
         # Create second gauge with same metric name - should work with same labels
-        publisher.gauge(
-            model_name="test_model", id=test_id2, value=0.7, request=mock_request
-        )
+        publisher.gauge(model_name="test_model", id=test_id2, value=0.7, request=mock_request)
 
         # Both values should be stored
         assert test_id1 in publisher.values
@@ -199,14 +176,10 @@ class TestPrometheusPublisher:
         assert publisher.values[test_id1] == 0.5
         assert publisher.values[test_id2] == 0.7
 
-    def test_tag_generation_with_request(
-        self, publisher: PrometheusPublisher, mock_request: MockMetricRequest
-    ):
+    def test_tag_generation_with_request(self, publisher: PrometheusPublisher, mock_request: MockMetricRequest):
         """Test tag generation with request object."""
         test_id = uuid.uuid4()
-        tags = publisher._generate_tags(
-            model_name="test_model", id=test_id, request=mock_request
-        )
+        tags = publisher._generate_tags(model_name="test_model", id=test_id, request=mock_request)
 
         expected_tags = {
             "metricName": mock_request.metric_name,
@@ -227,16 +200,12 @@ class TestPrometheusPublisher:
 
         assert tags == expected_tags
 
-    def test_invalid_gauge_parameters(
-        self, publisher: PrometheusPublisher, mock_request: MockMetricRequest
-    ):
+    def test_invalid_gauge_parameters(self, publisher: PrometheusPublisher, mock_request: MockMetricRequest):
         """Test error handling for invalid parameters."""
         test_id = uuid.uuid4()
 
         # Test missing both value and named_values
-        with pytest.raises(
-            ValueError, match="Either 'value' or 'named_values' must be provided"
-        ):
+        with pytest.raises(ValueError, match="Either 'value' or 'named_values' must be provided"):
             publisher.gauge(model_name="test_model", id=test_id, request=mock_request)
 
         # Test missing both request and metric_name

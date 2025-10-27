@@ -4,6 +4,7 @@ from typing import Any
 import numpy as np
 from sklearn.base import ClassifierMixin
 
+
 class IndividualConsistency:
     """
     Calculate individual fairness in terms of consistency of predictions across similar inputs.
@@ -12,12 +13,9 @@ class IndividualConsistency:
     :param predictionProvider the model under inspection
     return the consistency measure
     """
+
     @staticmethod
-    def calculate(
-        proximity_function: Any,
-        samples: np.ndarray,
-        model: ClassifierMixin
-    ) -> float:
+    def calculate(proximity_function: Any, samples: np.ndarray, model: ClassifierMixin) -> float:
         """
         Calculate individual fairness.
         :param proximity_function: a function that finds the top k similar inputs, given a reference input and a list of inputs
@@ -25,7 +23,7 @@ class IndividualConsistency:
         :param model: the model under inspection
         return the consistency measure
         """
-        consistency =  1
+        consistency = 1
         for sample in samples:
             prediction_outputs = model.predict(sample)
             if len(prediction_outputs) == 0:
