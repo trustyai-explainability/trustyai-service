@@ -14,6 +14,8 @@ from src.service.data.model_data import ModelData
 from src.service.data.storage import get_storage_interface
 from src.service.utils import list_utils
 from src.service.data.modelmesh_parser import ModelMeshPayloadParser, PartialPayload
+from src.service.data.datasources.data_source import DataSource
+from src.service.data.shared_data_source import get_shared_data_source
 
 # Define constants locally to avoid import issues
 INPUT_SUFFIX = "_inputs"
@@ -30,6 +32,10 @@ PartialKind = Literal["request", "response"]
 storage_interface = get_storage_interface()
 unreconciled_inputs = {}
 unreconciled_outputs = {}
+
+def get_data_source():
+    """Get the shared data source instance."""
+    return get_shared_data_source()
 
 
 class PartialPayloadId(BaseModel):
@@ -236,6 +242,21 @@ async def reconcile_modelmesh_payloads(
         f"Current storage shapes for {model_id}: Inputs={shapes[0]}, Outputs={shapes[1]}, Metadata={shapes[2]}"
     )
 
+    # Add model to known models set so it can be discovered by the scheduler
+    data_source = get_data_source()
+    await data_source.add_model_to_known(model_id)
+    known_models = await data_source.get_known_models()
+    logger.info(f"Added model {model_id} to known models set. Current known models: {list(known_models)}")
+    logger.debug(f"DataSource instance id: {id(data_source)}")
+
+    # Mark that inference data has been recorded for this model
+    try:
+        metadata = await data_source.get_metadata(model_id)
+        metadata.set_recorded_inferences(True)
+        logger.info(f"Marked model {model_id} as having recorded inferences")
+    except Exception as e:
+        logger.warning(f"Could not update recorded_inferences flag for model {model_id}: {e}")
+
     # Clean up
     await storage_interface.delete_modelmesh_payload(request_id, True)
     await storage_interface.delete_modelmesh_payload(request_id, False)
@@ -337,6 +358,21 @@ async def reconcile(input_payload: KServeInferenceRequest, output_payload: KServ
         f"Outputs={shapes[1]}, "
         f"Metadata={shapes[2]}"
     )
+
+    # Add model to known models set so it can be discovered by the scheduler
+    data_source = get_data_source()
+    await data_source.add_model_to_known(output_payload.model_name)
+    known_models = await data_source.get_known_models()
+    logger.info(f"Added model {output_payload.model_name} to known models set. Current known models: {list(known_models)}")
+    logger.debug(f"DataSource instance id: {id(data_source)}")
+
+    # Mark that inference data has been recorded for this model
+    try:
+        metadata = await data_source.get_metadata(output_payload.model_name)
+        metadata.set_recorded_inferences(True)
+        logger.info(f"Marked model {output_payload.model_name} as having recorded inferences")
+    except Exception as e:
+        logger.warning(f"Could not update recorded_inferences flag for model {output_payload.model_name}: {e}")
 
 
 @router.post("/")

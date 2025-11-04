@@ -89,15 +89,15 @@ class ModelData:
         * get_metadata: whether to retrieve metadata <- use this to reduce file reads
         """
         if get_input:
-            input_data = await storage_interface.read_data(self.input_dataset, start_row, n_rows)
+            input_data, _ = await storage_interface.read_data(self.input_dataset, start_row, n_rows)
         else:
             input_data = None
         if get_output:
-            output_data = await storage_interface.read_data(self.output_dataset, start_row, n_rows)
+            output_data, _ = await storage_interface.read_data(self.output_dataset, start_row, n_rows)
         else:
             output_data = None
         if get_metadata:
-            metadata = await storage_interface.read_data(self.metadata_dataset, start_row, n_rows)
+            metadata, _ = await storage_interface.read_data(self.metadata_dataset, start_row, n_rows)
         else:
             metadata = None
 
