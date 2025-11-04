@@ -11,6 +11,10 @@ from src.service.utils import list_utils
 from .storage_interface import StorageInterface
 from src.service.constants import PROTECTED_DATASET_SUFFIX, PARTIAL_PAYLOAD_DATASET_NAME
 from src.service.data.modelmesh_parser import PartialPayload
+from src.service.data.metadata.storage_metadata import StorageMetadata
+from src.service.payloads.service.schema import Schema
+from src.service.payloads.service.schema_item import SchemaItem
+from src.service.payloads.values.data_type import DataType
 
 logger = logging.getLogger(__name__)
 COLUMN_NAMES_ATTRIBUTE = "column_names"
@@ -338,7 +342,7 @@ class PVCStorage(StorageInterface):
         logger.info(f"Extracted model IDs: {list(model_ids)}")
         return list(model_ids)
 
-    async def get_metadata(self, model_id: str) -> Dict:
+    async def get_metadata(self, model_id: str) -> StorageMetadata:
         """Get metadata for a specific model including shapes, column names, etc."""
         from src.service.constants import INPUT_SUFFIX, OUTPUT_SUFFIX, METADATA_SUFFIX
 
@@ -409,7 +413,98 @@ class PVCStorage(StorageInterface):
             except Exception as e:
                 logger.error(f"Error getting metadata info for {model_id}: {e}")
 
-        return metadata
+        # Create schemas for input and output data
+        input_schema = None
+        output_schema = None
+        observations = 0
+
+        try:
+            # Create input schema if input data exists
+            if input_exists and metadata.get("inputData"):
+                input_data = metadata["inputData"]
+                column_names = input_data.get("columnNames", [])
+                aliased_names = input_data.get("aliasedNames", [])
+
+                # Create name mapping from original to aliased names
+                name_mapping = {}
+                if len(column_names) == len(aliased_names):
+                    name_mapping = {orig: alias for orig, alias in zip(column_names, aliased_names) if orig != alias}
+
+                # Create SchemaItem objects for each column
+                schema_items = {}
+                for idx, col_name in enumerate(column_names):
+                    schema_items[col_name] = SchemaItem(
+                        type=DataType.UNKNOWN,  # We don't have type info in PVC storage
+                        name=col_name,
+                        column_index=idx
+                    )
+
+                input_schema = Schema(
+                    items=schema_items,
+                    name_mapping=name_mapping
+                )
+
+                # Get observation count from input dataset
+                if input_data.get("shape"):
+                    observations = input_data["shape"][0] if len(input_data["shape"]) > 0 else 0
+
+            # Create output schema if output data exists
+            if output_exists and metadata.get("outputData"):
+                output_data = metadata["outputData"]
+                column_names = output_data.get("columnNames", [])
+                aliased_names = output_data.get("aliasedNames", [])
+
+                # Create name mapping from original to aliased names
+                name_mapping = {}
+                if len(column_names) == len(aliased_names):
+                    name_mapping = {orig: alias for orig, alias in zip(column_names, aliased_names) if orig != alias}
+
+                # Create SchemaItem objects for each column
+                schema_items = {}
+                for idx, col_name in enumerate(column_names):
+                    schema_items[col_name] = SchemaItem(
+                        type=DataType.UNKNOWN,  # We don't have type info in PVC storage
+                        name=col_name,
+                        column_index=idx
+                    )
+
+                output_schema = Schema(
+                    items=schema_items,
+                    name_mapping=name_mapping
+                )
+
+            # Use default empty schemas if none exist
+            if input_schema is None:
+                input_schema = Schema(name_mapping={}, items={})
+            if output_schema is None:
+                output_schema = Schema(name_mapping={}, items={})
+
+            # Create and return StorageMetadata object
+            storage_metadata = StorageMetadata(
+                model_id=model_id,
+                input_schema=input_schema,
+                output_schema=output_schema,
+                input_tensor_name="input",  # Default tensor name
+                output_tensor_name="output",  # Default tensor name
+                observations=observations,
+                recorded_inferences=observations > 0  # True if we have data
+            )
+
+            logger.info(f"Created StorageMetadata for {model_id}: observations={observations}, recorded_inferences={observations > 0}")
+            return storage_metadata
+
+        except Exception as e:
+            logger.error(f"Error creating StorageMetadata for {model_id}: {e}")
+            # Return minimal metadata object on error
+            return StorageMetadata(
+                model_id=model_id,
+                input_schema=Schema(name_mapping={}, items={}),
+                output_schema=Schema(name_mapping={}, items={}),
+                input_tensor_name="input",
+                output_tensor_name="output",
+                observations=0,
+                recorded_inferences=False
+            )
 
     async def persist_partial_payload(self, payload, is_input: bool):
         """Save a partial payload to disk. Returns None if no matching id exists"""
