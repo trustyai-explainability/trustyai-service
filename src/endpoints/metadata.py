@@ -213,7 +213,9 @@ async def apply_column_names(name_mapping: NameMapping):
         raise
     except Exception as e:
         logger.error(f"Error applying column names: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error applying column names: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error applying column names: {str(e)}"
+        ) from e
 
 
 @router.delete("/info/names")
