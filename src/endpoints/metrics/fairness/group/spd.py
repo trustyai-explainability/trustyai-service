@@ -316,14 +316,21 @@ async def list_spd_requests():
         # Convert to list format expected by client
         requests_list = []
         for request_id, request in spd_requests.items():
-            requests_list.append({
-                "requestId": str(request_id),
-                "modelId": request.model_id,
-                "metricName": "SPD",
-                "batchSize": request.batch_size,
-                "protectedAttribute": request.protected_attribute,
-                "outcomeName": request.outcome_name
-            })
+            # Validate request object type before property access
+            if hasattr(request, "model_id") and hasattr(request, "batch_size") and \
+               hasattr(request, "protected_attribute") and hasattr(request, "outcome_name"):
+                requests_list.append({
+                    "requestId": str(request_id),
+                    "modelId": request.model_id,
+                    "metricName": "SPD",
+                    "batchSize": request.batch_size,
+                    "protectedAttribute": request.protected_attribute,
+                    "outcomeName": request.outcome_name
+                })
+            else:
+                # Log warning for malformed request objects and skip them
+                logger.warning(f"Skipping malformed SPD request {request_id}: missing required attributes")
+                continue
 
         return {"requests": requests_list}
 
