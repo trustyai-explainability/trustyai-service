@@ -397,9 +397,9 @@ class MariaDBStorage(StorageInterface):
     @require_existing_dataset
     def get_metadata(self, model_id: str) -> Dict:
         """Get metadata for a specific model including shapes, column names, etc."""
-        input_dataset = model_id + "_inputs"
-        output_dataset = model_id + "_outputs"
-        metadata_dataset = model_id + "_metadata"
+        input_dataset = f"{model_id}_inputs"
+        output_dataset = f"{model_id}_outputs"
+        metadata_dataset = f"{model_id}_metadata"
 
         metadata = {
             "modelId": model_id,
