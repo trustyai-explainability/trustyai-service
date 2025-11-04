@@ -218,7 +218,9 @@ async def compute_spd(request: GroupMetricRequest):
         }
     except Exception as e:
         logger.error(f"Error computing SPD: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error computing metric: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error computing metric: {str(e)}"
+        ) from e
 
 
 @router.get("/metrics/group/fairness/spd/definition")
