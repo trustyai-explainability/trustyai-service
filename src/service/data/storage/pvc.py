@@ -289,8 +289,20 @@ class PVCStorage(StorageInterface):
         allocated_dataset_name = self.allocate_valid_dataset_name(dataset_name)
         async with self.get_lock(allocated_dataset_name):
             with H5PYContext(self, dataset_name, "a") as db:
-                if allocated_dataset_name in db and COLUMN_ALIAS_ATTRIBUTE in db[allocated_dataset_name].attrs:
-                    del db[allocated_dataset_name].attrs[COLUMN_ALIAS_ATTRIBUTE]
+                if allocated_dataset_name in db:
+                    if COLUMN_ALIAS_ATTRIBUTE in db[allocated_dataset_name].attrs:
+                        del db[allocated_dataset_name].attrs[COLUMN_ALIAS_ATTRIBUTE]
+                        logger.info(f"Successfully cleared name mapping for dataset '{allocated_dataset_name}'")
+                    else:
+                        logger.warning(
+                            f"Attempted to clear name mapping for dataset '{allocated_dataset_name}', "
+                            f"but '{COLUMN_ALIAS_ATTRIBUTE}' attribute was not found."
+                        )
+                else:
+                    logger.warning(
+                        f"Attempted to clear name mapping for dataset '{allocated_dataset_name}', "
+                        f"but dataset was not found in the database."
+                    )
 
     def get_known_models(self) -> List[str]:
         """Get a list of all model IDs that have inference data stored"""
