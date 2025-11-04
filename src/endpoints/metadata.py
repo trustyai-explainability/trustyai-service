@@ -87,7 +87,9 @@ async def get_service_info():
 
     except Exception as e:
         logger.error(f"Error retrieving service info: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error retrieving service info: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error retrieving service info: {str(e)}"
+        ) from e
 
 
 @router.get("/info/inference/ids/{model}")
