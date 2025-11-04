@@ -209,7 +209,7 @@ class PrometheusScheduler:
                 await self._process_model_requests(model_id, throw_errors)
             else:
                 if not has_requests:
-                    logger.debug(f"No metric requests registered")
+                    logger.debug("No metric requests registered")
                 if model_id not in model_ids:
                     logger.debug(f"Model {model_id} not in registered model_ids: {list(model_ids)}")
 
