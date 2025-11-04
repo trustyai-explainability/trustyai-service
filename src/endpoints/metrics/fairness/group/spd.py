@@ -266,7 +266,9 @@ async def schedule_spd(request: GroupMetricRequest):
 
     except Exception as e:
         logger.error(f"Error scheduling SPD computation: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error scheduling metric: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error scheduling metric: {str(e)}"
+        ) from e
 
 
 @router.delete("/metrics/group/fairness/spd/request")
