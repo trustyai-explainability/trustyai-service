@@ -5,6 +5,7 @@ import logging
 
 from src.service.data.storage import get_storage_interface
 from src.service.data.shared_data_source import get_shared_data_source
+from src.service.prometheus.shared_prometheus_scheduler import get_shared_prometheus_scheduler
 from src.service.constants import INPUT_SUFFIX, OUTPUT_SUFFIX
 
 router = APIRouter()
@@ -15,6 +16,10 @@ storage_interface = get_storage_interface()
 def get_data_source():
     """Get the shared data source instance."""
     return get_shared_data_source()
+
+def get_prometheus_scheduler():
+    """Get the shared prometheus scheduler instance."""
+    return get_shared_prometheus_scheduler()
 
 
 class NameMapping(BaseModel):
@@ -53,6 +58,26 @@ async def get_service_info():
                 num_observations = await data_source.get_num_observations(model_id)
                 has_inferences = await data_source.has_recorded_inferences(model_id)
 
+                # Get scheduled metrics for this model
+                scheduled_metadata = {}
+                try:
+                    scheduler = get_prometheus_scheduler()
+                    if scheduler:
+                        # Get all metric types and count scheduled requests per model
+                        all_requests = scheduler.get_all_requests()  # Should return dict of metric_name -> {request_id -> request}
+                        for metric_name, requests_dict in all_requests.items():
+                            count = 0
+                            for request_id, request in requests_dict.items():
+                                # Check if request is for this model (defensive access)
+                                request_model_id = getattr(request, 'model_id', getattr(request, 'modelId', None))
+                                if request_model_id == model_id:
+                                    count += 1
+                            if count > 0:
+                                scheduled_metadata[metric_name] = count
+                        logger.debug(f"Found {len(scheduled_metadata)} scheduled metric types for model {model_id}")
+                except Exception as e:
+                    logger.warning(f"Error retrieving scheduled metrics for model {model_id}: {e}")
+
                 # Transform to match expected format
                 service_metadata[model_id] = {
                     "data": {
@@ -62,7 +87,7 @@ async def get_service_info():
                         "outputTensorName": model_metadata.output_tensor_name if model_metadata else "output"
                     },
                     "metrics": {
-                        "scheduledMetadata": {}  # TODO: Integrate with prometheus scheduler
+                        "scheduledMetadata": scheduled_metadata
                     }
                 }
 
