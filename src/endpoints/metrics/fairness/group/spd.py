@@ -190,17 +190,17 @@ except Exception as e:
 async def compute_spd(request: GroupMetricRequest):
     """Compute the current value of Statistical Parity Difference metric."""
     try:
-        logger.info(f"Computing SPD for model: {request.modelId}")
+        logger.info(f"Computing SPD for model: {request.model_id}")
 
         # Get data source and load dataframe
         data_source = get_data_source()
-        batch_size = request.batchSize if request.batchSize else 100
+        batch_size = request.batch_size if request.batch_size else 100
 
         # Get dataframe for the model
-        dataframe = await data_source.get_organic_dataframe(request.modelId, batch_size)
+        dataframe = await data_source.get_organic_dataframe(request.model_id, batch_size)
 
         if dataframe.empty:
-            raise HTTPException(status_code=404, detail=f"No data found for model: {request.modelId}")
+            raise HTTPException(status_code=404, detail=f"No data found for model: {request.model_id}")
 
         # Calculate SPD using our calculator
         result = calculate_spd_metric(dataframe, request)
