@@ -149,8 +149,8 @@ def calculate_spd_metric(dataframe: pd.DataFrame, request) -> MetricValueCarrier
         unprivileged_data = dataframe[unprivileged_mask]
 
         if len(privileged_data) == 0 or len(unprivileged_data) == 0:
-            logger.warning(f"Empty group(s) for SPD calculation: privileged={len(privileged_data)}, unprivileged={len(unprivileged_data)}")
-            return MetricValueCarrier(0.0)
+            logger.warning(f"Insufficient data for SPD calculation: privileged={len(privileged_data)}, unprivileged={len(unprivileged_data)} samples. Returning NaN.")
+            return MetricValueCarrier(float('nan'))
 
         # Calculate favorable outcome rates
         priv_favorable_count = len(privileged_data[privileged_data[outcome_name].isin(favorable_values)])
