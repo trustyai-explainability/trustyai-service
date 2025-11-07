@@ -9,6 +9,7 @@ from pandas import DataFrame
 from pandas.errors import DataError
 from src.endpoints.metrics.metrics_directory import MetricsDirectory
 from src.service.data.datasources.data_source import DataSource
+from src.service.data.shared_data_source import get_shared_data_source
 from src.service.data.exceptions import DataframeCreateException, StorageReadException
 from src.service.data.storage.pvc import MissingH5PYDataException
 from src.service.payloads.metrics.base_metric_request import BaseMetricRequest
@@ -47,7 +48,7 @@ class PrometheusScheduler:
         self.has_logged_skipped_request_message: Set[str] = set()
         self.metrics_directory: MetricsDirectory = MetricsDirectory()
         self.publisher: PrometheusPublisher = publisher or PrometheusPublisher()
-        self.data_source: DataSource = data_source or DataSource()
+        self.data_source: DataSource = data_source or get_shared_data_source()
         self.service_config: Dict = self.get_service_config()
         self._logged_skipped_request_message_lock: threading.Lock = threading.Lock()
         self._requests_lock: threading.Lock = threading.Lock()
@@ -83,7 +84,9 @@ class PrometheusScheduler:
             self._publish_global_statistics(verified_models, throw_errors)
 
             # Process each model
+            logger.debug(f"Processing {len(verified_models)} verified models: {verified_models}")
             for model_id in verified_models:
+                logger.debug(f"Processing model: {model_id}")
                 await self._process_model(model_id, throw_errors)
 
         except Exception as e:
@@ -91,11 +94,14 @@ class PrometheusScheduler:
 
     async def register(self, metric_name: str, id: uuid.UUID, request: BaseMetricRequest) -> None:
         """Register a metric request."""
+        logger.info(f"Registering {metric_name} request {id} for model: {getattr(request, 'model_id', 'unknown')}")
         await RequestReconciler.reconcile(request, self.data_source)
+        logger.info(f"After reconciliation, {metric_name} request {id} model_id: {getattr(request, 'model_id', 'unknown')}")
         with self._requests_lock:
             if metric_name not in self.requests:
                 self.requests[metric_name] = {}
             self.requests[metric_name][id] = request
+        logger.info(f"Successfully registered {metric_name} request {id} for model: {getattr(request, 'model_id', 'unknown')}")
 
     async def delete(self, metric_name: str, id: uuid.UUID) -> None:
         """Delete a metric request."""
@@ -145,7 +151,12 @@ class PrometheusScheduler:
             List of verified model IDs, or empty list if error occurred.
         """
         try:
-            return await self.data_source.get_verified_models()
+            known_models = await self.data_source.get_known_models()
+            logger.debug(f"Scheduler DataSource instance id: {id(self.data_source)}")
+            logger.debug(f"Scheduler known models: {list(known_models)}")
+            verified_models = await self.data_source.get_verified_models()
+            logger.debug(f"Scheduler verified models: {verified_models}")
+            return verified_models
         except (StorageReadException, MissingH5PYDataException) as e:
             self._handle_error(e, "Failed to retrieve verified models from data source", throw_errors)
             return []
@@ -189,8 +200,18 @@ class PrometheusScheduler:
             if not await self._should_process_model(model_id, throw_errors):
                 return
 
-            if self.has_requests() and model_id in self.get_model_ids():
+            has_requests = self.has_requests()
+            model_ids = self.get_model_ids()
+            logger.debug(f"Scheduler has_requests: {has_requests}, registered model_ids: {list(model_ids)}")
+
+            if has_requests and model_id in model_ids:
+                logger.info(f"Processing metric requests for model: {model_id}")
                 await self._process_model_requests(model_id, throw_errors)
+            else:
+                if not has_requests:
+                    logger.debug("No metric requests registered")
+                if model_id not in model_ids:
+                    logger.debug(f"Model {model_id} not in registered model_ids: {list(model_ids)}")
 
         except Exception as e:
             self._handle_error(e, f"Unexpected error processing model={model_id}", throw_errors)
@@ -322,11 +343,19 @@ class PrometheusScheduler:
 
     def _get_requests_for_model(self, model_id: str) -> List[Tuple[uuid.UUID, BaseMetricRequest]]:
         """Get all requests for a specific model."""
-        return [
-            (req_id, request)
-            for req_id, request in self.get_all_requests_flat().items()
-            if request.model_id == model_id
-        ]
+        all_requests = self.get_all_requests_flat()
+        logger.debug(f"Checking requests for model={model_id}. Total requests: {len(all_requests)}")
+
+        matching_requests = []
+        for req_id, request in all_requests.items():
+            request_model_id = getattr(request, 'model_id', None)
+            logger.debug(f"Request {req_id}: model_id='{request_model_id}', metric='{getattr(request, 'metric_name', 'unknown')}'")
+            if request_model_id == model_id:
+                matching_requests.append((req_id, request))
+                logger.info(f"Found matching request {req_id} for model={model_id}, metric={getattr(request, 'metric_name', 'unknown')}")
+
+        logger.info(f"Found {len(matching_requests)} matching requests for model={model_id}")
+        return matching_requests
 
     def _calculate_max_batch_size(self, requests: List[Tuple[uuid.UUID, BaseMetricRequest]]) -> int:
         """Calculate the maximum batch size needed for all requests."""

@@ -95,19 +95,37 @@ class DataSource:
             df_data = {}
 
             if input_data is not None:
+                # Input data is expected to be 2D
                 for i, col_name in enumerate(input_names):
-                    if i < input_data.shape[1]:
+                    if len(input_data.shape) == 2 and i < input_data.shape[1]:
                         df_data[col_name] = input_data[:, i]
+                    elif len(input_data.shape) == 1 and i == 0:
+                        # Single column case
+                        df_data[col_name] = input_data
 
             if output_data is not None:
-                for i, col_name in enumerate(output_names):
-                    if i < output_data.shape[1]:
-                        df_data[col_name] = output_data[:, i]
+                # Output data can be 1D (single output) or 2D (multiple outputs)
+                if len(output_data.shape) == 1:
+                    # 1D array - single output column
+                    if len(output_names) > 0:
+                        df_data[output_names[0]] = output_data
+                else:
+                    # 2D array - multiple output columns
+                    for i, col_name in enumerate(output_names):
+                        if i < output_data.shape[1]:
+                            df_data[col_name] = output_data[:, i]
 
             if metadata is not None:
-                for i, col_name in enumerate(metadata_names):
-                    if i < metadata.shape[1]:
-                        df_data[col_name] = metadata[:, i]
+                # Metadata can be 1D (single column) or 2D (multiple columns)
+                if len(metadata.shape) == 1:
+                    # 1D array - single metadata column
+                    if len(metadata_names) > 0:
+                        df_data[metadata_names[0]] = metadata
+                else:
+                    # 2D array - multiple metadata columns
+                    for i, col_name in enumerate(metadata_names):
+                        if i < metadata.shape[1]:
+                            df_data[col_name] = metadata[:, i]
 
             return pd.DataFrame(df_data)
 
@@ -256,19 +274,23 @@ class DataSource:
 
     async def _discover_models_from_storage(self) -> List[str]:
         """
-        Discover model IDs from storage.
+        Discover model IDs from storage by scanning for actual model data.
 
         Returns:
             A list of discovered model IDs
         """
-        # TODO: In a real implementation, this would scan the storage for model directories
-        # For now, return any models that might be in environment or configuration
         discovered = []
 
-        # Check for models mentioned in environment variables
-        if "TEST_MODEL_ID" in os.environ:
-            discovered.append(os.environ["TEST_MODEL_ID"])
+        try:
+            # Use storage interface to discover models with actual data
+            storage_models = self.storage_interface.get_known_models()
+            logger.info(f"Storage interface discovered models: {storage_models}")
+            discovered.extend(storage_models)
 
+        except Exception as e:
+            logger.warning(f"Failed to discover models from storage interface: {e}")
+
+        logger.info(f"Total discovered models: {discovered}")
         return discovered
 
     # GROUND TRUTH OPERATIONS

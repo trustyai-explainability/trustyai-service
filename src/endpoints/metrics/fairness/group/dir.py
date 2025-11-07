@@ -1,12 +1,14 @@
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
 from prometheus_client import Gauge
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional, Union, Dict, Any
 import pandas as pd
 import os
 import time
 import uuid
 import logging
+
+from src.service.payloads.metrics.base_metric_request import BaseMetricRequest
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -28,17 +30,27 @@ class ReconcilableOutput(BaseModel):
     multipleValued: Optional[bool] = None
 
 
-class GroupMetricRequest(BaseModel):
-    modelId: str
-    requestName: Optional[str] = None
-    metricName: Optional[str] = None
-    batchSize: Optional[int] = 100
-    protectedAttribute: str
-    outcomeName: str
-    privilegedAttribute: ReconcilableFeature
-    unprivilegedAttribute: ReconcilableFeature
-    favorableOutcome: ReconcilableOutput
-    thresholdDelta: Optional[float] = None
+class GroupMetricRequest(BaseMetricRequest):
+    # Use field aliases to accept camelCase from API while keeping snake_case internally
+    model_id: str = Field(alias="modelId")
+    metric_name: Optional[str] = Field(default=None, alias="metricName")  # Will be set by endpoint
+    request_name: Optional[str] = Field(default=None, alias="requestName")
+    batch_size: Optional[int] = Field(default=100, alias="batchSize")
+
+    # DIR-specific fields
+    protected_attribute: str = Field(alias="protectedAttribute")
+    outcome_name: str = Field(alias="outcomeName")
+    privileged_attribute: Union[ReconcilableFeature, int, float, str] = Field(alias="privilegedAttribute")
+    unprivileged_attribute: Union[ReconcilableFeature, int, float, str] = Field(alias="unprivilegedAttribute")
+    favorable_outcome: Union[ReconcilableOutput, int, float, str] = Field(alias="favorableOutcome")
+    threshold_delta: Optional[float] = Field(default=None, alias="thresholdDelta")
+
+    def retrieve_tags(self) -> Dict[str, str]:
+        """Retrieve tags for this DIR metric request."""
+        tags = self.retrieve_default_tags()
+        tags["protectedAttribute"] = self.protected_attribute
+        tags["outcomeName"] = self.outcome_name
+        return tags
 
 
 class GroupDefinitionRequest(BaseModel):
@@ -48,9 +60,9 @@ class GroupDefinitionRequest(BaseModel):
     batchSize: Optional[int] = 100
     protectedAttribute: str
     outcomeName: str
-    privilegedAttribute: ReconcilableFeature
-    unprivilegedAttribute: ReconcilableFeature
-    favorableOutcome: ReconcilableOutput
+    privilegedAttribute: Union[ReconcilableFeature, int, float, str]
+    unprivilegedAttribute: Union[ReconcilableFeature, int, float, str]
+    favorableOutcome: Union[ReconcilableOutput, int, float, str]
     thresholdDelta: Optional[float] = None
     metricValue: Dict[str, Any]
 
@@ -125,7 +137,7 @@ class DIRRequest(BaseModel):
 
 # Dictionary to store DIR requests
 active_dir_requests = {}
-dir_metric_gauge = Gauge("dir_metric", "Stored DIR Metric Values", ["request_id"])
+dir_metric_gauge = Gauge("trustyai_dir", "Stored DIR Metric Values", ["request_id"])
 
 
 def calculate_and_update_dir_metric(request_id: str):

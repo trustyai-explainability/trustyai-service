@@ -11,6 +11,10 @@ from src.service.utils import list_utils
 from .storage_interface import StorageInterface
 from src.service.constants import PROTECTED_DATASET_SUFFIX, PARTIAL_PAYLOAD_DATASET_NAME
 from src.service.data.modelmesh_parser import PartialPayload
+from src.service.data.metadata.storage_metadata import StorageMetadata
+from src.service.payloads.service.schema import Schema
+from src.service.payloads.service.schema_item import SchemaItem
+from src.service.payloads.values.data_type import DataType
 
 logger = logging.getLogger(__name__)
 COLUMN_NAMES_ATTRIBUTE = "column_names"
@@ -283,6 +287,224 @@ class PVCStorage(StorageInterface):
                 curr_names = db[allocated_dataset_name].attrs[COLUMN_NAMES_ATTRIBUTE]
                 aliased_names = [name_mapping.get(name, name) for name in curr_names]
                 db[allocated_dataset_name].attrs[COLUMN_ALIAS_ATTRIBUTE] = aliased_names
+
+    async def clear_name_mapping(self, dataset_name: str):
+        """Clear/remove the name mapping for a dataset"""
+        allocated_dataset_name = self.allocate_valid_dataset_name(dataset_name)
+        async with self.get_lock(allocated_dataset_name):
+            with H5PYContext(self, dataset_name, "a") as db:
+                if allocated_dataset_name in db:
+                    if COLUMN_ALIAS_ATTRIBUTE in db[allocated_dataset_name].attrs:
+                        del db[allocated_dataset_name].attrs[COLUMN_ALIAS_ATTRIBUTE]
+                        logger.info(f"Successfully cleared name mapping for dataset '{allocated_dataset_name}'")
+                    else:
+                        logger.warning(
+                            f"Attempted to clear name mapping for dataset '{allocated_dataset_name}', "
+                            f"but '{COLUMN_ALIAS_ATTRIBUTE}' attribute was not found."
+                        )
+                else:
+                    logger.warning(
+                        f"Attempted to clear name mapping for dataset '{allocated_dataset_name}', "
+                        f"but dataset was not found in the database."
+                    )
+
+    def get_known_models(self) -> List[str]:
+        """Get a list of all model IDs that have inference data stored"""
+        from src.service.constants import INPUT_SUFFIX, OUTPUT_SUFFIX, METADATA_SUFFIX
+
+        all_datasets = self.list_all_datasets()
+        logger.info(f"All datasets found: {all_datasets}")
+        model_ids = set()
+
+        for dataset_name in all_datasets:
+            logger.debug(f"Processing dataset: {dataset_name}")
+            # Skip internal datasets
+            if dataset_name.startswith(PROTECTED_DATASET_SUFFIX):
+                logger.debug(f"Skipping internal dataset: {dataset_name}")
+                continue
+
+            # Extract model ID by removing suffixes
+            if dataset_name.endswith(INPUT_SUFFIX):
+                model_id = dataset_name[:-len(INPUT_SUFFIX)]
+                model_ids.add(model_id)
+                logger.debug(f"Found input dataset for model: {model_id}")
+            elif dataset_name.endswith(OUTPUT_SUFFIX):
+                model_id = dataset_name[:-len(OUTPUT_SUFFIX)]
+                model_ids.add(model_id)
+                logger.debug(f"Found output dataset for model: {model_id}")
+            elif dataset_name.endswith(METADATA_SUFFIX):
+                model_id = dataset_name[:-len(METADATA_SUFFIX)]
+                model_ids.add(model_id)
+                logger.debug(f"Found metadata dataset for model: {model_id}")
+            else:
+                logger.debug(f"Dataset doesn't match expected suffixes: {dataset_name}")
+
+        logger.info(f"Extracted model IDs: {list(model_ids)}")
+        return list(model_ids)
+
+    async def get_metadata(self, model_id: str) -> StorageMetadata:
+        """Get metadata for a specific model including shapes, column names, etc."""
+        from src.service.constants import INPUT_SUFFIX, OUTPUT_SUFFIX, METADATA_SUFFIX
+
+        input_dataset = model_id + INPUT_SUFFIX
+        output_dataset = model_id + OUTPUT_SUFFIX
+        metadata_dataset = model_id + METADATA_SUFFIX
+
+        logger.info(f"Getting metadata for model_id: {model_id}")
+        logger.info(f"Looking for datasets: input={input_dataset}, output={output_dataset}, metadata={metadata_dataset}")
+
+        # Check which datasets exist
+        input_exists = await self.dataset_exists(input_dataset)
+        output_exists = await self.dataset_exists(output_dataset)
+        metadata_exists = await self.dataset_exists(metadata_dataset)
+
+        logger.info(f"Dataset existence: input={input_exists}, output={output_exists}, metadata={metadata_exists}")
+
+        metadata = {
+            "modelId": model_id,
+            "inputData": None,
+            "outputData": None,
+            "metadataData": None
+        }
+
+        # Get input data metadata
+        if input_exists:
+            try:
+                logger.info(f"Retrieving input metadata for {input_dataset}")
+                input_shape = await self.dataset_shape(input_dataset)
+                input_names = await self.get_original_column_names(input_dataset)
+                aliased_input_names = await self.get_aliased_column_names(input_dataset)
+                logger.info(f"Input metadata: shape={input_shape}, names={input_names}, aliases={aliased_input_names}")
+                metadata["inputData"] = {
+                    "shape": list(input_shape) if input_shape is not None else [],
+                    "columnNames": list(input_names) if input_names is not None else [],
+                    "aliasedNames": list(aliased_input_names) if aliased_input_names is not None else []
+                }
+            except Exception as e:
+                logger.error(f"Error getting input metadata for {model_id}: {e}")
+                import traceback
+                logger.error(f"Traceback: {traceback.format_exc()}")
+
+        # Get output data metadata
+        if output_exists:
+            try:
+                logger.info(f"Retrieving output metadata for {output_dataset}")
+                output_shape = await self.dataset_shape(output_dataset)
+                output_names = await self.get_original_column_names(output_dataset)
+                aliased_output_names = await self.get_aliased_column_names(output_dataset)
+                metadata["outputData"] = {
+                    "shape": list(output_shape) if output_shape is not None else [],
+                    "columnNames": list(output_names) if output_names is not None else [],
+                    "aliasedNames": list(aliased_output_names) if aliased_output_names is not None else []
+                }
+            except Exception as e:
+                logger.error(f"Error getting output metadata for {model_id}: {e}")
+
+        # Get metadata data info
+        if metadata_exists:
+            try:
+                logger.info(f"Retrieving metadata info for {metadata_dataset}")
+                metadata_shape = await self.dataset_shape(metadata_dataset)
+                metadata_names = await self.get_original_column_names(metadata_dataset)
+                metadata["metadataData"] = {
+                    "shape": list(metadata_shape) if metadata_shape is not None else [],
+                    "columnNames": list(metadata_names) if metadata_names is not None else []
+                }
+            except Exception as e:
+                logger.error(f"Error getting metadata info for {model_id}: {e}")
+
+        # Create schemas for input and output data
+        input_schema = None
+        output_schema = None
+        observations = 0
+
+        try:
+            # Create input schema if input data exists
+            if input_exists and metadata.get("inputData"):
+                input_data = metadata["inputData"]
+                column_names = input_data.get("columnNames", [])
+                aliased_names = input_data.get("aliasedNames", [])
+
+                # Create name mapping from original to aliased names
+                name_mapping = {}
+                if len(column_names) == len(aliased_names):
+                    name_mapping = {orig: alias for orig, alias in zip(column_names, aliased_names) if orig != alias}
+
+                # Create SchemaItem objects for each column
+                schema_items = {}
+                for idx, col_name in enumerate(column_names):
+                    schema_items[col_name] = SchemaItem(
+                        type=DataType.UNKNOWN,  # We don't have type info in PVC storage
+                        name=col_name,
+                        column_index=idx
+                    )
+
+                input_schema = Schema(
+                    items=schema_items,
+                    name_mapping=name_mapping
+                )
+
+                # Get observation count from input dataset
+                if input_data.get("shape"):
+                    observations = input_data["shape"][0] if len(input_data["shape"]) > 0 else 0
+
+            # Create output schema if output data exists
+            if output_exists and metadata.get("outputData"):
+                output_data = metadata["outputData"]
+                column_names = output_data.get("columnNames", [])
+                aliased_names = output_data.get("aliasedNames", [])
+
+                # Create name mapping from original to aliased names
+                name_mapping = {}
+                if len(column_names) == len(aliased_names):
+                    name_mapping = {orig: alias for orig, alias in zip(column_names, aliased_names) if orig != alias}
+
+                # Create SchemaItem objects for each column
+                schema_items = {}
+                for idx, col_name in enumerate(column_names):
+                    schema_items[col_name] = SchemaItem(
+                        type=DataType.UNKNOWN,  # We don't have type info in PVC storage
+                        name=col_name,
+                        column_index=idx
+                    )
+
+                output_schema = Schema(
+                    items=schema_items,
+                    name_mapping=name_mapping
+                )
+
+            # Use default empty schemas if none exist
+            if input_schema is None:
+                input_schema = Schema(name_mapping={}, items={})
+            if output_schema is None:
+                output_schema = Schema(name_mapping={}, items={})
+
+            # Create and return StorageMetadata object
+            storage_metadata = StorageMetadata(
+                model_id=model_id,
+                input_schema=input_schema,
+                output_schema=output_schema,
+                input_tensor_name="input",  # Default tensor name
+                output_tensor_name="output",  # Default tensor name
+                observations=observations,
+                recorded_inferences=observations > 0  # True if we have data
+            )
+
+            logger.info(f"Created StorageMetadata for {model_id}: observations={observations}, recorded_inferences={observations > 0}")
+            return storage_metadata
+
+        except Exception as e:
+            logger.error(f"Error creating StorageMetadata for {model_id}: {e}")
+            # Return minimal metadata object on error
+            return StorageMetadata(
+                model_id=model_id,
+                input_schema=Schema(name_mapping={}, items={}),
+                output_schema=Schema(name_mapping={}, items={}),
+                input_tensor_name="input",
+                output_tensor_name="output",
+                observations=0,
+                recorded_inferences=False
+            )
 
     async def persist_partial_payload(self, payload, is_input: bool):
         """Save a partial payload to disk. Returns None if no matching id exists"""

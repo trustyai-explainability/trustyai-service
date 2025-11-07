@@ -41,6 +41,20 @@ class StorageInterface(ABC):
         pass
 
     @abstractmethod
+    def clear_name_mapping(self, dataset_name: str):
+        pass
+
+    @abstractmethod
+    def get_known_models(self) -> List[str]:
+        """Get a list of all model IDs that have inference data stored"""
+        pass
+
+    @abstractmethod
+    def get_metadata(self, model_id: str) -> Dict:
+        """Get metadata for a specific model including shapes, column names, etc."""
+        pass
+
+    @abstractmethod
     def delete_dataset(self, dataset_name: str):
         pass
 

@@ -353,6 +353,103 @@ class MariaDBStorage(StorageInterface):
             )
             conn.commit()
 
+    @require_existing_dataset
+    def clear_name_mapping(self, dataset_name: str):
+        """Clear/remove the name mapping for a dataset by resetting aliased_names to original column_names."""
+        original_names = self.get_original_column_names(dataset_name)
+
+        # Reset aliased_names to the original column_names
+        with self.connection_manager as (conn, cursor):
+            # parse original_names list into parameterized JSON_ARRAY argument
+            array_parameters = ", ".join(["?" for _ in original_names])
+            cursor.execute(
+                f"UPDATE `{self.dataset_reference_table}` SET metadata=JSON_SET(metadata, '$.aliased_names', JSON_ARRAY({array_parameters})) WHERE dataset_name=?",
+                (
+                    *original_names,
+                    dataset_name,
+                ),
+            )
+            conn.commit()
+
+    def get_known_models(self) -> List[str]:
+        """Get a list of all model IDs that have inference data stored"""
+        all_datasets = self.list_all_datasets()
+        model_ids = set()
+
+        for dataset_name in all_datasets:
+            # Skip internal datasets
+            if dataset_name.startswith("trustyai_internal_"):
+                continue
+
+            # Extract model ID by removing suffixes
+            if dataset_name.endswith("_inputs"):
+                model_id = dataset_name[:-len("_inputs")]
+                model_ids.add(model_id)
+            elif dataset_name.endswith("_outputs"):
+                model_id = dataset_name[:-len("_outputs")]
+                model_ids.add(model_id)
+            elif dataset_name.endswith("_metadata"):
+                model_id = dataset_name[:-len("_metadata")]
+                model_ids.add(model_id)
+
+        return list(model_ids)
+
+    @require_existing_dataset
+    def get_metadata(self, model_id: str) -> Dict:
+        """Get metadata for a specific model including shapes, column names, etc."""
+        input_dataset = f"{model_id}_inputs"
+        output_dataset = f"{model_id}_outputs"
+        metadata_dataset = f"{model_id}_metadata"
+
+        metadata = {
+            "modelId": model_id,
+            "inputData": None,
+            "outputData": None,
+            "metadataData": None
+        }
+
+        # Get input data metadata
+        if self.dataset_exists(input_dataset):
+            try:
+                input_shape = self.dataset_shape(input_dataset)
+                input_names = self.get_original_column_names(input_dataset)
+                aliased_input_names = self.get_aliased_column_names(input_dataset)
+                metadata["inputData"] = {
+                    "shape": list(input_shape) if input_shape is not None else [],
+                    "columnNames": list(input_names) if input_names is not None else [],
+                    "aliasedNames": list(aliased_input_names) if aliased_input_names is not None else []
+                }
+            except Exception as e:
+                logger.warning(f"Error getting input metadata for {model_id}: {e}")
+
+        # Get output data metadata
+        if self.dataset_exists(output_dataset):
+            try:
+                output_shape = self.dataset_shape(output_dataset)
+                output_names = self.get_original_column_names(output_dataset)
+                aliased_output_names = self.get_aliased_column_names(output_dataset)
+                metadata["outputData"] = {
+                    "shape": list(output_shape) if output_shape is not None else [],
+                    "columnNames": list(output_names) if output_names is not None else [],
+                    "aliasedNames": list(aliased_output_names) if aliased_output_names is not None else []
+                }
+            except Exception as e:
+                logger.warning(f"Error getting output metadata for {model_id}: {e}")
+
+        # Get metadata data info
+        if self.dataset_exists(metadata_dataset):
+            try:
+                metadata_shape = self.dataset_shape(metadata_dataset)
+                metadata_names = self.get_original_column_names(metadata_dataset)
+                metadata["metadataData"] = {
+                    "shape": list(metadata_shape) if metadata_shape is not None else [],
+                    "columnNames": list(metadata_names) if metadata_names is not None else []
+                }
+            except Exception as e:
+                logger.warning(f"Error getting metadata info for {model_id}: {e}")
+
+        return metadata
+
     # === PARTIAL PAYLOADS =========================================================================
     async def _persist_payload(self, payload, is_input: bool, request_id: Optional[str] = None):
         """Save a partial payload to the database."""

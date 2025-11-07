@@ -4,7 +4,8 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-import uvicorn
+from hypercorn.config import Config
+from hypercorn.asyncio import serve
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -34,7 +35,7 @@ from src.endpoints.metrics.fairness.group.spd import router as spd_router
 from src.endpoints.metrics.identity.identity_endpoint import router as identity_router
 from src.endpoints.metrics.metrics_info import router as metrics_info_router
 
-from src.service.prometheus.prometheus_scheduler import PrometheusScheduler
+from src.service.prometheus.shared_prometheus_scheduler import get_shared_prometheus_scheduler
 
 try:
     from src.endpoints.evaluation.lm_evaluation_harness import (
@@ -46,12 +47,25 @@ except ImportError:
     lm_evaluation_harness_available = False
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,  # Reduce default verbosity
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
+
+# Enable debug logging for TrustyAI components only
+logging.getLogger("src").setLevel(logging.DEBUG)
+logging.getLogger("__main__").setLevel(logging.DEBUG)
+
+# Remove noisy HTTP/2 and hypercorn internal logs
+logging.getLogger("hpack.hpack").setLevel(logging.WARNING)
+logging.getLogger("hypercorn.protocol").setLevel(logging.INFO)
+logging.getLogger("hypercorn.access").setLevel(logging.INFO)
+
+# Ensure scheduler debug logging
+scheduler_logger = logging.getLogger("src.service.prometheus.prometheus_scheduler")
+scheduler_logger.setLevel(logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-prometheus_scheduler = PrometheusScheduler()
+prometheus_scheduler = get_shared_prometheus_scheduler()
 
 
 async def schedule_metrics_calculation():
@@ -207,40 +221,49 @@ def get_tls_config():
         return None
 
 
-if __name__ == "__main__":
-    # SERVICE_STORAGE_FORMAT=PVC; STORAGE_DATA_FOLDER=/tmp; STORAGE_DATA_FILENAME=trustyai_test.hdf5
-
+async def run_server():
+    """Run hypercorn server with both HTTP and HTTPS binds"""
     # Get TLS configuration
     tls_config = get_tls_config()
 
     # Configure server settings
-    host = "0.0.0.0"
+    host_https = "0.0.0.0"
+    host_http = "127.0.0.1"  # Keep loopback-only for security (kube-rbac-proxy forwards here)
     http_port = int(os.getenv("HTTP_PORT", "8080"))
     ssl_port = int(os.getenv("SSL_PORT", "4443"))
 
+    # Create hypercorn config
+    config = Config()
+
+    # HTTP for kube-rbac-proxy (plain HTTP on insecure_bind)
+    config.insecure_bind = [f"{host_http}:{http_port}"]
+    logger.info(f"Binding HTTP on {host_http}:{http_port} for kube-rbac-proxy")
+
+    import os
+
+    # Configure for HTTP/1.1 compatibility and proper keep-alive
+    config.h11_max_incomplete_size = 16 * 1024 * 1024  # 16MB for large requests
+    config.keep_alive = int(os.getenv("KEEP_ALIVE", "75"))  # Allow override via env var
+
+    # Optional HTTPS (direct access on bind)
     if tls_config:
-        # Run dual servers: HTTP for health checks, HTTPS for main service
-        import threading
-        import time
-
-        def run_http_server():
-            logger.info(f"Starting TrustyAI HTTP server for health checks on port {http_port}")
-            uvicorn.run(app=app, host=host, port=http_port, log_level="warning")
-
-        def run_https_server():
-            logger.info(f"Starting TrustyAI HTTPS server on port {ssl_port}")
-            uvicorn.run(app=app, host=host, port=ssl_port, **tls_config)
-
-        # Start HTTP server in background thread for health checks
-        http_thread = threading.Thread(target=run_http_server, daemon=True)
-        http_thread.start()
-
-        # Give HTTP server time to start
-        time.sleep(1)
-
-        # Run HTTPS server in main thread
-        run_https_server()
+        config.bind = [f"{host_https}:{ssl_port}"]
+        config.certfile = tls_config["ssl_certfile"]
+        config.keyfile = tls_config["ssl_keyfile"]
+        logger.info(f"Binding HTTPS on {host_https}:{ssl_port} for direct access")
+        logger.info("TrustyAI service running with dual HTTP/HTTPS protocol support")
     else:
-        # Run without TLS on HTTP port
-        logger.info(f"Starting TrustyAI service without TLS on port {http_port}")
-        uvicorn.run(app=app, host=host, port=http_port)
+        logger.info("TLS certificates not found - running HTTP only")
+
+    # Configure logging
+    config.accesslog = "-"  # Log to stdout
+    config.errorlog = "-"   # Log to stderr
+    config.use_reloader = False  # Disable reloader in production
+
+    # Start the server
+    await serve(app, config)
+
+
+if __name__ == "__main__":
+    # SERVICE_STORAGE_FORMAT=PVC; STORAGE_DATA_FOLDER=/tmp; STORAGE_DATA_FILENAME=trustyai_test.hdf5
+    asyncio.run(run_server())
