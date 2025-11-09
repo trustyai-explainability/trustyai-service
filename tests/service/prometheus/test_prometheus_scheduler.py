@@ -92,6 +92,99 @@ class TestPrometheusScheduler:
             config = PrometheusScheduler.get_service_config()
             assert config["metrics_schedule"] == 3600  # 3600 seconds
 
+    def test_parse_interval_iso8601_seconds(self) -> None:
+        """Test parsing ISO-8601 duration with seconds."""
+        assert PrometheusScheduler._parse_schedule_interval("PT30S") == 30
+        assert PrometheusScheduler._parse_schedule_interval("PT1S") == 1
+        assert PrometheusScheduler._parse_schedule_interval("PT60S") == 60
+
+    def test_parse_interval_iso8601_minutes(self) -> None:
+        """Test parsing ISO-8601 duration with minutes."""
+        assert PrometheusScheduler._parse_schedule_interval("PT5M") == 300
+        assert PrometheusScheduler._parse_schedule_interval("PT1M") == 60
+        assert PrometheusScheduler._parse_schedule_interval("PT30M") == 1800
+
+    def test_parse_interval_iso8601_hours(self) -> None:
+        """Test parsing ISO-8601 duration with hours."""
+        assert PrometheusScheduler._parse_schedule_interval("PT2H") == 7200
+        assert PrometheusScheduler._parse_schedule_interval("PT1H") == 3600
+        assert PrometheusScheduler._parse_schedule_interval("PT24H") == 86400
+
+    def test_parse_interval_iso8601_days(self) -> None:
+        """Test parsing ISO-8601 duration with days."""
+        assert PrometheusScheduler._parse_schedule_interval("P1D") == 86400
+        assert PrometheusScheduler._parse_schedule_interval("P2D") == 172800
+
+    def test_parse_interval_iso8601_combined(self) -> None:
+        """Test parsing ISO-8601 duration with combined units."""
+        # 1 day, 2 hours, 30 minutes, 45 seconds = 95445 seconds
+        assert PrometheusScheduler._parse_schedule_interval("P1DT2H30M45S") == 95445
+        # 1 hour and 30 minutes = 5400 seconds
+        assert PrometheusScheduler._parse_schedule_interval("PT1H30M") == 5400
+
+    def test_parse_interval_simple_format_seconds(self) -> None:
+        """Test parsing simple format with seconds (backward compatibility)."""
+        assert PrometheusScheduler._parse_schedule_interval("30s") == 30
+        assert PrometheusScheduler._parse_schedule_interval("1s") == 1
+        assert PrometheusScheduler._parse_schedule_interval("60s") == 60
+
+    def test_parse_interval_simple_format_minutes(self) -> None:
+        """Test parsing simple format with minutes (backward compatibility)."""
+        assert PrometheusScheduler._parse_schedule_interval("5m") == 300
+        assert PrometheusScheduler._parse_schedule_interval("1m") == 60
+        assert PrometheusScheduler._parse_schedule_interval("30m") == 1800
+
+    def test_parse_interval_simple_format_hours(self) -> None:
+        """Test parsing simple format with hours (backward compatibility)."""
+        assert PrometheusScheduler._parse_schedule_interval("2h") == 7200
+        assert PrometheusScheduler._parse_schedule_interval("1h") == 3600
+        assert PrometheusScheduler._parse_schedule_interval("24h") == 86400
+
+    def test_parse_interval_simple_format_days(self) -> None:
+        """Test parsing simple format with days (backward compatibility)."""
+        assert PrometheusScheduler._parse_schedule_interval("1d") == 86400
+        assert PrometheusScheduler._parse_schedule_interval("2d") == 172800
+
+    def test_parse_interval_invalid_format(self) -> None:
+        """Test that invalid formats raise ValueError."""
+        # "invalid" ends with 'd', so tries to parse as days and fails
+        with pytest.raises(ValueError, match="Failed to parse schedule interval"):
+            PrometheusScheduler._parse_schedule_interval("invalid")
+
+        # "30x" doesn't match any suffix, goes to else clause
+        with pytest.raises(ValueError, match="Invalid schedule format"):
+            PrometheusScheduler._parse_schedule_interval("30x")
+
+        # "abc" doesn't match any suffix, goes to else clause
+        with pytest.raises(ValueError, match="Invalid schedule format"):
+            PrometheusScheduler._parse_schedule_interval("abc")
+
+    def test_parse_interval_empty_string(self) -> None:
+        """Test that empty string raises ValueError."""
+        with pytest.raises(ValueError):
+            PrometheusScheduler._parse_schedule_interval("")
+
+    def test_service_config_iso8601_format(self) -> None:
+        """Test get_service_config with ISO-8601 format."""
+        with patch.dict("os.environ", {"SERVICE_METRICS_SCHEDULE": "PT5M", "SERVICE_BATCH_SIZE": "200"}):
+            config = PrometheusScheduler.get_service_config()
+            assert config["metrics_schedule"] == 300  # 5 minutes
+            assert config["batch_size"] == 200
+
+        with patch.dict("os.environ", {"SERVICE_METRICS_SCHEDULE": "P1D"}):
+            config = PrometheusScheduler.get_service_config()
+            assert config["metrics_schedule"] == 86400  # 1 day
+
+        with patch.dict("os.environ", {"SERVICE_METRICS_SCHEDULE": "PT1H30M"}):
+            config = PrometheusScheduler.get_service_config()
+            assert config["metrics_schedule"] == 5400  # 1.5 hours
+
+    def test_service_config_invalid_schedule_falls_back(self) -> None:
+        """Test that invalid schedule format falls back to default with warning."""
+        with patch.dict("os.environ", {"SERVICE_METRICS_SCHEDULE": "invalid_format"}):
+            config = PrometheusScheduler.get_service_config()
+            assert config["metrics_schedule"] == 30  # Falls back to default
+
     @pytest.mark.asyncio
     async def test_register_request(self, scheduler: PrometheusScheduler, mock_request: MockMetricRequest) -> None:
         """Test registering a metric request."""

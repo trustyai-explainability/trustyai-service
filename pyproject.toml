@@ -21,6 +21,7 @@ dependencies = [
     "aif360",
     "hypothesis>=6.136.2",
     "pytest>=8.4.1",
+    "isodate>=0.7.2",
 ]
 
 [project.optional-dependencies]

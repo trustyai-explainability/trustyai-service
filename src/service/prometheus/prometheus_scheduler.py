@@ -5,6 +5,7 @@ import uuid
 from collections import defaultdict
 from typing import Dict, List, Optional, Set, Tuple
 
+import isodate
 from pandas import DataFrame
 from pandas.errors import DataError
 from src.endpoints.metrics.metrics_directory import MetricsDirectory
@@ -22,19 +23,50 @@ logger: logging.Logger = logging.getLogger(__name__)
 
 class PrometheusScheduler:
     @staticmethod
+    def _parse_schedule_interval(schedule_str: str) -> int:
+        """
+        Parse schedule interval string (ISO-8601) to seconds.
+        
+        Args:
+            schedule_str: Schedule interval string to parse.
+
+        Returns:
+            Interval in seconds.
+
+        Raises:
+            ValueError: If the schedule string cannot be parsed.
+        """
+        # Try ISO-8601 format first
+        try:
+            duration = isodate.parse_duration(schedule_str)
+            return int(duration.total_seconds())
+        except (isodate.ISO8601Error, AttributeError):
+            # Fall back to simple format (30s, 5m, 2h) for backward compatibility
+            try:
+                if schedule_str.endswith("s"):
+                    return int(schedule_str[:-1])
+                elif schedule_str.endswith("m"):
+                    return int(schedule_str[:-1]) * 60
+                elif schedule_str.endswith("h"):
+                    return int(schedule_str[:-1]) * 60 * 60
+                elif schedule_str.endswith("d"):
+                    return int(schedule_str[:-1]) * 60 * 60 * 24
+                else:
+                    raise ValueError(f"Invalid schedule format: {schedule_str}")
+            except (ValueError, IndexError) as e:
+                raise ValueError(f"Failed to parse schedule interval '{schedule_str}': {e}") from e
+
+    @staticmethod
     def get_service_config() -> Dict:
         """Get service configuration from environment variables."""
 
         metrics_schedule = os.getenv("SERVICE_METRICS_SCHEDULE", "30s")
         batch_size = int(os.getenv("SERVICE_BATCH_SIZE", "100"))
 
-        if metrics_schedule.endswith("s"):
-            interval = int(metrics_schedule[:-1])
-        elif metrics_schedule.endswith("m"):
-            interval = int(metrics_schedule[:-1]) * 60
-        elif metrics_schedule.endswith("h"):
-            interval = int(metrics_schedule[:-1]) * 60 * 60
-        else:
+        try:
+            interval = PrometheusScheduler._parse_schedule_interval(metrics_schedule)
+        except ValueError as e:
+            logger.warning(f"{e}. Defaulting to 30 seconds.")
             interval = 30  # Default to 30 seconds
 
         return {"batch_size": batch_size, "metrics_schedule": interval}
