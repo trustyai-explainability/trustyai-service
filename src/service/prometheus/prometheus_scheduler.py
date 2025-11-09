@@ -40,7 +40,7 @@ class PrometheusScheduler:
         try:
             duration = isodate.parse_duration(schedule_str)
             return int(duration.total_seconds())
-        except (isodate.ISO8601Error, AttributeError):
+        except (isodate.ISO8601Error, AttributeError, ValueError):
             # Fall back to simple format (30s, 5m, 2h) for backward compatibility
             try:
                 if schedule_str.endswith("s"):
