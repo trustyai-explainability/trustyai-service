@@ -23,6 +23,7 @@ def calculate_dir_metric(
     This function is registered with the metrics directory and called by the scheduler.
     """
     try:
+        request.metric_name = "DIR"
         return calculate_fairness_metric(dataframe, request)
     except Exception as e:
         logger.error(f"Error calculating DIR: {str(e)}")

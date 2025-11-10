@@ -20,6 +20,7 @@ def calculate_spd_metric(dataframe: pd.DataFrame, request: GroupMetricRequest) -
     This function is registered with the metrics directory and called by the scheduler.
     """
     try:
+        request.metric_name = "SPD"
         return calculate_fairness_metric(dataframe, request)
 
     except Exception as e:
