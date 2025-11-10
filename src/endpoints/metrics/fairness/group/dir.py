@@ -73,7 +73,7 @@ async def compute_dir(request: GroupMetricRequest, delta: Optional[float] = Quer
             "thresholds": {
                 "lowerBound": 1 - delta,
                 "upperBound": 1 + delta,
-                "outsideBounds": abs(result.get_value()) < 1 - delta or abs(result.get_value()) > 1 + delta
+                "outsideBounds": result.get_value() < 1 - delta or result.get_value() > 1 + delta
             }
         }
     except Exception as e:
