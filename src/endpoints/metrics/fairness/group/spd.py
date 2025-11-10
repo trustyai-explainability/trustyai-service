@@ -1,180 +1,69 @@
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
-from typing import Dict, List, Optional, Any, Union
 import logging
 import uuid
-import pandas as pd
 
+import pandas as pd
+from fastapi import APIRouter, HTTPException, Query
+
+from src.core.metrics.fairness.group.group_statistical_parity_difference import GroupStatisticalParityDifference
+from src.endpoints.metrics.fairness.group.utils import (
+    GroupDefinitionRequest,
+    GroupMetricRequest,
+    ScheduleId,
+    get_data_source,
+    get_prometheus_scheduler,
+    prepare_fairness_data,
+)
 from src.service.prometheus.metric_value_carrier import MetricValueCarrier
-from src.service.data.shared_data_source import get_shared_data_source
-from src.service.prometheus.shared_prometheus_scheduler import get_shared_prometheus_scheduler
-from src.service.payloads.metrics.base_metric_request import BaseMetricRequest
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-
-def get_prometheus_scheduler():
-    """Get the shared prometheus scheduler instance."""
-    return get_shared_prometheus_scheduler()
-
-
-def get_data_source():
-    """Get the shared data source instance."""
-    return get_shared_data_source()
-
-
-class ReconcilableFeature(BaseModel):
-    rawValueNodes: Optional[List[Dict[str, Any]]] = None
-    rawValueNode: Optional[Dict[str, Any]] = None
-    reconciledType: Optional[List[Dict[str, Any]]] = None
-    multipleValued: Optional[bool] = None
-
-
-class ReconcilableOutput(BaseModel):
-    rawValueNodes: Optional[List[Dict[str, Any]]] = None
-    rawValueNode: Optional[Dict[str, Any]] = None
-    reconciledType: Optional[List[Dict[str, Any]]] = None
-    multipleValued: Optional[bool] = None
-
-
-class GroupMetricRequest(BaseMetricRequest):
-    # Use field aliases to accept camelCase from API while keeping snake_case internally
-    model_id: str = Field(alias="modelId")
-    metric_name: Optional[str] = Field(default=None, alias="metricName")  # Will be set by endpoint
-    request_name: Optional[str] = Field(default=None, alias="requestName")
-    batch_size: Optional[int] = Field(default=100, alias="batchSize")
-
-    # SPD-specific fields
-    protected_attribute: str = Field(alias="protectedAttribute")
-    outcome_name: str = Field(alias="outcomeName")
-    privileged_attribute: Union[ReconcilableFeature, int, float, str] = Field(alias="privilegedAttribute")
-    unprivileged_attribute: Union[ReconcilableFeature, int, float, str] = Field(alias="unprivilegedAttribute")
-    favorable_outcome: Union[ReconcilableOutput, int, float, str] = Field(alias="favorableOutcome")
-    threshold_delta: Optional[float] = Field(default=None, alias="thresholdDelta")
-
-    def retrieve_tags(self) -> Dict[str, str]:
-        """Retrieve tags for this SPD metric request."""
-        tags = self.retrieve_default_tags()
-        tags["protectedAttribute"] = self.protected_attribute
-        tags["outcomeName"] = self.outcome_name
-        return tags
-
-
-class GroupDefinitionRequest(BaseModel):
-    modelId: str
-    requestName: Optional[str] = None
-    metricName: Optional[str] = None
-    batchSize: Optional[int] = 100
-    protectedAttribute: str
-    outcomeName: str
-    privilegedAttribute: Union[ReconcilableFeature, int, float, str]
-    unprivilegedAttribute: Union[ReconcilableFeature, int, float, str]
-    favorableOutcome: Union[ReconcilableOutput, int, float, str]
-    thresholdDelta: Optional[float] = None
-    metricValue: Dict[str, Any]
-
-    # Additional snake_case properties for metrics processing
-    @property
-    def protected_attribute(self) -> str:
-        return self.protectedAttribute
-
-    @property
-    def outcome_name(self) -> str:
-        return self.outcomeName
-
-    @property
-    def privileged_attribute(self) -> Union[ReconcilableFeature, int, float, str]:
-        return self.privilegedAttribute
-
-    @property
-    def unprivileged_attribute(self) -> Union[ReconcilableFeature, int, float, str]:
-        return self.unprivilegedAttribute
-
-    @property
-    def favorable_outcome(self) -> Union[ReconcilableOutput, int, float, str]:
-        return self.favorableOutcome
-
-    @property
-    def threshold_delta(self) -> Optional[float]:
-        return self.thresholdDelta
-
-
-class ScheduleId(BaseModel):
-    requestId: str
-
+# Constants
+DEFAULT_SPD_THRESHOLD_DELTA = 0.1  # Default threshold delta for SPD fairness bounds
+DEFAULT_BATCH_SIZE = 100  # Default batch size for data retrieval
+SPD_FAIRNESS_TARGET = 0  # Perfect fairness target for SPD (difference of 0.0)
 
 # Note: SPDRequest class removed - using GroupMetricRequest for consistency with Java API
 
 
-def calculate_spd_metric(dataframe: pd.DataFrame, request) -> MetricValueCarrier:
+def calculate_spd_metric(dataframe: pd.DataFrame, request: GroupMetricRequest) -> MetricValueCarrier:
     """
-    Calculate SPD metric for the given dataframe and request.
+    Calculate the Statistical Parity Difference metric for the given dataframe and request.
+
     This function is registered with the metrics directory and called by the scheduler.
+
+    Args:
+        dataframe: Input data containing protected attributes and outcomes
+        request: Metric request specifying groups and favorable outcomes
+
+    Returns:
+        MetricValueCarrier containing the SPD value
     """
     try:
-        # Extract data from the reconciled request
-        protected_attr = (
-            request.protectedAttribute if hasattr(request, "protectedAttribute") else request.protected_attribute
-        )
-        outcome_name = request.outcomeName if hasattr(request, "outcomeName") else request.outcome_name
+        # Prepare data using utility function
+        privileged_data, unprivileged_data, outcome_name, favorable_values = prepare_fairness_data(dataframe, request)
 
-        # Handle different types of privilege/unprivilege attributes
-        if hasattr(request, "privilegedAttribute") and hasattr(request.privilegedAttribute, "reconciledType"):
-            # Complex reconciled type
-            privileged_values = [
-                item.get("value") for item in request.privilegedAttribute.reconciledType if "value" in item
-            ]
-        else:
-            # Simple value
-            privileged_attr = getattr(request, "privilegedAttribute", getattr(request, "privileged_attribute", None))
-            privileged_values = [privileged_attr] if not isinstance(privileged_attr, list) else privileged_attr
-
-        if hasattr(request, "unprivilegedAttribute") and hasattr(request.unprivilegedAttribute, "reconciledType"):
-            unprivileged_values = [
-                item.get("value") for item in request.unprivilegedAttribute.reconciledType if "value" in item
-            ]
-        else:
-            unprivileged_attr = getattr(
-                request, "unprivilegedAttribute", getattr(request, "unprivileged_attribute", None)
-            )
-            unprivileged_values = [unprivileged_attr] if not isinstance(unprivileged_attr, list) else unprivileged_attr
-
-        if hasattr(request, "favorableOutcome") and hasattr(request.favorableOutcome, "reconciledType"):
-            favorable_values = [
-                item.get("value") for item in request.favorableOutcome.reconciledType if "value" in item
-            ]
-        else:
-            favorable_attr = getattr(request, "favorableOutcome", getattr(request, "favorable_outcome", None))
-            favorable_values = [favorable_attr] if not isinstance(favorable_attr, list) else favorable_attr
-
-        # Filter the dataframe into privileged and unprivileged groups
-        privileged_mask = dataframe[protected_attr].isin(privileged_values)
-        unprivileged_mask = dataframe[protected_attr].isin(unprivileged_values)
-
-        privileged_data = dataframe[privileged_mask]
-        unprivileged_data = dataframe[unprivileged_mask]
-
+        # Check for sufficient data
         if len(privileged_data) == 0 or len(unprivileged_data) == 0:
             logger.warning(
                 f"Insufficient data for SPD calculation: privileged={len(privileged_data)}, unprivileged={len(unprivileged_data)} samples. Returning NaN."
             )
             return MetricValueCarrier(float("nan"))
 
-        # Calculate favorable outcome rates
-        priv_favorable_count = len(privileged_data[privileged_data[outcome_name].isin(favorable_values)])
-        unpriv_favorable_count = len(unprivileged_data[unprivileged_data[outcome_name].isin(favorable_values)])
+        # Validate favorable outcomes
+        if len(favorable_values) == 0:
+            raise ValueError("No favorable outcomes specified for SPD calculation")
 
-        priv_favorable_rate = priv_favorable_count / len(privileged_data)
-        unpriv_favorable_rate = unpriv_favorable_count / len(unprivileged_data)
+        # Prepare data in the format expected by GroupStatisticalParityDifference
+        privileged_array = privileged_data[[outcome_name]].to_numpy()
+        unprivileged_array = unprivileged_data[[outcome_name]].to_numpy()
 
-        # SPD = P(Y=favorable|A=unprivileged) - P(Y=favorable|A=privileged)
-        spd_value = unpriv_favorable_rate - priv_favorable_rate
-
-        logger.debug(
-            f"SPD calculation: privileged_rate={priv_favorable_rate:.4f}, unprivileged_rate={unpriv_favorable_rate:.4f}, spd={spd_value:.4f}"
+        # Calculate SPD using the core implementation
+        spd_value = GroupStatisticalParityDifference.calculate(
+            privileged=privileged_array, unprivileged=unprivileged_array, favorable_outputs=favorable_values
         )
 
+        logger.debug(f"SPD calculation result: {spd_value:.4f}")
         return MetricValueCarrier(spd_value)
 
     except Exception as e:
@@ -200,14 +89,15 @@ except Exception as e:
 
 # Statistical Parity Difference
 @router.post("/metrics/group/fairness/spd")
-async def compute_spd(request: GroupMetricRequest):
+async def compute_spd(request: GroupMetricRequest, delta: float | None = Query(None)):
     """Compute the current value of Statistical Parity Difference metric."""
     try:
         logger.info(f"Computing SPD for model: {request.model_id}")
+        request.metric_name = "SPD"
 
         # Get data source and load dataframe
         data_source = get_data_source()
-        batch_size = request.batch_size if request.batch_size else 100
+        batch_size = request.batch_size if request.batch_size else DEFAULT_BATCH_SIZE
 
         # Get dataframe for the model
         dataframe = await data_source.get_organic_dataframe(request.model_id, batch_size)
@@ -218,12 +108,20 @@ async def compute_spd(request: GroupMetricRequest):
         # Calculate SPD using our calculator
         result = calculate_spd_metric(dataframe, request)
 
+        # Use delta from query parameter, then request.threshold_delta, then default
+        if delta is None:
+            delta = request.threshold_delta if request.threshold_delta is not None else DEFAULT_SPD_THRESHOLD_DELTA
+
         return {
             "name": "SPD",
             "value": result.get_value(),
             "type": "FAIRNESS",
             "specificDefinition": f"Statistical Parity Difference value of {result.get_value():.4f}",
-            "thresholds": {"lowerBound": -0.1, "upperBound": 0.1, "outsideBounds": abs(result.get_value()) > 0.1},
+            "thresholds": {
+                "lowerBound": SPD_FAIRNESS_TARGET - delta,
+                "upperBound": SPD_FAIRNESS_TARGET + delta,
+                "outsideBounds": abs(result.get_value() - SPD_FAIRNESS_TARGET) > delta,
+            },
         }
     except Exception as e:
         logger.error(f"Error computing SPD: {str(e)}")
@@ -235,7 +133,9 @@ async def get_spd_definition():
     """Provide a general definition of Statistical Parity Difference metric."""
     return {
         "name": "Statistical Parity Difference",
-        "description": "Description.",
+        "description": "Measures the difference in favorable outcome rates between unprivileged and privileged groups. "
+        "A value of zero indicates perfect fairness. "
+        "Positive or negative values indicate bias favoring one group over another.",
     }
 
 
@@ -244,8 +144,8 @@ async def interpret_spd_value(request: GroupDefinitionRequest):
     """Provide a specific, plain-english interpretation of a specific value of SPD metric."""
     try:
         logger.info(f"Interpreting SPD value for model: {request.modelId}")
-        # TODO: Implement
-        return {"interpretation": "The SPD value indicates a small bias in the model."}
+        # TODO: Implement interpretation
+        return {"interpretation": "The SPD value indicates the difference in favorable outcome rates between groups."}
     except Exception as e:
         logger.error(f"Error interpreting SPD value: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error interpreting value: {str(e)}")
@@ -350,12 +250,12 @@ async def list_spd_requests():
 
 # Deprecated SPD endpoints
 @router.post("/spd", deprecated=True)
-async def compute_spd_deprecated(request: GroupMetricRequest):
+async def compute_spd_deprecated(request: GroupMetricRequest, delta: float | None = Query(None)):
     """Compute the current value of Statistical Parity Difference metric (deprecated).
 
     This endpoint is deprecated. Please use /metrics/group/fairness/spd instead.
     """
-    return await compute_spd(request)
+    return await compute_spd(request, delta)
 
 
 @router.get("/spd/definition", deprecated=True)
