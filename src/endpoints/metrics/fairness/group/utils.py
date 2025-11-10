@@ -113,7 +113,12 @@ def calculate_fairness_metric(dataframe: pd.DataFrame, request: GroupMetricReque
     # model_id = request.modelId if hasattr(request, 'modelId') else request.model_id
     protected_attr = request.protectedAttribute if hasattr(request, 'protectedAttribute') else request.protected_attribute
     outcome_name = request.outcomeName if hasattr(request, 'outcomeName') else request.outcome_name
+    
     metric_name = request.metric_name if hasattr(request, 'metricName') else request.metric_name
+    if metric_name is None:
+        raise ValueError("Metric name is required")
+    if metric_name.lower() not in ["spd", "dir"]:
+        raise ValueError(f"Invalid metric name: {metric_name}. Must be 'spd' or 'dir'")
 
     # Handle different types of privilege/unprivilege attributes
     if hasattr(request, 'privilegedAttribute') and hasattr(request.privilegedAttribute, 'reconciledType'):
