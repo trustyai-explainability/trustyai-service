@@ -1,196 +1,84 @@
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
-from prometheus_client import Gauge
-from pydantic import BaseModel, Field
-from typing import List, Optional, Union, Dict, Any
+from fastapi import APIRouter, HTTPException, Query
+from typing import Optional
 import pandas as pd
-import os
-import time
 import uuid
 import logging
 
-from src.service.payloads.metrics.base_metric_request import BaseMetricRequest
+from src.endpoints.metrics.fairness.group.utils import (
+    GroupMetricRequest, GroupDefinitionRequest, ScheduleId,
+    get_data_source, get_prometheus_scheduler, calculate_fairness_metric
+    )
+from src.service.prometheus.metric_value_carrier import MetricValueCarrier
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-DATA_DIR = "data"
 
-
-class ReconcilableFeature(BaseModel):
-    rawValueNodes: Optional[List[Dict[str, Any]]] = None
-    rawValueNode: Optional[Dict[str, Any]] = None
-    reconciledType: Optional[List[Dict[str, Any]]] = None
-    multipleValued: Optional[bool] = None
-
-
-class ReconcilableOutput(BaseModel):
-    rawValueNodes: Optional[List[Dict[str, Any]]] = None
-    rawValueNode: Optional[Dict[str, Any]] = None
-    reconciledType: Optional[List[Dict[str, Any]]] = None
-    multipleValued: Optional[bool] = None
-
-
-class GroupMetricRequest(BaseMetricRequest):
-    # Use field aliases to accept camelCase from API while keeping snake_case internally
-    model_id: str = Field(alias="modelId")
-    metric_name: Optional[str] = Field(default=None, alias="metricName")  # Will be set by endpoint
-    request_name: Optional[str] = Field(default=None, alias="requestName")
-    batch_size: Optional[int] = Field(default=100, alias="batchSize")
-
-    # DIR-specific fields
-    protected_attribute: str = Field(alias="protectedAttribute")
-    outcome_name: str = Field(alias="outcomeName")
-    privileged_attribute: Union[ReconcilableFeature, int, float, str] = Field(alias="privilegedAttribute")
-    unprivileged_attribute: Union[ReconcilableFeature, int, float, str] = Field(alias="unprivilegedAttribute")
-    favorable_outcome: Union[ReconcilableOutput, int, float, str] = Field(alias="favorableOutcome")
-    threshold_delta: Optional[float] = Field(default=None, alias="thresholdDelta")
-
-    def retrieve_tags(self) -> Dict[str, str]:
-        """Retrieve tags for this DIR metric request."""
-        tags = self.retrieve_default_tags()
-        tags["protectedAttribute"] = self.protected_attribute
-        tags["outcomeName"] = self.outcome_name
-        return tags
-
-
-class GroupDefinitionRequest(BaseModel):
-    modelId: str
-    requestName: Optional[str] = None
-    metricName: Optional[str] = None
-    batchSize: Optional[int] = 100
-    protectedAttribute: str
-    outcomeName: str
-    privilegedAttribute: Union[ReconcilableFeature, int, float, str]
-    unprivilegedAttribute: Union[ReconcilableFeature, int, float, str]
-    favorableOutcome: Union[ReconcilableOutput, int, float, str]
-    thresholdDelta: Optional[float] = None
-    metricValue: Dict[str, Any]
-
-
-class ScheduleId(BaseModel):
-    requestId: str
-
-
-class MetricValueCarrier(BaseModel):
-    value: float
-
-
-def load_dataframe(model_name: str) -> pd.DataFrame:
-    file_path = os.path.join(DATA_DIR, f"{model_name}.csv")
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(f"Data for model '{model_name}' not found.")
-    return pd.read_csv(file_path)
-
-
-def calculate_disparate_impact_ratio(
-    df: pd.DataFrame,
-    protected_attr: str,
-    outcome_name: str,
-    favorable_outcome: List[str],
-    privileged: List[str],
-    unprivileged: List[str],
-) -> float:
-    privileged_group = df[df[protected_attr].isin(privileged)]
-    unprivileged_group = df[df[protected_attr].isin(unprivileged)]
-
-    priv_outcome_ratio = len(privileged_group[privileged_group[outcome_name].isin(favorable_outcome)]) / len(
-        privileged_group
-    )
-    unpriv_outcome_ratio = len(unprivileged_group[unprivileged_group[outcome_name].isin(favorable_outcome)]) / len(
-        unprivileged_group
-    )
-
-    if priv_outcome_ratio == 0:
-        return 0.0
-    return unpriv_outcome_ratio / priv_outcome_ratio
-
-
-@router.post("/metrics/group/fairness/dir", response_model=MetricValueCarrier)
-async def get_disparate_impact_ratio(request: GroupMetricRequest, delta: Optional[float] = Query(None)):
+def calculate_dir_metric(
+    request: GroupMetricRequest,
+    dataframe: pd.DataFrame,
+) -> MetricValueCarrier:
+    """
+    Calculate the Disparate Impact Ratio metric for the given dataframe and request.
+    This function is registered with the metrics directory and called by the scheduler.
+    """
     try:
-        df = load_dataframe(request.modelId)
-        dir_value = calculate_disparate_impact_ratio(
-            df,
-            request.protectedAttribute,
-            request.outcomeName,
-            request.favorableOutcome.rawValueNodes,
-            request.privilegedAttribute.rawValueNodes,
-            request.unprivilegedAttribute.rawValueNodes,
-        )
-        return MetricValueCarrier(value=dir_value)
-
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        return calculate_fairness_metric(dataframe, request)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error calculating DIR: {str(e)}")
+        logger.error(f"Error calculating DIR: {str(e)}")
+        raise e
 
 
-class DIRRequest(BaseModel):
-    modelid: str
-    protected_attribute: str
-    privileged_attribute: Union[str, float]
-    unprivileged_attribute: Union[str, float]
-    outcome_name: str
-    favorable_outcome: List[str]
-    batch_size: int
+# Register the DIR calculator with the metrics directory
+def register_dir_calculator():
+    """Register the DIR calculator with the global metrics directory."""
+    scheduler = get_prometheus_scheduler()
+    if scheduler and scheduler.metrics_directory:
+        scheduler.metrics_directory.register("DIR", calculate_dir_metric)
+        logger.info("DIR calculator registered with metrics directory")
 
-
-# Dictionary to store DIR requests
-active_dir_requests = {}
-dir_metric_gauge = Gauge("trustyai_dir", "Stored DIR Metric Values", ["request_id"])
-
-
-def calculate_and_update_dir_metric(request_id: str):
-    while request_id in active_dir_requests:
-        request = active_dir_requests[request_id]
-
-        try:
-            df = load_dataframe(request.modelid)
-            dir_value = calculate_disparate_impact_ratio(
-                df,
-                request.protected_attribute,
-                request.outcome_name,
-                request.favorable_outcome,
-                [request.privileged_attribute],
-                [request.unprivileged_attribute],
-            )
-            dir_metric_gauge.labels(request_id=request_id).set(dir_value)
-            time.sleep(30)
-        except Exception as e:
-            print(f"Error calculating DIR for request {request_id}: {e}")
-            break
-
-
-@router.post("/metrics/group/fairness/dir/request")
-async def register_dir_request(request: DIRRequest, background_tasks: BackgroundTasks):
-    request_id = str(uuid.uuid4())
-    active_dir_requests[request_id] = request
-    background_tasks.add_task(calculate_and_update_dir_metric, request_id)
-    return {"request_id": request_id}
-
-
-@router.delete("/metrics/group/fairness/dir/request/{request_id}")
-async def delete_dir_request(request_id: str):
-    if request_id in active_dir_requests:
-        del active_dir_requests[request_id]
-        dir_metric_gauge.remove(request_id=request_id)
-        return {"detail": f"Request {request_id} has been deleted."}
-    else:
-        raise HTTPException(status_code=404, detail="Request ID not found.")
+# Register on module import
+try:
+    register_dir_calculator()
+except Exception as e:
+    logger.warning(f"Could not register DIR calculator on import: {e}")
 
 
 # Disparate Impact Ratio
 @router.post("/metrics/group/fairness/dir")
-async def compute_dir(request: GroupMetricRequest):
+async def compute_dir(request: GroupMetricRequest, delta: Optional[float] = Query(None)):
     """Compute the current value of Disparate Impact Ratio metric."""
     try:
-        logger.info(f"Computing DIR for model: {request.modelId}")
-        # TODO: Implement
-        return {"status": "success", "value": 0.8}
+        logger.info(f"Computing DIR for model: {request.model_id}")
+        request.metric_name = "DIR"
+
+        # Get data source and load dataframe
+        data_source = get_data_source()
+        batch_size = request.batch_size if request.batch_size else 100
+
+        # Get dataframe for the model
+        dataframe = await data_source.get_organic_dataframe(request.model_id, batch_size)
+        if dataframe.empty:
+            raise HTTPException(status_code=404, detail=f"No data found for model: {request.model_id}")
+
+        # Calculate DIR using our calculator
+        result = calculate_dir_metric(dataframe, request)
+        if delta is None:
+            delta = 0.2
+        return {
+            "name": "DIR",
+            "value": result.get_value(),
+            "type": "FAIRNESS",
+            "specificDefinition": f"Disparate Impact Ratio value of {result.get_value():.4f}",
+            "thresholds": {
+                "lowerBound": 1 - delta,
+                "upperBound": 1 + delta,
+                "outsideBounds": abs(result.get_value()) < 1 - delta or abs(result.get_value()) > 1 + delta
+            }
+        }
     except Exception as e:
         logger.error(f"Error computing DIR: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error computing metric: {str(e)}")
-
+        raise HTTPException(status_code=500, detail=f"Error computing metric: {str(e)}") from e
 
 @router.get("/metrics/group/fairness/dir/definition")
 async def get_dir_definition():
@@ -214,27 +102,95 @@ async def interpret_dir_value(request: GroupDefinitionRequest):
 
 
 @router.post("/metrics/group/fairness/dir/request")
-async def schedule_dir(request: GroupMetricRequest, background_tasks: BackgroundTasks):
+async def schedule_dir(request: GroupMetricRequest):
     """Schedule a recurring computation of DIR metric."""
-    request_id = str(uuid.uuid4())
-    logger.info(f"Scheduling DIR computation with ID: {request_id}")
-    # TODO: Implement background task scheduling
-    return {"requestId": request_id}
+    try:
+        # Generate UUID for this request
+        request_id = uuid.uuid4()
+        logger.info(f"Scheduling DIR computation with ID: {request_id}")
+
+        # Set metric name automatically
+        request.metric_name = "DIR"
+
+        # Get the scheduler and register the request
+        scheduler = get_prometheus_scheduler()
+        if not scheduler:
+            raise HTTPException(status_code=500, detail="Prometheus scheduler not available")
+
+        # Register with the scheduler (this will reconcile the request and store it)
+        await scheduler.register("DIR", request_id, request)
+
+        logger.info(f"Successfully scheduled DIR computation with ID: {request_id}")
+        return {"requestId": str(request_id)}
+
+    except Exception as e:
+        logger.error(f"Error scheduling DIR computation: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error scheduling metric: {str(e)}") from e
 
 
 @router.delete("/metrics/group/fairness/dir/request")
 async def delete_dir_schedule(schedule: ScheduleId):
     """Delete a recurring computation of DIR metric."""
-    logger.info(f"Deleting DIR schedule: {schedule.requestId}")
-    # TODO: Implement schedule deletion
-    return {"status": "success", "message": f"Schedule {schedule.requestId} deleted"}
+    try:
+        logger.info(f"Deleting DIR schedule: {schedule.requestId}")
+
+        # Get the scheduler and delete the request
+        scheduler = get_prometheus_scheduler()
+        if not scheduler:
+            raise HTTPException(status_code=500, detail="Prometheus scheduler not available")
+
+        # Convert string ID to UUID
+        try:
+            request_uuid = uuid.UUID(schedule.requestId)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid request ID format")
+
+        # Delete from scheduler
+        await scheduler.delete("DIR", request_uuid)
+
+        logger.info(f"Successfully deleted DIR schedule: {schedule.requestId}")
+        return {"status": "success", "message": f"Schedule {schedule.requestId} deleted"}
+
+    except Exception as e:
+        logger.error(f"Error deleting DIR schedule: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error deleting schedule: {str(e)}")
 
 
 @router.get("/metrics/group/fairness/dir/requests")
 async def list_dir_requests():
     """List the currently scheduled computations of DIR metric."""
-    # TODO: Implement request listing
-    return {"requests": []}
+    try:
+        # Get the scheduler and list DIR requests
+        scheduler = get_prometheus_scheduler()
+        if not scheduler:
+            raise HTTPException(status_code=500, detail="Prometheus scheduler not available")
+
+        # Get all requests for DIR
+        dir_requests = scheduler.get_requests("DIR")
+        
+        # Convert to list format expected by client
+        requests_list = []
+        for request_id, request in dir_requests.items():
+            # Validate request object type before property access
+            if hasattr(request, "model_id") and hasattr(request, "batch_size") and \
+               hasattr(request, "protected_attribute") and hasattr(request, "outcome_name"):
+                requests_list.append({
+                    "requestId": str(request_id),
+                    "modelId": request.model_id,
+                    "metricName": "DIR",
+                    "batchSize": request.batch_size,
+                    "protectedAttribute": request.protected_attribute,
+                    "outcomeName": request.outcome_name
+                })
+            else:
+                # Log warning for malformed request objects and skip them
+                logger.warning(f"Skipping malformed DIR request {request_id}: missing required attributes")
+                continue
+
+        return {"requests": requests_list}
+    except Exception as e:
+        logger.error(f"Error listing DIR requests: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error listing requests: {str(e)}")
 
 
 # Deprecated DIR endpoints
@@ -266,12 +222,12 @@ async def interpret_dir_value_deprecated(request: GroupDefinitionRequest):
 
 
 @router.post("/dir/request", deprecated=True)
-async def schedule_dir_deprecated(request: GroupMetricRequest, background_tasks: BackgroundTasks):
+async def schedule_dir_deprecated(request: GroupMetricRequest):
     """Schedule a recurring computation of DIR metric (deprecated).
 
     This endpoint is deprecated. Please use /metrics/group/fairness/dir/request instead.
     """
-    return await schedule_dir(request, background_tasks)
+    return await schedule_dir(request)
 
 
 @router.delete("/dir/request", deprecated=True)
