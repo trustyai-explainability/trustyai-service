@@ -27,7 +27,7 @@ class TestKSTestEndpoints:
             "batchSize": 100,
         },
         expected_response_keys=["status", "value", "drift_detected", "p_value", "alpha"],
-        df_type="pandas",
+        df_type="Pandas",
     )
 
     # Polars DataFrame tests
@@ -43,7 +43,7 @@ class TestKSTestEndpoints:
             "batchSize": 100,
         },
         expected_response_keys=["status", "value", "drift_detected", "p_value", "alpha"],
-        df_type="polars",
+        df_type="Polars",
     )
 
     test_definition_endpoint = factory.make_definition_endpoint_test(
@@ -144,4 +144,121 @@ class TestKSTestEndpoints:
         endpoint_path="/metrics/drift/kstest/requests",
         client=client,
         num_requests=3,
+    )
+
+    # List endpoint with malformed requests (defensive logic test)
+    test_list_requests_filters_malformed = factory.make_list_requests_with_malformed_data_test(
+        metric_name="KSTest",
+        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+        endpoint_path="/metrics/drift/kstest/requests",
+        client=client,
+        num_valid_requests=2,
+        num_malformed_requests=3,
+    )
+
+    # ========================================================================
+    # Scheduler Exception Tests
+    # ========================================================================
+
+    # Schedule endpoint scheduler exceptions
+    test_schedule_connection_error = factory.make_schedule_endpoint_error_test(
+        metric_name="KSTest",
+        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+        endpoint_path="/metrics/drift/kstest/request",
+        client=client,
+        request_payload={
+            "modelId": "test-model",
+            "referenceTag": "baseline",
+            "fitColumns": ["feature1"],
+        },
+        expected_status_code=500,
+        expected_error_substring="connect",  # Match "Failed to connect"
+        mock_scheduler_none=False,
+        register_side_effect=ConnectionError("Failed to connect to scheduler database"),
+    )
+
+    test_schedule_timeout_error = factory.make_schedule_endpoint_error_test(
+        metric_name="KSTest",
+        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+        endpoint_path="/metrics/drift/kstest/request",
+        client=client,
+        request_payload={
+            "modelId": "test-model",
+            "referenceTag": "baseline",
+            "fitColumns": ["feature1"],
+        },
+        expected_status_code=500,
+        expected_error_substring="timeout",
+        mock_scheduler_none=False,
+        register_side_effect=TimeoutError("Scheduler registration timeout after 30s"),
+    )
+
+    test_schedule_runtime_error = factory.make_schedule_endpoint_error_test(
+        metric_name="KSTest",
+        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+        endpoint_path="/metrics/drift/kstest/request",
+        client=client,
+        request_payload={
+            "modelId": "test-model",
+            "referenceTag": "baseline",
+            "fitColumns": ["feature1"],
+        },
+        expected_status_code=500,
+        expected_error_substring="error",
+        mock_scheduler_none=False,
+        register_side_effect=RuntimeError("Internal scheduler error occurred"),
+    )
+
+    # Delete endpoint scheduler exceptions
+    test_delete_connection_error = factory.make_delete_endpoint_error_test(
+        metric_name="KSTest",
+        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+        endpoint_path="/metrics/drift/kstest/request",
+        client=client,
+        request_id="123e4567-e89b-12d3-a456-426614174000",
+        expected_status_code=500,
+        expected_error_substring="connect",  # Match "Failed to connect"
+        mock_scheduler_none=False,
+        delete_side_effect=ConnectionError("Failed to connect to scheduler database"),
+    )
+
+    test_delete_runtime_error = factory.make_delete_endpoint_error_test(
+        metric_name="KSTest",
+        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+        endpoint_path="/metrics/drift/kstest/request",
+        client=client,
+        request_id="123e4567-e89b-12d3-a456-426614174000",
+        expected_status_code=500,
+        expected_error_substring="failed",
+        mock_scheduler_none=False,
+        delete_side_effect=RuntimeError("Scheduler deletion failed"),
+    )
+
+    # Scheduler unavailable tests
+    # Note: Current endpoint implementation returns 500 instead of 503 for scheduler unavailable
+    # This could be improved to return 503 (Service Unavailable) in a future update
+    test_schedule_scheduler_unavailable = factory.make_schedule_endpoint_error_test(
+        metric_name="KSTest",
+        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+        endpoint_path="/metrics/drift/kstest/request",
+        client=client,
+        request_payload={
+            "modelId": "test-model",
+            "referenceTag": "baseline",
+            "fitColumns": ["feature1"],
+        },
+        expected_status_code=500,  # TODO: Should be 503 Service Unavailable
+        expected_error_substring="not available",  # Matches "Prometheus scheduler not available"
+        mock_scheduler_none=True,
+    )
+
+    test_delete_scheduler_unavailable = factory.make_delete_endpoint_error_test(
+        metric_name="KSTest",
+        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+        endpoint_path="/metrics/drift/kstest/request",
+        client=client,
+        request_id="123e4567-e89b-12d3-a456-426614174000",
+        expected_status_code=500,  # TODO: Should be 503 Service Unavailable
+        expected_error_substring="not available",  # Matches "Prometheus scheduler not available"
+        mock_scheduler_none=True,
     )

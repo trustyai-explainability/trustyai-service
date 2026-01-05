@@ -2,7 +2,7 @@ import logging
 import uuid
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.metrics.drift.kolmogorov_smirnov import KolmogorovSmirnov
@@ -40,7 +40,7 @@ class KSTestMetricRequest(BaseMetricRequest):
     # KSTest-specific fields
     threshold_delta: Optional[float] = Field(default=None, alias="thresholdDelta")
     reference_tag: Optional[str] = Field(default=None, alias="referenceTag")
-    fit_columns: List[str] = Field(default=[], alias="fitColumns")
+    fit_columns: List[str] = Field(default_factory=list, alias="fitColumns")
 
     def retrieve_tags(self) -> Dict[str, str]:
         """Retrieve tags for this KSTest metric request."""
@@ -140,7 +140,7 @@ async def get_kstest_definition() -> Dict[str, str]:
 
 
 @router.post("/metrics/drift/kstest/request")
-async def schedule_kstest(request: KSTestMetricRequest, background_tasks: BackgroundTasks) -> Dict[str, str]:
+async def schedule_kstest(request: KSTestMetricRequest) -> Dict[str, str]:
     """Schedule a recurring computation of KSTest metric."""
     try:
         # Generate UUID for this request

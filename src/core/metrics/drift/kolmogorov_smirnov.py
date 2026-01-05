@@ -24,7 +24,7 @@ class KolmogorovSmirnov:
     """
 
     @staticmethod
-    def kstest(reference_data: np.ndarray, current_data: np.ndarray, alpha: float = 0.05) -> Dict[str, float]:
+    def kstest(reference_data: np.ndarray, current_data: np.ndarray, alpha: float = 0.05) -> Dict[str, float | bool]:
         """
         Calculate exact KS test statistic and p-value for drift detection.
 
@@ -44,6 +44,6 @@ class KolmogorovSmirnov:
         return {
             "statistic": float(statistic),
             "p_value": float(p_value),
-            "drift_detected": bool(p_value < alpha),
             "alpha": alpha,
+            "drift_detected": bool(p_value < alpha),
         }
