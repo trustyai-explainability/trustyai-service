@@ -1,14 +1,11 @@
-from fastapi import APIRouter, HTTPException, BackgroundTasks
-from prometheus_client import Gauge
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import Dict, List, Optional, Any, Union
 import logging
 import uuid
 import pandas as pd
 
-from src.core.metrics.fairness.group.group_statistical_parity_difference import GroupStatisticalParityDifference
 from src.service.prometheus.metric_value_carrier import MetricValueCarrier
-from src.service.data.datasources.data_source import DataSource
 from src.service.data.shared_data_source import get_shared_data_source
 from src.service.prometheus.shared_prometheus_scheduler import get_shared_prometheus_scheduler
 from src.service.payloads.metrics.base_metric_request import BaseMetricRequest
@@ -16,9 +13,11 @@ from src.service.payloads.metrics.base_metric_request import BaseMetricRequest
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+
 def get_prometheus_scheduler():
     """Get the shared prometheus scheduler instance."""
     return get_shared_prometheus_scheduler()
+
 
 def get_data_source():
     """Get the shared data source instance."""
@@ -60,7 +59,6 @@ class GroupMetricRequest(BaseMetricRequest):
         tags["protectedAttribute"] = self.protected_attribute
         tags["outcomeName"] = self.outcome_name
         return tags
-
 
 
 class GroupDefinitionRequest(BaseModel):
@@ -116,29 +114,39 @@ def calculate_spd_metric(dataframe: pd.DataFrame, request) -> MetricValueCarrier
     """
     try:
         # Extract data from the reconciled request
-        model_id = request.modelId if hasattr(request, 'modelId') else request.model_id
-        protected_attr = request.protectedAttribute if hasattr(request, 'protectedAttribute') else request.protected_attribute
-        outcome_name = request.outcomeName if hasattr(request, 'outcomeName') else request.outcome_name
+        model_id = request.modelId if hasattr(request, "modelId") else request.model_id
+        protected_attr = (
+            request.protectedAttribute if hasattr(request, "protectedAttribute") else request.protected_attribute
+        )
+        outcome_name = request.outcomeName if hasattr(request, "outcomeName") else request.outcome_name
 
         # Handle different types of privilege/unprivilege attributes
-        if hasattr(request, 'privilegedAttribute') and hasattr(request.privilegedAttribute, 'reconciledType'):
+        if hasattr(request, "privilegedAttribute") and hasattr(request.privilegedAttribute, "reconciledType"):
             # Complex reconciled type
-            privileged_values = [item.get('value') for item in request.privilegedAttribute.reconciledType if 'value' in item]
+            privileged_values = [
+                item.get("value") for item in request.privilegedAttribute.reconciledType if "value" in item
+            ]
         else:
             # Simple value
-            privileged_attr = getattr(request, 'privilegedAttribute', getattr(request, 'privileged_attribute', None))
+            privileged_attr = getattr(request, "privilegedAttribute", getattr(request, "privileged_attribute", None))
             privileged_values = [privileged_attr] if not isinstance(privileged_attr, list) else privileged_attr
 
-        if hasattr(request, 'unprivilegedAttribute') and hasattr(request.unprivilegedAttribute, 'reconciledType'):
-            unprivileged_values = [item.get('value') for item in request.unprivilegedAttribute.reconciledType if 'value' in item]
+        if hasattr(request, "unprivilegedAttribute") and hasattr(request.unprivilegedAttribute, "reconciledType"):
+            unprivileged_values = [
+                item.get("value") for item in request.unprivilegedAttribute.reconciledType if "value" in item
+            ]
         else:
-            unprivileged_attr = getattr(request, 'unprivilegedAttribute', getattr(request, 'unprivileged_attribute', None))
+            unprivileged_attr = getattr(
+                request, "unprivilegedAttribute", getattr(request, "unprivileged_attribute", None)
+            )
             unprivileged_values = [unprivileged_attr] if not isinstance(unprivileged_attr, list) else unprivileged_attr
 
-        if hasattr(request, 'favorableOutcome') and hasattr(request.favorableOutcome, 'reconciledType'):
-            favorable_values = [item.get('value') for item in request.favorableOutcome.reconciledType if 'value' in item]
+        if hasattr(request, "favorableOutcome") and hasattr(request.favorableOutcome, "reconciledType"):
+            favorable_values = [
+                item.get("value") for item in request.favorableOutcome.reconciledType if "value" in item
+            ]
         else:
-            favorable_attr = getattr(request, 'favorableOutcome', getattr(request, 'favorable_outcome', None))
+            favorable_attr = getattr(request, "favorableOutcome", getattr(request, "favorable_outcome", None))
             favorable_values = [favorable_attr] if not isinstance(favorable_attr, list) else favorable_attr
 
         # Filter the dataframe into privileged and unprivileged groups
@@ -149,8 +157,10 @@ def calculate_spd_metric(dataframe: pd.DataFrame, request) -> MetricValueCarrier
         unprivileged_data = dataframe[unprivileged_mask]
 
         if len(privileged_data) == 0 or len(unprivileged_data) == 0:
-            logger.warning(f"Insufficient data for SPD calculation: privileged={len(privileged_data)}, unprivileged={len(unprivileged_data)} samples. Returning NaN.")
-            return MetricValueCarrier(float('nan'))
+            logger.warning(
+                f"Insufficient data for SPD calculation: privileged={len(privileged_data)}, unprivileged={len(unprivileged_data)} samples. Returning NaN."
+            )
+            return MetricValueCarrier(float("nan"))
 
         # Calculate favorable outcome rates
         priv_favorable_count = len(privileged_data[privileged_data[outcome_name].isin(favorable_values)])
@@ -162,13 +172,16 @@ def calculate_spd_metric(dataframe: pd.DataFrame, request) -> MetricValueCarrier
         # SPD = P(Y=favorable|A=unprivileged) - P(Y=favorable|A=privileged)
         spd_value = unpriv_favorable_rate - priv_favorable_rate
 
-        logger.debug(f"SPD calculation: privileged_rate={priv_favorable_rate:.4f}, unprivileged_rate={unpriv_favorable_rate:.4f}, spd={spd_value:.4f}")
+        logger.debug(
+            f"SPD calculation: privileged_rate={priv_favorable_rate:.4f}, unprivileged_rate={unpriv_favorable_rate:.4f}, spd={spd_value:.4f}"
+        )
 
         return MetricValueCarrier(spd_value)
 
     except Exception as e:
         logger.error(f"Error calculating SPD: {str(e)}")
         raise e
+
 
 # Register the SPD calculator with the metrics directory
 def register_spd_calculator():
@@ -177,6 +190,7 @@ def register_spd_calculator():
     if scheduler and scheduler.metrics_directory:
         scheduler.metrics_directory.register("SPD", calculate_spd_metric)
         logger.info("SPD calculator registered with metrics directory")
+
 
 # Register on module import
 try:
@@ -210,17 +224,11 @@ async def compute_spd(request: GroupMetricRequest):
             "value": result.get_value(),
             "type": "FAIRNESS",
             "specificDefinition": f"Statistical Parity Difference value of {result.get_value():.4f}",
-            "thresholds": {
-                "lowerBound": -0.1,
-                "upperBound": 0.1,
-                "outsideBounds": abs(result.get_value()) > 0.1
-            }
+            "thresholds": {"lowerBound": -0.1, "upperBound": 0.1, "outsideBounds": abs(result.get_value()) > 0.1},
         }
     except Exception as e:
         logger.error(f"Error computing SPD: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Error computing metric: {str(e)}"
-        ) from e
+        raise HTTPException(status_code=500, detail=f"Error computing metric: {str(e)}") from e
 
 
 @router.get("/metrics/group/fairness/spd/definition")
@@ -268,9 +276,7 @@ async def schedule_spd(request: GroupMetricRequest):
 
     except Exception as e:
         logger.error(f"Error scheduling SPD computation: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Error scheduling metric: {str(e)}"
-        ) from e
+        raise HTTPException(status_code=500, detail=f"Error scheduling metric: {str(e)}") from e
 
 
 @router.delete("/metrics/group/fairness/spd/request")
@@ -317,15 +323,19 @@ async def list_spd_requests():
         requests_list = []
         for request_id, request in spd_requests.items():
             # Validate request object type before property access
-            if hasattr(request, "model_id") and hasattr(request, "batch_size") and \
-               hasattr(request, "protected_attribute") and hasattr(request, "outcome_name"):
+            if (
+                hasattr(request, "model_id")
+                and hasattr(request, "batch_size")
+                and hasattr(request, "protected_attribute")
+                and hasattr(request, "outcome_name")
+            ):
                 requests_list.append({
                     "requestId": str(request_id),
                     "modelId": request.model_id,
                     "metricName": "SPD",
                     "batchSize": request.batch_size,
                     "protectedAttribute": request.protected_attribute,
-                    "outcomeName": request.outcome_name
+                    "outcomeName": request.outcome_name,
                 })
             else:
                 # Log warning for malformed request objects and skip them

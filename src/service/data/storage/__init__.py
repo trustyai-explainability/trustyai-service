@@ -13,6 +13,7 @@ def get_storage_interface():
     elif storage_format == "MARIA":
         try:
             from src.service.data.storage.maria.maria import MariaDBStorage
+
             return MariaDBStorage(
                 user=os.environ.get("DATABASE_USERNAME"),
                 password=os.environ.get("DATABASE_PASSWORD"),

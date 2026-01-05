@@ -257,7 +257,7 @@ async def run_server():
 
     # Configure logging
     config.accesslog = "-"  # Log to stdout
-    config.errorlog = "-"   # Log to stderr
+    config.errorlog = "-"  # Log to stderr
     config.use_reloader = False  # Disable reloader in production
 
     # Start the server

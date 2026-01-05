@@ -121,13 +121,12 @@ class TestPrometheusScheduler:
         assert PrometheusScheduler._parse_schedule_interval("P1DT2H30M45S") == 95445
         # 1 hour and 30 minutes = 5400 seconds
         assert PrometheusScheduler._parse_schedule_interval("PT1H30M") == 5400
-    
+
     def test_parse_interval_iso8601_fractional(self) -> None:
         """Test parsing ISO-8601 duration with fractional values."""
         assert PrometheusScheduler._parse_schedule_interval("PT0.5H") == 1800
         assert PrometheusScheduler._parse_schedule_interval("PT0.25M") == 15
         assert PrometheusScheduler._parse_schedule_interval("PT1.5S") == 1
-
 
     def test_parse_interval_simple_format_seconds(self) -> None:
         """Test parsing simple format with seconds (backward compatibility)."""

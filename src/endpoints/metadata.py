@@ -13,9 +13,11 @@ logger = logging.getLogger(__name__)
 
 storage_interface = get_storage_interface()
 
+
 def get_data_source():
     """Get the shared data source instance."""
     return get_shared_data_source()
+
 
 def get_prometheus_scheduler():
     """Get the shared prometheus scheduler instance."""
@@ -64,12 +66,14 @@ async def get_service_info():
                     scheduler = get_prometheus_scheduler()
                     if scheduler:
                         # Get all metric types and count scheduled requests per model
-                        all_requests = scheduler.get_all_requests()  # Should return dict of metric_name -> {request_id -> request}
+                        all_requests = (
+                            scheduler.get_all_requests()
+                        )  # Should return dict of metric_name -> {request_id -> request}
                         for metric_name, requests_dict in all_requests.items():
                             count = 0
                             for request_id, request in requests_dict.items():
                                 # Check if request is for this model (defensive access)
-                                request_model_id = getattr(request, 'model_id', getattr(request, 'modelId', None))
+                                request_model_id = getattr(request, "model_id", getattr(request, "modelId", None))
                                 if request_model_id == model_id:
                                     count += 1
                             if count > 0:
@@ -84,14 +88,14 @@ async def get_service_info():
                         "observations": num_observations,
                         "hasRecordedInferences": has_inferences,
                         "inputTensorName": model_metadata.input_tensor_name if model_metadata else "input",
-                        "outputTensorName": model_metadata.output_tensor_name if model_metadata else "output"
+                        "outputTensorName": model_metadata.output_tensor_name if model_metadata else "output",
                     },
-                    "metrics": {
-                        "scheduledMetadata": scheduled_metadata
-                    }
+                    "metrics": {"scheduledMetadata": scheduled_metadata},
                 }
 
-                logger.debug(f"Retrieved metadata for model {model_id}: observations={num_observations}, hasInferences={has_inferences}")
+                logger.debug(
+                    f"Retrieved metadata for model {model_id}: observations={num_observations}, hasInferences={has_inferences}"
+                )
 
             except Exception as e:
                 logger.warning(f"Error retrieving metadata for model {model_id}: {e}")
@@ -101,10 +105,10 @@ async def get_service_info():
                         "observations": 0,
                         "hasRecordedInferences": False,
                         "inputTensorName": "input",
-                        "outputTensorName": "output"
+                        "outputTensorName": "output",
                     },
                     "metrics": {"scheduledMetadata": {}},
-                    "error": str(e)
+                    "error": str(e),
                 }
 
         logger.info(f"Successfully retrieved service info for {len(service_metadata)} models")
@@ -112,9 +116,7 @@ async def get_service_info():
 
     except Exception as e:
         logger.error(f"Error retrieving service info: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Error retrieving service info: {str(e)}"
-        ) from e
+        raise HTTPException(status_code=500, detail=f"Error retrieving service info: {str(e)}") from e
 
 
 @router.get("/info/inference/ids/{model}")
@@ -150,11 +152,7 @@ async def get_column_names():
                 input_exists = await storage_interface.dataset_exists(input_dataset_name)
                 output_exists = await storage_interface.dataset_exists(output_dataset_name)
 
-                model_mappings = {
-                    "modelId": model_id,
-                    "inputMapping": {},
-                    "outputMapping": {}
-                }
+                model_mappings = {"modelId": model_id, "inputMapping": {}, "outputMapping": {}}
 
                 # Get input name mappings
                 if input_exists:
@@ -240,9 +238,7 @@ async def apply_column_names(name_mapping: NameMapping):
         raise
     except Exception as e:
         logger.error(f"Error applying column names: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Error applying column names: {str(e)}"
-        ) from e
+        raise HTTPException(status_code=500, detail=f"Error applying column names: {str(e)}") from e
 
 
 @router.delete("/info/names")
@@ -282,9 +278,7 @@ async def remove_column_names(request: ModelIdRequest):
         raise
     except Exception as e:
         logger.error(f"Error removing column names: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Error removing column names: {str(e)}"
-        ) from e
+        raise HTTPException(status_code=500, detail=f"Error removing column names: {str(e)}") from e
 
 
 @router.get("/info/tags")
