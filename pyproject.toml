@@ -33,10 +33,12 @@ test = [
     "hypothesis>=6,<7",
     "aif360>=0.6,<0.7",
 ]
+notebook = ["ipykernel>=7.1", "ipywidgets>=8.1"]
+
+[project.optional-dependencies]
 eval = ["lm-eval[api]>=0.4,<0.5"]
 protobuf = ["grpcio>=1.62,<2", "grpcio-tools>=1.62,<2"]
 mariadb = ["mariadb>=1.1.12", "javaobj-py3==0.4.4"]
-notebook = ["ipykernel>=7.1", "ipywidgets>=8.1"]
 
 [tool.hatch.build.targets.sdist]
 include = ["src"]

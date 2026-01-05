@@ -3178,6 +3178,7 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "huggingface-hub" },
 ]
+sdist = { url = "https://files.pythonhosted.org/packages/73/6f/f80cfef4a312e1fb34baf7d85c72d4411afde10978d4657f8cdd811d3ccc/tokenizers-0.22.2.tar.gz", hash = "sha256:473b83b915e547aa366d1eee11806deaf419e17be16310ac0a14077f1e28f917", size = 372115, upload-time = "2026-01-05T10:45:15.988Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/92/97/5dbfabf04c7e348e655e907ed27913e03db0923abb5dfdd120d7b25630e1/tokenizers-0.22.2-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:544dd704ae7238755d790de45ba8da072e9af3eea688f698b137915ae959281c", size = 3100275, upload-time = "2026-01-05T10:41:02.158Z" },
     { url = "https://files.pythonhosted.org/packages/2e/47/174dca0502ef88b28f1c9e06b73ce33500eedfac7a7692108aec220464e7/tokenizers-0.22.2-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:1e418a55456beedca4621dbab65a318981467a2b188e982a23e117f115ce5001", size = 2981472, upload-time = "2026-01-05T10:41:00.276Z" },
@@ -3188,6 +3189,12 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/64/04/ca2363f0bfbe3b3d36e95bf67e56a4c88c8e3362b658e616d1ac185d47f2/tokenizers-0.22.2-cp39-abi3-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:df6c4265b289083bf710dff49bc51ef252f9d5be33a45ee2bed151114a56207b", size = 3379195, upload-time = "2026-01-05T10:40:51.139Z" },
     { url = "https://files.pythonhosted.org/packages/2e/76/932be4b50ef6ccedf9d3c6639b056a967a86258c6d9200643f01269211ca/tokenizers-0.22.2-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:369cc9fc8cc10cb24143873a0d95438bb8ee257bb80c71989e3ee290e8d72c67", size = 3274982, upload-time = "2026-01-05T10:40:58.331Z" },
     { url = "https://files.pythonhosted.org/packages/1d/28/5f9f5a4cc211b69e89420980e483831bcc29dade307955cc9dc858a40f01/tokenizers-0.22.2-cp39-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:29c30b83d8dcd061078b05ae0cb94d3c710555fbb44861139f9f83dcca3dc3e4", size = 9478245, upload-time = "2026-01-05T10:41:04.053Z" },
+    { url = "https://files.pythonhosted.org/packages/6c/fb/66e2da4704d6aadebf8cb39f1d6d1957df667ab24cff2326b77cda0dcb85/tokenizers-0.22.2-cp39-abi3-musllinux_1_2_armv7l.whl", hash = "sha256:37ae80a28c1d3265bb1f22464c856bd23c02a05bb211e56d0c5301a435be6c1a", size = 9560069, upload-time = "2026-01-05T10:45:10.673Z" },
+    { url = "https://files.pythonhosted.org/packages/16/04/fed398b05caa87ce9b1a1bb5166645e38196081b225059a6edaff6440fac/tokenizers-0.22.2-cp39-abi3-musllinux_1_2_i686.whl", hash = "sha256:791135ee325f2336f498590eb2f11dc5c295232f288e75c99a36c5dbce63088a", size = 9899263, upload-time = "2026-01-05T10:45:12.559Z" },
+    { url = "https://files.pythonhosted.org/packages/05/a1/d62dfe7376beaaf1394917e0f8e93ee5f67fea8fcf4107501db35996586b/tokenizers-0.22.2-cp39-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:38337540fbbddff8e999d59970f3c6f35a82de10053206a7562f1ea02d046fa5", size = 10033429, upload-time = "2026-01-05T10:45:14.333Z" },
+    { url = "https://files.pythonhosted.org/packages/fd/18/a545c4ea42af3df6effd7d13d250ba77a0a86fb20393143bbb9a92e434d4/tokenizers-0.22.2-cp39-abi3-win32.whl", hash = "sha256:a6bf3f88c554a2b653af81f3204491c818ae2ac6fbc09e76ef4773351292bc92", size = 2502363, upload-time = "2026-01-05T10:45:20.593Z" },
+    { url = "https://files.pythonhosted.org/packages/65/71/0670843133a43d43070abeb1949abfdef12a86d490bea9cd9e18e37c5ff7/tokenizers-0.22.2-cp39-abi3-win_amd64.whl", hash = "sha256:c9ea31edff2968b44a88f97d784c2f16dc0729b8b143ed004699ebca91f05c48", size = 2747786, upload-time = "2026-01-05T10:45:18.411Z" },
+    { url = "https://files.pythonhosted.org/packages/72/f4/0de46cfa12cdcbcd464cc59fde36912af405696f687e53a091fb432f694c/tokenizers-0.22.2-cp39-abi3-win_arm64.whl", hash = "sha256:9ce725d22864a1e965217204946f830c37876eee3b2ba6fc6255e8e903d5fcbc", size = 2612133, upload-time = "2026-01-05T10:45:17.232Z" },
 ]
 
 [[package]]
@@ -3379,13 +3386,7 @@ dependencies = [
     { name = "uvicorn" },
 ]
 
-[package.dev-dependencies]
-dev = [
-    { name = "flake8" },
-    { name = "httpx" },
-    { name = "isort" },
-    { name = "mypy" },
-]
+[package.optional-dependencies]
 eval = [
     { name = "lm-eval", extra = ["api"] },
 ]
@@ -3393,13 +3394,21 @@ mariadb = [
     { name = "javaobj-py3" },
     { name = "mariadb" },
 ]
-notebook = [
-    { name = "ipykernel" },
-    { name = "ipywidgets" },
-]
 protobuf = [
     { name = "grpcio" },
     { name = "grpcio-tools" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "flake8" },
+    { name = "httpx" },
+    { name = "isort" },
+    { name = "mypy" },
+]
+notebook = [
+    { name = "ipykernel" },
+    { name = "ipywidgets" },
 ]
 test = [
     { name = "aif360" },
@@ -3414,9 +3423,14 @@ requires-dist = [
     { name = "cryptography", specifier = ">=44.0.2,<47" },
     { name = "fastapi", specifier = ">=0.115.9,<0.128" },
     { name = "fastapi-utils", specifier = ">=0.8.0" },
+    { name = "grpcio", marker = "extra == 'protobuf'", specifier = ">=1.62,<2" },
+    { name = "grpcio-tools", marker = "extra == 'protobuf'", specifier = ">=1.62,<2" },
     { name = "h5py", specifier = ">=3.13.0,<4" },
     { name = "hypercorn", specifier = ">=0.17.0,<0.19" },
     { name = "isodate", specifier = ">=0.7.2" },
+    { name = "javaobj-py3", marker = "extra == 'mariadb'", specifier = "==0.4.4" },
+    { name = "lm-eval", extras = ["api"], marker = "extra == 'eval'", specifier = ">=0.4,<0.5" },
+    { name = "mariadb", marker = "extra == 'mariadb'", specifier = ">=1.1.12" },
     { name = "numpy", specifier = ">=2.0,<3" },
     { name = "pandas", specifier = ">=2.2.3,<3" },
     { name = "polars", specifier = ">=1.2,<2" },
@@ -3428,6 +3442,7 @@ requires-dist = [
     { name = "typing-inspect", specifier = ">=0.9.0,<1" },
     { name = "uvicorn", specifier = ">=0.38.0" },
 ]
+provides-extras = ["eval", "protobuf", "mariadb"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -3436,18 +3451,9 @@ dev = [
     { name = "isort", specifier = ">=5.12,<8" },
     { name = "mypy", specifier = ">=1.5,<2" },
 ]
-eval = [{ name = "lm-eval", extras = ["api"], specifier = ">=0.4,<0.5" }]
-mariadb = [
-    { name = "javaobj-py3", specifier = "==0.4.4" },
-    { name = "mariadb", specifier = ">=1.1.12" },
-]
 notebook = [
     { name = "ipykernel", specifier = ">=7.1" },
     { name = "ipywidgets", specifier = ">=8.1" },
-]
-protobuf = [
-    { name = "grpcio", specifier = ">=1.62,<2" },
-    { name = "grpcio-tools", specifier = ">=1.62,<2" },
 ]
 test = [
     { name = "aif360", specifier = ">=0.6,<0.7" },

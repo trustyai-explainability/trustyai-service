@@ -33,7 +33,7 @@ jobs:
           python -m venv .venv
           source .venv/bin/activate
           if [ -f pyproject.toml ]; then
-            uv pip install -e ".[dev,test,eval,protobuf,mariadb]"
+            uv sync --all-groups
           else
             uv pip install pytest
           fi
