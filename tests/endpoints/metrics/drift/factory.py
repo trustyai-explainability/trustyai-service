@@ -307,8 +307,17 @@ def make_compute_endpoint_error_test(
 
         data = response.json()
         assert "detail" in data, f"Missing 'detail' in {metric_name} error response"
-        assert expected_error_substring.lower() in data["detail"].lower(), (
-            f"Expected error containing '{expected_error_substring}' in {metric_name}, got: {data['detail']}"
+
+        # Handle both string detail (controlled errors) and list detail (422 validation errors)
+        detail = data["detail"]
+        if isinstance(detail, list):
+            # For 422 validation errors, concatenate all error messages
+            detail_text = " ".join(str(err.get("msg", err)) if isinstance(err, dict) else str(err) for err in detail)
+        else:
+            detail_text = str(detail)
+
+        assert expected_error_substring.lower() in detail_text.lower(), (
+            f"Expected error containing '{expected_error_substring}' in {metric_name}, got: {detail}"
         )
 
     return test_impl
@@ -366,8 +375,17 @@ def make_schedule_endpoint_error_test(
 
         data = response.json()
         assert "detail" in data, f"Missing 'detail' in {metric_name} error response"
-        assert expected_error_substring.lower() in data["detail"].lower(), (
-            f"Expected error containing '{expected_error_substring}' in {metric_name}, got: {data['detail']}"
+
+        # Handle both string detail (controlled errors) and list detail (422 validation errors)
+        detail = data["detail"]
+        if isinstance(detail, list):
+            # For 422 validation errors, concatenate all error messages
+            detail_text = " ".join(str(err.get("msg", err)) if isinstance(err, dict) else str(err) for err in detail)
+        else:
+            detail_text = str(detail)
+
+        assert expected_error_substring.lower() in detail_text.lower(), (
+            f"Expected error containing '{expected_error_substring}' in {metric_name}, got: {detail}"
         )
 
     return test_impl
@@ -420,8 +438,17 @@ def make_delete_endpoint_error_test(
 
         data = response.json()
         assert "detail" in data, f"Missing 'detail' in {metric_name} error response"
-        assert expected_error_substring.lower() in data["detail"].lower(), (
-            f"Expected error containing '{expected_error_substring}' in {metric_name}, got: {data['detail']}"
+
+        # Handle both string detail (controlled errors) and list detail (422 validation errors)
+        detail = data["detail"]
+        if isinstance(detail, list):
+            # For 422 validation errors, concatenate all error messages
+            detail_text = " ".join(str(err.get("msg", err)) if isinstance(err, dict) else str(err) for err in detail)
+        else:
+            detail_text = str(detail)
+
+        assert expected_error_substring.lower() in detail_text.lower(), (
+            f"Expected error containing '{expected_error_substring}' in {metric_name}, got: {detail}"
         )
 
     return test_impl
