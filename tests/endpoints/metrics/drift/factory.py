@@ -332,6 +332,7 @@ def make_schedule_endpoint_error_test(
     expected_status_code: int,
     expected_error_substring: str,
     mock_scheduler_none: bool = False,
+    register_side_effect: Exception | None = None,
 ) -> Callable[[], None]:
     """
     Factory to create a test for schedule endpoint error cases.
@@ -344,6 +345,7 @@ def make_schedule_endpoint_error_test(
     :param expected_status_code: Expected HTTP error status code
     :param expected_error_substring: Substring expected in error message
     :param mock_scheduler_none: If True, mock scheduler as None to test unavailability
+    :param register_side_effect: Exception to raise from scheduler.register() (e.g., connection errors)
     :return: Test function
     """
 
@@ -357,7 +359,11 @@ def make_schedule_endpoint_error_test(
         else:
             # Mock normal scheduler
             mock_sched = MagicMock()
-            mock_sched.register = AsyncMock(return_value=None)
+            if register_side_effect:
+                # Mock scheduler.register() to raise an exception
+                mock_sched.register = AsyncMock(side_effect=register_side_effect)
+            else:
+                mock_sched.register = AsyncMock(return_value=None)
             mock_sched_fn.return_value = mock_sched
 
         # Mock data source
@@ -400,6 +406,7 @@ def make_delete_endpoint_error_test(
     expected_status_code: int,
     expected_error_substring: str,
     mock_scheduler_none: bool = False,
+    delete_side_effect: Exception | None = None,
 ) -> Callable[[], None]:
     """
     Factory to create a test for delete endpoint error cases.
@@ -412,6 +419,7 @@ def make_delete_endpoint_error_test(
     :param expected_status_code: Expected HTTP error status code
     :param expected_error_substring: Substring expected in error message
     :param mock_scheduler_none: If True, mock scheduler as None to test unavailability
+    :param delete_side_effect: Exception to raise from scheduler.delete() (e.g., connection errors)
     :return: Test function
     """
 
@@ -424,7 +432,11 @@ def make_delete_endpoint_error_test(
         else:
             # Mock normal scheduler
             mock_sched = MagicMock()
-            mock_sched.delete = AsyncMock(return_value=None)
+            if delete_side_effect:
+                # Mock scheduler.delete() to raise an exception
+                mock_sched.delete = AsyncMock(side_effect=delete_side_effect)
+            else:
+                mock_sched.delete = AsyncMock(return_value=None)
             mock_sched_fn.return_value = mock_sched
 
         # Send request
