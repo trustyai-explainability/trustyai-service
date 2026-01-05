@@ -52,7 +52,7 @@ def make_compute_endpoint_test(
     :param client: TestClient instance for making requests
     :param request_payload: Request payload dictionary
     :param expected_response_keys: Keys expected in successful response
-    :param df_type: Type of DataFrame to use ("pandas" or "polars")
+    :param df_type: Type of DataFrame to use ("Pandas" or "Polars")
     :return: Test function
     """
 
@@ -511,7 +511,7 @@ def _create_sample_dataframe(
     for col in columns:
         data[col] = np.random.randn(n_samples)
 
-    if df_type == "polars":
+    if df_type == "Polars":
         return pl.DataFrame(data)
     else:
         return pd.DataFrame(data)
