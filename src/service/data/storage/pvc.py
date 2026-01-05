@@ -483,7 +483,7 @@ class PVCStorage(StorageInterface):
             )
 
             logger.info(
-                f"Created StorageMetadata for {model_id}: observations={observations}, recorded_inferences={observations > 0}"
+                f"Created StorageMetadata for {model_id}: {observations=}, recorded_inferences={observations > 0}"
             )
             return storage_metadata
 

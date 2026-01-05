@@ -24,7 +24,9 @@ def get_storage_interface():
             )
         except ImportError as e:
             raise ValueError(
-                f"MariaDB storage requires optional dependencies. Install with: pip install trustyai-service[mariadb]. Error: {e}"
+                "MariaDB storage requires optional dependencies. "
+                "Install with: pip install trustyai-service[mariadb]. "
+                f"Error: {e}"
             )
     else:
         raise ValueError(

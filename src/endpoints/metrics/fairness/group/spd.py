@@ -114,7 +114,6 @@ def calculate_spd_metric(dataframe: pd.DataFrame, request) -> MetricValueCarrier
     """
     try:
         # Extract data from the reconciled request
-        model_id = request.modelId if hasattr(request, "modelId") else request.model_id
         protected_attr = (
             request.protectedAttribute if hasattr(request, "protectedAttribute") else request.protected_attribute
         )

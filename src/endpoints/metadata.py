@@ -41,7 +41,9 @@ class ModelIdRequest(BaseModel):
 
 @router.get("/info")
 async def get_service_info():
-    """Get a comprehensive overview of the model inference datasets collected by TrustyAI and the metric computations that are scheduled over those datasets."""
+    """Get a comprehensive overview of the model inference datasets collected by
+    TrustyAI and the metric computations that are scheduled over those datasets.
+    """
     try:
         logger.info("Retrieving service info")
 
@@ -216,7 +218,8 @@ async def apply_column_names(name_mapping: NameMapping):
         output_exists = await storage_interface.dataset_exists(output_dataset_name)
 
         if not input_exists and not output_exists:
-            error_msg = f"No metadata found for model={model_id}. This can happen if TrustyAI has not yet logged any inferences from this model."
+            error_msg = f"No metadata found for model={model_id}. " \
+                "This can happen if TrustyAI has not yet logged any inferences from this model."
             logger.error(error_msg)
             raise HTTPException(status_code=400, detail=error_msg)
 
@@ -256,7 +259,8 @@ async def remove_column_names(request: ModelIdRequest):
         output_exists = await storage_interface.dataset_exists(output_dataset_name)
 
         if not input_exists and not output_exists:
-            error_msg = f"No metadata found for model={model_id}. This can happen if TrustyAI has not yet logged any inferences from this model."
+            error_msg = f"No metadata found for model={model_id}. " \
+                "This can happen if TrustyAI has not yet logged any inferences from this model."
             logger.error(error_msg)
             raise HTTPException(status_code=400, detail=error_msg)
 
@@ -283,7 +287,9 @@ async def remove_column_names(request: ModelIdRequest):
 
 @router.get("/info/tags")
 async def get_tags():
-    """Retrieve the tags that have been applied to a particular model dataset, as well as a count of that tag's frequency within the dataset."""
+    """Retrieve the tags that have been applied to a particular model dataset,
+    as well as a count of that tag's frequency within the dataset.
+    """
     try:
         # TODO: Implement
         return {"tags": {}}
@@ -294,7 +300,9 @@ async def get_tags():
 
 @router.post("/info/tags")
 async def apply_tags(data_tagging: DataTagging):
-    """Apply per-row tags to a particular inference model dataset, to label certain rows as training or drift reference data, etc."""
+    """Apply per-row tags to a particular inference model dataset,
+    to label certain rows as training or drift reference data, etc.
+    """
     try:
         logger.info(f"Applying tags for model: {data_tagging.modelId}")
         # TODO: Implement

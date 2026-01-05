@@ -13,7 +13,6 @@ try:
     from src.proto.grpc_predict_v2_pb2 import (
         ModelInferRequest,
         ModelInferResponse,
-        InferTensorContents,
     )
 except ImportError as e:
     raise ImportError("Protobuf modules not found. Make sure to run the generate_protos.py script first.") from e

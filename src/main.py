@@ -239,8 +239,6 @@ async def run_server():
     config.insecure_bind = [f"{host_http}:{http_port}"]
     logger.info(f"Binding HTTP on {host_http}:{http_port} for kube-rbac-proxy")
 
-    import os
-
     # Configure for HTTP/1.1 compatibility and proper keep-alive
     config.h11_max_incomplete_size = 16 * 1024 * 1024  # 16MB for large requests
     config.keep_alive = int(os.getenv("KEEP_ALIVE", "75"))  # Allow override via env var
