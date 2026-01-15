@@ -7,6 +7,7 @@ from src.service.prometheus.prometheus_scheduler import PrometheusScheduler
 # Global shared PrometheusScheduler instance
 _shared_prometheus_scheduler = None
 
+
 def get_shared_prometheus_scheduler() -> PrometheusScheduler:
     """
     Get the shared PrometheusScheduler instance used by both endpoints and background scheduler.

@@ -14,7 +14,6 @@ from src.service.data.model_data import ModelData
 from src.service.data.storage import get_storage_interface
 from src.service.utils import list_utils
 from src.service.data.modelmesh_parser import ModelMeshPayloadParser, PartialPayload
-from src.service.data.datasources.data_source import DataSource
 from src.service.data.shared_data_source import get_shared_data_source
 
 # Define constants locally to avoid import issues
@@ -32,6 +31,7 @@ PartialKind = Literal["request", "response"]
 storage_interface = get_storage_interface()
 unreconciled_inputs = {}
 unreconciled_outputs = {}
+
 
 def get_data_source():
     """Get the shared data source instance."""
@@ -363,7 +363,9 @@ async def reconcile(input_payload: KServeInferenceRequest, output_payload: KServ
     data_source = get_data_source()
     await data_source.add_model_to_known(output_payload.model_name)
     known_models = await data_source.get_known_models()
-    logger.info(f"Added model {output_payload.model_name} to known models set. Current known models: {list(known_models)}")
+    logger.info(
+        f"Added model {output_payload.model_name} to known models set. Current known models: {list(known_models)}"
+    )
     logger.debug(f"DataSource instance id: {id(data_source)}")
 
     # Mark that inference data has been recorded for this model

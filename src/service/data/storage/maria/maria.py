@@ -383,13 +383,13 @@ class MariaDBStorage(StorageInterface):
 
             # Extract model ID by removing suffixes
             if dataset_name.endswith("_inputs"):
-                model_id = dataset_name[:-len("_inputs")]
+                model_id = dataset_name[: -len("_inputs")]
                 model_ids.add(model_id)
             elif dataset_name.endswith("_outputs"):
-                model_id = dataset_name[:-len("_outputs")]
+                model_id = dataset_name[: -len("_outputs")]
                 model_ids.add(model_id)
             elif dataset_name.endswith("_metadata"):
-                model_id = dataset_name[:-len("_metadata")]
+                model_id = dataset_name[: -len("_metadata")]
                 model_ids.add(model_id)
 
         return list(model_ids)
@@ -401,12 +401,7 @@ class MariaDBStorage(StorageInterface):
         output_dataset = f"{model_id}_outputs"
         metadata_dataset = f"{model_id}_metadata"
 
-        metadata = {
-            "modelId": model_id,
-            "inputData": None,
-            "outputData": None,
-            "metadataData": None
-        }
+        metadata = {"modelId": model_id, "inputData": None, "outputData": None, "metadataData": None}
 
         # Get input data metadata
         if self.dataset_exists(input_dataset):
@@ -417,7 +412,7 @@ class MariaDBStorage(StorageInterface):
                 metadata["inputData"] = {
                     "shape": list(input_shape) if input_shape is not None else [],
                     "columnNames": list(input_names) if input_names is not None else [],
-                    "aliasedNames": list(aliased_input_names) if aliased_input_names is not None else []
+                    "aliasedNames": list(aliased_input_names) if aliased_input_names is not None else [],
                 }
             except Exception as e:
                 logger.warning(f"Error getting input metadata for {model_id}: {e}")
@@ -431,7 +426,7 @@ class MariaDBStorage(StorageInterface):
                 metadata["outputData"] = {
                     "shape": list(output_shape) if output_shape is not None else [],
                     "columnNames": list(output_names) if output_names is not None else [],
-                    "aliasedNames": list(aliased_output_names) if aliased_output_names is not None else []
+                    "aliasedNames": list(aliased_output_names) if aliased_output_names is not None else [],
                 }
             except Exception as e:
                 logger.warning(f"Error getting output metadata for {model_id}: {e}")
@@ -443,7 +438,7 @@ class MariaDBStorage(StorageInterface):
                 metadata_names = self.get_original_column_names(metadata_dataset)
                 metadata["metadataData"] = {
                     "shape": list(metadata_shape) if metadata_shape is not None else [],
-                    "columnNames": list(metadata_names) if metadata_names is not None else []
+                    "columnNames": list(metadata_names) if metadata_names is not None else [],
                 }
             except Exception as e:
                 logger.warning(f"Error getting metadata info for {model_id}: {e}")

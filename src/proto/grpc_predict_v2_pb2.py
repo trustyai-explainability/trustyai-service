@@ -292,7 +292,7 @@ InferTensorContents = _reflection.GeneratedProtocolMessageType(
 _sym_db.RegisterMessage(InferTensorContents)
 
 _GRPCINFERENCESERVICE = DESCRIPTOR.services_by_name["GRPCInferenceService"]
-if _descriptor._USE_C_DESCRIPTORS == False:
+if not _descriptor._USE_C_DESCRIPTORS:
     DESCRIPTOR._options = None
     DESCRIPTOR._serialized_options = b"\n*org.kie.trustyai.connectors.kserve.v2.grpcP\001"
     _MODELINFERREQUEST_INFERINPUTTENSOR_PARAMETERSENTRY._options = None
