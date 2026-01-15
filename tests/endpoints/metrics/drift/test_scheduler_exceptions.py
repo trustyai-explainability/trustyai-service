@@ -12,17 +12,18 @@ These tests validate that the factory's register_side_effect and delete_side_eff
 parameters work correctly for testing endpoint error handling.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 
 def test_schedule_error_factory_supports_register_side_effect():
     """Verify that make_schedule_endpoint_error_test supports register_side_effect parameter."""
-    from . import factory
-
     # This test verifies the factory function signature accepts the parameter
     # In real usage, this would be used to test actual endpoints
     import inspect
+
+    from . import factory
 
     sig = inspect.signature(factory.make_schedule_endpoint_error_test)
     params = sig.parameters
@@ -33,10 +34,10 @@ def test_schedule_error_factory_supports_register_side_effect():
 
 def test_delete_error_factory_supports_delete_side_effect():
     """Verify that make_delete_endpoint_error_test supports delete_side_effect parameter."""
-    from . import factory
-
     # This test verifies the factory function signature accepts the parameter
     import inspect
+
+    from . import factory
 
     sig = inspect.signature(factory.make_delete_endpoint_error_test)
     params = sig.parameters

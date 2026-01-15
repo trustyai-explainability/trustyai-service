@@ -21,8 +21,7 @@ Common request fields:
 - fitColumns: List of feature columns to analyze
 """
 
-from typing import Literal
-from typing import Any, Callable, Dict, List, Union
+from typing import Any, Callable, Dict, List, Literal, Union
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
@@ -497,7 +496,7 @@ def make_list_requests_with_data_test(
             mock_request.model_id = f"test-model-{i}"
             mock_request.batch_size = 100 + i * 10
             mock_request.reference_tag = f"baseline-{i}"
-            mock_request.fit_columns = [f"feature{i}", f"feature{i+1}"]
+            mock_request.fit_columns = [f"feature{i}", f"feature{i + 1}"]
             mock_requests[request_id] = mock_request
 
         # Mock scheduler
@@ -526,6 +525,103 @@ def make_list_requests_with_data_test(
             assert "batchSize" in req, "Missing 'batchSize' in request"
             assert "referenceTag" in req, "Missing 'referenceTag' in request"
             assert "fitColumns" in req, "Missing 'fitColumns' in request"
+
+    return test_impl
+
+
+def make_list_requests_with_malformed_data_test(
+    metric_name: str,
+    module_path: str,
+    endpoint_path: str,
+    client: Any,
+    num_valid_requests: int = 2,
+    num_malformed_requests: int = 2,
+) -> Callable[[], None]:
+    """
+    Factory to create a test for list endpoint with mix of valid and malformed requests.
+
+    This tests the defensive logic that skips malformed requests and only returns valid ones.
+    Malformed requests are those missing required attributes (model_id, batch_size, etc.).
+
+    :param metric_name: Name of the metric for logging
+    :param module_path: Module path for patching
+    :param endpoint_path: API endpoint path
+    :param client: TestClient instance for making requests
+    :param num_valid_requests: Number of valid mock requests to create
+    :param num_malformed_requests: Number of malformed mock requests to create
+    :return: Test function
+    """
+
+    @patch(f"{module_path}.get_prometheus_scheduler")
+    def test_impl(self: Any, mock_sched_fn: MagicMock) -> None:
+        """Test list endpoint filters out malformed requests."""
+        from uuid import uuid4
+
+        mock_requests = {}
+
+        # Create valid requests
+        for i in range(num_valid_requests):
+            request_id = uuid4()
+            mock_request = MagicMock()
+            mock_request.model_id = f"test-model-{i}"
+            mock_request.batch_size = 100 + i * 10
+            mock_request.reference_tag = f"baseline-{i}"
+            mock_request.fit_columns = [f"feature{i}", f"feature{i + 1}"]
+            mock_requests[request_id] = mock_request
+
+        # Create malformed requests (missing various required attributes)
+        malformed_scenarios = [
+            {"batch_size": 100, "reference_tag": "baseline", "fit_columns": ["f1"]},  # Missing model_id
+            {"model_id": "model", "reference_tag": "baseline", "fit_columns": ["f1"]},  # Missing batch_size
+            {"model_id": "model", "batch_size": 100, "fit_columns": ["f1"]},  # Missing reference_tag
+            {"model_id": "model", "batch_size": 100, "reference_tag": "baseline"},  # Missing fit_columns
+        ]
+
+        for i in range(num_malformed_requests):
+            request_id = uuid4()
+            mock_request = MagicMock(spec=[])  # Start with no attributes
+
+            # Apply one of the malformed scenarios (cycle through them)
+            scenario = malformed_scenarios[i % len(malformed_scenarios)]
+            for attr, value in scenario.items():
+                setattr(mock_request, attr, value)
+
+            mock_requests[request_id] = mock_request
+
+        # Mock scheduler to return both valid and malformed requests
+        mock_sched = MagicMock()
+        mock_sched.get_requests = MagicMock(return_value=mock_requests)
+        mock_sched_fn.return_value = mock_sched
+
+        # Send request
+        response = client.get(endpoint_path)
+
+        # Verify response - should still be 200 (defensive handling)
+        assert response.status_code == 200, (
+            f"{metric_name} list should handle malformed requests gracefully, got {response.status_code}: {response.text}"
+        )
+
+        data = response.json()
+
+        # Verify only valid requests are returned (malformed ones filtered out)
+        assert "requests" in data, f"Missing 'requests' in {metric_name} list response"
+        assert isinstance(data["requests"], list), f"{metric_name} requests is not a list"
+        assert len(data["requests"]) == num_valid_requests, (
+            f"{metric_name} should return {num_valid_requests} valid requests (filtering out {num_malformed_requests} malformed), "
+            f"got {len(data['requests'])}"
+        )
+
+        # Verify all returned requests have the required structure
+        for req in data["requests"]:
+            assert "requestId" in req, "Missing 'requestId' in request"
+            assert "modelId" in req, "Missing 'modelId' in request"
+            assert "metricName" in req, "Missing 'metricName' in request"
+            assert "batchSize" in req, "Missing 'batchSize' in request"
+            assert "referenceTag" in req, "Missing 'referenceTag' in request"
+            assert "fitColumns" in req, "Missing 'fitColumns' in request"
+
+            # Verify values are from valid requests
+            assert req["modelId"].startswith("test-model-"), "Malformed request was not filtered"
 
     return test_impl
 
