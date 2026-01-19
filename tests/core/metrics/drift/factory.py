@@ -159,6 +159,128 @@ def make_empty_input_test(
 
 
 # ============================================================================
+# Parameter independence factory functions
+# ============================================================================
+
+
+def make_alpha_independence_test(
+    metric_fn: Callable,
+    params: Dict[str, Any],
+    statistic_key: str,
+    p_value_key: str,
+    alpha_param: str = "alpha",
+):
+    """
+    Create a test that verifies statistic and p-value are independent of alpha.
+
+    The alpha parameter should only affect drift_detected, not the statistic or p-value.
+
+    :param metric_fn: The drift metric function to test
+    :param params: Parameters to pass to the metric function
+    :param statistic_key: Key for the metric's statistic in the result dict
+    :param p_value_key: Key for the p-value in the result dict
+    :param alpha_param: Name of the alpha parameter
+    :return: Test function bound to the metric configuration
+    """
+
+    def test_impl(self) -> None:
+        """Test that statistic and p-value don't depend on alpha."""
+        rng = np.random.RandomState(42)
+        reference = stats.norm(loc=0, scale=1).rvs(size=100, random_state=rng)
+        current = stats.norm(loc=0.5, scale=1).rvs(size=100, random_state=rng)
+
+        # Test with different alpha values
+        params1 = {**params, alpha_param: 0.01}
+        params2 = {**params, alpha_param: 0.05}
+        params3 = {**params, alpha_param: 0.10}
+
+        result1 = metric_fn(reference, current, **params1)
+        result2 = metric_fn(reference, current, **params2)
+        result3 = metric_fn(reference, current, **params3)
+
+        # Statistic should be identical regardless of alpha
+        assert result1[statistic_key] == result2[statistic_key] == result3[statistic_key]
+
+        # P-value should be identical regardless of alpha
+        assert result1[p_value_key] == result2[p_value_key] == result3[p_value_key]
+
+    return test_impl
+
+
+def make_symmetry_test(
+    metric_fn: Callable,
+    params: Dict[str, Any],
+    statistic_key: str,
+):
+    """
+    Create a test that verifies the metric is symmetric: metric(A, B) == metric(B, A).
+
+    :param metric_fn: The drift metric function to test
+    :param params: Parameters to pass to the metric function
+    :param statistic_key: Key for the metric's statistic in the result dict
+    :return: Test function bound to the metric configuration
+    """
+
+    @given(
+        n_samples=st.integers(min_value=50, max_value=200),
+        seed=st.integers(min_value=0, max_value=10000),
+    )
+    @settings(max_examples=20, deadline=None)
+    def test_impl(self, n_samples: int, seed: int) -> None:
+        """Test that metric is symmetric."""
+        rng = np.random.RandomState(seed)
+        data_a = stats.norm(loc=0, scale=1).rvs(size=n_samples, random_state=rng)
+        data_b = stats.norm(loc=0.5, scale=1.2).rvs(size=n_samples, random_state=rng)
+
+        result_ab = metric_fn(data_a, data_b, **params)
+        result_ba = metric_fn(data_b, data_a, **params)
+
+        # Statistic should be the same in both directions
+        assert abs(result_ab[statistic_key] - result_ba[statistic_key]) < 1e-10
+
+    return test_impl
+
+
+def make_threshold_independence_test(
+    metric_fn: Callable,
+    params: Dict[str, Any],
+    statistic_key: str,
+    threshold_param: str = "threshold",
+):
+    """
+    Create a test that verifies the statistic is independent of threshold.
+
+    The threshold parameter should only affect drift_detected, not the statistic.
+
+    :param metric_fn: The drift metric function to test
+    :param params: Parameters to pass to the metric function
+    :param statistic_key: Key for the metric's statistic in the result dict
+    :param threshold_param: Name of the threshold parameter
+    :return: Test function bound to the metric configuration
+    """
+
+    def test_impl(self) -> None:
+        """Test that statistic doesn't depend on threshold."""
+        rng = np.random.RandomState(42)
+        reference = stats.norm(loc=0, scale=1).rvs(size=100, random_state=rng)
+        current = stats.norm(loc=0.5, scale=1).rvs(size=100, random_state=rng)
+
+        # Test with different threshold values
+        params1 = {**params, threshold_param: 0.05}
+        params2 = {**params, threshold_param: 0.10}
+        params3 = {**params, threshold_param: 0.20}
+
+        result1 = metric_fn(reference, current, **params1)
+        result2 = metric_fn(reference, current, **params2)
+        result3 = metric_fn(reference, current, **params3)
+
+        # Statistic should be identical regardless of threshold
+        assert result1[statistic_key] == result2[statistic_key] == result3[statistic_key]
+
+    return test_impl
+
+
+# ============================================================================
 # Multivariate-specific factory functions
 # ============================================================================
 
