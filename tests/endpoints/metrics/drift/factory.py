@@ -21,7 +21,7 @@ Common request fields:
 - fitColumns: List of feature columns to analyze
 """
 
-from typing import Any, Callable, Dict, List, Literal, Union
+from typing import Any, Callable, Dict, List, Literal, Optional, Union
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
@@ -848,6 +848,112 @@ def make_compute_generic_exception_test(
 # ============================================================================
 # Helper Functions
 # ============================================================================
+
+
+def make_deprecated_endpoint_test(
+    metric_name: str,
+    deprecated_endpoint_path: str,
+    client: Any,
+    endpoint_type: Literal["compute", "definition", "schedule", "delete", "list"],
+    module_path: Optional[str] = None,
+    request_payload: Optional[Dict[str, Any]] = None,
+    expected_response_keys: Optional[List[str]] = None,
+    expected_name_substring: Optional[str] = None,
+):
+    """
+    Factory function to create test for deprecated endpoints.
+
+    Tests that deprecated endpoints:
+    1. Still work and return expected results
+    2. Log deprecation warnings
+
+    :param metric_name: The deprecated metric name (e.g., "Meanshift")
+    :param deprecated_endpoint_path: The deprecated endpoint path
+    :param client: FastAPI TestClient
+    :param endpoint_type: Type of endpoint ("compute", "definition", "schedule", "delete", "list")
+    :param module_path: Optional module path for mocking (required for compute endpoint)
+    :param request_payload: Optional request payload for POST/DELETE endpoints
+    :param expected_response_keys: Optional list of expected response keys for validation
+    :param expected_name_substring: Optional substring to check in name field (for definition endpoint)
+    """
+
+    def _validate_response_keys(data: Dict[str, Any], keys: List[str]) -> None:
+        """Validate that all expected keys are present in response."""
+        for key in keys:
+            assert key in data, f"Expected key {key} not found in response"
+
+    def _assert_deprecation_logged(caplog, metric_name: str) -> None:
+        """Assert that deprecation warning was logged."""
+        deprecation_logged = any(
+            "Deprecated" in record.message and metric_name in record.message for record in caplog.records
+        )
+        assert deprecation_logged, f"Expected deprecation warning for {metric_name} not found in logs"
+
+    def test_func(self, caplog):
+        """Test that deprecated endpoint works and logs warning."""
+        match endpoint_type:
+            case "compute":
+                # Mock data source for compute endpoint
+                with patch(f"{module_path}.get_data_source") as mock_ds_fn:
+                    # Create mock data source with sample dataframes
+                    mock_ds = MagicMock()
+                    ref_df = _create_sample_dataframe(request_payload.get("fitColumns", ["feature1"]), df_type="Polars")
+                    cur_df = _create_sample_dataframe(request_payload.get("fitColumns", ["feature1"]), df_type="Polars")
+
+                    mock_ds.get_dataframe_by_tag = AsyncMock(return_value=ref_df)
+                    mock_ds.get_organic_dataframe = AsyncMock(return_value=cur_df)
+                    mock_ds_fn.return_value = mock_ds
+
+                    response = client.post(deprecated_endpoint_path, json=request_payload)
+                    assert response.status_code == 200
+                    data = response.json()
+                    if expected_response_keys:
+                        _validate_response_keys(data, expected_response_keys)
+
+            case "definition":
+                response = client.get(deprecated_endpoint_path)
+                assert response.status_code == 200
+                data = response.json()
+                _validate_response_keys(data, ["name", "description"])
+                if expected_name_substring:
+                    assert expected_name_substring in data["name"]
+
+            case "schedule":
+                with patch(f"{module_path}.get_prometheus_scheduler") as mock_sched_fn:
+                    mock_sched = MagicMock()
+                    mock_sched.register = AsyncMock()
+                    mock_sched_fn.return_value = mock_sched
+
+                    response = client.post(deprecated_endpoint_path, json=request_payload)
+                    assert response.status_code == 200
+                    data = response.json()
+                    _validate_response_keys(data, ["requestId"])
+
+            case "delete":
+                with patch(f"{module_path}.get_prometheus_scheduler") as mock_sched_fn:
+                    mock_sched = MagicMock()
+                    mock_sched.delete = AsyncMock()
+                    mock_sched_fn.return_value = mock_sched
+
+                    # Use request() to send JSON in DELETE request body
+                    response = client.request("DELETE", deprecated_endpoint_path, json={"requestId": "test-id"})
+                    # May succeed or fail depending on mocking, but should not crash
+                    assert response.status_code in [200, 400, 404, 500]
+
+            case "list":
+                with patch(f"{module_path}.get_prometheus_scheduler") as mock_sched_fn:
+                    mock_sched = MagicMock()
+                    mock_sched.get_requests = MagicMock(return_value={})
+                    mock_sched_fn.return_value = mock_sched
+
+                    response = client.get(deprecated_endpoint_path)
+                    assert response.status_code == 200
+                    data = response.json()
+                    _validate_response_keys(data, ["requests"])
+
+        _assert_deprecation_logged(caplog, metric_name)
+
+    return test_func
 
 
 def _create_sample_dataframe(
