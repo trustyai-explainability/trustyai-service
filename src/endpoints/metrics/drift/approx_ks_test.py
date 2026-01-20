@@ -55,9 +55,7 @@ async def get_approxkstest_definition():
 
 
 @router.post("/metrics/drift/approxkstest/request")
-async def schedule_approxkstest(
-    request: ApproxKSTestMetricRequest, background_tasks: BackgroundTasks
-):
+async def schedule_approxkstest(request: ApproxKSTestMetricRequest, background_tasks: BackgroundTasks):
     """Schedule a recurring computation of ApproxKSTest metric."""
     request_id = str(uuid.uuid4())
     logger.info(f"Scheduling ApproxKSTest computation with ID: {request_id}")

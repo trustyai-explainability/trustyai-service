@@ -2,38 +2,43 @@
 name = "trustyai-service"
 version = "1.0.0rc0"
 description = "TrustyAI Service"
-authors = [
-    { name = "Rui Vieira" },
-    { name = "TrustyAI team" },
-]
-requires-python = "~=3.11"
+authors = [{ name = "Rui Vieira" }, { name = "TrustyAI team" }]
+requires-python = ">=3.11, <3.14"
 readme = "README.md"
 dependencies = [
-    "fastapi>=0.115.9,<0.116",
+    "scikit-learn>=1.7,<2",
+    "scipy>=1.15",
+    "numpy>=2.0,<3",
     "pandas>=2.2.3,<3",
-    "prometheus-client>=0.21.1,<0.22",
-    "pydantic>=2.4.2,<3",
-    "uvicorn>=0.34.0,<0.35",
-    "protobuf>=4.24.4,<5",
-    "requests>=2.31.0,<3",
-    "cryptography>=44.0.2,<45",
+    "polars>=1.2,<2",
+    "fastapi>=0.115.9,<0.129",
+    "fastapi-utils>=0.8.0",
+    "uvicorn>=0.38.0",
+    "typing-inspect>=0.9.0,<1",
+    "prometheus-client>=0.21.1,<0.25",
+    "pydantic>=2.7.4,<3",
+    "hypercorn>=0.17.0,<0.19",
+    "protobuf>=4.24.4,<7",
+    "cryptography>=44.0.2,<47",
     "h5py>=3.13.0,<4",
+    "isodate>=0.7.2",
 ]
 
+[dependency-groups]
+dev = ["isort>=5.12,<8", "flake8>=6.1,<8", "mypy>=1.5,<2", "httpx>=0.25,<0.29"]
+test = [
+    "pytest>=8,<10",
+    "pytest-cov>=6,<8",
+    "pytest-asyncio>=1,<2",
+    "hypothesis>=6,<7",
+    "aif360>=0.6,<0.7",
+]
+notebook = ["ipykernel>=7.1", "ipywidgets>=8.1"]
+
 [project.optional-dependencies]
-dev = [
-    "pytest>=7.4.2,<8",
-    "isort>=5.12.0,<6",
-    "flake8>=6.1.0,<7",
-    "mypy>=1.5.1,<2",
-    "pytest-cov>=4.1.0,<5",
-    "httpx>=0.25.0,<0.26",
-]
-eval = [
-    "lm-eval[api]==0.4.4",
-    "fastapi-utils>=0.8.0",
-    "typing-inspect==0.9.0",
-]
+eval = ["lm-eval[api]>=0.4,<0.5"]
+protobuf = ["grpcio>=1.62,<2", "grpcio-tools>=1.62,<2"]
+mariadb = ["mariadb>=1.1.12", "javaobj-py3==0.4.4"]
 
 [tool.hatch.build.targets.sdist]
 include = ["src"]

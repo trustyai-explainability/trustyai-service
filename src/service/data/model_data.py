@@ -9,8 +9,16 @@ storage_interface = get_storage_interface()
 
 
 class ModelDataContainer:
-    def __init__(self, model_name: str, input_data: np.ndarray, input_names: List[str], output_data: np.ndarray,
-                 output_names: List[str], metadata: np.ndarray, metadata_names: List[str]):
+    def __init__(
+        self,
+        model_name: str,
+        input_data: np.ndarray,
+        input_names: List[str],
+        output_data: np.ndarray,
+        output_names: List[str],
+        metadata: np.ndarray,
+        metadata_names: List[str],
+    ):
         self.model_name = model_name
         self.input_data = input_data
         self.input_names = input_names
@@ -27,11 +35,12 @@ class ModelData:
     input_data_array, output_data_array, metadata_array = model_data.data()
 
     """
+
     def __init__(self, model_name):
         self.model_name = model_name
-        self.input_dataset = self.model_name+INPUT_SUFFIX
-        self.output_dataset = self.model_name+OUTPUT_SUFFIX
-        self.metadata_dataset = self.model_name+METADATA_SUFFIX
+        self.input_dataset = self.model_name + INPUT_SUFFIX
+        self.output_dataset = self.model_name + OUTPUT_SUFFIX
+        self.metadata_dataset = self.model_name + METADATA_SUFFIX
 
     async def row_counts(self) -> tuple[int, int, int]:
         """
@@ -67,8 +76,9 @@ class ModelData:
 
         return input_names, output_names, metadata_names
 
-    async def data(self, start_row=None, n_rows=None, get_input=True, get_output=True, get_metadata=True) \
-            -> tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray]]:
+    async def data(
+        self, start_row=None, n_rows=None, get_input=True, get_output=True, get_metadata=True
+    ) -> tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray]]:
         """
         Get data from a saved model
 
@@ -79,15 +89,15 @@ class ModelData:
         * get_metadata: whether to retrieve metadata <- use this to reduce file reads
         """
         if get_input:
-            input_data = await storage_interface.read_data(self.input_dataset, start_row, n_rows)
+            input_data, _ = await storage_interface.read_data(self.input_dataset, start_row, n_rows)
         else:
             input_data = None
         if get_output:
-            output_data = await storage_interface.read_data(self.output_dataset, start_row, n_rows)
+            output_data, _ = await storage_interface.read_data(self.output_dataset, start_row, n_rows)
         else:
             output_data = None
         if get_metadata:
-            metadata = await storage_interface.read_data(self.metadata_dataset, start_row, n_rows)
+            metadata, _ = await storage_interface.read_data(self.metadata_dataset, start_row, n_rows)
         else:
             metadata = None
 

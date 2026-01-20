@@ -26,9 +26,7 @@ class ScheduleId(BaseModel):
 async def compute_identity_metric(request: IdentityMetricRequest):
     """Provide a specific, plain-english interpretation of the current value of this metric."""
     try:
-        logger.info(
-            f"Computing identity metric for model: {request.modelId}, column: {request.columnName}"
-        )
+        logger.info(f"Computing identity metric for model: {request.modelId}, column: {request.columnName}")
         # TODO: Implement
         return {"status": "success", "value": 0.5}
     except Exception as e:
@@ -54,15 +52,11 @@ async def interpret_identity_value(request: IdentityMetricRequest):
         return {"interpretation": "Interpreation..."}
     except Exception as e:
         logger.error(f"Error interpreting identity value: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Error interpreting value: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error interpreting value: {str(e)}")
 
 
 @router.post("/metrics/identity/request")
-async def schedule_identity(
-    request: IdentityMetricRequest, background_tasks: BackgroundTasks
-):
+async def schedule_identity(request: IdentityMetricRequest, background_tasks: BackgroundTasks):
     """Schedule a recurring computation of this metric."""
     request_id = str(uuid.uuid4())
     logger.info(f"Scheduling identity metric computation with ID: {request_id}")
