@@ -325,15 +325,15 @@ class PVCStorage(StorageInterface):
 
             # Extract model ID by removing suffixes
             if dataset_name.endswith(INPUT_SUFFIX):
-                model_id = dataset_name[:-len(INPUT_SUFFIX)]
+                model_id = dataset_name[: -len(INPUT_SUFFIX)]
                 model_ids.add(model_id)
                 logger.debug(f"Found input dataset for model: {model_id}")
             elif dataset_name.endswith(OUTPUT_SUFFIX):
-                model_id = dataset_name[:-len(OUTPUT_SUFFIX)]
+                model_id = dataset_name[: -len(OUTPUT_SUFFIX)]
                 model_ids.add(model_id)
                 logger.debug(f"Found output dataset for model: {model_id}")
             elif dataset_name.endswith(METADATA_SUFFIX):
-                model_id = dataset_name[:-len(METADATA_SUFFIX)]
+                model_id = dataset_name[: -len(METADATA_SUFFIX)]
                 model_ids.add(model_id)
                 logger.debug(f"Found metadata dataset for model: {model_id}")
             else:
@@ -351,7 +351,9 @@ class PVCStorage(StorageInterface):
         metadata_dataset = model_id + METADATA_SUFFIX
 
         logger.info(f"Getting metadata for model_id: {model_id}")
-        logger.info(f"Looking for datasets: input={input_dataset}, output={output_dataset}, metadata={metadata_dataset}")
+        logger.info(
+            f"Looking for datasets: input={input_dataset}, output={output_dataset}, metadata={metadata_dataset}"
+        )
 
         # Check which datasets exist
         input_exists = await self.dataset_exists(input_dataset)
@@ -360,12 +362,7 @@ class PVCStorage(StorageInterface):
 
         logger.info(f"Dataset existence: input={input_exists}, output={output_exists}, metadata={metadata_exists}")
 
-        metadata = {
-            "modelId": model_id,
-            "inputData": None,
-            "outputData": None,
-            "metadataData": None
-        }
+        metadata = {"modelId": model_id, "inputData": None, "outputData": None, "metadataData": None}
 
         # Get input data metadata
         if input_exists:
@@ -378,11 +375,12 @@ class PVCStorage(StorageInterface):
                 metadata["inputData"] = {
                     "shape": list(input_shape) if input_shape is not None else [],
                     "columnNames": list(input_names) if input_names is not None else [],
-                    "aliasedNames": list(aliased_input_names) if aliased_input_names is not None else []
+                    "aliasedNames": list(aliased_input_names) if aliased_input_names is not None else [],
                 }
             except Exception as e:
                 logger.error(f"Error getting input metadata for {model_id}: {e}")
                 import traceback
+
                 logger.error(f"Traceback: {traceback.format_exc()}")
 
         # Get output data metadata
@@ -395,7 +393,7 @@ class PVCStorage(StorageInterface):
                 metadata["outputData"] = {
                     "shape": list(output_shape) if output_shape is not None else [],
                     "columnNames": list(output_names) if output_names is not None else [],
-                    "aliasedNames": list(aliased_output_names) if aliased_output_names is not None else []
+                    "aliasedNames": list(aliased_output_names) if aliased_output_names is not None else [],
                 }
             except Exception as e:
                 logger.error(f"Error getting output metadata for {model_id}: {e}")
@@ -408,7 +406,7 @@ class PVCStorage(StorageInterface):
                 metadata_names = await self.get_original_column_names(metadata_dataset)
                 metadata["metadataData"] = {
                     "shape": list(metadata_shape) if metadata_shape is not None else [],
-                    "columnNames": list(metadata_names) if metadata_names is not None else []
+                    "columnNames": list(metadata_names) if metadata_names is not None else [],
                 }
             except Exception as e:
                 logger.error(f"Error getting metadata info for {model_id}: {e}")
@@ -436,13 +434,10 @@ class PVCStorage(StorageInterface):
                     schema_items[col_name] = SchemaItem(
                         type=DataType.UNKNOWN,  # We don't have type info in PVC storage
                         name=col_name,
-                        column_index=idx
+                        column_index=idx,
                     )
 
-                input_schema = Schema(
-                    items=schema_items,
-                    name_mapping=name_mapping
-                )
+                input_schema = Schema(items=schema_items, name_mapping=name_mapping)
 
                 # Get observation count from input dataset
                 if input_data.get("shape"):
@@ -465,13 +460,10 @@ class PVCStorage(StorageInterface):
                     schema_items[col_name] = SchemaItem(
                         type=DataType.UNKNOWN,  # We don't have type info in PVC storage
                         name=col_name,
-                        column_index=idx
+                        column_index=idx,
                     )
 
-                output_schema = Schema(
-                    items=schema_items,
-                    name_mapping=name_mapping
-                )
+                output_schema = Schema(items=schema_items, name_mapping=name_mapping)
 
             # Use default empty schemas if none exist
             if input_schema is None:
@@ -487,10 +479,12 @@ class PVCStorage(StorageInterface):
                 input_tensor_name="input",  # Default tensor name
                 output_tensor_name="output",  # Default tensor name
                 observations=observations,
-                recorded_inferences=observations > 0  # True if we have data
+                recorded_inferences=observations > 0,  # True if we have data
             )
 
-            logger.info(f"Created StorageMetadata for {model_id}: observations={observations}, recorded_inferences={observations > 0}")
+            logger.info(
+                f"Created StorageMetadata for {model_id}: {observations=}, recorded_inferences={observations > 0}"
+            )
             return storage_metadata
 
         except Exception as e:
@@ -503,7 +497,7 @@ class PVCStorage(StorageInterface):
                 input_tensor_name="input",
                 output_tensor_name="output",
                 observations=0,
-                recorded_inferences=False
+                recorded_inferences=False,
             )
 
     async def persist_partial_payload(self, payload, is_input: bool):

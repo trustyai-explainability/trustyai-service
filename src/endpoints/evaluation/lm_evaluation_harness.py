@@ -85,7 +85,9 @@ def get_lm_eval_arguments():
 
 
 def get_model():
-    """Build a Pydantic model from the lm-eval argparse arguments, adding in a few config variables of our own as well"""
+    """Build a Pydantic model from the lm-eval argparse arguments,
+    adding in a few config variables of our own as well
+    """
     args = get_lm_eval_arguments()
     model_args = {k: (v["type"], v["default"]) for k, v in args.items()}
     model_args.update(NON_CLI_ARGUMENTS)
@@ -314,7 +316,9 @@ def delete_lm_eval_job(job_id: int):
 
 @router.delete(API_PREFIX + "/jobs", summary="Delete data from all lm-evaluation-harness jobs from the server.")
 def delete_all_lm_eval_job():
-    """Delete data from all lm-evaluation-harness job's data from the server, terminating any job that its still running"""
+    """Delete data from all lm-evaluation-harness job's data from the server,
+    terminating any job that its still running
+    """
 
     deleted = []
     for job_id in job_registry.keys():

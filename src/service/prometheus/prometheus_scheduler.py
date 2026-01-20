@@ -26,7 +26,7 @@ class PrometheusScheduler:
     def _parse_schedule_interval(schedule_str: str) -> int:
         """
         Parse schedule interval string (ISO-8601) to seconds.
-        
+
         Args:
             schedule_str: Schedule interval string to parse.
 
@@ -128,12 +128,16 @@ class PrometheusScheduler:
         """Register a metric request."""
         logger.info(f"Registering {metric_name} request {id} for model: {getattr(request, 'model_id', 'unknown')}")
         await RequestReconciler.reconcile(request, self.data_source)
-        logger.info(f"After reconciliation, {metric_name} request {id} model_id: {getattr(request, 'model_id', 'unknown')}")
+        logger.info(
+            f"After reconciliation, {metric_name} request {id} model_id: {getattr(request, 'model_id', 'unknown')}"
+        )
         with self._requests_lock:
             if metric_name not in self.requests:
                 self.requests[metric_name] = {}
             self.requests[metric_name][id] = request
-        logger.info(f"Successfully registered {metric_name} request {id} for model: {getattr(request, 'model_id', 'unknown')}")
+        logger.info(
+            f"Successfully registered {metric_name} request {id} for model: {getattr(request, 'model_id', 'unknown')}"
+        )
 
     async def delete(self, metric_name: str, id: uuid.UUID) -> None:
         """Delete a metric request."""
@@ -380,11 +384,15 @@ class PrometheusScheduler:
 
         matching_requests = []
         for req_id, request in all_requests.items():
-            request_model_id = getattr(request, 'model_id', None)
-            logger.debug(f"Request {req_id}: model_id='{request_model_id}', metric='{getattr(request, 'metric_name', 'unknown')}'")
+            request_model_id = getattr(request, "model_id", None)
+            logger.debug(
+                f"Request {req_id}: model_id='{request_model_id}', metric='{getattr(request, 'metric_name', 'unknown')}'"
+            )
             if request_model_id == model_id:
                 matching_requests.append((req_id, request))
-                logger.info(f"Found matching request {req_id} for model={model_id}, metric={getattr(request, 'metric_name', 'unknown')}")
+                logger.info(
+                    f"Found matching request {req_id} for model={model_id}, metric={getattr(request, 'metric_name', 'unknown')}"
+                )
 
         logger.info(f"Found {len(matching_requests)} matching requests for model={model_id}")
         return matching_requests

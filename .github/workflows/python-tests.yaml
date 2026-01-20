@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11"]
+        python-version: ["3.11", "3.12", "3.13"]
 
     steps:
       - uses: actions/checkout@v4
@@ -33,7 +33,7 @@ jobs:
           python -m venv .venv
           source .venv/bin/activate
           if [ -f pyproject.toml ]; then
-            uv pip install -e ".[dev,protobuf,mariadb]"
+            uv sync --all-groups
           else
             uv pip install pytest
           fi

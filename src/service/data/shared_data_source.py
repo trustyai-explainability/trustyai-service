@@ -7,6 +7,7 @@ from src.service.data.datasources.data_source import DataSource
 # Global shared DataSource instance
 _shared_data_source = None
 
+
 def get_shared_data_source() -> DataSource:
     """
     Get the shared DataSource instance used by both consumer and scheduler.

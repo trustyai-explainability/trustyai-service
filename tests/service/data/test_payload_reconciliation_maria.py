@@ -3,13 +3,15 @@ Tests for ModelMesh payload reconciliation.MariaDBStorage("root", "root", "127.0
 """
 
 import asyncio
-import unittest
 import os
-from unittest import mock
+import unittest
 import uuid
+from unittest import mock
 
 import pandas as pd
+import pytest
 
+pytest.importorskip("mariadb")
 from src.service.data.modelmesh_parser import ModelMeshPayloadParser, PartialPayload
 from src.service.data.storage.maria.maria import MariaDBStorage
 from tests.service.data.test_utils import ModelMeshTestData

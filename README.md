@@ -57,7 +57,7 @@ podman build -t $IMAGE_NAME --build-arg EXTRAS="mariadb,protobuf,eval" .
 ## 🏃Running 🏃‍♀️
 ### Locally
 ```bash
-uv run uvicorn src.main --host 0.0.0.0 --port 8080
+uv run uvicorn src.main:app --host 0.0.0.0 --port 8080
 ```
 
 ### Container

@@ -2,22 +2,22 @@ import numpy as np
 import pickle
 
 
-def get_list_shape(l: list):
+def get_list_shape(lst: list):
     """Get the shape of a nested list, assuming the sublists are not jagged"""
-    return [len(l)] + get_list_shape(l[0]) if isinstance(l, list) else []
+    return [len(lst)] + get_list_shape(lst[0]) if isinstance(lst, list) else []
 
 
-def contains_non_numeric(l: list) -> bool:
+def contains_non_numeric(lst: list) -> bool:
     """Check if an arbitrarily deep nested list contains any non-numeric elements"""
-    if isinstance(l, (list, np.ndarray)):
-        return any(contains_non_numeric(item) for item in l)
+    if isinstance(lst, (list, np.ndarray)):
+        return any(contains_non_numeric(item) for item in lst)
     else:
-        return isinstance(l, (bool, str))
+        return isinstance(lst, (bool, str))
 
 
-def serialize_rows(l: list):
+def serialize_rows(lst: list):
     """Convert a nested list to a 1D numpy array, where the nth element contains a bytes serialization of the nth row"""
-    serialized = [np.void(pickle.dumps(row)) for row in l]
+    serialized = [np.void(pickle.dumps(row)) for row in lst]
     return np.array(serialized)
 
 

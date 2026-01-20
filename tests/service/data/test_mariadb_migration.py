@@ -5,10 +5,12 @@ Tests for MoariaDB storage
 import asyncio
 import datetime
 import unittest
+
 import numpy as np
+import pytest
 
+pytest.importorskip("mariadb")
 from src.service.data.storage.maria.maria import MariaDBStorage
-
 
 alphabet = "abcdefghijklmnopqrstuvwxz"
 

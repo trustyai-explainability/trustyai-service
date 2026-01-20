@@ -1,21 +1,21 @@
 # pylint: disable=line-too-long, missing-function-docstring
 
-import pytest
-from pytest import approx
 import numpy as np
 import pandas as pd
-
-from sklearn.linear_model import LogisticRegression
-from sklearn.neighbors import NearestNeighbors
-from sklearn.preprocessing import LabelEncoder
-
+import pytest
 from aif360.sklearn.metrics import (
-    disparate_impact_ratio,
-    statistical_parity_difference,
     average_odds_difference,
     average_predictive_value_difference,
     consistency_score,
+    disparate_impact_ratio,
+    statistical_parity_difference,
 )
+from hypothesis import Verbosity, given, settings
+from hypothesis import strategies as st
+from pytest import approx
+from sklearn.linear_model import LogisticRegression
+from sklearn.neighbors import NearestNeighbors
+from sklearn.preprocessing import LabelEncoder, StandardScaler
 
 from src.core.metrics.fairness.group.disparate_impact_ratio import DisparateImpactRatio
 from src.core.metrics.fairness.group.group_average_odds_difference import GroupAverageOddsDifference
@@ -24,8 +24,6 @@ from src.core.metrics.fairness.group.group_average_predictive_value_difference i
 )
 from src.core.metrics.fairness.group.group_statistical_parity_difference import GroupStatisticalParityDifference
 from src.core.metrics.fairness.individual.individual_consistency import IndividualConsistency
-
-from hypothesis import given, strategies as st, settings, Verbosity
 
 
 # generate synthetic bank churn data for testing
@@ -64,9 +62,11 @@ def train_model(X: pd.DataFrame = X, y: pd.Series = y):
     for feature in categorical_features:
         label_encoders[feature] = LabelEncoder()
         X[feature] = label_encoders[feature].fit_transform(X[feature])
-    lr = LogisticRegression().fit(X, y)
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+    lr = LogisticRegression().fit(X_scaled, y)
 
-    return pd.DataFrame(lr.predict(X))
+    return pd.DataFrame(lr.predict(X_scaled))
 
 
 def truth_predict_output(X: pd.DataFrame = X, y: pd.Series = y):
