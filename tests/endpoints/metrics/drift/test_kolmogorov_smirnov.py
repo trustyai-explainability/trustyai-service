@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.endpoints.metrics.drift.kolmogorov_smirnov import router
+from src.endpoints.metrics.drift.kolmogorov_smirnov import KSTestMetricRequest, router
 
 from . import factory
 
@@ -262,3 +262,137 @@ class TestKSTestEndpoints:
         expected_error_substring="not available",  # Matches "Prometheus scheduler not available"
         mock_scheduler_none=True,
     )
+
+    # ========================================================================
+    # Empty Data Tests
+    # ========================================================================
+
+    test_compute_empty_reference_data = factory.make_compute_empty_reference_data_test(
+        metric_name="KSTest",
+        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+        endpoint_path="/metrics/drift/kstest",
+        client=client,
+        request_payload={
+            "modelId": "test-model",
+            "referenceTag": "baseline",
+            "fitColumns": ["feature1"],
+        },
+    )
+
+    test_compute_empty_current_data = factory.make_compute_empty_current_data_test(
+        metric_name="KSTest",
+        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+        endpoint_path="/metrics/drift/kstest",
+        client=client,
+        request_payload={
+            "modelId": "test-model",
+            "referenceTag": "baseline",
+            "fitColumns": ["feature1"],
+        },
+    )
+
+    # ========================================================================
+    # List Endpoint Exception Tests
+    # ========================================================================
+
+    test_list_scheduler_unavailable = factory.make_list_endpoint_scheduler_unavailable_test(
+        metric_name="KSTest",
+        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+        endpoint_path="/metrics/drift/kstest/requests",
+        client=client,
+    )
+
+    test_list_exception_handling = factory.make_list_endpoint_exception_test(
+        metric_name="KSTest",
+        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+        endpoint_path="/metrics/drift/kstest/requests",
+        client=client,
+    )
+
+    # ========================================================================
+    # Compute Endpoint Generic Exception
+    # ========================================================================
+
+    test_compute_generic_exception = factory.make_compute_generic_exception_test(
+        metric_name="KSTest",
+        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+        endpoint_path="/metrics/drift/kstest",
+        client=client,
+        request_payload={
+            "modelId": "test-model",
+            "referenceTag": "baseline",
+            "fitColumns": ["feature1"],
+        },
+    )
+
+    # ========================================================================
+    # Additional Coverage Tests
+    # ========================================================================
+
+    # Test with custom threshold_delta (covers line 84: custom alpha)
+    test_compute_custom_threshold = factory.make_compute_endpoint_test(
+        metric_name="KSTest",
+        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+        endpoint_path="/metrics/drift/kstest",
+        client=client,
+        request_payload={
+            "modelId": "test-model",
+            "referenceTag": "baseline",
+            "fitColumns": ["feature1"],
+            "thresholdDelta": 0.01,  # Custom alpha value
+            "batchSize": 50,  # Also test custom batch size (line 63)
+        },
+        expected_response_keys=["status", "value", "drift_detected", "p_value", "alpha"],
+        df_type="Polars",
+    )
+
+    # ========================================================================
+    # KSTestMetricRequest.retrieve_tags() Tests
+    # ========================================================================
+
+    def test_retrieve_tags_with_all_fields(self):
+        """Test retrieve_tags method with all fields populated."""
+        request = KSTestMetricRequest(
+            modelId="test-model",
+            referenceTag="baseline",
+            fitColumns=["feature1", "feature2"],
+        )
+
+        tags = request.retrieve_tags()
+
+        # Check that tags include the base tags plus KSTest-specific tags
+        assert "modelId" in tags
+        assert tags["modelId"] == "test-model"
+        assert "referenceTag" in tags
+        assert tags["referenceTag"] == "baseline"
+        assert "fitColumns" in tags
+        assert tags["fitColumns"] == "feature1,feature2"
+
+    def test_retrieve_tags_without_reference_tag(self):
+        """Test retrieve_tags method without referenceTag."""
+        request = KSTestMetricRequest(
+            modelId="test-model",
+            fitColumns=["feature1"],
+        )
+
+        tags = request.retrieve_tags()
+
+        # Check that tags include base tags but not referenceTag
+        assert "modelId" in tags
+        assert tags["modelId"] == "test-model"
+        assert "referenceTag" not in tags
+        assert "fitColumns" in tags
+
+    def test_retrieve_tags_without_fit_columns(self):
+        """Test retrieve_tags method without fitColumns."""
+        request = KSTestMetricRequest(
+            modelId="test-model",
+            referenceTag="baseline",
+        )
+
+        tags = request.retrieve_tags()
+
+        # Check that tags include referenceTag but not fitColumns
+        assert "modelId" in tags
+        assert "referenceTag" in tags
+        assert "fitColumns" not in tags

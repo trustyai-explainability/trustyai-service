@@ -496,7 +496,7 @@ def make_list_requests_with_data_test(
             mock_request.model_id = f"test-model-{i}"
             mock_request.batch_size = 100 + i * 10
             mock_request.reference_tag = f"baseline-{i}"
-            mock_request.fit_columns = [f"feature{i}", f"feature{i+1}"]
+            mock_request.fit_columns = [f"feature{i}", f"feature{i + 1}"]
             mock_requests[request_id] = mock_request
 
         # Mock scheduler
@@ -566,7 +566,7 @@ def make_list_requests_with_malformed_data_test(
             mock_request.model_id = f"test-model-{i}"
             mock_request.batch_size = 100 + i * 10
             mock_request.reference_tag = f"baseline-{i}"
-            mock_request.fit_columns = [f"feature{i}", f"feature{i+1}"]
+            mock_request.fit_columns = [f"feature{i}", f"feature{i + 1}"]
             mock_requests[request_id] = mock_request
 
         # Create malformed requests (missing various required attributes)
