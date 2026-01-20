@@ -23,6 +23,7 @@ from src.endpoints.explainers.local_explainer import router as explainers_local_
 from src.endpoints.metadata import router as metadata_router
 
 # from src.endpoints.drift_metrics import router as drift_metrics_router
+from src.endpoints.metrics.drift.compare_means import router as drift_comparemeans_router
 from src.endpoints.metrics.drift.kolmogorov_smirnov import router as drift_kstest_router
 from src.endpoints.metrics.fairness.group.dir import router as dir_router
 from src.endpoints.metrics.fairness.group.spd import router as spd_router
@@ -114,6 +115,12 @@ app.include_router(dir_router, tags=["Fairness Metrics: Group: Disparate Impact 
 app.include_router(data_upload_router, tags=["Data Upload"])
 
 #   Drift metrics
+app.include_router(
+    drift_comparemeans_router,
+    tags=[
+        "Drift Metrics: CompareMeans",
+    ],
+)
 app.include_router(
     drift_kstest_router,
     tags=[
