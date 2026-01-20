@@ -56,6 +56,10 @@ class CompareMeansMetricRequest(BaseMetricRequest):
 
     def retrieve_tags(self) -> Dict[str, str]:
         """Retrieve tags for this CompareMeans metric request."""
+        # Ensure metric_name is set before calling retrieve_default_tags()
+        # to avoid returning None values that violate Dict[str, str] type hint
+        if self.metric_name is None:
+            self.metric_name = METRIC_NAME
         tags = self.retrieve_default_tags()
         if self.reference_tag:
             tags["referenceTag"] = self.reference_tag
@@ -119,14 +123,19 @@ async def compute_CompareMeans(
 
             # Aggregate: drift detected if any feature shows drift
             drift_detected = any(r["drift_detected"] for r in results.values())
-            max_statistic = max(abs(r["statistic"]) for r in results.values())
-            min_p_value = min(r["p_value"] for r in results.values())
+            
+            # Find the feature with the maximum absolute statistic
+            # Use both statistic and p-value from the same feature to maintain
+            # the relationship between test statistic and p-value
+            max_feature_result = max(results.values(), key=lambda r: abs(r["statistic"]))
+            max_statistic = max_feature_result["statistic"]
+            corresponding_p_value = max_feature_result["p_value"]
 
             return {
                 "status": "success",
-                "value": max_statistic,
+                "value": abs(max_statistic),
                 "drift_detected": drift_detected,
-                "p_value": min_p_value,
+                "p_value": corresponding_p_value,
                 "alpha": alpha,
                 "feature_results": results,
             }
