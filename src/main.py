@@ -4,11 +4,11 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from hypercorn.config import Config
-from hypercorn.asyncio import serve
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from hypercorn.asyncio import serve
+from hypercorn.config import Config
 
 # from fastapi_utils.tasks import repeat_every  # Removed due to compatibility issues
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
@@ -24,17 +24,11 @@ from src.endpoints.explainers.local_explainer import router as explainers_local_
 from src.endpoints.metadata import router as metadata_router
 
 # from src.endpoints.drift_metrics import router as drift_metrics_router
-from src.endpoints.metrics.drift.approx_ks_test import (
-    router as drift_approx_ks_test_router,
-)
-from src.endpoints.metrics.drift.fourier_mmd import router as drift_fourier_mmd_router
-from src.endpoints.metrics.drift.ks_test import router as drift_ks_test_router
-from src.endpoints.metrics.drift.meanshift import router as drift_meanshift_router
+from src.endpoints.metrics.drift.kolmogorov_smirnov import router as drift_kstest_router
 from src.endpoints.metrics.fairness.group.dir import router as dir_router
 from src.endpoints.metrics.fairness.group.spd import router as spd_router
 from src.endpoints.metrics.identity.identity_endpoint import router as identity_router
 from src.endpoints.metrics.metrics_info import router as metrics_info_router
-
 from src.service.prometheus.shared_prometheus_scheduler import get_shared_prometheus_scheduler
 
 try:
@@ -119,39 +113,15 @@ app.include_router(
 )
 app.include_router(dir_router, tags=["Fairness Metrics: Group: Disparate Impact Ratio"])
 app.include_router(data_upload_router, tags=["Data Upload"])
-# app.include_router(
-#     drift_metrics_router,
-#     tags=[
-#         "Drift Metrics: ApproxKSTest",
-#         "Drift Metrics: FourierMMD Drift",
-#         "Drift Metrics: KSTest",
-#         "Drift Metrics: Meanshift",
-#     ],
-# )
+
+#   Drift metrics
 app.include_router(
-    drift_approx_ks_test_router,
-    tags=[
-        "Drift Metrics: ApproxKSTest",
-    ],
-)
-app.include_router(
-    drift_fourier_mmd_router,
-    tags=[
-        "Drift Metrics: FourierMMD Drift",
-    ],
-)
-app.include_router(
-    drift_ks_test_router,
+    drift_kstest_router,
     tags=[
         "Drift Metrics: KSTest",
     ],
 )
-app.include_router(
-    drift_meanshift_router,
-    tags=[
-        "Drift Metrics: Meanshift",
-    ],
-)
+
 # app.include_router(explainers_router, tags=["Explainers: Global", "Explainers: Local"])
 app.include_router(explainers_global_router, tags=["Explainers: Global"])
 app.include_router(explainers_local_router, tags=["Explainers: Local"])
