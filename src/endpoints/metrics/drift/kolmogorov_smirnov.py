@@ -13,6 +13,9 @@ from src.service.prometheus.shared_prometheus_scheduler import get_shared_promet
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+# Metric name constant
+METRIC_NAME = "KSTest"
+
 
 def get_prometheus_scheduler():
     """Get the shared prometheus scheduler instance."""
@@ -35,10 +38,10 @@ class KSTestMetricRequest(BaseMetricRequest):
     model_id: str = Field(alias="modelId")
     metric_name: Optional[str] = Field(default=None, alias="metricName")  # Will be set by endpoint
     request_name: Optional[str] = Field(default=None, alias="requestName")
-    batch_size: Optional[int] = Field(default=100, alias="batchSize")
+    batch_size: int = Field(default=100, alias="batchSize")
 
     # KSTest-specific fields
-    threshold_delta: Optional[float] = Field(default=None, alias="thresholdDelta")
+    threshold_delta: float = Field(default=0.05, alias="thresholdDelta")  # Default alpha value
     reference_tag: Optional[str] = Field(default=None, alias="referenceTag")
     fit_columns: List[str] = Field(default_factory=list, alias="fitColumns")
 
@@ -56,11 +59,11 @@ class KSTestMetricRequest(BaseMetricRequest):
 async def compute_kstest(request: KSTestMetricRequest) -> Dict[str, float | bool | str | Dict[str, Dict[str, float]]]:
     """Compute the current value of KSTest metric."""
     try:
-        logger.info(f"Computing KSTest for model: {request.model_id}")
+        logger.info(f"Computing {METRIC_NAME} for model: {request.model_id}")
 
         # Get data source
         data_source = get_data_source()
-        batch_size = request.batch_size if request.batch_size else 100
+        batch_size = request.batch_size
 
         # Get reference dataframe (tagged with referenceTag)
         if request.reference_tag:
@@ -81,7 +84,7 @@ async def compute_kstest(request: KSTestMetricRequest) -> Dict[str, float | bool
             raise HTTPException(status_code=404, detail=f"No current data found for model: {request.model_id}")
 
         # Calculate KS test for each feature
-        alpha = request.threshold_delta if request.threshold_delta else 0.05
+        alpha = request.threshold_delta
 
         if request.fit_columns:
             # Multi-feature case: iterate over features
@@ -118,7 +121,7 @@ async def compute_kstest(request: KSTestMetricRequest) -> Dict[str, float | bool
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error computing KSTest: {str(e)}")
+        logger.error(f"Error computing {METRIC_NAME}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error computing metric: {str(e)}")
 
 
@@ -145,10 +148,10 @@ async def schedule_kstest(request: KSTestMetricRequest) -> Dict[str, str]:
     try:
         # Generate UUID for this request
         request_id = uuid.uuid4()
-        logger.info(f"Scheduling KSTest computation with ID: {request_id}.")
+        logger.info(f"Scheduling {METRIC_NAME} computation with ID: {request_id}.")
 
         # Set metric name automatically
-        request.metric_name = "KSTest"
+        request.metric_name = METRIC_NAME
 
         # Get the scheduler and register the request
         scheduler = get_prometheus_scheduler()
@@ -158,11 +161,11 @@ async def schedule_kstest(request: KSTestMetricRequest) -> Dict[str, str]:
         # Register with the scheduler (this will reconcile the request and store it)
         await scheduler.register(request.metric_name, request_id, request)
 
-        logger.info(f"Successfully scheduled KSTest computation with ID: {request_id}")
+        logger.info(f"Successfully scheduled {METRIC_NAME} computation with ID: {request_id}")
         return {"requestId": str(request_id)}
 
     except Exception as e:
-        logger.error(f"Error scheduling KSTest computation: {str(e)}")
+        logger.error(f"Error scheduling {METRIC_NAME} computation: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error scheduling metric: {str(e)}") from e
 
 
@@ -170,7 +173,7 @@ async def schedule_kstest(request: KSTestMetricRequest) -> Dict[str, str]:
 async def delete_kstest_schedule(schedule: ScheduleId) -> Dict[str, str]:
     """Delete a recurring computation of KSTest metric."""
     try:
-        logger.info(f"Deleting KSTest schedule: {schedule.requestId}")
+        logger.info(f"Deleting {METRIC_NAME} schedule: {schedule.requestId}")
 
         # Get the scheduler and delete the request
         scheduler = get_prometheus_scheduler()
@@ -184,13 +187,13 @@ async def delete_kstest_schedule(schedule: ScheduleId) -> Dict[str, str]:
             raise HTTPException(status_code=400, detail="Invalid request ID format")
 
         # Delete from scheduler
-        await scheduler.delete("KSTest", request_uuid)
+        await scheduler.delete(METRIC_NAME, request_uuid)
 
-        logger.info(f"Successfully deleted KSTest schedule: {schedule.requestId}")
+        logger.info(f"Successfully deleted {METRIC_NAME} schedule: {schedule.requestId}")
         return {"status": "success", "message": f"Schedule {schedule.requestId} deleted"}
 
     except Exception as e:
-        logger.error(f"Error deleting KSTest schedule: {str(e)}")
+        logger.error(f"Error deleting {METRIC_NAME} schedule: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error deleting schedule: {str(e)}")
 
 
@@ -204,7 +207,7 @@ async def list_kstest_requests() -> Dict[str, List[Dict[str, Any]]]:
             raise HTTPException(status_code=500, detail="Prometheus scheduler not available")
 
         # Get all requests for KSTest
-        requests = scheduler.get_requests("KSTest")
+        requests = scheduler.get_requests(METRIC_NAME)
 
         # Convert to list format expected by client
         requests_list = []
@@ -219,18 +222,18 @@ async def list_kstest_requests() -> Dict[str, List[Dict[str, Any]]]:
                 requests_list.append({
                     "requestId": str(request_id),
                     "modelId": request.model_id,
-                    "metricName": "KSTest",
+                    "metricName": METRIC_NAME,
                     "batchSize": request.batch_size,
                     "referenceTag": request.reference_tag,
                     "fitColumns": request.fit_columns,
                 })
             else:
                 # Log warning for malformed request objects and skip them
-                logger.warning(f"Skipping malformed KSTest request {request_id}: missing required attributes")
+                logger.warning(f"Skipping malformed {METRIC_NAME} request {request_id}: missing required attributes")
                 continue
 
         return {"requests": requests_list}
 
     except Exception as e:
-        logger.error(f"Error listing KSTest requests: {str(e)}")
+        logger.error(f"Error listing {METRIC_NAME} requests: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error listing requests: {str(e)}")
