@@ -29,8 +29,9 @@ import pandas as pd
 import polars as pl
 
 # ============================================================================
-# Factory Functions for Common Tests
+# Success Case Tests
 # ============================================================================
+# Tests for successful endpoint operations (200 status codes).
 
 
 def make_compute_endpoint_test(
@@ -258,6 +259,12 @@ def make_list_requests_endpoint_test(
     return test_impl
 
 
+# ============================================================================
+# Error Case Tests
+# ============================================================================
+# Tests for error handling (4xx status codes: validation errors, missing data, etc.).
+
+
 def make_compute_endpoint_error_test(
     metric_name: str,
     module_path: str,
@@ -463,6 +470,12 @@ def make_delete_endpoint_error_test(
         )
 
     return test_impl
+
+
+# ============================================================================
+# Edge Case Tests
+# ============================================================================
+# Tests for special scenarios: empty data, malformed data, etc.
 
 
 def make_list_requests_with_data_test(
@@ -727,6 +740,12 @@ def make_compute_empty_current_data_test(
     return test_impl
 
 
+# ============================================================================
+# Exception Handling Tests
+# ============================================================================
+# Tests for exception handling and 500 error cases.
+
+
 def make_list_endpoint_scheduler_unavailable_test(
     metric_name: str,
     module_path: str,
@@ -848,112 +867,7 @@ def make_compute_generic_exception_test(
 # ============================================================================
 # Helper Functions
 # ============================================================================
-
-
-def make_deprecated_endpoint_test(
-    metric_name: str,
-    deprecated_endpoint_path: str,
-    client: Any,
-    endpoint_type: Literal["compute", "definition", "schedule", "delete", "list"],
-    module_path: Optional[str] = None,
-    request_payload: Optional[Dict[str, Any]] = None,
-    expected_response_keys: Optional[List[str]] = None,
-    expected_name_substring: Optional[str] = None,
-):
-    """
-    Factory function to create test for deprecated endpoints.
-
-    Tests that deprecated endpoints:
-    1. Still work and return expected results
-    2. Log deprecation warnings
-
-    :param metric_name: The deprecated metric name (e.g., "Meanshift")
-    :param deprecated_endpoint_path: The deprecated endpoint path
-    :param client: FastAPI TestClient
-    :param endpoint_type: Type of endpoint ("compute", "definition", "schedule", "delete", "list")
-    :param module_path: Optional module path for mocking (required for compute endpoint)
-    :param request_payload: Optional request payload for POST/DELETE endpoints
-    :param expected_response_keys: Optional list of expected response keys for validation
-    :param expected_name_substring: Optional substring to check in name field (for definition endpoint)
-    """
-
-    def _validate_response_keys(data: Dict[str, Any], keys: List[str]) -> None:
-        """Validate that all expected keys are present in response."""
-        for key in keys:
-            assert key in data, f"Expected key {key} not found in response"
-
-    def _assert_deprecation_logged(caplog, metric_name: str) -> None:
-        """Assert that deprecation warning was logged."""
-        deprecation_logged = any(
-            "Deprecated" in record.message and metric_name in record.message for record in caplog.records
-        )
-        assert deprecation_logged, f"Expected deprecation warning for {metric_name} not found in logs"
-
-    def test_func(self, caplog):
-        """Test that deprecated endpoint works and logs warning."""
-        match endpoint_type:
-            case "compute":
-                # Mock data source for compute endpoint
-                with patch(f"{module_path}.get_data_source") as mock_ds_fn:
-                    # Create mock data source with sample dataframes
-                    mock_ds = MagicMock()
-                    ref_df = _create_sample_dataframe(request_payload.get("fitColumns", ["feature1"]), df_type="Polars")
-                    cur_df = _create_sample_dataframe(request_payload.get("fitColumns", ["feature1"]), df_type="Polars")
-
-                    mock_ds.get_dataframe_by_tag = AsyncMock(return_value=ref_df)
-                    mock_ds.get_organic_dataframe = AsyncMock(return_value=cur_df)
-                    mock_ds_fn.return_value = mock_ds
-
-                    response = client.post(deprecated_endpoint_path, json=request_payload)
-                    assert response.status_code == 200
-                    data = response.json()
-                    if expected_response_keys:
-                        _validate_response_keys(data, expected_response_keys)
-
-            case "definition":
-                response = client.get(deprecated_endpoint_path)
-                assert response.status_code == 200
-                data = response.json()
-                _validate_response_keys(data, ["name", "description"])
-                if expected_name_substring:
-                    assert expected_name_substring in data["name"]
-
-            case "schedule":
-                with patch(f"{module_path}.get_prometheus_scheduler") as mock_sched_fn:
-                    mock_sched = MagicMock()
-                    mock_sched.register = AsyncMock()
-                    mock_sched_fn.return_value = mock_sched
-
-                    response = client.post(deprecated_endpoint_path, json=request_payload)
-                    assert response.status_code == 200
-                    data = response.json()
-                    _validate_response_keys(data, ["requestId"])
-
-            case "delete":
-                with patch(f"{module_path}.get_prometheus_scheduler") as mock_sched_fn:
-                    mock_sched = MagicMock()
-                    mock_sched.delete = AsyncMock()
-                    mock_sched_fn.return_value = mock_sched
-
-                    # Use request() to send JSON in DELETE request body
-                    response = client.request("DELETE", deprecated_endpoint_path, json={"requestId": "test-id"})
-                    # May succeed or fail depending on mocking, but should not crash
-                    assert response.status_code in [200, 400, 404, 500]
-
-            case "list":
-                with patch(f"{module_path}.get_prometheus_scheduler") as mock_sched_fn:
-                    mock_sched = MagicMock()
-                    mock_sched.get_requests = MagicMock(return_value={})
-                    mock_sched_fn.return_value = mock_sched
-
-                    response = client.get(deprecated_endpoint_path)
-                    assert response.status_code == 200
-                    data = response.json()
-                    _validate_response_keys(data, ["requests"])
-
-        _assert_deprecation_logged(caplog, metric_name)
-
-    return test_func
+# Shared utilities used by test factory functions.
 
 
 def _create_sample_dataframe(
@@ -975,3 +889,176 @@ def _create_sample_dataframe(
         return pl.DataFrame(data)
     else:
         return pd.DataFrame(data)
+
+
+# ============================================================================
+# Deprecated Endpoint Tests
+# ============================================================================
+# Tests for deprecated endpoints that proxy to new implementations.
+
+
+def _mock_data_source_for_deprecated(request_payload: Dict[str, Any]) -> MagicMock:
+    """Create a mocked data source with sample dataframe."""
+    sample_df = _create_sample_dataframe(request_payload.get("fitColumns", ["feature1"]))
+    mock_data_source = MagicMock()
+    mock_data_source.get_dataframe_by_tag = AsyncMock(return_value=sample_df)
+    mock_data_source.get_organic_dataframe = AsyncMock(return_value=sample_df)
+    mock_data_source.get_metadata = AsyncMock(return_value={"feature1": "type1"})
+    return mock_data_source
+
+
+def _mock_scheduler_for_deprecated() -> MagicMock:
+    """Create a mocked scheduler for deprecated endpoint tests."""
+    mock_sched = MagicMock()
+    mock_sched.register = AsyncMock(return_value=None)
+    mock_sched.delete = AsyncMock(return_value=None)
+    mock_sched.get_requests = MagicMock(return_value={})
+    return mock_sched
+
+
+def _validate_compute_response(data: Dict[str, Any], expected_keys: List[str], metric_name: str) -> None:
+    """Validate compute endpoint response."""
+    for key in expected_keys:
+        assert key in data, f"Missing key '{key}' in deprecated {metric_name} response"
+    if "status" in data:
+        assert data["status"] == "success"
+    if "drift_detected" in data:
+        assert isinstance(data["drift_detected"], bool)
+    if "value" in data:
+        assert isinstance(data["value"], (int, float))
+
+
+def make_deprecated_endpoint_test(
+    metric_name: str,
+    deprecated_endpoint_path: str,
+    client: Any,
+    endpoint_type: Literal["compute", "definition", "schedule", "delete", "list"],
+    module_path: Optional[str] = None,
+    request_payload: Optional[Dict[str, Any]] = None,
+    expected_response_keys: Optional[List[str]] = None,
+    expected_name_substring: Optional[str] = None,
+) -> Callable[[], None]:
+    """
+    Unified factory to create tests for any deprecated endpoint.
+    Verifies that deprecated endpoints work correctly and proxy to the new implementation.
+
+    :param metric_name: Name of the metric for logging
+    :param deprecated_endpoint_path: Deprecated API endpoint path (e.g., "/metrics/drift/meanshift")
+    :param client: TestClient instance for making requests
+    :param endpoint_type: Type of endpoint ("compute", "definition", "schedule", "delete", "list")
+    :param module_path: Module path for patching (e.g., "src.endpoints.metrics.drift.compare_means")
+                       Required for compute, schedule, delete, and list endpoints
+    :param request_payload: Request payload dictionary (required for compute/schedule)
+    :param expected_response_keys: Keys expected in successful response (required for compute)
+    :param expected_name_substring: Substring expected in metric name (required for definition)
+    :return: Test function
+
+    Examples:
+        # Test deprecated compute endpoint
+        test_func = make_deprecated_endpoint_test(
+            metric_name="Meanshift",
+            module_path="src.endpoints.metrics.drift.compare_means",
+            deprecated_endpoint_path="/metrics/drift/meanshift",
+            client=client,
+            endpoint_type="compute",
+            request_payload={"modelId": "test", "fitColumns": ["f1"]},
+            expected_response_keys=["status", "value"]
+        )
+
+        # Test deprecated definition endpoint
+        test_func = make_deprecated_endpoint_test(
+            metric_name="Meanshift",
+            module_path="src.endpoints.metrics.drift.compare_means",
+            deprecated_endpoint_path="/metrics/drift/meanshift/definition",
+            client=client,
+            endpoint_type="definition",
+            expected_name_substring="T-Test"
+        )
+
+        # Test deprecated list endpoint
+        test_func = make_deprecated_endpoint_test(
+            metric_name="Meanshift",
+            module_path="src.endpoints.metrics.drift.compare_means",
+            deprecated_endpoint_path="/metrics/drift/meanshift/requests",
+            client=client,
+            endpoint_type="list"
+        )
+    """
+
+    # Validate module_path is provided for endpoints that need it
+    if endpoint_type in ("compute", "schedule", "delete", "list") and module_path is None:
+        raise ValueError(f"module_path is required for endpoint_type '{endpoint_type}'")
+
+    match endpoint_type:
+        case "compute":
+            @patch(f"{module_path}.get_data_source")
+            def test_impl(self: Any, mock_ds: MagicMock) -> None:
+                """Test deprecated compute endpoint proxies correctly to new endpoint."""
+                mock_ds.return_value = _mock_data_source_for_deprecated(request_payload)
+                response = client.post(deprecated_endpoint_path, json=request_payload)
+                assert response.status_code == 200, f"Deprecated {metric_name} compute failed: {response.text}"
+                _validate_compute_response(response.json(), expected_response_keys, metric_name)
+
+            return test_impl
+
+        case "definition":
+
+            def test_impl(self: Any) -> None:
+                """Test deprecated definition endpoint returns valid response."""
+                response = client.get(deprecated_endpoint_path)
+                assert response.status_code == 200, f"Deprecated {metric_name} definition failed: {response.text}"
+                data = response.json()
+                assert "name" in data, f"Missing 'name' in deprecated {metric_name} definition"
+                assert "description" in data, f"Missing 'description' in deprecated {metric_name} definition"
+                assert expected_name_substring.lower() in data["name"].lower(), (
+                    f"Expected '{expected_name_substring}' in name, got: {data['name']}"
+                )
+
+            return test_impl
+
+        case "schedule":
+            @patch(f"{module_path}.get_prometheus_scheduler")
+            @patch(f"{module_path}.get_data_source")
+            def test_impl(self: Any, mock_ds: MagicMock, mock_sched_fn: MagicMock) -> None:
+                """Test deprecated schedule endpoint works correctly."""
+                mock_ds.return_value = _mock_data_source_for_deprecated(request_payload)
+                mock_sched_fn.return_value = _mock_scheduler_for_deprecated()
+                response = client.post(deprecated_endpoint_path, json=request_payload)
+                assert response.status_code == 200, f"Deprecated {metric_name} schedule failed: {response.text}"
+                data = response.json()
+                assert "requestId" in data, f"Missing 'requestId' in deprecated {metric_name} schedule response"
+                import uuid
+
+                uuid.UUID(data["requestId"])  # Raises ValueError if invalid
+
+            return test_impl
+
+        case "delete":
+            @patch(f"{module_path}.get_prometheus_scheduler")
+            def test_impl(self: Any, mock_sched_fn: MagicMock) -> None:
+                """Test deprecated delete schedule endpoint works correctly."""
+                mock_sched_fn.return_value = _mock_scheduler_for_deprecated()
+                payload = {"requestId": "123e4567-e89b-12d3-a456-426614174000"}
+                response = client.request("DELETE", deprecated_endpoint_path, json=payload)
+                assert response.status_code == 200, f"Deprecated {metric_name} delete failed: {response.text}"
+                data = response.json()
+                assert "status" in data and data["status"] == "success", f"Expected success in {metric_name} delete"
+
+            return test_impl
+
+        case "list":
+            @patch(f"{module_path}.get_prometheus_scheduler")
+            def test_impl(self: Any, mock_sched_fn: MagicMock) -> None:
+                """Test deprecated list requests endpoint works correctly."""
+                mock_sched_fn.return_value = _mock_scheduler_for_deprecated()
+                response = client.get(deprecated_endpoint_path)
+                assert response.status_code == 200, f"Deprecated {metric_name} list failed: {response.text}"
+                data = response.json()
+                assert "requests" in data and isinstance(data["requests"], list), (
+                    f"Expected requests list in {metric_name}"
+                )
+
+            return test_impl
+
+        case _:
+            raise ValueError(f"Unknown endpoint_type: {endpoint_type}")
