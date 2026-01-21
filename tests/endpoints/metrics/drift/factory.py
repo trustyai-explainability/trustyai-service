@@ -1,5 +1,4 @@
-"""
-Unified tests for all drift metric endpoints.
+"""Unified tests for all drift metric endpoints.
 
 This module provides factory functions to create common tests that apply to all
 drift metric endpoints, similar to the pattern in tests/metrics/test_drift_unified.py.
@@ -21,7 +20,8 @@ Common request fields:
 - fitColumns: List of feature columns to analyze
 """
 
-from typing import Any, Callable, Dict, List, Literal, Optional, Union
+from collections.abc import Callable
+from typing import Any, Literal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
@@ -39,12 +39,11 @@ def make_compute_endpoint_test(
     module_path: str,
     endpoint_path: str,
     client: Any,
-    request_payload: Dict[str, Any],
-    expected_response_keys: List[str],
+    request_payload: dict[str, Any],
+    expected_response_keys: list[str],
     df_type: Literal["Pandas", "Polars"] = "Polars",
 ) -> Callable[[], None]:
-    """
-    Factory to create a test for the compute endpoint.
+    """Factory to create a test for the compute endpoint.
 
     :param metric_name: Name of the metric for logging
     :param module_path: Module path for patching (e.g., "src.endpoints.metrics.drift.kolmogorov_smirnov")
@@ -95,9 +94,8 @@ def make_definition_endpoint_test(
     endpoint_path: str,
     client: Any,
     expected_name: str,
-) -> Callable[[], None]:
-    """
-    Factory to create a test for the definition endpoint.
+) -> Callable[[Any], None]:
+    """Factory to create a test for the definition endpoint.
 
     :param metric_name: Name of the metric for logging
     :param endpoint_path: API endpoint path (e.g., "/metrics/drift/kstest/definition")
@@ -133,10 +131,9 @@ def make_schedule_endpoint_test(
     module_path: str,
     endpoint_path: str,
     client: Any,
-    request_payload: Dict[str, Any],
+    request_payload: dict[str, Any],
 ) -> Callable[[], None]:
-    """
-    Factory to create a test for the schedule/request endpoint.
+    """Factory to create a test for the schedule/request endpoint.
 
     :param metric_name: Name of the metric for logging
     :param module_path: Module path for patching (e.g., "src.endpoints.metrics.drift.kolmogorov_smirnov")
@@ -185,8 +182,7 @@ def make_delete_schedule_endpoint_test(
     endpoint_path: str,
     client: Any,
 ) -> Callable[[], None]:
-    """
-    Factory to create a test for the delete schedule endpoint.
+    """Factory to create a test for the delete schedule endpoint.
 
     :param metric_name: Name of the metric for logging
     :param module_path: Module path for patching (e.g., "src.endpoints.metrics.drift.kolmogorov_smirnov")
@@ -227,8 +223,7 @@ def make_list_requests_endpoint_test(
     endpoint_path: str,
     client: Any,
 ) -> Callable[[], None]:
-    """
-    Factory to create a test for the list requests endpoint.
+    """Factory to create a test for the list requests endpoint.
 
     :param metric_name: Name of the metric for logging
     :param module_path: Module path for patching (e.g., "src.endpoints.metrics.drift.kolmogorov_smirnov")
@@ -270,14 +265,13 @@ def make_compute_endpoint_error_test(
     module_path: str,
     endpoint_path: str,
     client: Any,
-    request_payload: Dict[str, Any],
+    request_payload: dict[str, Any],
     expected_status_code: int,
     expected_error_substring: str,
     setup_mocks: bool = True,
     df_type: Literal["Pandas", "Polars"] = "Polars",
 ) -> Callable[[], None]:
-    """
-    Factory to create a test for compute endpoint error cases.
+    """Factory to create a test for compute endpoint error cases.
 
     :param metric_name: Name of the metric for logging
     :param module_path: Module path for patching
@@ -334,14 +328,13 @@ def make_schedule_endpoint_error_test(
     module_path: str,
     endpoint_path: str,
     client: Any,
-    request_payload: Dict[str, Any],
+    request_payload: dict[str, Any],
     expected_status_code: int,
     expected_error_substring: str,
     mock_scheduler_none: bool = False,
     register_side_effect: Exception | None = None,
 ) -> Callable[[], None]:
-    """
-    Factory to create a test for schedule endpoint error cases.
+    """Factory to create a test for schedule endpoint error cases.
 
     :param metric_name: Name of the metric for logging
     :param module_path: Module path for patching
@@ -414,8 +407,7 @@ def make_delete_endpoint_error_test(
     mock_scheduler_none: bool = False,
     delete_side_effect: Exception | None = None,
 ) -> Callable[[], None]:
-    """
-    Factory to create a test for delete endpoint error cases.
+    """Factory to create a test for delete endpoint error cases.
 
     :param metric_name: Name of the metric for logging
     :param module_path: Module path for patching
@@ -485,8 +477,7 @@ def make_list_requests_with_data_test(
     client: Any,
     num_requests: int = 2,
 ) -> Callable[[], None]:
-    """
-    Factory to create a test for list endpoint with actual requests.
+    """Factory to create a test for list endpoint with actual requests.
 
     :param metric_name: Name of the metric for logging
     :param module_path: Module path for patching
@@ -550,8 +541,7 @@ def make_list_requests_with_malformed_data_test(
     num_valid_requests: int = 2,
     num_malformed_requests: int = 2,
 ) -> Callable[[], None]:
-    """
-    Factory to create a test for list endpoint with mix of valid and malformed requests.
+    """Factory to create a test for list endpoint with mix of valid and malformed requests.
 
     This tests the defensive logic that skips malformed requests and only returns valid ones.
     Malformed requests are those missing required attributes (model_id, batch_size, etc.).
@@ -644,10 +634,9 @@ def make_compute_empty_reference_data_test(
     module_path: str,
     endpoint_path: str,
     client: Any,
-    request_payload: Dict[str, Any],
+    request_payload: dict[str, Any],
 ) -> Callable[[], None]:
-    """
-    Factory to create a test for compute endpoint when reference data is empty.
+    """Factory to create a test for compute endpoint when reference data is empty.
 
     Tests the 404 error case when no reference data is found for the given tag.
 
@@ -694,10 +683,9 @@ def make_compute_empty_current_data_test(
     module_path: str,
     endpoint_path: str,
     client: Any,
-    request_payload: Dict[str, Any],
+    request_payload: dict[str, Any],
 ) -> Callable[[], None]:
-    """
-    Factory to create a test for compute endpoint when current data is empty.
+    """Factory to create a test for compute endpoint when current data is empty.
 
     Tests the 404 error case when no current/organic data is found.
 
@@ -752,8 +740,7 @@ def make_list_endpoint_scheduler_unavailable_test(
     endpoint_path: str,
     client: Any,
 ) -> Callable[[], None]:
-    """
-    Factory to create a test for list endpoint when scheduler is unavailable.
+    """Factory to create a test for list endpoint when scheduler is unavailable.
 
     Tests the 500 error case when scheduler is None in list endpoint.
 
@@ -789,8 +776,7 @@ def make_list_endpoint_exception_test(
     endpoint_path: str,
     client: Any,
 ) -> Callable[[], None]:
-    """
-    Factory to create a test for list endpoint generic exception handling.
+    """Factory to create a test for list endpoint generic exception handling.
 
     Tests the catch-all exception handler in list endpoint.
 
@@ -827,10 +813,9 @@ def make_compute_generic_exception_test(
     module_path: str,
     endpoint_path: str,
     client: Any,
-    request_payload: Dict[str, Any],
+    request_payload: dict[str, Any],
 ) -> Callable[[], None]:
-    """
-    Factory to create a test for compute endpoint generic exception handling.
+    """Factory to create a test for compute endpoint generic exception handling.
 
     Tests the catch-all exception handler that catches unexpected errors.
 
@@ -871,10 +856,11 @@ def make_compute_generic_exception_test(
 
 
 def _create_sample_dataframe(
-    columns: List[str], n_samples: int = 100, df_type: Literal["Pandas", "Polars"] = "Polars"
-) -> Union[pd.DataFrame, pl.DataFrame]:
-    """
-    Create a sample DataFrame for testing.
+    columns: list[str],
+    n_samples: int = 100,
+    df_type: Literal["Pandas", "Polars"] = "Polars",
+) -> pd.DataFrame | pl.DataFrame:
+    """Create a sample DataFrame for testing.
 
     :param columns: List of column names
     :param n_samples: Number of samples to generate
@@ -887,8 +873,7 @@ def _create_sample_dataframe(
 
     if df_type == "Polars":
         return pl.DataFrame(data)
-    else:
-        return pd.DataFrame(data)
+    return pd.DataFrame(data)
 
 
 # ============================================================================
@@ -897,7 +882,7 @@ def _create_sample_dataframe(
 # Tests for deprecated endpoints that proxy to new implementations.
 
 
-def _mock_data_source_for_deprecated(request_payload: Dict[str, Any]) -> MagicMock:
+def _mock_data_source_for_deprecated(request_payload: dict[str, Any]) -> MagicMock:
     """Create a mocked data source with sample dataframe."""
     sample_df = _create_sample_dataframe(request_payload.get("fitColumns", ["feature1"]))
     mock_data_source = MagicMock()
@@ -916,7 +901,7 @@ def _mock_scheduler_for_deprecated() -> MagicMock:
     return mock_sched
 
 
-def _validate_compute_response(data: Dict[str, Any], expected_keys: List[str], metric_name: str) -> None:
+def _validate_compute_response(data: dict[str, Any], expected_keys: list[str], metric_name: str) -> None:
     """Validate compute endpoint response."""
     for key in expected_keys:
         assert key in data, f"Missing key '{key}' in deprecated {metric_name} response"
@@ -933,13 +918,12 @@ def make_deprecated_endpoint_test(
     deprecated_endpoint_path: str,
     client: Any,
     endpoint_type: Literal["compute", "definition", "schedule", "delete", "list"],
-    module_path: Optional[str] = None,
-    request_payload: Optional[Dict[str, Any]] = None,
-    expected_response_keys: Optional[List[str]] = None,
-    expected_name_substring: Optional[str] = None,
-) -> Callable[[], None]:
-    """
-    Unified factory to create tests for any deprecated endpoint.
+    module_path: str | None = None,
+    request_payload: dict[str, Any] | None = None,
+    expected_response_keys: list[str] | None = None,
+    expected_name_substring: str | None = None,
+) -> Callable[[Any], None]:
+    """Unified factory to create tests for any deprecated endpoint.
     Verifies that deprecated endpoints work correctly and proxy to the new implementation.
 
     :param metric_name: Name of the metric for logging
@@ -983,8 +967,8 @@ def make_deprecated_endpoint_test(
             client=client,
             endpoint_type="list"
         )
-    """
 
+    """
     # Validate module_path is provided for endpoints that need it
     if endpoint_type in ("compute", "schedule", "delete", "list") and module_path is None:
         raise ValueError(f"module_path is required for endpoint_type '{endpoint_type}'")
@@ -995,9 +979,14 @@ def make_deprecated_endpoint_test(
 
     match endpoint_type:
         case "compute":
+
             @patch(f"{module_path}.get_data_source")
             def test_impl(self: Any, mock_ds: MagicMock) -> None:
                 """Test deprecated compute endpoint proxies correctly to new endpoint."""
+                if request_payload is None:
+                    raise ValueError("request_payload is required for compute endpoint tests")
+                if expected_response_keys is None:
+                    raise ValueError("expected_response_keys is required for compute endpoint tests")
                 mock_ds.return_value = _mock_data_source_for_deprecated(request_payload)
                 response = client.post(deprecated_endpoint_path, json=request_payload)
                 assert response.status_code == 200, f"Deprecated {metric_name} compute failed: {response.text}"
@@ -1009,6 +998,8 @@ def make_deprecated_endpoint_test(
 
             def test_impl(self: Any) -> None:
                 """Test deprecated definition endpoint returns valid response."""
+                if expected_name_substring is None:
+                    raise ValueError("expected_name_substring is required for definition endpoint tests")
                 response = client.get(deprecated_endpoint_path)
                 assert response.status_code == 200, f"Deprecated {metric_name} definition failed: {response.text}"
                 data = response.json()
@@ -1021,10 +1012,13 @@ def make_deprecated_endpoint_test(
             return test_impl
 
         case "schedule":
+
             @patch(f"{module_path}.get_prometheus_scheduler")
             @patch(f"{module_path}.get_data_source")
             def test_impl(self: Any, mock_ds: MagicMock, mock_sched_fn: MagicMock) -> None:
                 """Test deprecated schedule endpoint works correctly."""
+                if request_payload is None:
+                    raise ValueError("request_payload is required for schedule endpoint tests")
                 mock_ds.return_value = _mock_data_source_for_deprecated(request_payload)
                 mock_sched_fn.return_value = _mock_scheduler_for_deprecated()
                 response = client.post(deprecated_endpoint_path, json=request_payload)
@@ -1038,6 +1032,7 @@ def make_deprecated_endpoint_test(
             return test_impl
 
         case "delete":
+
             @patch(f"{module_path}.get_prometheus_scheduler")
             def test_impl(self: Any, mock_sched_fn: MagicMock) -> None:
                 """Test deprecated delete schedule endpoint works correctly."""
@@ -1051,6 +1046,7 @@ def make_deprecated_endpoint_test(
             return test_impl
 
         case "list":
+
             @patch(f"{module_path}.get_prometheus_scheduler")
             def test_impl(self: Any, mock_sched_fn: MagicMock) -> None:
                 """Test deprecated list requests endpoint works correctly."""

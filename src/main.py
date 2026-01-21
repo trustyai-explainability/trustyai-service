@@ -3,6 +3,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any, AsyncGenerator
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -62,7 +63,7 @@ logger = logging.getLogger(__name__)
 prometheus_scheduler = get_shared_prometheus_scheduler()
 
 
-async def schedule_metrics_calculation():
+async def schedule_metrics_calculation() -> None:
     """Background task to calculate metrics at regular intervals."""
     while True:
         try:
@@ -76,7 +77,7 @@ async def schedule_metrics_calculation():
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Start the background metrics calculation task
     task = asyncio.create_task(schedule_metrics_calculation())
 
@@ -99,7 +100,7 @@ app = FastAPI(
 
 # CORS
 app.add_middleware(
-    CORSMiddleware,
+    CORSMiddleware,  # type: ignore[arg-type]  # FastAPI/Starlette middleware typing limitation
     allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
@@ -152,28 +153,28 @@ app.include_router(
 
 
 @app.get("/")
-async def root():
+async def root() -> dict[str, str]:
     return {"message": "Welcome to TrustyAI Explainability Service"}
 
 
 @app.get("/q/metrics")
-async def metrics(request: Request):
+async def metrics(request: Request) -> Response:
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 # Readiness probe
 @app.get("/q/health/ready")
-async def readiness_probe():
+async def readiness_probe() -> JSONResponse:
     return JSONResponse(content={"status": "ready"}, status_code=200)
 
 
 # Liveness probe endpoint
 @app.get("/q/health/live")
-async def liveness_probe():
+async def liveness_probe() -> JSONResponse:
     return JSONResponse(content={"status": "live"}, status_code=200)
 
 
-def get_tls_config():
+def get_tls_config() -> dict[str, Any] | None:
     """
     Get TLS configuration for the service.
     Returns SSL configuration if certificates are available, None otherwise.
@@ -196,7 +197,7 @@ def get_tls_config():
         return None
 
 
-async def run_server():
+async def run_server() -> None:
     """Run hypercorn server with both HTTP and HTTPS binds"""
     # Get TLS configuration
     tls_config = get_tls_config()
@@ -216,7 +217,7 @@ async def run_server():
 
     # Configure for HTTP/1.1 compatibility and proper keep-alive
     config.h11_max_incomplete_size = 16 * 1024 * 1024  # 16MB for large requests
-    config.keep_alive = int(os.getenv("KEEP_ALIVE", "75"))  # Allow override via env var
+    config.keep_alive_timeout = float(os.getenv("KEEP_ALIVE", "75"))
 
     # Optional HTTPS (direct access on bind)
     if tls_config:
@@ -234,7 +235,9 @@ async def run_server():
     config.use_reloader = False  # Disable reloader in production
 
     # Start the server
-    await serve(app, config)
+    # FastAPI implements the ASGI protocol that hypercorn expects
+    # The type stubs are overly strict, but FastAPI works correctly at runtime
+    await serve(app, config)  # type: ignore[arg-type]
 
 
 if __name__ == "__main__":
