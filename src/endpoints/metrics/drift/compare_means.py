@@ -14,6 +14,7 @@ from src.core.metrics.drift.compare_means import (
 from src.service.data.shared_data_source import get_shared_data_source
 from src.service.payloads.metrics.base_metric_request import BaseMetricRequest
 from src.service.prometheus.shared_prometheus_scheduler import get_shared_prometheus_scheduler
+from src.service.utils.logging_utils import log_deprecated_endpoint
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -309,7 +310,7 @@ async def compute_meanshift(request: MeanshiftMetricRequest):
 
     This endpoint is deprecated. Please use /metrics/drift/comparemeans instead.
     """
-    logger.warning(f"Deprecated {DEPRECATED_METRIC_NAME} endpoint called. Use {METRIC_NAME} endpoint instead.")
+    log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
     # Convert to CompareMeans request format
     # Use exclude_none=True so that omitted fields get their defaults applied
     compare_means_request = CompareMeansMetricRequest.model_validate(request.model_dump(exclude_none=True))
@@ -322,7 +323,7 @@ async def get_meanshift_definition():
 
     This endpoint is deprecated. Please use /metrics/drift/comparemeans/definition instead.
     """
-    logger.warning(f"Deprecated {DEPRECATED_METRIC_NAME} endpoint called. Use {METRIC_NAME} endpoint instead.")
+    log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
     return await get_CompareMeans_definition()
 
 
@@ -332,7 +333,7 @@ async def schedule_meanshift(request: MeanshiftMetricRequest):
 
     This endpoint is deprecated. Please use /metrics/drift/comparemeans/request instead.
     """
-    logger.warning(f"Deprecated {DEPRECATED_METRIC_NAME} endpoint called. Use {METRIC_NAME} endpoint instead.")
+    log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
     # Convert to CompareMeans request format
     # Use exclude_none=True so that omitted fields get their defaults applied
     compare_means_request = CompareMeansMetricRequest.model_validate(request.model_dump(exclude_none=True))
@@ -345,7 +346,7 @@ async def delete_meanshift_schedule(schedule: ScheduleId):
 
     This endpoint is deprecated. Please use /metrics/drift/comparemeans/request instead.
     """
-    logger.warning(f"Deprecated {DEPRECATED_METRIC_NAME} endpoint called. Use {METRIC_NAME} endpoint instead.")
+    log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
     return await delete_CompareMeans_schedule(schedule)
 
 
@@ -355,5 +356,5 @@ async def list_meanshift_requests():
 
     This endpoint is deprecated. Please use /metrics/drift/comparemeans/requests instead.
     """
-    logger.warning(f"Deprecated {DEPRECATED_METRIC_NAME} endpoint called. Use {METRIC_NAME} endpoint instead.")
+    log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
     return await list_CompareMeans_requests()
