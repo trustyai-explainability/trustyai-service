@@ -1,12 +1,12 @@
-"""
-Factory functions to generate unified tests for drift metrics.
+"""Factory functions to generate unified tests for drift metrics.
 
 This module provides comprehensive common tests for all drift metrics using
 factory functions to avoid repeating testing situations. Each metric is tested
 against shared behavioral properties while maintaining metric-specific configurations.
 """
 
-from typing import Any, Callable, Dict
+from collections.abc import Callable
+from typing import Any
 
 import numpy as np
 import pytest
@@ -15,18 +15,18 @@ from hypothesis import strategies as st
 from scipy import stats
 
 # ============================================================================
-# Factory Functions - Create test methods with proper scoping
+# Core Behavior Tests
 # ============================================================================
+# Tests for basic metric functionality: detection, robustness, and validation.
 
 
 def make_identical_distributions_test(
     metric_fn: Callable,
-    params: Dict[str, Any],
+    params: dict[str, Any],
     statistic_key: str,
     required_keys: list[str],
 ):
-    """
-    Create a test function for identical distributions.
+    """Create a test function for identical distributions.
 
     Tests that metrics correctly handle identical distributions (Type I error control).
     Each factory call creates a unique test method instance.
@@ -64,10 +64,9 @@ def make_identical_distributions_test(
 
 def make_detects_large_shift_test(
     metric_fn: Callable,
-    params: Dict[str, Any],
+    params: dict[str, Any],
 ):
-    """
-    Create a test function for detecting large mean shifts.
+    """Create a test function for detecting large mean shifts.
 
     Tests that metrics can reliably detect large distribution shifts.
 
@@ -98,11 +97,10 @@ def make_detects_large_shift_test(
 
 def make_different_sample_sizes_test(
     metric_fn: Callable,
-    params: Dict[str, Any],
+    params: dict[str, Any],
     statistic_key: str,
 ):
-    """
-    Create a test function for different sample sizes.
+    """Create a test function for different sample sizes.
 
     Tests that metrics handle different sample sizes correctly.
 
@@ -133,12 +131,86 @@ def make_different_sample_sizes_test(
     return test_impl
 
 
+def make_small_sample_sizes_test(
+    metric_fn: Callable,
+    params: dict[str, Any],
+    statistic_key: str = "statistic",
+):
+    """Create a test function for small sample sizes.
+
+    Tests that metrics handle small sample sizes correctly (edge case testing).
+
+    :param metric_fn: The drift metric function to test
+    :param params: Parameters to pass to the metric function
+    :param statistic_key: Key for the metric's statistic in the result dict
+    :return: Test function bound to the metric configuration
+    """
+
+    @given(
+        n_ref=st.integers(min_value=3, max_value=20),
+        n_curr=st.integers(min_value=3, max_value=20),
+        seed=st.integers(min_value=0, max_value=5000),
+    )
+    @settings(max_examples=15, deadline=None)
+    def test_impl(self, n_ref: int, n_curr: int, seed: int) -> None:
+        """Test metric handles small sample sizes."""
+        rng = np.random.RandomState(seed)
+        reference = stats.norm(loc=0, scale=1).rvs(size=n_ref, random_state=rng)
+        current = stats.norm(loc=0, scale=1).rvs(size=n_curr, random_state=rng)
+
+        result = metric_fn(reference, current, **params)
+
+        # Should produce valid results even with small samples
+        assert isinstance(result["drift_detected"], bool)
+        assert isinstance(result[statistic_key], (int, float))
+
+    return test_impl
+
+
+def make_different_variances_test(
+    metric_fn: Callable,
+    params: dict[str, Any],
+    statistic_key: str = "statistic",
+):
+    """Create a test function for different variances.
+
+    Tests that metrics handle distributions with different variances correctly.
+    This is particularly relevant for tests like Welch's t-test that account for
+    unequal variances.
+
+    :param metric_fn: The drift metric function to test
+    :param params: Parameters to pass to the metric function
+    :param statistic_key: Key for the metric's statistic in the result dict
+    :return: Test function bound to the metric configuration
+    """
+
+    @given(
+        n_samples=st.integers(min_value=50, max_value=150),
+        scale_ratio=st.floats(min_value=1.5, max_value=5.0),
+        seed=st.integers(min_value=0, max_value=10000),
+    )
+    @settings(max_examples=20, deadline=None)
+    def test_impl(self, n_samples: int, scale_ratio: float, seed: int) -> None:
+        """Test metric handles different variances."""
+        rng = np.random.RandomState(seed)
+        # Same mean (0), different variances
+        reference = stats.norm(loc=0, scale=1).rvs(size=n_samples, random_state=rng)
+        current = stats.norm(loc=0, scale=scale_ratio).rvs(size=n_samples, random_state=rng)
+
+        result = metric_fn(reference, current, **params)
+
+        # Should produce valid results even with different variances
+        assert isinstance(result["drift_detected"], bool)
+        assert isinstance(result[statistic_key], (int, float))
+
+    return test_impl
+
+
 def make_empty_input_test(
     metric_fn: Callable,
-    params: Dict[str, Any],
+    params: dict[str, Any],
 ):
-    """
-    Create a test function for empty input validation.
+    """Create a test function for empty input validation.
 
     Tests that metrics raise appropriate errors for empty inputs.
 
@@ -158,270 +230,131 @@ def make_empty_input_test(
     return test_impl
 
 
+def make_no_drift_test(
+    metric_fn: Callable,
+    params: dict[str, Any],
+    drift_detected_key: str = "drift_detected",
+    p_value_key: str = "p_value",
+    alpha_param: str = "alpha",
+):
+    """Create a test function for no drift detection with identical distributions.
+
+    Tests that metrics correctly identify no drift when distributions are identical.
+    For p-value based tests, this verifies that drift_detected is False when
+    p_value >= alpha for identical distributions.
+
+    :param metric_fn: The drift metric function to test
+    :param params: Parameters to pass to the metric function
+    :param drift_detected_key: Key for drift_detected in the result dict (default: "drift_detected")
+    :param p_value_key: Key for the p-value in the result dict (default: "p_value")
+    :param alpha_param: Name of the alpha parameter (default: "alpha")
+    :return: Test function bound to the metric configuration
+    """
+
+    @given(
+        n_samples=st.integers(min_value=20, max_value=200),
+        seed=st.integers(min_value=0, max_value=10000),
+    )
+    @settings(max_examples=30, deadline=None)
+    def test_impl(self, n_samples: int, seed: int) -> None:
+        """Test metric correctly identifies no drift for identical distributions."""
+        rng = np.random.RandomState(seed)
+        reference = stats.norm(loc=0, scale=1).rvs(size=n_samples, random_state=rng)
+        current = stats.norm(loc=0, scale=1).rvs(size=n_samples, random_state=rng)
+
+        result = metric_fn(reference, current, **params)
+
+        # For identical distributions, drift should not be detected
+        # (Type I error control: should not have high false positive rate)
+        # Note: This is probabilistic, but with identical distributions and reasonable alpha,
+        # drift_detected should typically be False
+        assert isinstance(result[drift_detected_key], bool)
+        assert isinstance(result[p_value_key], (int, float))
+
+        # For p-value based tests: if drift is not detected, p_value should be >= alpha
+        if not result[drift_detected_key]:
+            alpha = params.get(alpha_param, 0.05)
+            assert result[p_value_key] >= alpha, (
+                f"Inconsistent result: drift_detected=False but p_value={result[p_value_key]} < alpha={alpha}"
+            )
+
+    return test_impl
+
+
 # ============================================================================
-# Parameter independence factory functions
+# Parameter Independence Tests
 # ============================================================================
+# Tests that verify parameters affect drift detection but not computed statistics.
 
 
 def make_alpha_independence_test(
     metric_fn: Callable,
-    params: Dict[str, Any],
+    params: dict[str, Any],
     statistic_key: str,
-    p_value_key: str,
+    p_value_key: str = "p_value",
     alpha_param: str = "alpha",
 ):
-    """
-    Create a test that verifies statistic and p-value are independent of alpha.
+    """Create a test function for alpha independence (for p-value based tests).
 
-    The alpha parameter should only affect drift_detected, not the statistic or p-value.
-
-    :param metric_fn: The drift metric function to test
-    :param params: Parameters to pass to the metric function
-    :param statistic_key: Key for the metric's statistic in the result dict
-    :param p_value_key: Key for the p-value in the result dict
-    :param alpha_param: Name of the alpha parameter
-    :return: Test function bound to the metric configuration
-    """
-
-    def test_impl(self) -> None:
-        """Test that statistic and p-value don't depend on alpha."""
-        rng = np.random.RandomState(42)
-        reference = stats.norm(loc=0, scale=1).rvs(size=100, random_state=rng)
-        current = stats.norm(loc=0.5, scale=1).rvs(size=100, random_state=rng)
-
-        # Test with different alpha values
-        params1 = {**params, alpha_param: 0.01}
-        params2 = {**params, alpha_param: 0.05}
-        params3 = {**params, alpha_param: 0.10}
-
-        result1 = metric_fn(reference, current, **params1)
-        result2 = metric_fn(reference, current, **params2)
-        result3 = metric_fn(reference, current, **params3)
-
-        # Statistic should be identical regardless of alpha
-        assert result1[statistic_key] == result2[statistic_key] == result3[statistic_key]
-
-        # P-value should be identical regardless of alpha
-        assert result1[p_value_key] == result2[p_value_key] == result3[p_value_key]
-
-    return test_impl
-
-
-def make_symmetry_test(
-    metric_fn: Callable,
-    params: Dict[str, Any],
-    statistic_key: str,
-):
-    """
-    Create a test that verifies the metric is symmetric: metric(A, B) == metric(B, A).
+    Tests that changing the alpha parameter affects drift detection
+    but not the computed statistic or p-value itself. This is specifically
+    for hypothesis tests where drift is detected when p_value < alpha.
 
     :param metric_fn: The drift metric function to test
     :param params: Parameters to pass to the metric function
     :param statistic_key: Key for the metric's statistic in the result dict
-    :return: Test function bound to the metric configuration
-    """
-
-    @given(
-        n_samples=st.integers(min_value=50, max_value=200),
-        seed=st.integers(min_value=0, max_value=10000),
-    )
-    @settings(max_examples=20, deadline=None)
-    def test_impl(self, n_samples: int, seed: int) -> None:
-        """Test that metric is symmetric."""
-        rng = np.random.RandomState(seed)
-        data_a = stats.norm(loc=0, scale=1).rvs(size=n_samples, random_state=rng)
-        data_b = stats.norm(loc=0.5, scale=1.2).rvs(size=n_samples, random_state=rng)
-
-        result_ab = metric_fn(data_a, data_b, **params)
-        result_ba = metric_fn(data_b, data_a, **params)
-
-        # Statistic should be the same in both directions
-        assert abs(result_ab[statistic_key] - result_ba[statistic_key]) < 1e-10
-
-    return test_impl
-
-
-def make_threshold_independence_test(
-    metric_fn: Callable,
-    params: Dict[str, Any],
-    statistic_key: str,
-    threshold_param: str = "threshold",
-):
-    """
-    Create a test that verifies the statistic is independent of threshold.
-
-    The threshold parameter should only affect drift_detected, not the statistic.
-
-    :param metric_fn: The drift metric function to test
-    :param params: Parameters to pass to the metric function
-    :param statistic_key: Key for the metric's statistic in the result dict
-    :param threshold_param: Name of the threshold parameter
-    :return: Test function bound to the metric configuration
-    """
-
-    def test_impl(self) -> None:
-        """Test that statistic doesn't depend on threshold."""
-        rng = np.random.RandomState(42)
-        reference = stats.norm(loc=0, scale=1).rvs(size=100, random_state=rng)
-        current = stats.norm(loc=0.5, scale=1).rvs(size=100, random_state=rng)
-
-        # Test with different threshold values
-        params1 = {**params, threshold_param: 0.05}
-        params2 = {**params, threshold_param: 0.10}
-        params3 = {**params, threshold_param: 0.20}
-
-        result1 = metric_fn(reference, current, **params1)
-        result2 = metric_fn(reference, current, **params2)
-        result3 = metric_fn(reference, current, **params3)
-
-        # Statistic should be identical regardless of threshold
-        assert result1[statistic_key] == result2[statistic_key] == result3[statistic_key]
-
-    return test_impl
-
-
-# ============================================================================
-# Multivariate-specific factory functions
-# ============================================================================
-
-
-def make_multivariate_no_drift_test(
-    metric_fn: Callable,
-    params: Dict[str, Any],
-    statistic_key: str,
-):
-    """
-    Create a test function for multivariate data without drift.
-
-    Tests that metrics handle multi-dimensional data correctly.
-
-    :param metric_fn: The drift metric function to test
-    :param params: Parameters to pass to the metric function
-    :param statistic_key: Key for the metric's statistic in the result dict
+    :param p_value_key: Key for the p-value in the result dict (default: "p_value")
+    :param alpha_param: Name of the alpha parameter (default: "alpha")
     :return: Test function bound to the metric configuration
     """
 
     @given(
         n_samples=st.integers(min_value=50, max_value=150),
-        n_features=st.integers(min_value=2, max_value=5),
-        seed=st.integers(min_value=0, max_value=5000),
-    )
-    @settings(max_examples=20, deadline=None)
-    def test_impl(self, n_samples: int, n_features: int, seed: int) -> None:
-        """Test metric handles multi-dimensional data."""
-        rng = np.random.RandomState(seed)
-        # Sample from multivariate normal with identity covariance
-        reference = stats.multivariate_normal(mean=np.zeros(n_features), cov=np.eye(n_features)).rvs(
-            size=n_samples, random_state=rng
-        )
-        current = stats.multivariate_normal(mean=np.zeros(n_features), cov=np.eye(n_features)).rvs(
-            size=n_samples, random_state=rng
-        )
-
-        result = metric_fn(reference, current, **params)
-
-        # Verify return structure for multivariate case
-        assert isinstance(result["drift_detected"], bool)
-        assert isinstance(result[statistic_key], (int, float))
-
-    return test_impl
-
-
-def make_multivariate_detects_shift_test(
-    metric_fn: Callable,
-    params: Dict[str, Any],
-):
-    """
-    Create a test function for detecting shifts in multivariate data.
-
-    Tests that metrics can detect distribution shifts in multi-dimensional data.
-
-    :param metric_fn: The drift metric function to test
-    :param params: Parameters to pass to the metric function
-    :return: Test function bound to the metric configuration
-    """
-
-    @given(
-        n_samples=st.integers(min_value=50, max_value=150),
-        n_features=st.integers(min_value=2, max_value=5),
-        shift=st.floats(min_value=3.0, max_value=5.0),
-        seed=st.integers(min_value=0, max_value=5000),
-    )
-    @settings(max_examples=20, deadline=None)
-    def test_impl(self, n_samples: int, n_features: int, shift: float, seed: int) -> None:
-        """Test metric detects shifts in multi-dimensional data."""
-        rng = np.random.RandomState(seed)
-        # Sample from multivariate normal with identity covariance
-        reference = stats.multivariate_normal(mean=np.zeros(n_features), cov=np.eye(n_features)).rvs(
-            size=n_samples, random_state=rng
-        )
-        # Shifted distribution (mean shift in all dimensions)
-        current = stats.multivariate_normal(mean=np.full(n_features, shift), cov=np.eye(n_features)).rvs(
-            size=n_samples, random_state=rng
-        )
-
-        result = metric_fn(reference, current, **params)
-
-        # Large shift should be detected
-        assert result["drift_detected"] is True
-
-    return test_impl
-
-
-# ============================================================================
-# Symmetric metric factory functions
-# ============================================================================
-
-
-def make_symmetry_test(
-    metric_fn: Callable,
-    params: Dict[str, Any],
-    statistic_key: str,
-):
-    """
-    Create a test function for metric symmetry.
-
-    Tests that symmetric metrics satisfy M(A, B) = M(B, A).
-    This applies to symmetric divergence measures like Jensen-Shannon,
-    Hellinger distance, etc.
-
-    :param metric_fn: The drift metric function to test
-    :param params: Parameters to pass to the metric function
-    :param statistic_key: Key for the metric's statistic in the result dict
-    :return: Test function bound to the metric configuration
-    """
-
-    @given(
-        n_samples=st.integers(min_value=50, max_value=150),
-        loc_shift=st.floats(min_value=0.5, max_value=2.0),
+        loc_shift=st.floats(min_value=0.3, max_value=1.5),
         seed=st.integers(min_value=0, max_value=10000),
     )
     @settings(max_examples=20, deadline=None)
     def test_impl(self, n_samples: int, loc_shift: float, seed: int) -> None:
-        """Test metric is symmetric: M(A, B) = M(B, A)."""
+        """Test that alpha affects drift_detected but not the statistic or p-value."""
         rng = np.random.RandomState(seed)
-        data_a = stats.norm(loc=0, scale=1).rvs(size=n_samples, random_state=rng)
-        data_b = stats.norm(loc=loc_shift, scale=1).rvs(size=n_samples, random_state=rng)
+        reference = stats.norm(loc=0, scale=1).rvs(size=n_samples, random_state=rng)
+        current = stats.norm(loc=loc_shift, scale=1).rvs(size=n_samples, random_state=rng)
 
-        # Compute metric in both directions
-        result_ab = metric_fn(data_a, data_b, **params)
-        result_ba = metric_fn(data_b, data_a, **params)
+        # Get base alpha from params
+        base_params = params.copy()
+        base_alpha = base_params.get(alpha_param, 0.05)
 
-        # Metric should be symmetric
-        assert pytest.approx(result_ab[statistic_key], abs=1e-10) == result_ba[statistic_key]
-        assert result_ab["drift_detected"] == result_ba["drift_detected"]
+        # Test with strict alpha (half of base)
+        strict_params = base_params.copy()
+        strict_params[alpha_param] = base_alpha * 0.5
+        strict_result = metric_fn(reference, current, **strict_params)
+
+        # Test with lenient alpha (double base)
+        lenient_params = base_params.copy()
+        lenient_params[alpha_param] = base_alpha * 2.0
+        lenient_result = metric_fn(reference, current, **lenient_params)
+
+        # Statistic and p-value should be identical regardless of alpha
+        assert pytest.approx(strict_result[statistic_key]) == lenient_result[statistic_key]
+        assert pytest.approx(strict_result[p_value_key]) == lenient_result[p_value_key]
+
+        # Drift detection may differ based on alpha
+        # For p-value tests: drift detected when p_value < alpha
+        if strict_result["drift_detected"]:
+            assert strict_result[p_value_key] < strict_params[alpha_param]
+        if lenient_result["drift_detected"]:
+            assert lenient_result[p_value_key] < lenient_params[alpha_param]
 
     return test_impl
 
 
 def make_threshold_independence_test(
     metric_fn: Callable,
-    params: Dict[str, Any],
+    params: dict[str, Any],
     statistic_key: str,
     threshold_param: str = "threshold",
 ):
-    """
-    Create a test function for threshold independence.
+    """Create a test function for threshold independence.
 
     Tests that changing the threshold parameter affects drift detection
     but not the computed metric value itself.
@@ -472,63 +405,138 @@ def make_threshold_independence_test(
     return test_impl
 
 
-def make_alpha_independence_test(
-    metric_fn: Callable,
-    params: Dict[str, Any],
-    statistic_key: str,
-    p_value_key: str = "p_value",
-    alpha_param: str = "alpha",
-):
-    """
-    Create a test function for alpha independence (for p-value based tests).
+# ============================================================================
+# Mathematical Property Tests
+# ============================================================================
+# Tests for mathematical properties like symmetry.
 
-    Tests that changing the alpha parameter affects drift detection
-    but not the computed statistic or p-value itself. This is specifically
-    for hypothesis tests where drift is detected when p_value < alpha.
+
+def make_symmetry_test(
+    metric_fn: Callable,
+    params: dict[str, Any],
+    statistic_key: str,
+):
+    """Create a test function for metric symmetry.
+
+    Tests that symmetric metrics satisfy M(A, B) = M(B, A).
+    This applies to symmetric divergence measures like Jensen-Shannon,
+    Hellinger distance, etc.
 
     :param metric_fn: The drift metric function to test
     :param params: Parameters to pass to the metric function
     :param statistic_key: Key for the metric's statistic in the result dict
-    :param p_value_key: Key for the p-value in the result dict (default: "p_value")
-    :param alpha_param: Name of the alpha parameter (default: "alpha")
     :return: Test function bound to the metric configuration
     """
 
     @given(
         n_samples=st.integers(min_value=50, max_value=150),
-        loc_shift=st.floats(min_value=0.3, max_value=1.5),
+        loc_shift=st.floats(min_value=0.5, max_value=2.0),
         seed=st.integers(min_value=0, max_value=10000),
     )
     @settings(max_examples=20, deadline=None)
     def test_impl(self, n_samples: int, loc_shift: float, seed: int) -> None:
-        """Test that alpha affects drift_detected but not the statistic or p-value."""
+        """Test metric is symmetric: M(A, B) = M(B, A)."""
         rng = np.random.RandomState(seed)
-        reference = stats.norm(loc=0, scale=1).rvs(size=n_samples, random_state=rng)
-        current = stats.norm(loc=loc_shift, scale=1).rvs(size=n_samples, random_state=rng)
+        data_a = stats.norm(loc=0, scale=1).rvs(size=n_samples, random_state=rng)
+        data_b = stats.norm(loc=loc_shift, scale=1).rvs(size=n_samples, random_state=rng)
 
-        # Get base alpha from params
-        base_params = params.copy()
-        base_alpha = base_params.get(alpha_param, 0.05)
+        # Compute metric in both directions
+        result_ab = metric_fn(data_a, data_b, **params)
+        result_ba = metric_fn(data_b, data_a, **params)
 
-        # Test with strict alpha (half of base)
-        strict_params = base_params.copy()
-        strict_params[alpha_param] = base_alpha * 0.5
-        strict_result = metric_fn(reference, current, **strict_params)
+        # Metric should be symmetric
+        assert pytest.approx(result_ab[statistic_key], abs=1e-10) == result_ba[statistic_key]
+        assert result_ab["drift_detected"] == result_ba["drift_detected"]
 
-        # Test with lenient alpha (double base)
-        lenient_params = base_params.copy()
-        lenient_params[alpha_param] = base_alpha * 2.0
-        lenient_result = metric_fn(reference, current, **lenient_params)
+    return test_impl
 
-        # Statistic and p-value should be identical regardless of alpha
-        assert pytest.approx(strict_result[statistic_key]) == lenient_result[statistic_key]
-        assert pytest.approx(strict_result[p_value_key]) == lenient_result[p_value_key]
 
-        # Drift detection may differ based on alpha
-        # For p-value tests: drift detected when p_value < alpha
-        if strict_result["drift_detected"]:
-            assert strict_result[p_value_key] < strict_params[alpha_param]
-        if lenient_result["drift_detected"]:
-            assert lenient_result[p_value_key] < lenient_params[alpha_param]
+# ============================================================================
+# Multivariate Tests
+# ============================================================================
+# Tests for metrics that handle multi-dimensional data.
+
+
+def make_multivariate_no_drift_test(
+    metric_fn: Callable,
+    params: dict[str, Any],
+    statistic_key: str,
+):
+    """Create a test function for multivariate data without drift.
+
+    Tests that metrics handle multi-dimensional data correctly.
+
+    :param metric_fn: The drift metric function to test
+    :param params: Parameters to pass to the metric function
+    :param statistic_key: Key for the metric's statistic in the result dict
+    :return: Test function bound to the metric configuration
+    """
+
+    @given(
+        n_samples=st.integers(min_value=50, max_value=150),
+        n_features=st.integers(min_value=2, max_value=5),
+        seed=st.integers(min_value=0, max_value=5000),
+    )
+    @settings(max_examples=20, deadline=None)
+    def test_impl(self, n_samples: int, n_features: int, seed: int) -> None:
+        """Test metric handles multi-dimensional data."""
+        rng = np.random.RandomState(seed)
+        # Sample from multivariate normal with identity covariance
+        reference = stats.multivariate_normal(mean=np.zeros(n_features), cov=np.eye(n_features)).rvs(
+            size=n_samples,
+            random_state=rng,
+        )
+        current = stats.multivariate_normal(mean=np.zeros(n_features), cov=np.eye(n_features)).rvs(
+            size=n_samples,
+            random_state=rng,
+        )
+
+        result = metric_fn(reference, current, **params)
+
+        # Verify return structure for multivariate case
+        assert isinstance(result["drift_detected"], bool)
+        assert isinstance(result[statistic_key], (int, float))
+
+    return test_impl
+
+
+def make_multivariate_detects_shift_test(
+    metric_fn: Callable,
+    params: dict[str, Any],
+):
+    """Create a test function for detecting shifts in multivariate data.
+
+    Tests that metrics can detect distribution shifts in multi-dimensional data.
+
+    :param metric_fn: The drift metric function to test
+    :param params: Parameters to pass to the metric function
+    :return: Test function bound to the metric configuration
+    """
+
+    @given(
+        n_samples=st.integers(min_value=50, max_value=150),
+        n_features=st.integers(min_value=2, max_value=5),
+        shift=st.floats(min_value=3.0, max_value=5.0),
+        seed=st.integers(min_value=0, max_value=5000),
+    )
+    @settings(max_examples=20, deadline=None)
+    def test_impl(self, n_samples: int, n_features: int, shift: float, seed: int) -> None:
+        """Test metric detects shifts in multi-dimensional data."""
+        rng = np.random.RandomState(seed)
+        # Sample from multivariate normal with identity covariance
+        reference = stats.multivariate_normal(mean=np.zeros(n_features), cov=np.eye(n_features)).rvs(
+            size=n_samples,
+            random_state=rng,
+        )
+        # Shifted distribution (mean shift in all dimensions)
+        current = stats.multivariate_normal(mean=np.full(n_features, shift), cov=np.eye(n_features)).rvs(
+            size=n_samples,
+            random_state=rng,
+        )
+
+        result = metric_fn(reference, current, **params)
+
+        # Large shift should be detected
+        assert result["drift_detected"] is True
 
     return test_impl

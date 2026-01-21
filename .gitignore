@@ -166,3 +166,6 @@ cython_debug/
 .idea/trustyai-service-v2.iml
 .idea/vcs.xml
 .idea/inspectionProfiles/profiles_settings.xml
+
+# MacOS
+.DS_Store

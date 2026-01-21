@@ -1,5 +1,4 @@
-"""
-Unified tests for all drift metric endpoints.
+"""Unified tests for all drift metric endpoints.
 
 This module provides factory functions to create common tests that apply to all
 drift metric endpoints, similar to the pattern in tests/metrics/test_drift_unified.py.
@@ -21,7 +20,8 @@ Common request fields:
 - fitColumns: List of feature columns to analyze
 """
 
-from typing import Any, Callable, Dict, List, Literal, Union
+from collections.abc import Callable
+from typing import Any, Literal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
@@ -29,8 +29,9 @@ import pandas as pd
 import polars as pl
 
 # ============================================================================
-# Factory Functions for Common Tests
+# Success Case Tests
 # ============================================================================
+# Tests for successful endpoint operations (200 status codes).
 
 
 def make_compute_endpoint_test(
@@ -38,12 +39,11 @@ def make_compute_endpoint_test(
     module_path: str,
     endpoint_path: str,
     client: Any,
-    request_payload: Dict[str, Any],
-    expected_response_keys: List[str],
+    request_payload: dict[str, Any],
+    expected_response_keys: list[str],
     df_type: Literal["Pandas", "Polars"] = "Polars",
 ) -> Callable[[], None]:
-    """
-    Factory to create a test for the compute endpoint.
+    """Factory to create a test for the compute endpoint.
 
     :param metric_name: Name of the metric for logging
     :param module_path: Module path for patching (e.g., "src.endpoints.metrics.drift.kolmogorov_smirnov")
@@ -94,9 +94,8 @@ def make_definition_endpoint_test(
     endpoint_path: str,
     client: Any,
     expected_name: str,
-) -> Callable[[], None]:
-    """
-    Factory to create a test for the definition endpoint.
+) -> Callable[[Any], None]:
+    """Factory to create a test for the definition endpoint.
 
     :param metric_name: Name of the metric for logging
     :param endpoint_path: API endpoint path (e.g., "/metrics/drift/kstest/definition")
@@ -132,10 +131,9 @@ def make_schedule_endpoint_test(
     module_path: str,
     endpoint_path: str,
     client: Any,
-    request_payload: Dict[str, Any],
+    request_payload: dict[str, Any],
 ) -> Callable[[], None]:
-    """
-    Factory to create a test for the schedule/request endpoint.
+    """Factory to create a test for the schedule/request endpoint.
 
     :param metric_name: Name of the metric for logging
     :param module_path: Module path for patching (e.g., "src.endpoints.metrics.drift.kolmogorov_smirnov")
@@ -184,8 +182,7 @@ def make_delete_schedule_endpoint_test(
     endpoint_path: str,
     client: Any,
 ) -> Callable[[], None]:
-    """
-    Factory to create a test for the delete schedule endpoint.
+    """Factory to create a test for the delete schedule endpoint.
 
     :param metric_name: Name of the metric for logging
     :param module_path: Module path for patching (e.g., "src.endpoints.metrics.drift.kolmogorov_smirnov")
@@ -226,8 +223,7 @@ def make_list_requests_endpoint_test(
     endpoint_path: str,
     client: Any,
 ) -> Callable[[], None]:
-    """
-    Factory to create a test for the list requests endpoint.
+    """Factory to create a test for the list requests endpoint.
 
     :param metric_name: Name of the metric for logging
     :param module_path: Module path for patching (e.g., "src.endpoints.metrics.drift.kolmogorov_smirnov")
@@ -258,19 +254,24 @@ def make_list_requests_endpoint_test(
     return test_impl
 
 
+# ============================================================================
+# Error Case Tests
+# ============================================================================
+# Tests for error handling (4xx status codes: validation errors, missing data, etc.).
+
+
 def make_compute_endpoint_error_test(
     metric_name: str,
     module_path: str,
     endpoint_path: str,
     client: Any,
-    request_payload: Dict[str, Any],
+    request_payload: dict[str, Any],
     expected_status_code: int,
     expected_error_substring: str,
     setup_mocks: bool = True,
     df_type: Literal["Pandas", "Polars"] = "Polars",
 ) -> Callable[[], None]:
-    """
-    Factory to create a test for compute endpoint error cases.
+    """Factory to create a test for compute endpoint error cases.
 
     :param metric_name: Name of the metric for logging
     :param module_path: Module path for patching
@@ -327,14 +328,13 @@ def make_schedule_endpoint_error_test(
     module_path: str,
     endpoint_path: str,
     client: Any,
-    request_payload: Dict[str, Any],
+    request_payload: dict[str, Any],
     expected_status_code: int,
     expected_error_substring: str,
     mock_scheduler_none: bool = False,
     register_side_effect: Exception | None = None,
 ) -> Callable[[], None]:
-    """
-    Factory to create a test for schedule endpoint error cases.
+    """Factory to create a test for schedule endpoint error cases.
 
     :param metric_name: Name of the metric for logging
     :param module_path: Module path for patching
@@ -407,8 +407,7 @@ def make_delete_endpoint_error_test(
     mock_scheduler_none: bool = False,
     delete_side_effect: Exception | None = None,
 ) -> Callable[[], None]:
-    """
-    Factory to create a test for delete endpoint error cases.
+    """Factory to create a test for delete endpoint error cases.
 
     :param metric_name: Name of the metric for logging
     :param module_path: Module path for patching
@@ -465,6 +464,12 @@ def make_delete_endpoint_error_test(
     return test_impl
 
 
+# ============================================================================
+# Edge Case Tests
+# ============================================================================
+# Tests for special scenarios: empty data, malformed data, etc.
+
+
 def make_list_requests_with_data_test(
     metric_name: str,
     module_path: str,
@@ -472,8 +477,7 @@ def make_list_requests_with_data_test(
     client: Any,
     num_requests: int = 2,
 ) -> Callable[[], None]:
-    """
-    Factory to create a test for list endpoint with actual requests.
+    """Factory to create a test for list endpoint with actual requests.
 
     :param metric_name: Name of the metric for logging
     :param module_path: Module path for patching
@@ -537,8 +541,7 @@ def make_list_requests_with_malformed_data_test(
     num_valid_requests: int = 2,
     num_malformed_requests: int = 2,
 ) -> Callable[[], None]:
-    """
-    Factory to create a test for list endpoint with mix of valid and malformed requests.
+    """Factory to create a test for list endpoint with mix of valid and malformed requests.
 
     This tests the defensive logic that skips malformed requests and only returns valid ones.
     Malformed requests are those missing required attributes (model_id, batch_size, etc.).
@@ -598,7 +601,8 @@ def make_list_requests_with_malformed_data_test(
 
         # Verify response - should still be 200 (defensive handling)
         assert response.status_code == 200, (
-            f"{metric_name} list should handle malformed requests gracefully, got {response.status_code}: {response.text}"
+            f"{metric_name} list should handle malformed requests gracefully, "
+            f"got {response.status_code}: {response.text}"
         )
 
         data = response.json()
@@ -607,7 +611,8 @@ def make_list_requests_with_malformed_data_test(
         assert "requests" in data, f"Missing 'requests' in {metric_name} list response"
         assert isinstance(data["requests"], list), f"{metric_name} requests is not a list"
         assert len(data["requests"]) == num_valid_requests, (
-            f"{metric_name} should return {num_valid_requests} valid requests (filtering out {num_malformed_requests} malformed), "
+            f"{metric_name} should return {num_valid_requests} valid requests "
+            f"(filtering out {num_malformed_requests} malformed), "
             f"got {len(data['requests'])}"
         )
 
@@ -631,10 +636,9 @@ def make_compute_empty_reference_data_test(
     module_path: str,
     endpoint_path: str,
     client: Any,
-    request_payload: Dict[str, Any],
+    request_payload: dict[str, Any],
 ) -> Callable[[], None]:
-    """
-    Factory to create a test for compute endpoint when reference data is empty.
+    """Factory to create a test for compute endpoint when reference data is empty.
 
     Tests the 404 error case when no reference data is found for the given tag.
 
@@ -671,7 +675,7 @@ def make_compute_empty_reference_data_test(
 
         data = response.json()
         assert "detail" in data, f"Missing 'detail' in {metric_name} error response"
-        assert "no reference data found" in data["detail"].lower(), f"Expected 'no reference data found' in error"
+        assert "no reference data found" in data["detail"].lower(), "Expected 'no reference data found' in error"
 
     return test_impl
 
@@ -681,10 +685,9 @@ def make_compute_empty_current_data_test(
     module_path: str,
     endpoint_path: str,
     client: Any,
-    request_payload: Dict[str, Any],
+    request_payload: dict[str, Any],
 ) -> Callable[[], None]:
-    """
-    Factory to create a test for compute endpoint when current data is empty.
+    """Factory to create a test for compute endpoint when current data is empty.
 
     Tests the 404 error case when no current/organic data is found.
 
@@ -722,9 +725,15 @@ def make_compute_empty_current_data_test(
 
         data = response.json()
         assert "detail" in data, f"Missing 'detail' in {metric_name} error response"
-        assert "no current data found" in data["detail"].lower(), f"Expected 'no current data found' in error"
+        assert "no current data found" in data["detail"].lower(), "Expected 'no current data found' in error"
 
     return test_impl
+
+
+# ============================================================================
+# Exception Handling Tests
+# ============================================================================
+# Tests for exception handling and 500 error cases.
 
 
 def make_list_endpoint_scheduler_unavailable_test(
@@ -733,8 +742,7 @@ def make_list_endpoint_scheduler_unavailable_test(
     endpoint_path: str,
     client: Any,
 ) -> Callable[[], None]:
-    """
-    Factory to create a test for list endpoint when scheduler is unavailable.
+    """Factory to create a test for list endpoint when scheduler is unavailable.
 
     Tests the 500 error case when scheduler is None in list endpoint.
 
@@ -759,7 +767,7 @@ def make_list_endpoint_scheduler_unavailable_test(
 
         data = response.json()
         assert "detail" in data, f"Missing 'detail' in {metric_name} error response"
-        assert "scheduler not available" in data["detail"].lower(), f"Expected 'scheduler not available' in error"
+        assert "scheduler not available" in data["detail"].lower(), "Expected 'scheduler not available' in error"
 
     return test_impl
 
@@ -770,8 +778,7 @@ def make_list_endpoint_exception_test(
     endpoint_path: str,
     client: Any,
 ) -> Callable[[], None]:
-    """
-    Factory to create a test for list endpoint generic exception handling.
+    """Factory to create a test for list endpoint generic exception handling.
 
     Tests the catch-all exception handler in list endpoint.
 
@@ -798,7 +805,7 @@ def make_list_endpoint_exception_test(
 
         data = response.json()
         assert "detail" in data, f"Missing 'detail' in {metric_name} error response"
-        assert "error listing requests" in data["detail"].lower(), f"Expected 'error listing requests' in error"
+        assert "error listing requests" in data["detail"].lower(), "Expected 'error listing requests' in error"
 
     return test_impl
 
@@ -808,10 +815,9 @@ def make_compute_generic_exception_test(
     module_path: str,
     endpoint_path: str,
     client: Any,
-    request_payload: Dict[str, Any],
+    request_payload: dict[str, Any],
 ) -> Callable[[], None]:
-    """
-    Factory to create a test for compute endpoint generic exception handling.
+    """Factory to create a test for compute endpoint generic exception handling.
 
     Tests the catch-all exception handler that catches unexpected errors.
 
@@ -840,7 +846,222 @@ def make_compute_generic_exception_test(
 
         data = response.json()
         assert "detail" in data, f"Missing 'detail' in {metric_name} error response"
-        assert "error computing metric" in data["detail"].lower(), f"Expected 'error computing metric' in error"
+        assert "error computing metric" in data["detail"].lower(), "Expected 'error computing metric' in error"
+
+    return test_impl
+
+
+# ============================================================================
+# Request Model Tests
+# ============================================================================
+# Tests for request model methods like retrieve_tags().
+
+
+def make_retrieve_tags_with_all_fields_test(
+    request_class: type,
+) -> Callable[[Any], None]:
+    """Create a test for retrieve_tags() with all fields populated.
+
+    :param request_class: The request class to test (e.g., CompareMeansMetricRequest)
+    :return: Test function
+    """
+
+    def test_impl(self: Any) -> None:
+        """Test retrieve_tags method with all fields populated."""
+        request = request_class.model_validate({
+            "modelId": "test-model",
+            "referenceTag": "baseline",
+            "fitColumns": ["feature1", "feature2"],
+        })
+
+        tags = request.retrieve_tags()
+
+        # Check that tags include the base tags plus metric-specific tags
+        assert "modelId" in tags
+        assert tags["modelId"] == "test-model"
+        assert "referenceTag" in tags
+        assert tags["referenceTag"] == "baseline"
+        assert "fitColumns" in tags
+        assert tags["fitColumns"] == "feature1,feature2"
+
+    return test_impl
+
+
+def make_retrieve_tags_without_reference_tag_test(
+    request_class: type,
+) -> Callable[[Any], None]:
+    """Create a test for retrieve_tags() without referenceTag.
+
+    :param request_class: The request class to test (e.g., CompareMeansMetricRequest)
+    :return: Test function
+    """
+
+    def test_impl(self: Any) -> None:
+        """Test retrieve_tags method without referenceTag."""
+        request = request_class(
+            modelId="test-model",
+            fitColumns=["feature1"],
+        )
+
+        tags = request.retrieve_tags()
+
+        # Check that tags include base tags but not referenceTag
+        assert "modelId" in tags
+        assert tags["modelId"] == "test-model"
+        assert "referenceTag" not in tags
+        assert "fitColumns" in tags
+
+    return test_impl
+
+
+def make_retrieve_tags_without_fit_columns_test(
+    request_class: type,
+) -> Callable[[Any], None]:
+    """Create a test for retrieve_tags() without fitColumns.
+
+    :param request_class: The request class to test (e.g., CompareMeansMetricRequest)
+    :return: Test function
+    """
+
+    def test_impl(self: Any) -> None:
+        """Test retrieve_tags method without fitColumns."""
+        request = request_class.model_validate({
+            "modelId": "test-model",
+            "referenceTag": "baseline",
+        })
+
+        tags = request.retrieve_tags()
+
+        # Check that tags include referenceTag but not fitColumns
+        assert "modelId" in tags
+        assert "referenceTag" in tags
+        assert "fitColumns" not in tags
+
+    return test_impl
+
+
+def make_retrieve_tags_with_empty_fit_columns_test(
+    request_class: type,
+) -> Callable[[Any], None]:
+    """Create a test for retrieve_tags() with empty fitColumns list.
+
+    :param request_class: The request class to test (e.g., CompareMeansMetricRequest)
+    :return: Test function
+    """
+
+    def test_impl(self: Any) -> None:
+        """Test retrieve_tags method with empty fitColumns list."""
+        request = request_class(
+            modelId="test-model",
+            referenceTag="baseline",
+            fitColumns=[],
+        )
+
+        tags = request.retrieve_tags()
+
+        # Check that tags include referenceTag but not fitColumns (empty list should not add tag)
+        assert "modelId" in tags
+        assert "referenceTag" in tags
+        assert "fitColumns" not in tags
+
+    return test_impl
+
+
+def make_retrieve_default_tags_with_none_metric_name_test(
+    request_class: type,
+    expected_metric_name: str,
+) -> Callable[[Any], None]:
+    """Create a test for retrieve_default_tags() with None metric_name.
+
+    Tests that model_validator automatically sets metric_name, preventing None values
+    in Dict[str, str] returned by retrieve_default_tags().
+
+    :param request_class: The request class to test (e.g., CompareMeansMetricRequest)
+    :param expected_metric_name: The expected metric name after validator runs (e.g., "CompareMeans")
+    :return: Test function
+    """
+
+    def test_impl(self: Any) -> None:
+        """Test that metric_name is automatically set via model_validator (fixes type violation issue)."""
+        # Create request without metric_name (it defaults to None)
+        request = request_class(
+            modelId="test-model",
+        )
+
+        # Model validator should have set metric_name automatically during initialization
+        assert request.metric_name == expected_metric_name
+
+        # This should not raise an error and should not add None to Dict[str, str]
+        tags = request.retrieve_default_tags()
+
+        # Verify tags are all strings (no None values)
+        assert "modelId" in tags
+        assert tags["modelId"] == "test-model"
+        assert "metricName" in tags
+        assert tags["metricName"] == expected_metric_name
+        assert isinstance(tags["metricName"], str)
+        assert isinstance(tags["modelId"], str)
+
+        # Verify all values are strings (not None)
+        for key, value in tags.items():
+            assert value is not None, f"Tag {key} should not be None"
+            assert isinstance(value, str), f"Tag {key} should be str, got {type(value)}"
+
+    return test_impl
+
+
+def make_retrieve_default_tags_called_directly_by_prometheus_publisher_test(
+    request_class: type,
+    expected_metric_name: str,
+) -> Callable[[Any], None]:
+    """Create a test for retrieve_default_tags() called directly by prometheus_publisher.
+
+    Tests that retrieve_default_tags() works when called directly (as prometheus_publisher does).
+    This simulates the actual issue: prometheus_publisher._generate_tags() calls
+    retrieve_default_tags() directly, bypassing retrieve_tags(). The model_validator
+    ensures metric_name is set during initialization, so this won't add None to Dict[str, str].
+
+    :param request_class: The request class to test (e.g., CompareMeansMetricRequest)
+    :param expected_metric_name: The expected metric name after validator runs (e.g., "CompareMeans")
+    :return: Test function
+    """
+
+    def test_impl(self: Any) -> None:
+        """Test that retrieve_default_tags() works when called directly (as prometheus_publisher does)."""
+        import uuid
+
+        from prometheus_client import CollectorRegistry
+
+        from src.service.prometheus.prometheus_publisher import PrometheusPublisher
+
+        # Create request without metric_name (it defaults to None, but model_validator sets it)
+        request = request_class(
+            modelId="test-model",
+        )
+
+        # Model validator should have set metric_name automatically
+        assert request.metric_name == expected_metric_name
+
+        # Simulate what prometheus_publisher does: call retrieve_default_tags() directly
+        # This should not raise an error and should not add None to the dict
+        tags_from_default = request.retrieve_default_tags()
+
+        # Verify all values are strings (not None)
+        for key, value in tags_from_default.items():
+            assert value is not None, f"Tag {key} should not be None (would violate Dict[str, str])"
+            assert isinstance(value, str), f"Tag {key} should be str, got {type(value)}"
+
+        # Now test with actual prometheus_publisher to ensure it works end-to-end
+        registry = CollectorRegistry()
+        publisher = PrometheusPublisher(registry=registry)
+        test_id = uuid.uuid4()
+
+        # This should not raise an error
+        publisher.gauge(model_name="test_model", id=test_id, value=0.5, request=request)
+
+        # Verify the gauge was created successfully
+        metric_name = f"trustyai_{request.metric_name.lower()}"
+        assert metric_name in publisher.registry._names_to_collectors
 
     return test_impl
 
@@ -848,13 +1069,15 @@ def make_compute_generic_exception_test(
 # ============================================================================
 # Helper Functions
 # ============================================================================
+# Shared utilities used by test factory functions.
 
 
 def _create_sample_dataframe(
-    columns: List[str], n_samples: int = 100, df_type: Literal["Pandas", "Polars"] = "Polars"
-) -> Union[pd.DataFrame, pl.DataFrame]:
-    """
-    Create a sample DataFrame for testing.
+    columns: list[str],
+    n_samples: int = 100,
+    df_type: Literal["Pandas", "Polars"] = "Polars",
+) -> pd.DataFrame | pl.DataFrame:
+    """Create a sample DataFrame for testing.
 
     :param columns: List of column names
     :param n_samples: Number of samples to generate
@@ -867,5 +1090,192 @@ def _create_sample_dataframe(
 
     if df_type == "Polars":
         return pl.DataFrame(data)
-    else:
-        return pd.DataFrame(data)
+    return pd.DataFrame(data)
+
+
+# ============================================================================
+# Deprecated Endpoint Tests
+# ============================================================================
+# Tests for deprecated endpoints that proxy to new implementations.
+
+
+def _mock_data_source_for_deprecated(request_payload: dict[str, Any]) -> MagicMock:
+    """Create a mocked data source with sample dataframe."""
+    sample_df = _create_sample_dataframe(request_payload.get("fitColumns", ["feature1"]))
+    mock_data_source = MagicMock()
+    mock_data_source.get_dataframe_by_tag = AsyncMock(return_value=sample_df)
+    mock_data_source.get_organic_dataframe = AsyncMock(return_value=sample_df)
+    mock_data_source.get_metadata = AsyncMock(return_value={"feature1": "type1"})
+    return mock_data_source
+
+
+def _mock_scheduler_for_deprecated() -> MagicMock:
+    """Create a mocked scheduler for deprecated endpoint tests."""
+    mock_sched = MagicMock()
+    mock_sched.register = AsyncMock(return_value=None)
+    mock_sched.delete = AsyncMock(return_value=None)
+    mock_sched.get_requests = MagicMock(return_value={})
+    return mock_sched
+
+
+def _validate_compute_response(data: dict[str, Any], expected_keys: list[str], metric_name: str) -> None:
+    """Validate compute endpoint response."""
+    for key in expected_keys:
+        assert key in data, f"Missing key '{key}' in deprecated {metric_name} response"
+    if "status" in data:
+        assert data["status"] == "success"
+    if "drift_detected" in data:
+        assert isinstance(data["drift_detected"], bool)
+    if "value" in data:
+        assert isinstance(data["value"], (int, float))
+
+
+def make_deprecated_endpoint_test(
+    metric_name: str,
+    deprecated_endpoint_path: str,
+    client: Any,
+    endpoint_type: Literal["compute", "definition", "schedule", "delete", "list"],
+    module_path: str | None = None,
+    request_payload: dict[str, Any] | None = None,
+    expected_response_keys: list[str] | None = None,
+    expected_name_substring: str | None = None,
+) -> Callable[[Any], None]:
+    """Unified factory to create tests for any deprecated endpoint.
+    Verifies that deprecated endpoints work correctly and proxy to the new implementation.
+
+    :param metric_name: Name of the metric for logging
+    :param deprecated_endpoint_path: Deprecated API endpoint path (e.g., "/metrics/drift/meanshift")
+    :param client: TestClient instance for making requests
+    :param endpoint_type: Type of endpoint ("compute", "definition", "schedule", "delete", "list")
+    :param module_path: Module path for patching (e.g., "src.endpoints.metrics.drift.compare_means")
+                       Required for compute, schedule, delete, and list endpoints
+    :param request_payload: Request payload dictionary (required for compute/schedule)
+    :param expected_response_keys: Keys expected in successful response (required for compute)
+    :param expected_name_substring: Substring expected in metric name (required for definition)
+    :return: Test function
+
+    Examples:
+        # Test deprecated compute endpoint
+        test_func = make_deprecated_endpoint_test(
+            metric_name="Meanshift",
+            module_path="src.endpoints.metrics.drift.compare_means",
+            deprecated_endpoint_path="/metrics/drift/meanshift",
+            client=client,
+            endpoint_type="compute",
+            request_payload={"modelId": "test", "fitColumns": ["f1"]},
+            expected_response_keys=["status", "value"]
+        )
+
+        # Test deprecated definition endpoint
+        test_func = make_deprecated_endpoint_test(
+            metric_name="Meanshift",
+            module_path="src.endpoints.metrics.drift.compare_means",
+            deprecated_endpoint_path="/metrics/drift/meanshift/definition",
+            client=client,
+            endpoint_type="definition",
+            expected_name_substring="T-Test"
+        )
+
+        # Test deprecated list endpoint
+        test_func = make_deprecated_endpoint_test(
+            metric_name="Meanshift",
+            module_path="src.endpoints.metrics.drift.compare_means",
+            deprecated_endpoint_path="/metrics/drift/meanshift/requests",
+            client=client,
+            endpoint_type="list"
+        )
+
+    """
+    # Validate module_path is provided for endpoints that need it
+    if endpoint_type in ("compute", "schedule", "delete", "list") and module_path is None:
+        raise ValueError(f"module_path is required for endpoint_type '{endpoint_type}'")
+
+    # Validate expected_name_substring is provided for definition endpoint
+    if endpoint_type == "definition" and expected_name_substring is None:
+        raise ValueError("expected_name_substring is required for endpoint_type 'definition'")
+
+    match endpoint_type:
+        case "compute":
+
+            @patch(f"{module_path}.get_data_source")
+            def test_impl(self: Any, mock_ds: MagicMock) -> None:
+                """Test deprecated compute endpoint proxies correctly to new endpoint."""
+                if request_payload is None:
+                    raise ValueError("request_payload is required for compute endpoint tests")
+                if expected_response_keys is None:
+                    raise ValueError("expected_response_keys is required for compute endpoint tests")
+                mock_ds.return_value = _mock_data_source_for_deprecated(request_payload)
+                response = client.post(deprecated_endpoint_path, json=request_payload)
+                assert response.status_code == 200, f"Deprecated {metric_name} compute failed: {response.text}"
+                _validate_compute_response(response.json(), expected_response_keys, metric_name)
+
+            return test_impl
+
+        case "definition":
+
+            def test_impl(self: Any) -> None:
+                """Test deprecated definition endpoint returns valid response."""
+                if expected_name_substring is None:
+                    raise ValueError("expected_name_substring is required for definition endpoint tests")
+                response = client.get(deprecated_endpoint_path)
+                assert response.status_code == 200, f"Deprecated {metric_name} definition failed: {response.text}"
+                data = response.json()
+                assert "name" in data, f"Missing 'name' in deprecated {metric_name} definition"
+                assert "description" in data, f"Missing 'description' in deprecated {metric_name} definition"
+                assert expected_name_substring.lower() in data["name"].lower(), (
+                    f"Expected '{expected_name_substring}' in name, got: {data['name']}"
+                )
+
+            return test_impl
+
+        case "schedule":
+
+            @patch(f"{module_path}.get_prometheus_scheduler")
+            @patch(f"{module_path}.get_data_source")
+            def test_impl(self: Any, mock_ds: MagicMock, mock_sched_fn: MagicMock) -> None:
+                """Test deprecated schedule endpoint works correctly."""
+                if request_payload is None:
+                    raise ValueError("request_payload is required for schedule endpoint tests")
+                mock_ds.return_value = _mock_data_source_for_deprecated(request_payload)
+                mock_sched_fn.return_value = _mock_scheduler_for_deprecated()
+                response = client.post(deprecated_endpoint_path, json=request_payload)
+                assert response.status_code == 200, f"Deprecated {metric_name} schedule failed: {response.text}"
+                data = response.json()
+                assert "requestId" in data, f"Missing 'requestId' in deprecated {metric_name} schedule response"
+                import uuid
+
+                uuid.UUID(data["requestId"])  # Raises ValueError if invalid
+
+            return test_impl
+
+        case "delete":
+
+            @patch(f"{module_path}.get_prometheus_scheduler")
+            def test_impl(self: Any, mock_sched_fn: MagicMock) -> None:
+                """Test deprecated delete schedule endpoint works correctly."""
+                mock_sched_fn.return_value = _mock_scheduler_for_deprecated()
+                payload = {"requestId": "123e4567-e89b-12d3-a456-426614174000"}
+                response = client.request("DELETE", deprecated_endpoint_path, json=payload)
+                assert response.status_code == 200, f"Deprecated {metric_name} delete failed: {response.text}"
+                data = response.json()
+                assert "status" in data and data["status"] == "success", f"Expected success in {metric_name} delete"
+
+            return test_impl
+
+        case "list":
+
+            @patch(f"{module_path}.get_prometheus_scheduler")
+            def test_impl(self: Any, mock_sched_fn: MagicMock) -> None:
+                """Test deprecated list requests endpoint works correctly."""
+                mock_sched_fn.return_value = _mock_scheduler_for_deprecated()
+                response = client.get(deprecated_endpoint_path)
+                assert response.status_code == 200, f"Deprecated {metric_name} list failed: {response.text}"
+                data = response.json()
+                assert "requests" in data and isinstance(data["requests"], list), (
+                    f"Expected requests list in {metric_name}"
+                )
+
+            return test_impl
+
+        case _:
+            raise ValueError(f"Unknown endpoint_type: {endpoint_type}")
