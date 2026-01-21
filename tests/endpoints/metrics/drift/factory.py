@@ -989,6 +989,10 @@ def make_deprecated_endpoint_test(
     if endpoint_type in ("compute", "schedule", "delete", "list") and module_path is None:
         raise ValueError(f"module_path is required for endpoint_type '{endpoint_type}'")
 
+    # Validate expected_name_substring is provided for definition endpoint
+    if endpoint_type == "definition" and expected_name_substring is None:
+        raise ValueError("expected_name_substring is required for endpoint_type 'definition'")
+
     match endpoint_type:
         case "compute":
             @patch(f"{module_path}.get_data_source")
