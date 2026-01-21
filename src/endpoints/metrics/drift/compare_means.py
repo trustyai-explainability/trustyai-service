@@ -3,7 +3,7 @@ import uuid
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from src.core.metrics.drift.compare_means import CompareMeans
 from src.service.data.shared_data_source import get_shared_data_source
@@ -54,12 +54,15 @@ class CompareMeansMetricRequest(BaseMetricRequest):
     reference_tag: Optional[str] = Field(default=None, alias="referenceTag")
     fit_columns: List[str] = Field(default_factory=list, alias="fitColumns")
 
-    def retrieve_tags(self) -> Dict[str, str]:
-        """Retrieve tags for this CompareMeans metric request."""
-        # Ensure metric_name is set before calling retrieve_default_tags()
-        # to avoid returning None values that violate Dict[str, str] type hint
+    @model_validator(mode='after')
+    def _set_default_metric_name(self) -> 'CompareMeansMetricRequest':
+        """Automatically set metric_name to default if not provided."""
         if self.metric_name is None:
             self.metric_name = METRIC_NAME
+        return self
+
+    def retrieve_tags(self) -> Dict[str, str]:
+        """Retrieve tags for this CompareMeans metric request."""
         tags = self.retrieve_default_tags()
         if self.reference_tag:
             tags["referenceTag"] = self.reference_tag
@@ -125,9 +128,16 @@ async def compute_CompareMeans(
             drift_detected = any(r["drift_detected"] for r in results.values())
             
             # Find the feature with the maximum absolute statistic
-            # Use both statistic and p-value from the same feature to maintain
-            # the relationship between test statistic and p-value
-            max_feature_result = max(results.values(), key=lambda r: abs(r["statistic"]))
+            # If drift is detected, prioritize features that detected drift to ensure
+            # consistency: drift_detected=True implies p_value < alpha
+            if drift_detected:
+                # Among features that detected drift, find the one with max absolute statistic
+                drifting_features = [r for r in results.values() if r["drift_detected"]]
+                max_feature_result = max(drifting_features, key=lambda r: abs(r["statistic"]))
+            else:
+                # If no drift detected, use the feature with max absolute statistic overall
+                max_feature_result = max(results.values(), key=lambda r: abs(r["statistic"]))
+            
             max_statistic = max_feature_result["statistic"]
             corresponding_p_value = max_feature_result["p_value"]
 
