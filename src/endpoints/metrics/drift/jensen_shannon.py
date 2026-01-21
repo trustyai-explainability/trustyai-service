@@ -1,13 +1,21 @@
 import logging
 import uuid
-from typing import Any
+from typing import Any, Literal, cast
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from src.core.metrics.drift.jensen_shannon import JensenShannon
-from src.service.data.shared_data_source import get_shared_data_source
+from src.core.metrics.drift.jensen_shannon import (
+    DEFAULT_BINS,
+    DEFAULT_GRID_POINTS,
+    DEFAULT_METHOD,
+    DEFAULT_STATISTIC,
+    DEFAULT_THRESHOLD,
+    JensenShannon,
+)
+from src.service.data.shared_data_source import DataSource, get_shared_data_source
 from src.service.payloads.metrics.base_metric_request import BaseMetricRequest
+from src.service.prometheus.prometheus_scheduler import PrometheusScheduler
 from src.service.prometheus.shared_prometheus_scheduler import get_shared_prometheus_scheduler
 
 router = APIRouter()
@@ -17,12 +25,12 @@ logger = logging.getLogger(__name__)
 METRIC_NAME = "JensenShannon"
 
 
-def get_prometheus_scheduler():
+def get_prometheus_scheduler() -> PrometheusScheduler:
     """Get the shared prometheus scheduler instance."""
     return get_shared_prometheus_scheduler()
 
 
-def get_data_source():
+def get_data_source() -> DataSource:
     """Get the shared data source instance."""
     return get_shared_data_source()
 
@@ -36,16 +44,16 @@ class JensenShannonMetricRequest(BaseMetricRequest):
     model_config = ConfigDict(populate_by_name=True)
 
     model_id: str = Field(alias="modelId")
-    metric_name: str | None = Field(default=None, alias="metricName")  # Will be set by endpoint
+    metric_name: str | None = Field(default=None, alias="metricName")
     request_name: str | None = Field(default=None, alias="requestName")
     batch_size: int = Field(default=100, alias="batchSize")
 
     # JensenShannon-specific fields
-    statistic: str = Field(default="distance", alias="statistic")  # JS distance or divergence
-    threshold: float = Field(default=0.1, alias="threshold")  # Drift detection threshold
-    method: str = Field(default="kde", alias="method")  # Density estimation method
-    grid_points: int = Field(default=256, alias="gridPoints")  # Grid points for KDE
-    bins: int = Field(default=64, alias="bins")  # Number of bins for histogram method
+    statistic: str = Field(default=DEFAULT_STATISTIC, alias="statistic")  # JS distance or divergence
+    threshold: float = Field(default=DEFAULT_THRESHOLD, alias="threshold")  # Drift detection threshold
+    method: str = Field(default=DEFAULT_METHOD, alias="method")  # Density estimation method
+    grid_points: int = Field(default=DEFAULT_GRID_POINTS, alias="gridPoints")  # Grid points for KDE
+    bins: int = Field(default=DEFAULT_BINS, alias="bins")  # Number of bins for histogram method
     reference_tag: str | None = Field(default=None, alias="referenceTag")
     fit_columns: list[str] = Field(default_factory=list, alias="fitColumns")
 
@@ -69,7 +77,7 @@ class JensenShannonMetricRequest(BaseMetricRequest):
 @router.post("/metrics/drift/jensenshannon")
 async def compute_jensenshannon(
     request: JensenShannonMetricRequest,
-) -> dict[str, float | bool | str | dict[str, dict[str, float]]]:
+) -> dict[str, float | bool | str | dict[str, dict[str, float | bool]]]:
     """Compute the current value of Jensen-Shannon metric."""
     try:
         logger.info(f"Computing {METRIC_NAME} for model: {request.model_id}")
@@ -116,24 +124,24 @@ async def compute_jensenshannon(
                 results[feature_name] = JensenShannon.jensenshannon(
                     data_ref=reference_data,
                     data_cur=current_data,
-                    statistic=statistic,
+                    statistic=cast(Literal["distance", "divergence"], statistic),
                     threshold=threshold,
-                    method=method,
+                    method=cast(Literal["kde", "hist"], method),
                     grid_points=grid_points,
                     bins=bins,
                 )
 
             # Aggregate: drift detected if any feature shows drift
             drift_detected = any(r["drift_detected"] for r in results.values())
-            max_distance = max(r["Jensen–Shannon_distance"] for r in results.values())
-            max_divergence = max(r["Jensen–Shannon_divergence"] for r in results.values())
+            max_distance = max(r["Jensen-Shannon_distance"] for r in results.values())
+            max_divergence = max(r["Jensen-Shannon_divergence"] for r in results.values())
 
             return {
                 "status": "success",
                 "value": max_distance,
                 "drift_detected": drift_detected,
-                "Jensen–Shannon_distance": max_distance,
-                "Jensen–Shannon_divergence": max_divergence,
+                "Jensen-Shannon_distance": max_distance,
+                "Jensen-Shannon_divergence": max_divergence,
                 "threshold": threshold,
                 "statistic": statistic,
                 "method": method,
@@ -154,8 +162,10 @@ async def compute_jensenshannon(
 @router.get("/metrics/drift/jensenshannon/definition")
 async def get_jensenshannon_definition() -> dict[str, str]:
     """Provide a general definition of Jensen-Shannon metric."""
-    description = """The Jensen–Shannon divergence is a symmetric and smoothed version of the Kullback–Leibler divergence.
-    It measures the similarity between two probability distributions and is bounded between 0 and 1 (or 0 and log(2) in nats).
+    description = """The Jensen-Shannon divergence is a symmetric
+    and smoothed version of the Kullback–Leibler divergence.
+    It measures the similarity between two probability distributions
+    and is bounded between 0 and 1 (or 0 and log(2) in nats).
     The Jensen-Shannon distance is the square root of the divergence.
 
     For more information, see the following:
@@ -184,6 +194,8 @@ async def schedule_jensenshannon(request: JensenShannonMetricRequest) -> dict[st
             raise HTTPException(status_code=500, detail="Prometheus scheduler not available")
 
         # Register with the scheduler (this will reconcile the request and store it)
+        # metric_name is guaranteed to be set by model_validator
+        assert request.metric_name is not None, "metric_name should be set by model_validator"
         await scheduler.register(request.metric_name, request_id, request)
 
         logger.info(f"Successfully scheduled {METRIC_NAME} computation with ID: {request_id}")

@@ -35,8 +35,8 @@ class TestJensenShannonEndpoints:
             "status",
             "value",
             "drift_detected",
-            "Jensen–Shannon_distance",
-            "Jensen–Shannon_divergence",
+            "Jensen-Shannon_distance",
+            "Jensen-Shannon_divergence",
         ],
         df_type="Pandas",
     )
@@ -62,8 +62,8 @@ class TestJensenShannonEndpoints:
             "status",
             "value",
             "drift_detected",
-            "Jensen–Shannon_distance",
-            "Jensen–Shannon_divergence",
+            "Jensen-Shannon_distance",
+            "Jensen-Shannon_divergence",
         ],
         df_type="Polars",
     )
@@ -156,7 +156,7 @@ class TestJensenShannonEndpoints:
         endpoint_path="/metrics/drift/jensenshannon/request",
         client=client,
         request_id="not-a-valid-uuid",
-        expected_status_code=500,  # Endpoint catches ValueError and returns 500
+        expected_status_code=400,  # Endpoint raises HTTPException with status_code=400 for invalid UUID
         expected_error_substring="Invalid request ID",
     )
 
@@ -345,3 +345,5 @@ class TestJensenShannonEndpoints:
         assert data_source is not None
         # Scheduler might be None if not configured, which is valid
         # Just verify the function executes without error
+        # Use scheduler variable to avoid F841 linting error
+        _ = scheduler  # Scheduler can be None, which is valid

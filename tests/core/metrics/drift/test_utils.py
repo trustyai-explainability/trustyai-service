@@ -69,6 +69,31 @@ class TestProbDistHist:
         with pytest.raises(ValueError, match="cannot be empty"):
             utils.prob_dist_hist(empty, empty, bins=10)
 
+    def test_prob_dist_hist_nan_data_raises_error(self):
+        """Test that NaN values in input arrays raise ValueError."""
+        x_with_nan = np.array([1.0, 2.0, np.nan, 4.0])
+        y_valid = np.array([1.0, 2.0, 3.0, 4.0])
+
+        with pytest.raises(ValueError, match="cannot contain NaN"):
+            utils.prob_dist_hist(x_with_nan, y_valid, bins=10)
+        with pytest.raises(ValueError, match="cannot contain NaN"):
+            utils.prob_dist_hist(y_valid, x_with_nan, bins=10)
+
+    def test_prob_dist_hist_constant_inputs(self):
+        """Test histogram probability distributions for constant inputs."""
+        x = np.ones(100)
+        y = np.ones(100)
+
+        p_x, p_y = utils.prob_dist_hist(x, y, bins=10)
+
+        # Distributions should be properly normalized and well-behaved for singular data
+        assert pytest.approx(p_x.sum(), abs=1e-10) == 1.0
+        assert pytest.approx(p_y.sum(), abs=1e-10) == 1.0
+        assert np.all(p_x >= 0.0)
+        assert np.all(p_y >= 0.0)
+        assert np.all(np.isfinite(p_x))
+        assert np.all(np.isfinite(p_y))
+
     def test_prob_dist_hist_different_bins(self):
         """Test histogram method with different bin counts."""
         np.random.seed(456)
@@ -121,6 +146,15 @@ class TestProbDistKDE:
         assert np.all(p_x >= 0)
         assert np.all(p_y >= 0)
 
+    def test_prob_dist_kde_constant_inputs_raises_error(self):
+        """Test that KDE raises error for constant (zero-variance) inputs."""
+        x = np.ones(100)
+        y = np.ones(100)
+
+        # KDE should raise ValueError for constant inputs
+        with pytest.raises(ValueError, match="zero variance"):
+            utils.prob_dist_kde(x, y, grid_points=100)
+
     def test_prob_dist_kde_identical_distributions(self):
         """Test KDE method with identical distributions."""
         np.random.seed(42)
@@ -160,6 +194,26 @@ class TestProbDistKDE:
             utils.prob_dist_kde(nonempty, empty, bins=10)
         with pytest.raises(ValueError, match="cannot be empty"):
             utils.prob_dist_kde(empty, empty, bins=10)
+
+    def test_prob_dist_kde_nan_data_raises_error(self):
+        """Test that NaN values in input arrays raise ValueError."""
+        x_with_nan = np.array([1.0, 2.0, np.nan, 4.0])
+        y_valid = np.array([1.0, 2.0, 3.0, 4.0])
+
+        with pytest.raises(ValueError, match="cannot contain NaN"):
+            utils.prob_dist_kde(x_with_nan, y_valid, grid_points=100)
+        with pytest.raises(ValueError, match="cannot contain NaN"):
+            utils.prob_dist_kde(y_valid, x_with_nan, grid_points=100)
+
+    def test_prob_dist_kde_small_sample_raises_error(self):
+        """Test that sample size < 2 raises ValueError."""
+        single_point = np.array([1.0])
+        multiple_points = np.array([1.0, 2.0, 3.0])
+
+        with pytest.raises(ValueError, match="needs at least 2 points"):
+            utils.prob_dist_kde(single_point, multiple_points, grid_points=100)
+        with pytest.raises(ValueError, match="needs at least 2 points"):
+            utils.prob_dist_kde(multiple_points, single_point, grid_points=100)
 
     def test_prob_dist_kde_different_grid_points(self):
         """Test KDE method with different grid resolutions."""
