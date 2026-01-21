@@ -54,8 +54,8 @@ class CompareMeansMetricRequest(BaseMetricRequest):
     reference_tag: Optional[str] = Field(default=None, alias="referenceTag")
     fit_columns: List[str] = Field(default_factory=list, alias="fitColumns")
 
-    @model_validator(mode='after')
-    def _set_default_metric_name(self) -> 'CompareMeansMetricRequest':
+    @model_validator(mode="after")
+    def _set_default_metric_name(self) -> "CompareMeansMetricRequest":
         """Automatically set metric_name to default if not provided."""
         if self.metric_name is None:
             self.metric_name = METRIC_NAME
@@ -126,7 +126,7 @@ async def compute_CompareMeans(
 
             # Aggregate: drift detected if any feature shows drift
             drift_detected = any(r["drift_detected"] for r in results.values())
-            
+
             # Find the feature with the maximum absolute statistic
             # If drift is detected, prioritize features that detected drift to ensure
             # consistency: drift_detected=True implies p_value < alpha
@@ -137,7 +137,7 @@ async def compute_CompareMeans(
             else:
                 # If no drift detected, use the feature with max absolute statistic overall
                 max_feature_result = max(results.values(), key=lambda r: abs(r["statistic"]))
-            
+
             max_statistic = max_feature_result["statistic"]
             corresponding_p_value = max_feature_result["p_value"]
 
@@ -317,17 +317,7 @@ async def compute_meanshift(request: MeanshiftMetricRequest):
     """
     logger.warning(f"Deprecated {DEPRECATED_METRIC_NAME} endpoint called. Use {METRIC_NAME} endpoint instead.")
     # Convert to CompareMeans request format
-    compare_means_request = CompareMeansMetricRequest(
-        modelId=request.modelId,
-        requestName=request.requestName,
-        metricName=request.metricName,
-        batchSize=request.batchSize,
-        alpha=request.alpha,
-        equalVar=request.equalVar,
-        nanPolicy=request.nanPolicy,
-        referenceTag=request.referenceTag,
-        fitColumns=request.fitColumns,
-    )
+    compare_means_request = CompareMeansMetricRequest.model_validate(request.model_dump(exclude_none=False))
     return await compute_CompareMeans(compare_means_request)
 
 
@@ -349,17 +339,7 @@ async def schedule_meanshift(request: MeanshiftMetricRequest):
     """
     logger.warning(f"Deprecated {DEPRECATED_METRIC_NAME} endpoint called. Use {METRIC_NAME} endpoint instead.")
     # Convert to CompareMeans request format
-    compare_means_request = CompareMeansMetricRequest(
-        modelId=request.modelId,
-        requestName=request.requestName,
-        metricName=request.metricName,
-        batchSize=request.batchSize,
-        alpha=request.alpha,
-        equalVar=request.equalVar,
-        nanPolicy=request.nanPolicy,
-        referenceTag=request.referenceTag,
-        fitColumns=request.fitColumns,
-    )
+    compare_means_request = CompareMeansMetricRequest.model_validate(request.model_dump(exclude_none=False))
     return await schedule_CompareMeans(compare_means_request)
 
 
