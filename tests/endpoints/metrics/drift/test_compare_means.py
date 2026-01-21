@@ -1,8 +1,9 @@
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import numpy as np
 import pandas as pd
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 from src.endpoints.metrics.drift.compare_means import CompareMeansMetricRequest, router
 
@@ -94,9 +95,8 @@ class TestCompareMeansEndpoints:
     # ========================================================================
 
     def test_multi_feature_drift_consistency(self):
-        """
-        Test that when drift is detected, the returned p_value is consistent with drift_detected.
-        
+        """Test that when drift is detected, the returned p_value is consistent with drift_detected.
+
         This test verifies the fix for the issue where drift_detected=True but p_value > alpha
         when multiple features are tested and the feature with max statistic didn't detect drift.
         """
@@ -104,19 +104,19 @@ class TestCompareMeansEndpoints:
         # - Feature A: large statistic but p_value > alpha (no drift)
         # - Feature B: smaller statistic but p_value < alpha (drift detected)
         # The old code would return Feature A's p_value, causing inconsistency
-        
+
         # Mock data that will produce the desired scenario
         # We'll use actual t-test results by creating data with known properties
         np.random.seed(42)
-        
+
         # Feature A: large difference but high variance -> large statistic, high p-value
         ref_a = np.random.normal(0, 1, 100)
         cur_a = np.random.normal(0.1, 3, 100)  # Small mean shift, large variance
-        
+
         # Feature B: smaller difference but low variance -> smaller statistic, low p-value
         ref_b = np.random.normal(0, 1, 100)
         cur_b = np.random.normal(0.5, 1, 100)  # Larger mean shift, same variance
-        
+
         reference_df = pd.DataFrame({
             "featureA": ref_a,
             "featureB": ref_b,
@@ -125,13 +125,13 @@ class TestCompareMeansEndpoints:
             "featureA": cur_a,
             "featureB": cur_b,
         })
-        
+
         with patch("src.endpoints.metrics.drift.compare_means.get_data_source") as mock_ds:
             mock_data_source = MagicMock()
             mock_data_source.get_dataframe_by_tag = AsyncMock(return_value=reference_df)
             mock_data_source.get_organic_dataframe = AsyncMock(return_value=current_df)
             mock_ds.return_value = mock_data_source
-            
+
             # Make request with both features
             response = client.post(
                 "/metrics/drift/comparemeans",
@@ -140,12 +140,12 @@ class TestCompareMeansEndpoints:
                     "referenceTag": "baseline",
                     "fitColumns": ["featureA", "featureB"],
                     "alpha": 0.05,
-                }
+                },
             )
-            
+
             assert response.status_code == 200
             data = response.json()
-            
+
             # Verify consistency: if drift_detected=True, then p_value < alpha
             if data["drift_detected"]:
                 assert data["p_value"] < data["alpha"], (
@@ -155,23 +155,19 @@ class TestCompareMeansEndpoints:
                 # If no drift detected, p_value should be >= alpha (or at least not contradict)
                 # Note: This is less strict since we might return the max statistic feature
                 pass
-            
+
             # Verify feature_results contains both features
             assert "feature_results" in data
             assert "featureA" in data["feature_results"]
             assert "featureB" in data["feature_results"]
-            
+
             # Verify that at least one feature detected drift (since we set up the scenario)
-            feature_drift_detected = [
-                data["feature_results"][f]["drift_detected"]
-                for f in ["featureA", "featureB"]
-            ]
+            feature_drift_detected = [data["feature_results"][f]["drift_detected"] for f in ["featureA", "featureB"]]
             assert any(feature_drift_detected), "At least one feature should detect drift in this test scenario"
 
     def test_multi_feature_drift_consistency_deterministic(self):
-        """
-        Deterministic test for drift consistency fix.
-        
+        """Deterministic test for drift consistency fix.
+
         Tests the specific bug: when Feature A has max statistic but no drift,
         and Feature B has drift, the returned p_value should come from Feature B
         (a drifting feature), not Feature A.
@@ -182,19 +178,19 @@ class TestCompareMeansEndpoints:
         np.random.seed(123)
         ref_a = np.random.normal(0, 1, 50)
         cur_a = np.random.normal(0.1, 3, 50)  # Small shift, high variance -> high p-value
-        
+
         ref_b = np.random.normal(0, 1, 50)
         cur_b = np.random.normal(1.5, 1, 50)  # Large shift, same variance -> low p-value
-        
+
         reference_df = pd.DataFrame({"featureA": ref_a, "featureB": ref_b})
         current_df = pd.DataFrame({"featureA": cur_a, "featureB": cur_b})
-        
+
         with patch("src.endpoints.metrics.drift.compare_means.get_data_source") as mock_ds:
             mock_data_source = MagicMock()
             mock_data_source.get_dataframe_by_tag = AsyncMock(return_value=reference_df)
             mock_data_source.get_organic_dataframe = AsyncMock(return_value=current_df)
             mock_ds.return_value = mock_data_source
-            
+
             response = client.post(
                 "/metrics/drift/comparemeans",
                 json={
@@ -202,30 +198,24 @@ class TestCompareMeansEndpoints:
                     "referenceTag": "baseline",
                     "fitColumns": ["featureA", "featureB"],
                     "alpha": 0.05,
-                }
+                },
             )
-            
+
             assert response.status_code == 200
             data = response.json()
-            
+
             # The key assertion: if drift_detected=True, p_value MUST be < alpha
             if data["drift_detected"]:
                 assert data["p_value"] < data["alpha"], (
                     f"BUG: drift_detected=True but p_value={data['p_value']} >= alpha={data['alpha']}. "
                     f"This indicates the p_value came from a non-drifting feature."
                 )
-            
+
             # Additional check: verify the p_value comes from a drifting feature
             if data["drift_detected"]:
-                drifting_features = [
-                    f for f, r in data["feature_results"].items()
-                    if r["drift_detected"]
-                ]
+                drifting_features = [f for f, r in data["feature_results"].items() if r["drift_detected"]]
                 # The returned p_value should match one of the drifting features' p_values
-                drifting_p_values = [
-                    data["feature_results"][f]["p_value"]
-                    for f in drifting_features
-                ]
+                drifting_p_values = [data["feature_results"][f]["p_value"] for f in drifting_features]
                 assert data["p_value"] in drifting_p_values, (
                     f"Returned p_value={data['p_value']} doesn't match any drifting feature's p_value: {drifting_p_values}"
                 )
@@ -482,11 +472,11 @@ class TestCompareMeansEndpoints:
 
     def test_retrieve_tags_with_all_fields(self):
         """Test retrieve_tags method with all fields populated."""
-        request = CompareMeansMetricRequest(
-            modelId="test-model",
-            referenceTag="baseline",
-            fitColumns=["feature1", "feature2"],
-        )
+        request = CompareMeansMetricRequest.model_validate({
+            "modelId": "test-model",
+            "referenceTag": "baseline",
+            "fitColumns": ["feature1", "feature2"],
+        })
 
         tags = request.retrieve_tags()
 
@@ -515,10 +505,10 @@ class TestCompareMeansEndpoints:
 
     def test_retrieve_tags_without_fit_columns(self):
         """Test retrieve_tags method without fitColumns."""
-        request = CompareMeansMetricRequest(
-            modelId="test-model",
-            referenceTag="baseline",
-        )
+        request = CompareMeansMetricRequest.model_validate({
+            "modelId": "test-model",
+            "referenceTag": "baseline",
+        })
 
         tags = request.retrieve_tags()
 
@@ -536,10 +526,10 @@ class TestCompareMeansEndpoints:
 
         # Model validator should have set metric_name automatically during initialization
         assert request.metric_name == "CompareMeans"
-        
+
         # This should not raise an error and should not add None to Dict[str, str]
         tags = request.retrieve_default_tags()
-        
+
         # Verify tags are all strings (no None values)
         assert "modelId" in tags
         assert tags["modelId"] == "test-model"
@@ -547,23 +537,24 @@ class TestCompareMeansEndpoints:
         assert tags["metricName"] == "CompareMeans"
         assert isinstance(tags["metricName"], str)
         assert isinstance(tags["modelId"], str)
-        
+
         # Verify all values are strings (not None)
         for key, value in tags.items():
             assert value is not None, f"Tag {key} should not be None"
             assert isinstance(value, str), f"Tag {key} should be str, got {type(value)}"
 
     def test_retrieve_default_tags_called_directly_by_prometheus_publisher(self):
-        """
-        Test that retrieve_default_tags() works when called directly (as prometheus_publisher does).
-        
+        """Test that retrieve_default_tags() works when called directly (as prometheus_publisher does).
+
         This simulates the actual issue: prometheus_publisher._generate_tags() calls
         retrieve_default_tags() directly, bypassing retrieve_tags(). The model_validator
         ensures metric_name is set during initialization, so this won't add None to Dict[str, str].
         """
-        from prometheus_client import CollectorRegistry
-        from src.service.prometheus.prometheus_publisher import PrometheusPublisher
         import uuid
+
+        from prometheus_client import CollectorRegistry
+
+        from src.service.prometheus.prometheus_publisher import PrometheusPublisher
 
         # Create request without metric_name (it defaults to None, but model_validator sets it)
         request = CompareMeansMetricRequest(
@@ -572,29 +563,24 @@ class TestCompareMeansEndpoints:
 
         # Model validator should have set metric_name automatically
         assert request.metric_name == "CompareMeans"
-        
+
         # Simulate what prometheus_publisher does: call retrieve_default_tags() directly
         # This should not raise an error and should not add None to the dict
         tags_from_default = request.retrieve_default_tags()
-        
+
         # Verify all values are strings (not None)
         for key, value in tags_from_default.items():
             assert value is not None, f"Tag {key} should not be None (would violate Dict[str, str])"
             assert isinstance(value, str), f"Tag {key} should be str, got {type(value)}"
-        
+
         # Now test with actual prometheus_publisher to ensure it works end-to-end
         registry = CollectorRegistry()
         publisher = PrometheusPublisher(registry=registry)
         test_id = uuid.uuid4()
-        
+
         # This should not raise an error
-        publisher.gauge(
-            model_name="test_model",
-            id=test_id,
-            value=0.5,
-            request=request
-        )
-        
+        publisher.gauge(model_name="test_model", id=test_id, value=0.5, request=request)
+
         # Verify the gauge was created successfully
         metric_name = f"trustyai_{request.metric_name.lower()}"
         assert metric_name in publisher.registry._names_to_collectors
