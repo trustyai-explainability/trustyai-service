@@ -1,11 +1,16 @@
 import logging
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from src.core.metrics.drift.compare_means import CompareMeans
+from src.core.metrics.drift.compare_means import (
+    DEFAULT_ALPHA,
+    DEFAULT_EQUAL_VAR,
+    DEFAULT_NAN_POLICY,
+    CompareMeans,
+)
 from src.service.data.shared_data_source import get_shared_data_source
 from src.service.payloads.metrics.base_metric_request import BaseMetricRequest
 from src.service.prometheus.shared_prometheus_scheduler import get_shared_prometheus_scheduler
@@ -19,9 +24,8 @@ DEPRECATED_METRIC_NAME = "Meanshift"  # Legacy name for backwards compatibility
 
 # Default parameter values
 DEFAULT_BATCH_SIZE = 100
-DEFAULT_ALPHA = 0.05  # Default significance level for t-test
-DEFAULT_EQUAL_VAR = False  # Use Welch's t-test by default (does not assume equal variances)
-DEFAULT_NAN_POLICY = "omit"  # Omit NaN values by default
+# Note: DEFAULT_ALPHA, DEFAULT_EQUAL_VAR, and DEFAULT_NAN_POLICY are imported
+# from src.core.metrics.drift.compare_means to ensure consistency
 
 
 def get_prometheus_scheduler():
@@ -43,16 +47,16 @@ class CompareMeansMetricRequest(BaseMetricRequest):
     model_config = ConfigDict(populate_by_name=True)
 
     model_id: str = Field(alias="modelId")
-    metric_name: Optional[str] = Field(default=None, alias="metricName")  # Will be set by endpoint
-    request_name: Optional[str] = Field(default=None, alias="requestName")
+    metric_name: str | None = Field(default=None, alias="metricName")  # Will be set by endpoint
+    request_name: str | None = Field(default=None, alias="requestName")
     batch_size: int = Field(default=DEFAULT_BATCH_SIZE, alias="batchSize")
 
     # CompareMeans-specific fields
     alpha: float = Field(default=DEFAULT_ALPHA, alias="alpha")
     equal_var: bool = Field(default=DEFAULT_EQUAL_VAR, alias="equalVar")
     nan_policy: str = Field(default=DEFAULT_NAN_POLICY, alias="nanPolicy")
-    reference_tag: Optional[str] = Field(default=None, alias="referenceTag")
-    fit_columns: List[str] = Field(default_factory=list, alias="fitColumns")
+    reference_tag: str | None = Field(default=None, alias="referenceTag")
+    fit_columns: list[str] = Field(default_factory=list, alias="fitColumns")
 
     @model_validator(mode="after")
     def _set_default_metric_name(self) -> "CompareMeansMetricRequest":
@@ -61,7 +65,7 @@ class CompareMeansMetricRequest(BaseMetricRequest):
             self.metric_name = METRIC_NAME
         return self
 
-    def retrieve_tags(self) -> Dict[str, str]:
+    def retrieve_tags(self) -> dict[str, str]:
         """Retrieve tags for this CompareMeans metric request."""
         tags = self.retrieve_default_tags()
         if self.reference_tag:
@@ -74,7 +78,7 @@ class CompareMeansMetricRequest(BaseMetricRequest):
 @router.post("/metrics/drift/comparemeans")
 async def compute_CompareMeans(
     request: CompareMeansMetricRequest,
-) -> Dict[str, float | bool | str | Dict[str, Dict[str, float]]]:
+) -> dict[str, float | bool | str | dict[str, dict[str, float | bool]]]:
     """Compute the current value of CompareMeans metric."""
     try:
         logger.info(f"Computing {METRIC_NAME} for model: {request.model_id}")
@@ -162,7 +166,7 @@ async def compute_CompareMeans(
 
 
 @router.get("/metrics/drift/comparemeans/definition")
-async def get_CompareMeans_definition() -> Dict[str, str]:
+async def get_CompareMeans_definition() -> dict[str, str]:
     """Provide a general definition of CompareMeans metric."""
     description = """The independent two-sample t-test is used to determine whether two independent samples
     have significantly different means. This implementation uses Welch's t-test by default (equal_var=False),
@@ -180,7 +184,7 @@ async def get_CompareMeans_definition() -> Dict[str, str]:
 
 
 @router.post("/metrics/drift/comparemeans/request")
-async def schedule_CompareMeans(request: CompareMeansMetricRequest) -> Dict[str, str]:
+async def schedule_CompareMeans(request: CompareMeansMetricRequest) -> dict[str, str]:
     """Schedule a recurring computation of CompareMeans metric."""
     try:
         # Generate UUID for this request
@@ -207,7 +211,7 @@ async def schedule_CompareMeans(request: CompareMeansMetricRequest) -> Dict[str,
 
 
 @router.delete("/metrics/drift/comparemeans/request")
-async def delete_CompareMeans_schedule(schedule: ScheduleId) -> Dict[str, str]:
+async def delete_CompareMeans_schedule(schedule: ScheduleId) -> dict[str, str]:
     """Delete a recurring computation of CompareMeans metric."""
     try:
         logger.info(f"Deleting {METRIC_NAME} schedule: {schedule.requestId}")
@@ -235,7 +239,7 @@ async def delete_CompareMeans_schedule(schedule: ScheduleId) -> Dict[str, str]:
 
 
 @router.get("/metrics/drift/comparemeans/requests")
-async def list_CompareMeans_requests() -> Dict[str, List[Dict[str, Any]]]:
+async def list_CompareMeans_requests() -> dict[str, list[dict[str, Any]]]:
     """List the currently scheduled computations of CompareMeans metric."""
     try:
         # Get the scheduler and list CompareMeans requests
@@ -289,24 +293,14 @@ async def list_CompareMeans_requests() -> Dict[str, List[Dict[str, Any]]]:
 # ============================================================================
 
 
-class MeanshiftMetricRequest(BaseModel):
+class MeanshiftMetricRequest(CompareMeansMetricRequest):
     """
     DEPRECATED: Use CompareMeansMetricRequest instead.
     Maintained for backward compatibility with old API clients.
+
+    This class inherits from CompareMeansMetricRequest to ensure consistency
+    and reduce duplication. All fields and validation behavior are inherited.
     """
-
-    model_config = ConfigDict(populate_by_name=True)
-
-    modelId: str
-    requestName: Optional[str] = None
-    metricName: Optional[str] = None
-    batchSize: Optional[int] = DEFAULT_BATCH_SIZE
-    # T-test specific parameters (same as CompareMeans)
-    alpha: Optional[float] = DEFAULT_ALPHA
-    equalVar: Optional[bool] = DEFAULT_EQUAL_VAR
-    nanPolicy: Optional[str] = DEFAULT_NAN_POLICY
-    referenceTag: Optional[str] = None
-    fitColumns: List[str] = []
 
 
 @router.post("/metrics/drift/meanshift", deprecated=True)
@@ -317,7 +311,8 @@ async def compute_meanshift(request: MeanshiftMetricRequest):
     """
     logger.warning(f"Deprecated {DEPRECATED_METRIC_NAME} endpoint called. Use {METRIC_NAME} endpoint instead.")
     # Convert to CompareMeans request format
-    compare_means_request = CompareMeansMetricRequest.model_validate(request.model_dump(exclude_none=False))
+    # Use exclude_none=True so that omitted fields get their defaults applied
+    compare_means_request = CompareMeansMetricRequest.model_validate(request.model_dump(exclude_none=True))
     return await compute_CompareMeans(compare_means_request)
 
 
@@ -339,7 +334,8 @@ async def schedule_meanshift(request: MeanshiftMetricRequest):
     """
     logger.warning(f"Deprecated {DEPRECATED_METRIC_NAME} endpoint called. Use {METRIC_NAME} endpoint instead.")
     # Convert to CompareMeans request format
-    compare_means_request = CompareMeansMetricRequest.model_validate(request.model_dump(exclude_none=False))
+    # Use exclude_none=True so that omitted fields get their defaults applied
+    compare_means_request = CompareMeansMetricRequest.model_validate(request.model_dump(exclude_none=True))
     return await schedule_CompareMeans(compare_means_request)
 
 

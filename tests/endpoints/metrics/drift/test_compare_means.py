@@ -466,121 +466,105 @@ class TestCompareMeansEndpoints:
         module_path="src.endpoints.metrics.drift.compare_means",
     )
 
+    def test_deprecated_compute_endpoint_with_omitted_optional_fields(self):
+        """Test that deprecated Meanshift endpoint works with omitted optional fields.
+
+        This verifies the fix for backward compatibility where legacy clients
+        may omit optional fields like alpha, equalVar, nanPolicy, batchSize.
+        The endpoint should apply defaults via exclude_none=True.
+        """
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        # Create sample dataframes
+        sample_df = pd.DataFrame({
+            "feature1": [1.0, 2.0, 3.0, 4.0, 5.0],
+            "feature2": [10.0, 20.0, 30.0, 40.0, 50.0],
+        })
+
+        with patch("src.endpoints.metrics.drift.compare_means.get_data_source") as mock_ds:
+            mock_data_source = MagicMock()
+            mock_data_source.get_dataframe_by_tag = AsyncMock(return_value=sample_df)
+            mock_data_source.get_organic_dataframe = AsyncMock(return_value=sample_df)
+            mock_ds.return_value = mock_data_source
+
+            # Request with only required fields - optional fields omitted
+            # This tests the exclude_none=True fix for backward compatibility
+            response = client.post(
+                "/metrics/drift/meanshift",
+                json={
+                    "modelId": "test-model",
+                    "referenceTag": "baseline",
+                    "fitColumns": ["feature1", "feature2"],
+                    # Omitting: batchSize, alpha, equalVar, nanPolicy
+                    # These should get defaults applied via exclude_none=True
+                },
+            )
+
+            assert response.status_code == 200, f"Deprecated endpoint failed with omitted fields: {response.text}"
+            data = response.json()
+
+            # Verify response structure
+            assert "status" in data
+            assert "value" in data
+            assert "drift_detected" in data
+            assert "p_value" in data
+            assert "alpha" in data
+
+            # Verify defaults were applied (alpha should be 0.05, the default)
+            assert data["alpha"] == 0.05, "Default alpha should be applied"
+
+    def test_deprecated_schedule_endpoint_with_omitted_optional_fields(self):
+        """Test that deprecated Meanshift schedule endpoint works with omitted optional fields."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        with patch("src.endpoints.metrics.drift.compare_means.get_prometheus_scheduler") as mock_sched_fn:
+            mock_sched = MagicMock()
+            mock_sched.register = AsyncMock(return_value=None)
+            mock_sched_fn.return_value = mock_sched
+
+            # Request with only required fields - optional fields omitted
+            response = client.post(
+                "/metrics/drift/meanshift/request",
+                json={
+                    "modelId": "test-model",
+                    "referenceTag": "baseline",
+                    "fitColumns": ["feature1"],
+                    # Omitting: batchSize, alpha, equalVar, nanPolicy
+                },
+            )
+
+            assert response.status_code == 200, f"Deprecated schedule endpoint failed: {response.text}"
+            data = response.json()
+            assert "requestId" in data
+
     # ========================================================================
     # CompareMeansMetricRequest.retrieve_tags() Tests
     # ========================================================================
 
-    def test_retrieve_tags_with_all_fields(self):
-        """Test retrieve_tags method with all fields populated."""
-        request = CompareMeansMetricRequest.model_validate({
-            "modelId": "test-model",
-            "referenceTag": "baseline",
-            "fitColumns": ["feature1", "feature2"],
-        })
+    test_retrieve_tags_with_all_fields = factory.make_retrieve_tags_with_all_fields_test(
+        request_class=CompareMeansMetricRequest,
+    )
 
-        tags = request.retrieve_tags()
+    test_retrieve_tags_without_reference_tag = factory.make_retrieve_tags_without_reference_tag_test(
+        request_class=CompareMeansMetricRequest,
+    )
 
-        # Check that tags include the base tags plus CompareMeans-specific tags
-        assert "modelId" in tags
-        assert tags["modelId"] == "test-model"
-        assert "referenceTag" in tags
-        assert tags["referenceTag"] == "baseline"
-        assert "fitColumns" in tags
-        assert tags["fitColumns"] == "feature1,feature2"
+    test_retrieve_tags_without_fit_columns = factory.make_retrieve_tags_without_fit_columns_test(
+        request_class=CompareMeansMetricRequest,
+    )
 
-    def test_retrieve_tags_without_reference_tag(self):
-        """Test retrieve_tags method without referenceTag."""
-        request = CompareMeansMetricRequest(
-            modelId="test-model",
-            fitColumns=["feature1"],
+    test_retrieve_tags_with_empty_fit_columns = factory.make_retrieve_tags_with_empty_fit_columns_test(
+        request_class=CompareMeansMetricRequest,
+    )
+
+    test_retrieve_default_tags_with_none_metric_name = factory.make_retrieve_default_tags_with_none_metric_name_test(
+        request_class=CompareMeansMetricRequest,
+        expected_metric_name="CompareMeans",
+    )
+
+    test_retrieve_default_tags_called_directly_by_prometheus_publisher = (
+        factory.make_retrieve_default_tags_called_directly_by_prometheus_publisher_test(
+            request_class=CompareMeansMetricRequest,
+            expected_metric_name="CompareMeans",
         )
-
-        tags = request.retrieve_tags()
-
-        # Check that tags include base tags but not referenceTag
-        assert "modelId" in tags
-        assert tags["modelId"] == "test-model"
-        assert "referenceTag" not in tags
-        assert "fitColumns" in tags
-
-    def test_retrieve_tags_without_fit_columns(self):
-        """Test retrieve_tags method without fitColumns."""
-        request = CompareMeansMetricRequest.model_validate({
-            "modelId": "test-model",
-            "referenceTag": "baseline",
-        })
-
-        tags = request.retrieve_tags()
-
-        # Check that tags include referenceTag but not fitColumns
-        assert "modelId" in tags
-        assert "referenceTag" in tags
-        assert "fitColumns" not in tags
-
-    def test_retrieve_default_tags_with_none_metric_name(self):
-        """Test that metric_name is automatically set via model_validator (fixes type violation issue)."""
-        # Create request without metric_name (it defaults to None)
-        request = CompareMeansMetricRequest(
-            modelId="test-model",
-        )
-
-        # Model validator should have set metric_name automatically during initialization
-        assert request.metric_name == "CompareMeans"
-
-        # This should not raise an error and should not add None to Dict[str, str]
-        tags = request.retrieve_default_tags()
-
-        # Verify tags are all strings (no None values)
-        assert "modelId" in tags
-        assert tags["modelId"] == "test-model"
-        assert "metricName" in tags
-        assert tags["metricName"] == "CompareMeans"
-        assert isinstance(tags["metricName"], str)
-        assert isinstance(tags["modelId"], str)
-
-        # Verify all values are strings (not None)
-        for key, value in tags.items():
-            assert value is not None, f"Tag {key} should not be None"
-            assert isinstance(value, str), f"Tag {key} should be str, got {type(value)}"
-
-    def test_retrieve_default_tags_called_directly_by_prometheus_publisher(self):
-        """Test that retrieve_default_tags() works when called directly (as prometheus_publisher does).
-
-        This simulates the actual issue: prometheus_publisher._generate_tags() calls
-        retrieve_default_tags() directly, bypassing retrieve_tags(). The model_validator
-        ensures metric_name is set during initialization, so this won't add None to Dict[str, str].
-        """
-        import uuid
-
-        from prometheus_client import CollectorRegistry
-
-        from src.service.prometheus.prometheus_publisher import PrometheusPublisher
-
-        # Create request without metric_name (it defaults to None, but model_validator sets it)
-        request = CompareMeansMetricRequest(
-            modelId="test-model",
-        )
-
-        # Model validator should have set metric_name automatically
-        assert request.metric_name == "CompareMeans"
-
-        # Simulate what prometheus_publisher does: call retrieve_default_tags() directly
-        # This should not raise an error and should not add None to the dict
-        tags_from_default = request.retrieve_default_tags()
-
-        # Verify all values are strings (not None)
-        for key, value in tags_from_default.items():
-            assert value is not None, f"Tag {key} should not be None (would violate Dict[str, str])"
-            assert isinstance(value, str), f"Tag {key} should be str, got {type(value)}"
-
-        # Now test with actual prometheus_publisher to ensure it works end-to-end
-        registry = CollectorRegistry()
-        publisher = PrometheusPublisher(registry=registry)
-        test_id = uuid.uuid4()
-
-        # This should not raise an error
-        publisher.gauge(model_name="test_model", id=test_id, value=0.5, request=request)
-
-        # Verify the gauge was created successfully
-        metric_name = f"trustyai_{request.metric_name.lower()}"
-        assert metric_name in publisher.registry._names_to_collectors
+    )
