@@ -601,7 +601,8 @@ def make_list_requests_with_malformed_data_test(
 
         # Verify response - should still be 200 (defensive handling)
         assert response.status_code == 200, (
-            f"{metric_name} list should handle malformed requests gracefully, got {response.status_code}: {response.text}"
+            f"{metric_name} list should handle malformed requests gracefully, "
+            f"got {response.status_code}: {response.text}"
         )
 
         data = response.json()
@@ -610,7 +611,8 @@ def make_list_requests_with_malformed_data_test(
         assert "requests" in data, f"Missing 'requests' in {metric_name} list response"
         assert isinstance(data["requests"], list), f"{metric_name} requests is not a list"
         assert len(data["requests"]) == num_valid_requests, (
-            f"{metric_name} should return {num_valid_requests} valid requests (filtering out {num_malformed_requests} malformed), "
+            f"{metric_name} should return {num_valid_requests} valid requests "
+            f"(filtering out {num_malformed_requests} malformed), "
             f"got {len(data['requests'])}"
         )
 
@@ -845,6 +847,221 @@ def make_compute_generic_exception_test(
         data = response.json()
         assert "detail" in data, f"Missing 'detail' in {metric_name} error response"
         assert "error computing metric" in data["detail"].lower(), "Expected 'error computing metric' in error"
+
+    return test_impl
+
+
+# ============================================================================
+# Request Model Tests
+# ============================================================================
+# Tests for request model methods like retrieve_tags().
+
+
+def make_retrieve_tags_with_all_fields_test(
+    request_class: type,
+) -> Callable[[Any], None]:
+    """Create a test for retrieve_tags() with all fields populated.
+
+    :param request_class: The request class to test (e.g., CompareMeansMetricRequest)
+    :return: Test function
+    """
+
+    def test_impl(self: Any) -> None:
+        """Test retrieve_tags method with all fields populated."""
+        request = request_class.model_validate({
+            "modelId": "test-model",
+            "referenceTag": "baseline",
+            "fitColumns": ["feature1", "feature2"],
+        })
+
+        tags = request.retrieve_tags()
+
+        # Check that tags include the base tags plus metric-specific tags
+        assert "modelId" in tags
+        assert tags["modelId"] == "test-model"
+        assert "referenceTag" in tags
+        assert tags["referenceTag"] == "baseline"
+        assert "fitColumns" in tags
+        assert tags["fitColumns"] == "feature1,feature2"
+
+    return test_impl
+
+
+def make_retrieve_tags_without_reference_tag_test(
+    request_class: type,
+) -> Callable[[Any], None]:
+    """Create a test for retrieve_tags() without referenceTag.
+
+    :param request_class: The request class to test (e.g., CompareMeansMetricRequest)
+    :return: Test function
+    """
+
+    def test_impl(self: Any) -> None:
+        """Test retrieve_tags method without referenceTag."""
+        request = request_class(
+            modelId="test-model",
+            fitColumns=["feature1"],
+        )
+
+        tags = request.retrieve_tags()
+
+        # Check that tags include base tags but not referenceTag
+        assert "modelId" in tags
+        assert tags["modelId"] == "test-model"
+        assert "referenceTag" not in tags
+        assert "fitColumns" in tags
+
+    return test_impl
+
+
+def make_retrieve_tags_without_fit_columns_test(
+    request_class: type,
+) -> Callable[[Any], None]:
+    """Create a test for retrieve_tags() without fitColumns.
+
+    :param request_class: The request class to test (e.g., CompareMeansMetricRequest)
+    :return: Test function
+    """
+
+    def test_impl(self: Any) -> None:
+        """Test retrieve_tags method without fitColumns."""
+        request = request_class.model_validate({
+            "modelId": "test-model",
+            "referenceTag": "baseline",
+        })
+
+        tags = request.retrieve_tags()
+
+        # Check that tags include referenceTag but not fitColumns
+        assert "modelId" in tags
+        assert "referenceTag" in tags
+        assert "fitColumns" not in tags
+
+    return test_impl
+
+
+def make_retrieve_tags_with_empty_fit_columns_test(
+    request_class: type,
+) -> Callable[[Any], None]:
+    """Create a test for retrieve_tags() with empty fitColumns list.
+
+    :param request_class: The request class to test (e.g., CompareMeansMetricRequest)
+    :return: Test function
+    """
+
+    def test_impl(self: Any) -> None:
+        """Test retrieve_tags method with empty fitColumns list."""
+        request = request_class(
+            modelId="test-model",
+            referenceTag="baseline",
+            fitColumns=[],
+        )
+
+        tags = request.retrieve_tags()
+
+        # Check that tags include referenceTag but not fitColumns (empty list should not add tag)
+        assert "modelId" in tags
+        assert "referenceTag" in tags
+        assert "fitColumns" not in tags
+
+    return test_impl
+
+
+def make_retrieve_default_tags_with_none_metric_name_test(
+    request_class: type,
+    expected_metric_name: str,
+) -> Callable[[Any], None]:
+    """Create a test for retrieve_default_tags() with None metric_name.
+
+    Tests that model_validator automatically sets metric_name, preventing None values
+    in Dict[str, str] returned by retrieve_default_tags().
+
+    :param request_class: The request class to test (e.g., CompareMeansMetricRequest)
+    :param expected_metric_name: The expected metric name after validator runs (e.g., "CompareMeans")
+    :return: Test function
+    """
+
+    def test_impl(self: Any) -> None:
+        """Test that metric_name is automatically set via model_validator (fixes type violation issue)."""
+        # Create request without metric_name (it defaults to None)
+        request = request_class(
+            modelId="test-model",
+        )
+
+        # Model validator should have set metric_name automatically during initialization
+        assert request.metric_name == expected_metric_name
+
+        # This should not raise an error and should not add None to Dict[str, str]
+        tags = request.retrieve_default_tags()
+
+        # Verify tags are all strings (no None values)
+        assert "modelId" in tags
+        assert tags["modelId"] == "test-model"
+        assert "metricName" in tags
+        assert tags["metricName"] == expected_metric_name
+        assert isinstance(tags["metricName"], str)
+        assert isinstance(tags["modelId"], str)
+
+        # Verify all values are strings (not None)
+        for key, value in tags.items():
+            assert value is not None, f"Tag {key} should not be None"
+            assert isinstance(value, str), f"Tag {key} should be str, got {type(value)}"
+
+    return test_impl
+
+
+def make_retrieve_default_tags_called_directly_by_prometheus_publisher_test(
+    request_class: type,
+    expected_metric_name: str,
+) -> Callable[[Any], None]:
+    """Create a test for retrieve_default_tags() called directly by prometheus_publisher.
+
+    Tests that retrieve_default_tags() works when called directly (as prometheus_publisher does).
+    This simulates the actual issue: prometheus_publisher._generate_tags() calls
+    retrieve_default_tags() directly, bypassing retrieve_tags(). The model_validator
+    ensures metric_name is set during initialization, so this won't add None to Dict[str, str].
+
+    :param request_class: The request class to test (e.g., CompareMeansMetricRequest)
+    :param expected_metric_name: The expected metric name after validator runs (e.g., "CompareMeans")
+    :return: Test function
+    """
+
+    def test_impl(self: Any) -> None:
+        """Test that retrieve_default_tags() works when called directly (as prometheus_publisher does)."""
+        import uuid
+
+        from prometheus_client import CollectorRegistry
+
+        from src.service.prometheus.prometheus_publisher import PrometheusPublisher
+
+        # Create request without metric_name (it defaults to None, but model_validator sets it)
+        request = request_class(
+            modelId="test-model",
+        )
+
+        # Model validator should have set metric_name automatically
+        assert request.metric_name == expected_metric_name
+
+        # Simulate what prometheus_publisher does: call retrieve_default_tags() directly
+        # This should not raise an error and should not add None to the dict
+        tags_from_default = request.retrieve_default_tags()
+
+        # Verify all values are strings (not None)
+        for key, value in tags_from_default.items():
+            assert value is not None, f"Tag {key} should not be None (would violate Dict[str, str])"
+            assert isinstance(value, str), f"Tag {key} should be str, got {type(value)}"
+
+        # Now test with actual prometheus_publisher to ensure it works end-to-end
+        registry = CollectorRegistry()
+        publisher = PrometheusPublisher(registry=registry)
+        test_id = uuid.uuid4()
+
+        # This should not raise an error
+        publisher.gauge(model_name="test_model", id=test_id, value=0.5, request=request)
+
+        # Verify the gauge was created successfully
+        metric_name = f"trustyai_{request.metric_name.lower()}"
+        assert metric_name in publisher.registry._names_to_collectors
 
     return test_impl
 
