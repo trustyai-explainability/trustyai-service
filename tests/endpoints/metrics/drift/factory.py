@@ -671,7 +671,7 @@ def make_compute_empty_reference_data_test(
 
         data = response.json()
         assert "detail" in data, f"Missing 'detail' in {metric_name} error response"
-        assert "no reference data found" in data["detail"].lower(), f"Expected 'no reference data found' in error"
+        assert "no reference data found" in data["detail"].lower(), "Expected 'no reference data found' in error"
 
     return test_impl
 
@@ -722,7 +722,7 @@ def make_compute_empty_current_data_test(
 
         data = response.json()
         assert "detail" in data, f"Missing 'detail' in {metric_name} error response"
-        assert "no current data found" in data["detail"].lower(), f"Expected 'no current data found' in error"
+        assert "no current data found" in data["detail"].lower(), "Expected 'no current data found' in error"
 
     return test_impl
 
@@ -759,7 +759,7 @@ def make_list_endpoint_scheduler_unavailable_test(
 
         data = response.json()
         assert "detail" in data, f"Missing 'detail' in {metric_name} error response"
-        assert "scheduler not available" in data["detail"].lower(), f"Expected 'scheduler not available' in error"
+        assert "scheduler not available" in data["detail"].lower(), "Expected 'scheduler not available' in error"
 
     return test_impl
 
@@ -798,7 +798,7 @@ def make_list_endpoint_exception_test(
 
         data = response.json()
         assert "detail" in data, f"Missing 'detail' in {metric_name} error response"
-        assert "error listing requests" in data["detail"].lower(), f"Expected 'error listing requests' in error"
+        assert "error listing requests" in data["detail"].lower(), "Expected 'error listing requests' in error"
 
     return test_impl
 
@@ -840,7 +840,7 @@ def make_compute_generic_exception_test(
 
         data = response.json()
         assert "detail" in data, f"Missing 'detail' in {metric_name} error response"
-        assert "error computing metric" in data["detail"].lower(), f"Expected 'error computing metric' in error"
+        assert "error computing metric" in data["detail"].lower(), "Expected 'error computing metric' in error"
 
     return test_impl
 
