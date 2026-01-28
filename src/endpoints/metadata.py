@@ -218,8 +218,10 @@ async def apply_column_names(name_mapping: NameMapping):
         output_exists = await storage_interface.dataset_exists(output_dataset_name)
 
         if not input_exists and not output_exists:
-            error_msg = f"No metadata found for model={model_id}. " \
+            error_msg = (
+                f"No metadata found for model={model_id}. "
                 "This can happen if TrustyAI has not yet logged any inferences from this model."
+            )
             logger.error(error_msg)
             raise HTTPException(status_code=400, detail=error_msg)
 
@@ -259,8 +261,10 @@ async def remove_column_names(request: ModelIdRequest):
         output_exists = await storage_interface.dataset_exists(output_dataset_name)
 
         if not input_exists and not output_exists:
-            error_msg = f"No metadata found for model={model_id}. " \
+            error_msg = (
+                f"No metadata found for model={model_id}. "
                 "This can happen if TrustyAI has not yet logged any inferences from this model."
+            )
             logger.error(error_msg)
             raise HTTPException(status_code=400, detail=error_msg)
 
