@@ -4,7 +4,7 @@ from typing import List
 import numpy as np
 from sklearn.base import ClassifierMixin
 
-from src.core.metrics.fairness.fairness_metrics_utils import filter_rows_by_inputs, calculate_confusion_matrix
+from src.core.metrics.fairness.fairness_metrics_utils import calculate_confusion_matrix, filter_rows_by_inputs
 
 
 class GroupAverageOddsDifference:
