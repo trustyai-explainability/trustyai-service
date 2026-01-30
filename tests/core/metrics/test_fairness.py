@@ -15,7 +15,7 @@ from hypothesis import strategies as st
 from pytest import approx
 from sklearn.linear_model import LogisticRegression
 from sklearn.neighbors import NearestNeighbors
-from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.preprocessing import LabelEncoder
 
 from src.core.metrics.fairness.group.disparate_impact_ratio import DisparateImpactRatio
 from src.core.metrics.fairness.group.group_average_odds_difference import GroupAverageOddsDifference
@@ -189,7 +189,9 @@ class TestDisparateImpactRatio:
     def test_dir_consistent_with_sklearn(self):
         dir_result = disparate_impact_ratio(y, prot_attr="Gender", priv_group="Male", pos_label=1)
 
-        score = DisparateImpactRatio.calculate(privileged=privileged, unprivileged=unprivileged, favorable_output=1)
+        score = DisparateImpactRatio.calculate(
+            privileged=privileged, unprivileged=unprivileged, favorable_outputs=np.array([1])
+        )
         assert score == approx(dir_result, abs=1e-5)
 
     @given(bank_data_strategy())
@@ -198,7 +200,9 @@ class TestDisparateImpactRatio:
         """Property-based test to verify the result of DIR calculation is always positive."""
         privileged, unprivileged = get_privileged_unprivileged_split(df=df)
 
-        score = DisparateImpactRatio.calculate(privileged=privileged, unprivileged=unprivileged, favorable_output=1)
+        score = DisparateImpactRatio.calculate(
+            privileged=privileged, unprivileged=unprivileged, favorable_outputs=np.array([1])
+        )
 
         assert score >= 0, f"Disparate Impact Ratio {score} should be >= 0"
 
@@ -210,7 +214,9 @@ class TestDisparateImpactRatio:
         # Modify the data so that the unprivileged group has zero favorable outcomes
         unprivileged[:, -1] = 0
 
-        score = DisparateImpactRatio.calculate(privileged=privileged, unprivileged=unprivileged, favorable_output=1)
+        score = DisparateImpactRatio.calculate(
+            privileged=privileged, unprivileged=unprivileged, favorable_outputs=np.array([1])
+        )
 
         assert score == 0, (
             f"DIR should be zero when there are no favorable outcomes in the unprivileged group. Actual score {score}"
@@ -226,7 +232,9 @@ class TestDisparateImpactRatio:
         set_favorable_outcomes(group=privileged)
         set_favorable_outcomes(group=unprivileged)
 
-        score = DisparateImpactRatio.calculate(privileged=privileged, unprivileged=unprivileged, favorable_output=1)
+        score = DisparateImpactRatio.calculate(
+            privileged=privileged, unprivileged=unprivileged, favorable_outputs=np.array([1])
+        )
         assert score == approx(1.0, abs=1e-5), f"DIR should be ~1 when rates are equal. Actual score: {score}"
 
     def test_dir_empty_dataframe(self):
@@ -235,7 +243,9 @@ class TestDisparateImpactRatio:
         privileged, unprivileged = get_privileged_unprivileged_split(df=empty_df)
 
         with pytest.raises(ValueError):
-            DisparateImpactRatio.calculate(privileged=privileged, unprivileged=unprivileged, favorable_output=1)
+            DisparateImpactRatio.calculate(
+                privileged=privileged, unprivileged=unprivileged, favorable_outputs=np.array([1])
+            )
 
 
 class TestGroupStatisticalParityDifference:
@@ -243,7 +253,7 @@ class TestGroupStatisticalParityDifference:
         spd = statistical_parity_difference(y, prot_attr="Gender", priv_group="Male", pos_label=1)
 
         score = GroupStatisticalParityDifference.calculate(
-            privileged=privileged, unprivileged=unprivileged, favorable_output=1
+            privileged=privileged, unprivileged=unprivileged, favorable_outputs=np.array([1])
         )
 
         assert score == approx(spd, abs=1e-5)
@@ -255,7 +265,7 @@ class TestGroupStatisticalParityDifference:
         privileged, unprivileged = get_privileged_unprivileged_split(df=df)
 
         score = GroupStatisticalParityDifference.calculate(
-            privileged=privileged, unprivileged=unprivileged, favorable_output=1
+            privileged=privileged, unprivileged=unprivileged, favorable_outputs=np.array([1])
         )
 
         assert -1 <= score <= 1, f"SPD {score}, should be between -1 and 1"
@@ -270,7 +280,7 @@ class TestGroupStatisticalParityDifference:
         set_favorable_outcomes(group=unprivileged)
 
         score = GroupStatisticalParityDifference.calculate(
-            privileged=privileged, unprivileged=unprivileged, favorable_output=1
+            privileged=privileged, unprivileged=unprivileged, favorable_outputs=np.array([1])
         )
         assert score == approx(0, abs=1e-2), f"SPD should be ~0 when rates are equal. Actual score: {score}"
 
@@ -284,7 +294,7 @@ class TestGroupStatisticalParityDifference:
         set_favorable_outcomes(group=privileged, target_rate=0.2)
 
         positive_spd = GroupStatisticalParityDifference.calculate(
-            privileged=privileged, unprivileged=unprivileged, favorable_output=1
+            privileged=privileged, unprivileged=unprivileged, favorable_outputs=np.array([1])
         )
 
         assert positive_spd > 0, f"SPD should be positive when unprivileged rate is higher. Actual: {positive_spd}"
@@ -294,7 +304,7 @@ class TestGroupStatisticalParityDifference:
         set_favorable_outcomes(group=privileged, target_rate=0.8)
 
         negative_spd = GroupStatisticalParityDifference.calculate(
-            privileged=privileged, unprivileged=unprivileged, favorable_output=1
+            privileged=privileged, unprivileged=unprivileged, favorable_outputs=np.array([1])
         )
 
         assert negative_spd < 0, f"SPD should be negative when privileged rate is higher. Actual: {negative_spd}"
@@ -306,7 +316,7 @@ class TestGroupStatisticalParityDifference:
 
         with pytest.raises(ValueError):
             GroupStatisticalParityDifference.calculate(
-                privileged=privileged, unprivileged=unprivileged, favorable_output=1
+                privileged=privileged, unprivileged=unprivileged, favorable_outputs=np.array([1])
             )
 
 

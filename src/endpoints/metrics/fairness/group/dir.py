@@ -1,30 +1,72 @@
-from fastapi import APIRouter, HTTPException, Query
-from typing import Optional
-import pandas as pd
-import uuid
 import logging
+import uuid
 
+import pandas as pd
+from fastapi import APIRouter, HTTPException, Query
+
+from src.core.metrics.fairness.group.disparate_impact_ratio import DisparateImpactRatio
 from src.endpoints.metrics.fairness.group.utils import (
-    GroupMetricRequest, GroupDefinitionRequest, ScheduleId,
-    get_data_source, get_prometheus_scheduler, calculate_fairness_metric
-    )
+    GroupDefinitionRequest,
+    GroupMetricRequest,
+    ScheduleId,
+    get_data_source,
+    get_prometheus_scheduler,
+    prepare_fairness_data,
+)
 from src.service.prometheus.metric_value_carrier import MetricValueCarrier
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+# Constants
+DEFAULT_DIR_THRESHOLD_DELTA = 0.2  # Default threshold delta for DIR fairness bounds
+DEFAULT_BATCH_SIZE = 100  # Default batch size for data retrieval
+DIR_FAIRNESS_TARGET = 1  # Perfect fairness target for DIR (ratio of 1.0)
+
 
 def calculate_dir_metric(
-    request: GroupMetricRequest,
     dataframe: pd.DataFrame,
+    request: GroupMetricRequest,
 ) -> MetricValueCarrier:
     """
     Calculate the Disparate Impact Ratio metric for the given dataframe and request.
+
     This function is registered with the metrics directory and called by the scheduler.
+
+    Args:
+        dataframe: Input data containing protected attributes and outcomes
+        request: Metric request specifying groups and favorable outcomes
+
+    Returns:
+        MetricValueCarrier containing the DIR value
     """
     try:
-        request.metric_name = "DIR"
-        return calculate_fairness_metric(dataframe, request)
+        # Prepare data using utility function
+        privileged_data, unprivileged_data, outcome_name, favorable_values = prepare_fairness_data(dataframe, request)
+
+        # Check for sufficient data
+        if len(privileged_data) == 0 or len(unprivileged_data) == 0:
+            logger.warning(
+                f"Insufficient data for DIR calculation: privileged={len(privileged_data)}, unprivileged={len(unprivileged_data)} samples. Returning NaN."
+            )
+            return MetricValueCarrier(float("nan"))
+
+        # Validate favorable outcomes
+        if len(favorable_values) == 0:
+            raise ValueError("No favorable outcomes specified for DIR calculation")
+
+        # Prepare data in the format expected by DisparateImpactRatio
+        privileged_array = privileged_data[[outcome_name]].to_numpy()
+        unprivileged_array = unprivileged_data[[outcome_name]].to_numpy()
+
+        # Calculate DIR using the core implementation
+        dir_value = DisparateImpactRatio.calculate(
+            privileged=privileged_array, unprivileged=unprivileged_array, favorable_outputs=favorable_values
+        )
+
+        logger.debug(f"DIR calculation result: {dir_value:.4f}")
+        return MetricValueCarrier(dir_value)
+
     except Exception as e:
         logger.error(f"Error calculating DIR: {str(e)}")
         raise e
@@ -38,6 +80,7 @@ def register_dir_calculator():
         scheduler.metrics_directory.register("DIR", calculate_dir_metric)
         logger.info("DIR calculator registered with metrics directory")
 
+
 # Register on module import
 try:
     register_dir_calculator()
@@ -47,7 +90,7 @@ except Exception as e:
 
 # Disparate Impact Ratio
 @router.post("/metrics/group/fairness/dir")
-async def compute_dir(request: GroupMetricRequest, delta: Optional[float] = Query(None)):
+async def compute_dir(request: GroupMetricRequest, delta: float | None = Query(None)):
     """Compute the current value of Disparate Impact Ratio metric."""
     try:
         logger.info(f"Computing DIR for model: {request.model_id}")
@@ -55,7 +98,7 @@ async def compute_dir(request: GroupMetricRequest, delta: Optional[float] = Quer
 
         # Get data source and load dataframe
         data_source = get_data_source()
-        batch_size = request.batch_size if request.batch_size else 100
+        batch_size = request.batch_size if request.batch_size else DEFAULT_BATCH_SIZE
 
         # Get dataframe for the model
         dataframe = await data_source.get_organic_dataframe(request.model_id, batch_size)
@@ -64,29 +107,34 @@ async def compute_dir(request: GroupMetricRequest, delta: Optional[float] = Quer
 
         # Calculate DIR using our calculator
         result = calculate_dir_metric(dataframe, request)
+
+        # Use delta from query parameter, then request.threshold_delta, then default
         if delta is None:
-            delta = 0.2
+            delta = request.threshold_delta if request.threshold_delta is not None else DEFAULT_DIR_THRESHOLD_DELTA
         return {
             "name": "DIR",
             "value": result.get_value(),
             "type": "FAIRNESS",
             "specificDefinition": f"Disparate Impact Ratio value of {result.get_value():.4f}",
             "thresholds": {
-                "lowerBound": 1 - delta,
-                "upperBound": 1 + delta,
-                "outsideBounds": result.get_value() < 1 - delta or result.get_value() > 1 + delta
-            }
+                "lowerBound": DIR_FAIRNESS_TARGET - delta,
+                "upperBound": DIR_FAIRNESS_TARGET + delta,
+                "outsideBounds": result.get_value() < DIR_FAIRNESS_TARGET - delta
+                or result.get_value() > DIR_FAIRNESS_TARGET + delta,
+            },
         }
     except Exception as e:
         logger.error(f"Error computing DIR: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error computing metric: {str(e)}") from e
+
 
 @router.get("/metrics/group/fairness/dir/definition")
 async def get_dir_definition():
     """Provide a general definition of Disparate Impact Ratio metric."""
     return {
         "name": "Disparate Impact Ratio",
-        "description": "Description",
+        "description": "Measures the ratio of favorable outcome rates between unprivileged and privileged groups. "
+        "A value of 1.0 indicates perfect fairness, while values significantly different from 1.0 indicate potential bias.",
     }
 
 
@@ -168,20 +216,24 @@ async def list_dir_requests():
 
         # Get all requests for DIR
         dir_requests = scheduler.get_requests("DIR")
-        
+
         # Convert to list format expected by client
         requests_list = []
         for request_id, request in dir_requests.items():
             # Validate request object type before property access
-            if hasattr(request, "model_id") and hasattr(request, "batch_size") and \
-               hasattr(request, "protected_attribute") and hasattr(request, "outcome_name"):
+            if (
+                hasattr(request, "model_id")
+                and hasattr(request, "batch_size")
+                and hasattr(request, "protected_attribute")
+                and hasattr(request, "outcome_name")
+            ):
                 requests_list.append({
                     "requestId": str(request_id),
                     "modelId": request.model_id,
                     "metricName": "DIR",
                     "batchSize": request.batch_size,
                     "protectedAttribute": request.protected_attribute,
-                    "outcomeName": request.outcome_name
+                    "outcomeName": request.outcome_name,
                 })
             else:
                 # Log warning for malformed request objects and skip them
@@ -196,12 +248,12 @@ async def list_dir_requests():
 
 # Deprecated DIR endpoints
 @router.post("/dir", deprecated=True)
-async def compute_dir_deprecated(request: GroupMetricRequest):
+async def compute_dir_deprecated(request: GroupMetricRequest, delta: float | None = Query(None)):
     """Compute the current value of Disparate Impact Ratio metric (deprecated).
 
     This endpoint is deprecated. Please use /metrics/group/fairness/dir instead.
     """
-    return await compute_dir(request)
+    return await compute_dir(request, delta)
 
 
 @router.get("/dir/definition", deprecated=True)
