@@ -15,7 +15,7 @@ from hypothesis import strategies as st
 from pytest import approx
 from sklearn.linear_model import LogisticRegression
 from sklearn.neighbors import NearestNeighbors
-from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import LabelEncoder, StandardScaler
 
 from src.core.metrics.fairness.group.disparate_impact_ratio import DisparateImpactRatio
 from src.core.metrics.fairness.group.group_average_odds_difference import GroupAverageOddsDifference
