@@ -22,16 +22,24 @@ def generate_payload(n_rows, n_input_cols, n_output_cols, datatype, tag, input_o
     input_data = []
     for i in range(n_rows):
         if n_input_cols == 1:
-            input_data.append(i + input_offset)
+            val = i + input_offset
+            # Convert to bool (0 or 1) if datatype is BOOL
+            if datatype == "BOOL":
+                val = val % 2
+            input_data.append(val)
         else:
-            row = [i + j + input_offset for j in range(n_input_cols)]
+            row = [(i + j + input_offset) % 2 if datatype == "BOOL" else (i + j + input_offset) for j in range(n_input_cols)]
             input_data.append(row)
     output_data = []
     for i in range(n_rows):
         if n_output_cols == 1:
-            output_data.append(i * 2 + output_offset)
+            val = i * 2 + output_offset
+            # Convert to bool (0 or 1) if datatype is BOOL
+            if datatype == "BOOL":
+                val = val % 2
+            output_data.append(val)
         else:
-            row = [i * 2 + j + output_offset for j in range(n_output_cols)]
+            row = [(i * 2 + j + output_offset) % 2 if datatype == "BOOL" else (i * 2 + j + output_offset) for j in range(n_output_cols)]
             output_data.append(row)
     payload = {
         "model_name": model_name,
