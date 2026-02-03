@@ -375,7 +375,7 @@ class PVCStorage(StorageInterface):
         """Get a list of all model IDs that have inference data stored"""
         from src.service.constants import INPUT_SUFFIX, OUTPUT_SUFFIX, METADATA_SUFFIX
 
-        all_datasets = self.list_all_datasets()
+        all_datasets = await self.list_all_datasets()
         logger.info(f"All datasets found: {all_datasets}")
         model_ids = set()
 
@@ -586,9 +586,9 @@ class PVCStorage(StorageInterface):
                     dataset.attrs[payload_id] = np.void(serialized_data)
 
                 logger.debug(
-                    f"Stored {
-                        'ModelMesh' if is_modelmesh else 'KServe'} {
-                        'input' if is_input else 'output'} payload for request ID: {payload_id}")
+                    f"Stored {'ModelMesh' if is_modelmesh else 'KServe'} "
+                    f"{'input' if is_input else 'output'} payload for request ID: {payload_id}"
+                )
             except Exception as e:
                 logger.error(f"Error storing {'ModelMesh' if is_modelmesh else 'KServe'} payload: {str(e)}")
                 raise

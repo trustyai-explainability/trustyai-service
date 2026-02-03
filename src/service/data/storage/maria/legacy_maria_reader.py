@@ -130,7 +130,7 @@ class LegacyMariaDBStorageReader:
 
     async def migrate_data(self, new_maria_storage: StorageInterface):
         """MMigrate all legacy datasets to a new storage interface"""
-        existing_datasets = new_maria_storage.list_all_datasets()
+        existing_datasets = await new_maria_storage.list_all_datasets()
         migrations = []
 
         for dataset_name in self.list_datasets():
