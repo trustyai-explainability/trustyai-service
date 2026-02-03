@@ -113,15 +113,15 @@ class ModelData:
         storage_interface = get_global_storage_interface()
 
         if get_input:
-            input_data, _ = await storage_interface.read_data(self.input_dataset, start_row, n_rows)
+            input_data = await storage_interface.read_data(self.input_dataset, start_row, n_rows)
         else:
             input_data = None
         if get_output:
-            output_data, _ = await storage_interface.read_data(self.output_dataset, start_row, n_rows)
+            output_data = await storage_interface.read_data(self.output_dataset, start_row, n_rows)
         else:
             output_data = None
         if get_metadata:
-            metadata, _ = await storage_interface.read_data(self.metadata_dataset, start_row, n_rows)
+            metadata = await storage_interface.read_data(self.metadata_dataset, start_row, n_rows)
         else:
             metadata = None
 
