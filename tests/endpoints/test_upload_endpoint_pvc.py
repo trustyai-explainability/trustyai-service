@@ -360,7 +360,7 @@ class TestUploadEndpointPVC(unittest.TestCase):
                         "name": "predict",
                         "datatype": "FP32",
                         "shape": [2, 1],
-                        "data": [0.19013395683309373, 0.2754730253205645],
+                        "data": [[0.19013395683309373], [0.2754730253205645]],
                     }
                 ],
             },
