@@ -2,7 +2,6 @@
 INPUT_SUFFIX = "_inputs"
 OUTPUT_SUFFIX = "_outputs"
 METADATA_SUFFIX = "_metadata"
-GROUND_TRUTH_SUFFIX = "_ground_truth"
 PROTECTED_DATASET_SUFFIX = "trustyai_internal_"
 PARTIAL_PAYLOAD_DATASET_NAME = "partial_payloads"
 GROUND_TRUTH_SUFFIX = "-ground-truths"
