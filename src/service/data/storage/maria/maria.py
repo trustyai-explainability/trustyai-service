@@ -107,14 +107,19 @@ class MariaDBStorage(StorageInterface):
             )
 
         if attempt_migration:
-            # Schedule the migration to run asynchronously
+            # Attempt to schedule migration to run asynchronously if event loop is available
             import asyncio
             try:
                 loop = asyncio.get_running_loop()
                 loop.create_task(self._migrate_from_legacy_db())
             except RuntimeError:
-                # No event loop running, schedule migration for later
-                # Migration will be attempted on first database operation
+                # No event loop running - migration is skipped
+                # To enable migration in this case, manually call _migrate_from_legacy_db()
+                # from an async context after initialization
+                logger.warning(
+                    "No event loop available for migration. "
+                    "Migration skipped. To migrate, call _migrate_from_legacy_db() manually."
+                )
                 pass
 
     # === MIGRATORS ================================================================================
@@ -328,14 +333,17 @@ class MariaDBStorage(StorageInterface):
         self, dataset_name: str, start_row: int = 0, n_rows: int | None = None
     ) -> np.ndarray:
         """
-        Read saved data from the database, from `start_row` to `start_row + n_rows`
-        (inclusive).
+        Read saved data from the database using SQL LIMIT/OFFSET.
 
-        `dataset_name`: the name of the dataset to read. This is NOT the table name;
-            see `trustyai_v2_table_reference.dataset_name` or use list_all_datasets() for the available dataset_names.
-        `start_row`: The row to start reading from. If not specified, read from row 0.
-        `n_rows`: The total number of rows to read. If not specified, read all rows.
+        Args:
+            dataset_name: The name of the dataset to read (NOT the table name).
+                         See trustyai_v2_table_reference.dataset_name or use
+                         list_all_datasets() for available dataset names.
+            start_row: The row index to start reading from (OFFSET). Defaults to 0.
+            n_rows: The number of rows to read (LIMIT). If None, reads all remaining rows.
 
+        Returns:
+            NumPy array containing the requested rows.
         """
         table_name = await self._get_clean_table_name(dataset_name)
 

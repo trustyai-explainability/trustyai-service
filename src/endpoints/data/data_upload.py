@@ -19,9 +19,9 @@ logger = logging.getLogger(__name__)
 class UploadPayload(BaseModel):
     model_name: str
     data_tag: Optional[str] = None
-    is_ground_truth: bool = False
+    is_ground_truth: bool = False  # Reserved for future ground truth storage implementation
     request: KServeInferenceRequest
-    response:  KServeInferenceResponse
+    response: KServeInferenceResponse
 
 
 def validate_data_tag(tag: str) -> Optional[str]:
@@ -44,6 +44,15 @@ async def upload(payload: UploadPayload) -> Dict[str, str]:
     tag_validation_msg = validate_data_tag(payload.data_tag)
     if tag_validation_msg:
         raise HTTPException(status_code=400, detail=tag_validation_msg)
+
+    # Validate ground truth parameter
+    if payload.is_ground_truth:
+        raise HTTPException(
+            status_code=501,
+            detail="Ground truth upload is not yet implemented. "
+                   "This parameter is reserved for future use."
+        )
+
     try:
         logger.info(f"Received upload request for model: {payload.model_name}")
 

@@ -193,6 +193,21 @@ class PVCStorage(StorageInterface):
 
                         # Ensure new_rows dtype matches existing dataset dtype for HDF5 compatibility
                         # This is necessary when using dynamic void types - we may need to upcast
+                        #
+                        # NOTE ON VOID TYPE UPGRADE PATH:
+                        # New datasets are created with V{MAX_VOID_TYPE_LENGTH} (line 228) to allow
+                        # future appends with variable void sizes. However, datasets created before
+                        # this change may have smaller void types (e.g., V47).
+                        #
+                        # Upgrade behavior:
+                        # - If new_rows.dtype > existing dataset.dtype: new_rows is downcast (may
+                        #   lose data if serialized size exceeds existing dtype size). This is a
+                        #   limitation of HDF5's fixed-dtype requirement.
+                        # - To upgrade an existing dataset with small void type: manually recreate
+                        #   the dataset with V{MAX_VOID_TYPE_LENGTH} using migration scripts.
+                        #
+                        # This preserves backward compatibility while allowing optimal storage for
+                        # new datasets.
                         if new_rows.dtype != dataset.dtype:
                             if isinstance(
                                 new_rows.dtype,

@@ -1,10 +1,8 @@
-import asyncio
 import os
 
 from src.service.data.storage.pvc import PVCStorage
 
 global_storage_interface = None
-_storage_lock = asyncio.Lock()
 
 
 def get_global_storage_interface(force_reload=False):

@@ -316,47 +316,59 @@ async def consume_cloud_event(
     # get global storage interface
     storage_interface = get_global_storage_interface()
 
-    if isinstance(payload, KServeInferenceRequest):
-        if len(payload.inputs) == 0:
-            msg = f"KServe Inference Input {payload.id} received, but data field was empty. Payload will not be saved."
-            logger.error(msg)
-            raise HTTPException(status_code=400, detail=msg)
-        else:
-            logger.info(f"KServe Inference Input {payload.id} received.")
-            # if a match is found, the payload is auto-deleted from data
-            partial_output = await storage_interface.get_partial_payload(
-                payload.id, is_input=False, is_modelmesh=False
-            )
-            if partial_output is not None:
-                await reconcile_kserve(payload, partial_output, tag)
+    try:
+        if isinstance(payload, KServeInferenceRequest):
+            if len(payload.inputs) == 0:
+                msg = (
+                    f"KServe Inference Input {payload.id} received, but data field was empty. "
+                    f"Payload will not be saved."
+                )
+                logger.error(msg)
+                raise HTTPException(status_code=400, detail=msg)
             else:
-                await storage_interface.persist_partial_payload(payload, payload_id=payload.id, is_input=True)
+                logger.info(f"KServe Inference Input {payload.id} received.")
+                # if a match is found, the payload is auto-deleted from data
+                partial_output = await storage_interface.get_partial_payload(
+                    payload.id, is_input=False, is_modelmesh=False
+                )
+                if partial_output is not None:
+                    await reconcile_kserve(payload, partial_output, tag)
+                else:
+                    await storage_interface.persist_partial_payload(
+                        payload, payload_id=payload.id, is_input=True
+                    )
+                return {
+                    "status": "success",
+                    "message": f"Input payload {payload.id} processed successfully",
+                }
+
+        elif isinstance(payload, KServeInferenceResponse):
+            if len(payload.outputs) == 0:
+                msg = (
+                    f"KServe Inference Output {payload.id} received from model={payload.model_name}, "
+                    f"but data field was empty. Payload will not be saved."
+                )
+                logger.error(msg)
+                raise HTTPException(status_code=400, detail=msg)
+            else:
+                logger.info(
+                    f"KServe Inference Output {payload.id} received from model={payload.model_name}."
+                )
+                partial_input = await storage_interface.get_partial_payload(
+                    payload.id, is_input=True, is_modelmesh=False
+                )
+                if partial_input is not None:
+                    await reconcile_kserve(partial_input, payload, tag)
+                else:
+                    await storage_interface.persist_partial_payload(
+                        payload, payload_id=payload.id, is_input=False
+                    )
+
             return {
                 "status": "success",
-                "message": f"Input payload {payload.id} processed successfully",
+                "message": f"Output payload {payload.id} processed successfully",
             }
 
-    elif isinstance(payload, KServeInferenceResponse):
-        if len(payload.outputs) == 0:
-            msg = (
-                f"KServe Inference Output {payload.id} received from model={payload.model_name}, "
-                f"but data field was empty. Payload will not be saved."
-            )
-            logger.error(msg)
-            raise HTTPException(status_code=400, detail=msg)
-        else:
-            logger.info(
-                f"KServe Inference Output {payload.id} received from model={payload.model_name}."
-            )
-            partial_input = await storage_interface.get_partial_payload(
-                payload.id, is_input=True, is_modelmesh=False
-            )
-            if partial_input is not None:
-                await reconcile_kserve(partial_input, payload, tag)
-            else:
-                await storage_interface.persist_partial_payload(payload, payload_id=payload.id, is_input=False)
-
-        return {
-            "status": "success",
-            "message": f"Output payload {payload.id} processed successfully",
-        }
+    except ReconciliationError as e:
+        logger.error(f"Reconciliation failed for payload {payload.id}: {e}")
+        raise HTTPException(status_code=400, detail=str(e)) from e
