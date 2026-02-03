@@ -28,11 +28,11 @@ class TestUploadEndpointMaria(TestUploadEndpointPVC):
         from src.main import app
         self.client = TestClient(app)
 
-        self.original_datasets = set(self.storage_interface.list_all_datasets())
+        self.original_datasets = set(asyncio.run(self.storage_interface.list_all_datasets()))
 
     def tearDown(self):
         # delete any datasets we've created
-        new_datasets = set(self.storage_interface.list_all_datasets())
+        new_datasets = set(asyncio.run(self.storage_interface.list_all_datasets()))
         for ds in new_datasets.difference(self.original_datasets):
             asyncio.run(self.storage_interface.delete_dataset(ds))
 

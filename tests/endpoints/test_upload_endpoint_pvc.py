@@ -74,11 +74,17 @@ def generate_multi_input_payload(n_rows, n_input_cols, n_output_cols, datatype, 
     model_name = f"{MODEL_ID}_{uuid.uuid4().hex[:8]}"
     input_data = []
     for row_idx in range(n_rows):
-        row = [row_idx + col_idx * 10 for col_idx in range(n_input_cols)]
+        if datatype == "BOOL":
+            row = [(row_idx + col_idx * 10) % 2 for col_idx in range(n_input_cols)]
+        else:
+            row = [row_idx + col_idx * 10 for col_idx in range(n_input_cols)]
         input_data.append(row)
     output_data = []
     for row_idx in range(n_rows):
-        row = [row_idx * 2 + col_idx for col_idx in range(n_output_cols)]
+        if datatype == "BOOL":
+            row = [(row_idx * 2 + col_idx) % 2 for col_idx in range(n_output_cols)]
+        else:
+            row = [row_idx * 2 + col_idx for col_idx in range(n_output_cols)]
         output_data.append(row)
     payload = {
         "model_name": model_name,
@@ -111,10 +117,16 @@ def generate_multi_input_payload(n_rows, n_input_cols, n_output_cols, datatype, 
 def generate_mismatched_shape_no_unique_name_multi_input_payload(n_rows, n_input_cols, n_output_cols, datatype, tag):
     """Generate a payload with mismatched shapes and non-unique names."""
     model_name = f"{MODEL_ID}_{uuid.uuid4().hex[:8]}"
-    input_data_1 = [[row_idx + col_idx * 10 for col_idx in range(n_input_cols)] for row_idx in range(n_rows)]
-    mismatched_rows = n_rows - 1 if n_rows > 1 else 1
-    input_data_2 = [[row_idx + col_idx * 20 for col_idx in range(n_input_cols)] for row_idx in range(mismatched_rows)]
-    output_data = [[row_idx * 2 + col_idx for col_idx in range(n_output_cols)] for row_idx in range(n_rows)]
+    if datatype == "BOOL":
+        input_data_1 = [[(row_idx + col_idx * 10) % 2 for col_idx in range(n_input_cols)] for row_idx in range(n_rows)]
+        mismatched_rows = n_rows - 1 if n_rows > 1 else 1
+        input_data_2 = [[(row_idx + col_idx * 20) % 2 for col_idx in range(n_input_cols)] for row_idx in range(mismatched_rows)]
+        output_data = [[(row_idx * 2 + col_idx) % 2 for col_idx in range(n_output_cols)] for row_idx in range(n_rows)]
+    else:
+        input_data_1 = [[row_idx + col_idx * 10 for col_idx in range(n_input_cols)] for row_idx in range(n_rows)]
+        mismatched_rows = n_rows - 1 if n_rows > 1 else 1
+        input_data_2 = [[row_idx + col_idx * 20 for col_idx in range(n_input_cols)] for row_idx in range(mismatched_rows)]
+        output_data = [[row_idx * 2 + col_idx for col_idx in range(n_output_cols)] for row_idx in range(n_rows)]
     payload = {
         "model_name": model_name,
         "data_tag": tag,
