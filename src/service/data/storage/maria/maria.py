@@ -86,9 +86,7 @@ class MariaDBStorage(StorageInterface):
         self.host = host
         self.port = port
         self.database = database
-        self.connection_manager = MariaConnectionManager(
-            user, password, host, port, database
-        )
+        self.connection_manager = MariaConnectionManager(user, password, host, port, database)
 
         self.schema_prefix = "trustyai_v2"
         self.dataset_reference_table = f"{self.schema_prefix}_table_reference"
@@ -109,18 +107,13 @@ class MariaDBStorage(StorageInterface):
         if attempt_migration:
             # Attempt to schedule migration to run asynchronously if event loop is available
             import asyncio
+
             try:
                 loop = asyncio.get_running_loop()
                 loop.create_task(self._migrate_from_legacy_db())
             except RuntimeError:
-                # No event loop running - migration is skipped
-                # To enable migration in this case, manually call _migrate_from_legacy_db()
-                # from an async context after initialization
-                logger.warning(
-                    "No event loop available for migration. "
-                    "Migration skipped. To migrate, call _migrate_from_legacy_db() manually."
-                )
-                pass
+                # No event loop running - run migration synchronously
+                asyncio.run(self._migrate_from_legacy_db())
 
     # === MIGRATORS ================================================================================
     async def _migrate_from_legacy_db(self):
@@ -239,9 +232,9 @@ class MariaDBStorage(StorageInterface):
         # validate that the number of provided column names matches the shape of the provided array
         if new_rows.shape[1] != len(column_names):
             raise ValueError(
-                f"Shape mismatch: Number of provided column names ({
-                    len(column_names)}) does not match number of columns in provided array ({
-                    new_rows.shape[1]}).")
+                f"Shape mismatch: Number of provided column names ({len(column_names)}) "
+                f"does not match number of columns in provided array ({new_rows.shape[1]})."
+            )
 
         # if this is the first time we've seen this dataset, set up its tables inside the DB
         if not await self.dataset_exists(dataset_name):
@@ -329,9 +322,7 @@ class MariaDBStorage(StorageInterface):
             conn.commit()
 
     @require_existing_dataset
-    async def read_data(
-        self, dataset_name: str, start_row: int = 0, n_rows: int | None = None
-    ) -> np.ndarray:
+    async def read_data(self, dataset_name: str, start_row: int = 0, n_rows: int | None = None) -> np.ndarray:
         """
         Read saved data from the database using SQL LIMIT/OFFSET.
 
@@ -352,10 +343,7 @@ class MariaDBStorage(StorageInterface):
 
         with self.connection_manager as (conn, cursor):
             # grab matching data - using LIMIT/OFFSET from PR branch for better SQL compatibility
-            cursor.execute(
-                f"SELECT * FROM `{table_name}` ORDER BY row_idx ASC LIMIT ? OFFSET ?",
-                (n_rows, start_row)
-            )
+            cursor.execute(f"SELECT * FROM `{table_name}` ORDER BY row_idx ASC LIMIT ? OFFSET ?", (n_rows, start_row))
 
             # parse saved data back to Numpy array
             arr = []
@@ -409,10 +397,10 @@ class MariaDBStorage(StorageInterface):
                 f"UPDATE `{self.dataset_reference_table}` "
                 f"SET metadata=JSON_SET(metadata, '$.aliased_names', "
                 f"JSON_ARRAY({array_parameters})) WHERE dataset_name=?",
-                (*
-                    aliased_names,
+                (
+                    *aliased_names,
                     dataset_name,
-                 ),
+                ),
             )
             conn.commit()
 
@@ -429,16 +417,16 @@ class MariaDBStorage(StorageInterface):
                 f"UPDATE `{self.dataset_reference_table}` "
                 f"SET metadata=JSON_SET(metadata, '$.aliased_names', "
                 f"JSON_ARRAY({array_parameters})) WHERE dataset_name=?",
-                (*
-                    original_names,
+                (
+                    *original_names,
                     dataset_name,
-                 ),
+                ),
             )
             conn.commit()
 
     async def get_known_models(self) -> List[str]:
         """Get a list of all model IDs that have inference data stored"""
-        all_datasets = self.list_all_datasets()
+        all_datasets = await self.list_all_datasets()
         model_ids = set()
 
         for dataset_name in all_datasets:
@@ -511,22 +499,23 @@ class MariaDBStorage(StorageInterface):
         return metadata
 
     # === PARTIAL PAYLOADS =========================================================================
-    async def persist_partial_payload(self,
-                                      payload: Union[PartialPayload, KServeInferenceRequest, KServeInferenceResponse],
-                                      payload_id, is_input: bool):
+    async def persist_partial_payload(
+        self,
+        payload: Union[PartialPayload, KServeInferenceRequest, KServeInferenceResponse],
+        payload_id,
+        is_input: bool,
+    ):
         """Save a partial payload to the database."""
         with self.connection_manager as (conn, cursor):
             cursor.execute(
                 f"INSERT INTO `{self.partial_payload_table}` (payload_id, is_input, payload_data) VALUES (?, ?, ?)",
-                (payload_id, is_input, pkl.dumps(payload.model_dump())))
+                (payload_id, is_input, pkl.dumps(payload.model_dump())),
+            )
             conn.commit()
 
-    async def get_partial_payload(self,
-                                  payload_id: str,
-                                  is_input: bool,
-                                  is_modelmesh: bool) -> Union[PartialPayload,
-                                                               KServeInferenceRequest,
-                                                               KServeInferenceResponse]:
+    async def get_partial_payload(
+        self, payload_id: str, is_input: bool, is_modelmesh: bool
+    ) -> Union[PartialPayload, KServeInferenceRequest, KServeInferenceResponse]:
         """Retrieve a partial payload from the database."""
         with self.connection_manager as (conn, cursor):
             cursor.execute(
@@ -547,10 +536,8 @@ class MariaDBStorage(StorageInterface):
     async def delete_partial_payload(self, payload_id: str, is_input: bool):
         with self.connection_manager as (conn, cursor):
             cursor.execute(
-                f"DELETE FROM {
-                    self.partial_payload_table} WHERE payload_id=? AND is_input=?",
-                (payload_id,
-                 is_input))
+                f"DELETE FROM {self.partial_payload_table} WHERE payload_id=? AND is_input=?", (payload_id, is_input)
+            )
             conn.commit()
 
     async def persist_modelmesh_payload(self, payload: PartialPayload, request_id: str, is_input: bool):

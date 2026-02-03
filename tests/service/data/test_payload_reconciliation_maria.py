@@ -43,6 +43,15 @@ class TestMariaPayloadReconciliation(TestPayloadReconciliation):
         """Clean up after tests."""
         asyncio.run(self.storage.reset_database())
 
+    # Override void type tests - these only apply to PVC storage
+    @unittest.skip("MAX_VOID_TYPE_LENGTH only applies to PVC storage, not MariaDB")
+    def test_void_type_length_exceeds_limit(self):
+        pass
+
+    @unittest.skip("MAX_VOID_TYPE_LENGTH only applies to PVC storage, not MariaDB")
+    def test_void_type_length_within_limit(self):
+        pass
+
 
 if __name__ == "__main__":
     unittest.main()

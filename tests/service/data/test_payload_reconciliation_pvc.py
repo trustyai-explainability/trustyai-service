@@ -9,6 +9,7 @@ import os
 from unittest import mock
 import uuid
 
+import numpy as np
 import pandas as pd
 
 from src.service.data.modelmesh_parser import ModelMeshPayloadParser, PartialPayload
@@ -225,6 +226,60 @@ class TestPayloadReconciliation(unittest.TestCase):
         )
         self.assertIsNone(missing_payload)
 
+    async def _test_void_type_length_exceeds_limit(self):
+        """Test that rows exceeding MAX_VOID_TYPE_LENGTH raise ValueError."""
+        from src.service.data.storage.pvc import MAX_VOID_TYPE_LENGTH
+
+        # Use unique dataset name to avoid conflicts
+        dataset_name = f"dataset_oversized_void_type_{uuid.uuid4().hex[:8]}"
+
+        # Create a payload that will exceed MAX_VOID_TYPE_LENGTH when serialized
+        oversized_string = "x" * (MAX_VOID_TYPE_LENGTH + 100)
+        mixed_row = [
+            oversized_string,  # large non-numeric payload
+            {"key": "value"},  # non-primitive object
+            123,  # numeric value
+        ]
+        dataset = np.array([mixed_row], dtype=object)
+        column_names = ["col_str", "col_obj", "col_int"]
+
+        with self.assertRaises(ValueError) as context:
+            await self.storage.write_data(dataset_name, dataset, column_names)
+
+        error_msg = str(context.exception)
+        self.assertIn("exceeds maximum allowed size", error_msg)
+        self.assertIn(str(MAX_VOID_TYPE_LENGTH), error_msg)
+
+    async def _test_void_type_length_within_limit(self):
+        """Test that rows under MAX_VOID_TYPE_LENGTH are written successfully."""
+        from src.service.data.storage.pvc import MAX_VOID_TYPE_LENGTH
+
+        # Use unique dataset name to avoid conflicts
+        dataset_name = f"dataset_under_void_type_limit_{uuid.uuid4().hex[:8]}"
+
+        # Create a payload that is just under the limit
+        # Account for pickle overhead by using a smaller string
+        allowed_string = "y" * (MAX_VOID_TYPE_LENGTH - 200)
+        mixed_row = [
+            allowed_string,
+            {"key": "value"},
+            456,
+        ]
+        original_dataset = np.array([mixed_row], dtype=object)
+        column_names = ["col_str", "col_obj", "col_int"]
+
+        await self.storage.write_data(dataset_name, original_dataset, column_names)
+        retrieved_dataset = await self.storage.read_data(dataset_name)
+
+        # Ensure we got exactly one row with the expected values back
+        self.assertEqual(1, retrieved_dataset.shape[0])
+        self.assertEqual(3, retrieved_dataset.shape[1])
+        retrieved_row = list(retrieved_dataset[0])
+
+        self.assertEqual(allowed_string, retrieved_row[0])
+        self.assertEqual({"key": "value"}, retrieved_row[1])
+        self.assertEqual(456, retrieved_row[2])
+
 
 def run_async_test(coro):
     """Helper function to run async tests."""
@@ -237,6 +292,12 @@ TestPayloadReconciliation.test_persist_output_payload = lambda self: run_async_t
 TestPayloadReconciliation.test_full_reconciliation = lambda self: run_async_test(self._test_full_reconciliation())
 TestPayloadReconciliation.test_reconciliation_with_real_data = lambda self: run_async_test(
     self._test_reconciliation_with_real_data()
+)
+TestPayloadReconciliation.test_void_type_length_exceeds_limit = lambda self: run_async_test(
+    self._test_void_type_length_exceeds_limit()
+)
+TestPayloadReconciliation.test_void_type_length_within_limit = lambda self: run_async_test(
+    self._test_void_type_length_within_limit()
 )
 TestPayloadReconciliation.test_corrupted_payload_handling = lambda self: run_async_test(
     self._test_corrupted_payload_handling()
