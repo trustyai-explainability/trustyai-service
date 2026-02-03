@@ -295,11 +295,47 @@ class TestUploadEndpointPVC(unittest.TestCase):
         """Test error case for non-unique tensor names."""
         payload = generate_mismatched_shape_no_unique_name_multi_input_payload(250, 4, 3, "FP64", "TRAINING")
         response = self.client.post("/data/upload", json=payload)
-        self.assertEqual(response.status_code,400)
+        self.assertEqual(response.status_code, 400)
         print(response.text)
         self.assertIn("input shapes were mismatched", response.text)
         self.assertIn("[250, 4]", response.text)
 
+    def test_upload_mismatched_row_counts(self):
+        """Test error case for mismatched input/output row counts."""
+        model_name = f"{MODEL_ID}_{uuid.uuid4().hex[:8]}"
+        n_input_rows = 10
+        n_output_rows = 9
+
+        payload = {
+            "model_name": model_name,
+            "is_ground_truth": False,
+            "request": {
+                "inputs": [
+                    {
+                        "name": "input",
+                        "shape": [n_input_rows],
+                        "datatype": "FP32",
+                        "data": [float(i) for i in range(n_input_rows)],
+                    }
+                ],
+            },
+            "response": {
+                "outputs": [
+                    {
+                        "name": "output",
+                        "shape": [n_output_rows],
+                        "datatype": "FP32",
+                        "data": [float(i) for i in range(n_output_rows)],
+                    }
+                ],
+            },
+        }
+
+        response = self.client.post("/data/upload", json=payload)
+        self.assertEqual(response.status_code, 400)
+        response_text = response.text
+        self.assertIn("Could not reconcile", response_text)
+        self.assertIn("number of", response_text.lower())
 
     def test_upload_multiple_tagging(self):
         """Test uploading data with multiple tags."""
