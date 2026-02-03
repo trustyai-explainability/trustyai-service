@@ -156,11 +156,15 @@ class PVCStorage(StorageInterface):
             existing_shape = None
             dataset_exists = False
 
-        # standardize serialized rows to prevent metadata serialization failures
+        # Validate serialized rows don't exceed maximum void type length
+        # Note: serialize_rows() now uses dynamic void types, so this check is mainly
+        # for existing data or data from other sources
         if isinstance(new_rows.dtype, np.dtypes.VoidDType):
             if new_rows.dtype.itemsize > MAX_VOID_TYPE_LENGTH:
-                raise ValueError(f"The datatype of the array to be serialized is {new_rows.dtype}- the largest serializable void type is V{MAX_VOID_TYPE_LENGTH}")
-            new_rows = new_rows.astype(f"V{MAX_VOID_TYPE_LENGTH}") # this might cause bugs later
+                raise ValueError(
+                    f"The datatype of the array to be serialized is {new_rows.dtype} - "
+                    f"the largest serializable void type is V{MAX_VOID_TYPE_LENGTH}"
+                )
 
 
         if dataset_exists:  # if we've already got saved inferences for this model
@@ -186,6 +190,14 @@ class PVCStorage(StorageInterface):
 
                         # add new lines to dataset and write new data
                         dataset.resize(existing_shape[0] + inbound_shape[0], axis=0)
+
+                        # Ensure new_rows dtype matches existing dataset dtype for HDF5 compatibility
+                        # This is necessary when using dynamic void types - we may need to upcast
+                        if new_rows.dtype != dataset.dtype:
+                            if isinstance(new_rows.dtype, np.dtypes.VoidDType) and isinstance(dataset.dtype.type, type(np.void)):
+                                # Both are void types, cast new data to match existing dataset
+                                new_rows = new_rows.astype(dataset.dtype)
+
                         dataset[existing_shape[0] :] = new_rows
             else:
                 existing_shape_str = ", ".join([":"] + [str(x) for x in existing_shape[1:]])
@@ -204,12 +216,20 @@ class PVCStorage(StorageInterface):
                         1:
                     ]  # to-do: tune this value?
 
+                    # For void types, use MAX_VOID_TYPE_LENGTH to ensure future appends
+                    # with different sizes can be accommodated
+                    dataset_dtype = new_rows.dtype
+                    if isinstance(new_rows.dtype, np.dtypes.VoidDType):
+                        dataset_dtype = f"V{MAX_VOID_TYPE_LENGTH}"
+                        # Cast data to match dataset dtype
+                        new_rows = new_rows.astype(dataset_dtype)
+
                     dataset = db.create_dataset(
                         allocated_dataset_name,
                         data=new_rows,
                         maxshape=max_shape,
                         chunks=True,
-                        dtype=new_rows.dtype  # use the dtype of the data
+                        dtype=dataset_dtype
                     )
                     dataset.attrs[COLUMN_NAMES_ATTRIBUTE] = column_names
                     dataset.attrs[BYTES_ATTRIBUTE] = is_bytes
