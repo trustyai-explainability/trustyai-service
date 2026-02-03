@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from src.endpoints.consumer.consumer_endpoint import consume_cloud_event
 from src.endpoints.consumer import KServeInferenceRequest, KServeInferenceResponse, KServeData
+from src.exceptions import ReconciliationError
 from src.service.constants import TRUSTYAI_TAG_PREFIX
 from src.service.data.model_data import ModelData
 
@@ -74,9 +75,13 @@ async def upload(payload: UploadPayload) -> Dict[str, str]:
             "message": f"{new_data_points-previous_data_points} datapoints successfully added to {payload.model_name} data."
         }
 
+    except ReconciliationError as e:
+        logger.error(f"Reconciliation error for model {payload.model_name}: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Could not upload payload for model {payload.model_name}: {e.message}"
+        ) from e
     except HTTPException as e:
-        if "Could not reconcile_kserve KServe Inference" in str(e):
-            raise HTTPException(status_code=400, detail=f"Could not upload payload for model {payload.model_name}: {str(e)}") from e
         raise e
     except Exception as e:
         logger.error(f"Unexpected error in upload endpoint for model {payload.model_name}: {str(e)}", exc_info=True)
