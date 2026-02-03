@@ -286,7 +286,7 @@ class TestDataSource:
         mock_model_data_class.return_value = mock_model_data
 
         # Mock the storage interface to return discovered_model
-        data_source.storage_interface.get_known_models = Mock(return_value=["discovered_model"])
+        data_source.storage_interface.get_known_models = AsyncMock(return_value=["discovered_model"])
 
         # Mock has_metadata to return True for the discovered model
         data_source.has_metadata = AsyncMock(return_value=True)

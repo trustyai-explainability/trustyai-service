@@ -24,8 +24,12 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
         """Set up the test environment."""
         self.temp_dir = tempfile.TemporaryDirectory()
 
-        self.storage_patch = mock.patch("src.endpoints.consumer.consumer_endpoint.storage_interface")
-        self.mock_storage = self.storage_patch.start()
+        self.storage_patch = mock.patch(
+            "src.endpoints.consumer.consumer_endpoint.get_global_storage_interface"
+        )
+        self.mock_get_storage = self.storage_patch.start()
+        self.mock_storage = mock.AsyncMock()
+        self.mock_get_storage.return_value = self.mock_storage
 
         self.parser_patch = mock.patch.object(ModelMeshPayloadParser, "parse_input_payload")
         self.mock_parse_input = self.parser_patch.start()
@@ -79,8 +83,8 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
 
     async def _test_consume_input_payload(self):
         """Test consuming an input payload."""
-        self.mock_storage.persist_modelmesh_payload = mock.AsyncMock()
-        self.mock_storage.get_modelmesh_payload = mock.AsyncMock(return_value=None)
+        self.mock_storage.persist_partial_payload = mock.AsyncMock()
+        self.mock_storage.get_partial_payload = mock.AsyncMock(return_value=None)
         self.mock_parse_input.return_value = True
         self.mock_parse_output.side_effect = ValueError("Not an output payload")
 
@@ -91,6 +95,7 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
         }
 
         response = self.client.post("/consumer/kserve/v2", json=inference_payload)
+        print(response.text)
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
@@ -101,15 +106,15 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
             },
         )
 
-        self.mock_storage.persist_modelmesh_payload.assert_called_once()
-        call_args = self.mock_storage.persist_modelmesh_payload.call_args[0]
-        self.assertEqual(call_args[1], self.request_id)
-        self.assertTrue(call_args[2])  # is_input=True
+        self.mock_storage.persist_partial_payload.assert_called_once()
+        call_kwargs = self.mock_storage.persist_partial_payload.call_args[1]
+        self.assertEqual(call_kwargs["payload_id"], self.request_id)
+        self.assertTrue(call_kwargs["is_input"])  # is_input=True
 
     async def _test_consume_output_payload(self):
         """Test consuming an output payload."""
-        self.mock_storage.persist_modelmesh_payload = mock.AsyncMock()
-        self.mock_storage.get_modelmesh_payload = mock.AsyncMock(return_value=None)
+        self.mock_storage.persist_partial_payload = mock.AsyncMock()
+        self.mock_storage.get_partial_payload = mock.AsyncMock(return_value=None)
         self.mock_parse_input.side_effect = ValueError("Not an input payload")
         self.mock_parse_output.return_value = True
 
@@ -130,23 +135,23 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
             },
         )
 
-        self.mock_storage.persist_modelmesh_payload.assert_called_once()
-        call_args = self.mock_storage.persist_modelmesh_payload.call_args[0]
-        self.assertEqual(call_args[1], self.request_id)
-        self.assertFalse(call_args[2])  # is_input=False
+        self.mock_storage.persist_partial_payload.assert_called_once()
+        call_kwargs = self.mock_storage.persist_partial_payload.call_args[1]
+        self.assertEqual(call_kwargs["payload_id"], self.request_id)
+        self.assertFalse(call_kwargs["is_input"])  # is_input=True
 
     async def _test_reconcile_payloads(self):
         """Test reconciling both input and output payloads."""
         # Setup mocks for correct interactions
-        self.mock_storage.get_modelmesh_payload = mock.AsyncMock()
-        self.mock_storage.get_modelmesh_payload.side_effect = [
+        self.mock_storage.get_partial_payload = mock.AsyncMock()
+        self.mock_storage.get_partial_payload.side_effect = [
             None,
             self.input_payload,
         ]
 
-        self.mock_storage.persist_modelmesh_payload = mock.AsyncMock()
+        self.mock_storage.persist_partial_payload = mock.AsyncMock()
         self.mock_storage.write_data = mock.AsyncMock()
-        self.mock_storage.delete_modelmesh_payload = mock.AsyncMock()
+        self.mock_storage.delete_partial_payload = mock.AsyncMock()
 
         with (
             mock.patch(
@@ -199,13 +204,13 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
                 },
             )
 
-            self.mock_storage.persist_modelmesh_payload.assert_called_once()
+            self.mock_storage.persist_partial_payload.assert_called_once()
+            call_kwargs = self.mock_storage.persist_partial_payload.call_args[1]
 
-            call_args = self.mock_storage.persist_modelmesh_payload.call_args[0]
-            self.assertEqual(call_args[1], self.request_id)
-            self.assertTrue(call_args[2])  # is_input=True
+            self.assertEqual(call_kwargs['payload_id'], self.request_id)
+            self.assertTrue(call_kwargs['is_input'])  # is_input=True
 
-            self.mock_storage.persist_modelmesh_payload.reset_mock()
+            self.mock_storage.persist_partial_payload.reset_mock()
 
             mock_parse_input.side_effect = ValueError("Not an input")
             mock_parse_output.side_effect = lambda x: True
@@ -230,9 +235,9 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
                 },
             )
 
-            call_args = self.mock_storage.persist_modelmesh_payload.call_args[0]
-            self.assertEqual(call_args[1], self.request_id)
-            self.assertFalse(call_args[2])  # is_input=False
+            call_kwargs = self.mock_storage.persist_partial_payload.call_args[1]
+            self.assertEqual(call_kwargs["payload_id"], self.request_id)
+            self.assertFalse(call_kwargs["is_input"])  # is_input=False
 
             mock_reconcile.assert_called_once()
             reconcile_args = mock_reconcile.call_args[0]

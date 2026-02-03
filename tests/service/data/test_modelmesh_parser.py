@@ -3,7 +3,6 @@ Tests for the ModelMesh protobuf parser.
 """
 
 import unittest
-
 import pandas as pd
 
 from src.service.data.modelmesh_parser import ModelMeshPayloadParser, PartialPayload

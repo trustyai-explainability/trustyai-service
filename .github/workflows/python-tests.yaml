@@ -34,6 +34,7 @@ jobs:
           source .venv/bin/activate
           if [ -f pyproject.toml ]; then
             uv sync --all-groups
+            uv pip install -e ".[mariadb]"
           else
             uv pip install pytest
           fi

@@ -3432,7 +3432,7 @@ requires-dist = [
     { name = "lm-eval", extras = ["api"], marker = "extra == 'eval'", specifier = ">=0.4,<0.5" },
     { name = "mariadb", marker = "extra == 'mariadb'", specifier = ">=1.1.12" },
     { name = "numpy", specifier = ">=2.0,<3" },
-    { name = "pandas", specifier = ">=2.2.3,<3" },
+    { name = "pandas", specifier = ">=2.2.3,<4" },
     { name = "polars", specifier = ">=1.2,<2" },
     { name = "prometheus-client", specifier = ">=0.21.1,<0.25" },
     { name = "protobuf", specifier = ">=4.24.4,<7" },

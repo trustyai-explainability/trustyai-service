@@ -283,7 +283,7 @@ class DataSource:
 
         try:
             # Use storage interface to discover models with actual data
-            storage_models = self.storage_interface.get_known_models()
+            storage_models = await self.storage_interface.get_known_models()
             logger.info(f"Storage interface discovered models: {storage_models}")
             discovered.extend(storage_models)
 
