@@ -28,15 +28,20 @@ class MariaDBStorage(StorageInterface):
     === v2 DATABASE SCHEMA =========================================================================
 
     === Metadata Tables ===
-    `trustyai_v2_table_reference`: Reference information about the inference data tables- e.g., shape, source dataset, etc
-        - `table_idx`, BIGINT: Dataset index- this will identify which table is being referenced by this particular row.
-                             e.g., if `table_idx=$N`, this row describes the table `trustyai_dataset_$N`
-        - `dataset_name`, varchar(255): The name of the dataset stored in `trustyai_dataset_$TABLE_IDX`
+    `trustyai_v2_table_reference`: Reference information about the inference data tables-
+                                   e.g., shape, source dataset, etc
+        - `table_idx`, BIGINT: Dataset index- this will identify which table is being
+                             referenced by this particular row. e.g., if `table_idx=$N`,
+                             this row describes the table `trustyai_dataset_$N`
+        - `dataset_name`, varchar(255): The name of the dataset stored in
+                                       `trustyai_dataset_$TABLE_IDX`
         - `metadata`, JSON: json of dataset metadata, with schema:
-            - `column_names`: The raw column names of the model, straight from the original payloads
-            - `aliased_names`: The current state of column aliasing - this will reflect the most recent name-mapping
-            - `shape`: The shape of the dataset stored within `trustyai_dataset_$TABLE_IDX`, in the form (-1, x, y, ... z).
-                       The row dimension is always represented as -1.
+            - `column_names`: The raw column names of the model, straight from the
+                             original payloads
+            - `aliased_names`: The current state of column aliasing - this will reflect
+                              the most recent name-mapping
+            - `shape`: The shape of the dataset stored within `trustyai_dataset_$TABLE_IDX`,
+                      in the form (-1, x, y, ... z). The row dimension is always -1.
         - `n_rows`, BIGINT: The number of rows within the dataset.
     `trustyai_v2_partial_payloads`: Store partial payloads prior to reconciliation
         - `payload_id`, varchar(255): The id of the partial payload
@@ -44,9 +49,12 @@ class MariaDBStorage(StorageInterface):
         - `payload_data`, LONGBLOB: The pickled partial payload
 
     === Inference Data Tables ===
-    Each dataset is stored in its own table named `trustyai_v2_dataset_X`, where `X` is an incrementing integer assigned by the DB
+    Each dataset is stored in its own table named `trustyai_v2_dataset_X`, where `X` is
+    an incrementing integer assigned by the DB
 
-    `trustyai_v2_dataset_X`: stores the data for dataset_X. Information about dataset_X can be found in `trustyai_v2_table_reference` in the row where `table_idx`==`X`
+    `trustyai_v2_dataset_X`: stores the data for dataset_X. Information about dataset_X
+                            can be found in `trustyai_v2_table_reference` in the row
+                            where `table_idx`==`X`
      - `column_0`, LONGBLOB: the pickled data for the 0th column of this row, e.g., arr[$row][0]
      - `column_1`, LONGBLOB: the pickled data for the 1st column of this row, e.g., arr[$row][1]
      - ...
@@ -78,18 +86,24 @@ class MariaDBStorage(StorageInterface):
         self.host = host
         self.port = port
         self.database = database
-        self.connection_manager = MariaConnectionManager(user, password, host, port, database)
+        self.connection_manager = MariaConnectionManager(
+            user, password, host, port, database
+        )
 
         self.schema_prefix = "trustyai_v2"
         self.dataset_reference_table = f"{self.schema_prefix}_table_reference"
-        self.partial_payload_table = f"{self.schema_prefix}_partial_payloads"  # stores partial payloads
+        # stores partial payloads
+        self.partial_payload_table = f"{self.schema_prefix}_partial_payloads"
 
         with self.connection_manager as (conn, cursor):
             cursor.execute(
-                f"CREATE TABLE IF NOT EXISTS `{self.dataset_reference_table}` (table_idx BIGINT AUTO_INCREMENT, dataset_name varchar(255), metadata JSON, n_rows BIGINT, PRIMARY KEY (table_idx))"
+                f"CREATE TABLE IF NOT EXISTS `{self.dataset_reference_table}` "
+                "(table_idx BIGINT AUTO_INCREMENT, dataset_name varchar(255), "
+                "metadata JSON, n_rows BIGINT, PRIMARY KEY (table_idx))"
             )
             cursor.execute(
-                f"CREATE TABLE IF NOT EXISTS `{self.partial_payload_table}` (payload_id varchar(255), is_input BOOLEAN, payload_data LONGBLOB)"
+                f"CREATE TABLE IF NOT EXISTS `{self.partial_payload_table}` "
+                "(payload_id varchar(255), is_input BOOLEAN, payload_data LONGBLOB)"
             )
 
         if attempt_migration:
@@ -140,8 +154,8 @@ class MariaDBStorage(StorageInterface):
             metadata = cursor.fetchone()[0]
         return json.loads(metadata)
 
+    # === DATASET QUERYING ==========================================================================
 
-    #=== DATASET QUERYING ==========================================================================
     async def dataset_exists(self, dataset_name: str) -> bool:
         """
         Check if a dataset exists within the TrustyAI model data.
@@ -201,11 +215,13 @@ class MariaDBStorage(StorageInterface):
         """
         Write some rows to the database
 
-        `dataset_name`: the name of the dataset to write to. This is NOT the table name; this should
-            be some string descriptor of the dataset (e.g., model_ABC_input_data).`
+        `dataset_name`: the name of the dataset to write to. This is NOT the table name;
+                       this should be some string descriptor of the dataset
+                       (e.g., model_ABC_input_data).
         `new_rows`: the Numpy array representing the new rows-to-write.
-        `column_names`: The corresponding column names within the rows. If appending data to the table,
-            these names must match the existing column names found within `trustyai_v2_table_reference.metadata.column_names`.
+        `column_names`: The corresponding column names within the rows. If appending data,
+                       these names must match the existing column names found within
+                       `trustyai_v2_table_reference.metadata.column_names`.
         """
 
         if len(new_rows) == 0:
@@ -218,8 +234,9 @@ class MariaDBStorage(StorageInterface):
         # validate that the number of provided column names matches the shape of the provided array
         if new_rows.shape[1] != len(column_names):
             raise ValueError(
-                f"Shape mismatch: Number of provided column names ({len(column_names)}) does not match number of columns in provided array ({new_rows.shape[1]})."
-            )
+                f"Shape mismatch: Number of provided column names ({
+                    len(column_names)}) does not match number of columns in provided array ({
+                    new_rows.shape[1]}).")
 
         # if this is the first time we've seen this dataset, set up its tables inside the DB
         if not await self.dataset_exists(dataset_name):
@@ -309,7 +326,8 @@ class MariaDBStorage(StorageInterface):
     @require_existing_dataset
     async def read_data(self, dataset_name: str, start_row: int = 0, n_rows: int = None):
         """
-        Read saved data from the database, from `start_row` to `start_row + n_rows` (inclusive)wait storage.dataset_exists(dataset_name):
+        Read saved data from the database, from `start_row` to `start_row + n_rows`
+        (inclusive).
 
         `dataset_name`: the name of the dataset to read. This is NOT the table name;
             see `trustyai_v2_table_reference.dataset_name` or use list_all_datasets() for the available dataset_names.
@@ -378,11 +396,13 @@ class MariaDBStorage(StorageInterface):
             # parse aliased_name list into parameterized JSON_ARRAY argument
             array_parameters = ", ".join(["?" for _ in aliased_names])
             cursor.execute(
-                f"UPDATE `{self.dataset_reference_table}` SET metadata=JSON_SET(metadata, '$.aliased_names', JSON_ARRAY({array_parameters})) WHERE dataset_name=?",
-                (
-                    *aliased_names,
+                f"UPDATE `{self.dataset_reference_table}` "
+                f"SET metadata=JSON_SET(metadata, '$.aliased_names', "
+                f"JSON_ARRAY({array_parameters})) WHERE dataset_name=?",
+                (*
+                    aliased_names,
                     dataset_name,
-                ),
+                 ),
             )
             conn.commit()
 
@@ -396,11 +416,13 @@ class MariaDBStorage(StorageInterface):
             # parse original_names list into parameterized JSON_ARRAY argument
             array_parameters = ", ".join(["?" for _ in original_names])
             cursor.execute(
-                f"UPDATE `{self.dataset_reference_table}` SET metadata=JSON_SET(metadata, '$.aliased_names', JSON_ARRAY({array_parameters})) WHERE dataset_name=?",
-                (
-                    *original_names,
+                f"UPDATE `{self.dataset_reference_table}` "
+                f"SET metadata=JSON_SET(metadata, '$.aliased_names', "
+                f"JSON_ARRAY({array_parameters})) WHERE dataset_name=?",
+                (*
+                    original_names,
                     dataset_name,
-                ),
+                 ),
             )
             conn.commit()
 
@@ -489,7 +511,12 @@ class MariaDBStorage(StorageInterface):
                 (payload_id, is_input, pkl.dumps(payload.model_dump())))
             conn.commit()
 
-    async def get_partial_payload(self, payload_id: str, is_input: bool, is_modelmesh: bool) -> Union[PartialPayload, KServeInferenceRequest, KServeInferenceResponse]:
+    async def get_partial_payload(self,
+                                  payload_id: str,
+                                  is_input: bool,
+                                  is_modelmesh: bool) -> Union[PartialPayload,
+                                                               KServeInferenceRequest,
+                                                               KServeInferenceResponse]:
         """Retrieve a partial payload from the database."""
         with self.connection_manager as (conn, cursor):
             cursor.execute(
@@ -507,10 +534,13 @@ class MariaDBStorage(StorageInterface):
         else:  # kserve output
             return KServeInferenceResponse(**payload_dict)
 
-
     async def delete_partial_payload(self, payload_id: str, is_input: bool):
         with self.connection_manager as (conn, cursor):
-            cursor.execute(f"DELETE FROM {self.partial_payload_table} WHERE payload_id=? AND is_input=?", (payload_id, is_input))
+            cursor.execute(
+                f"DELETE FROM {
+                    self.partial_payload_table} WHERE payload_id=? AND is_input=?",
+                (payload_id,
+                 is_input))
             conn.commit()
 
     async def persist_modelmesh_payload(self, payload: PartialPayload, request_id: str, is_input: bool):
@@ -538,7 +568,7 @@ class MariaDBStorage(StorageInterface):
             await self.delete_dataset(dataset_name)
 
     async def reset_database(self):
-        logger.warning(f"Fully resetting TrustyAI V2 database.")
+        logger.warning("Fully resetting TrustyAI V2 database.")
         await self.delete_all_datasets()
         with self.connection_manager as (conn, cursor):
             cursor.execute(f"DROP TABLE IF EXISTS `{self.dataset_reference_table}`")
