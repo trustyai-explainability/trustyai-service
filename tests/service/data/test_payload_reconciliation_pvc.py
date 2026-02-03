@@ -193,6 +193,38 @@ class TestPayloadReconciliation(unittest.TestCase):
             await self.storage.get_partial_payload(request_id, is_input=False, is_modelmesh=True)
         )
 
+    async def _test_corrupted_payload_handling(self):
+        """Test error handling for corrupted or invalid payloads."""
+        request_id = str(uuid.uuid4())
+
+        # Test 1: Corrupted payload data (invalid base64)
+        corrupted_payload = PartialPayload(data="!!!INVALID_BASE64_DATA!!!")
+        await self.storage.persist_partial_payload(
+            corrupted_payload, request_id, is_input=True
+        )
+
+        retrieved = await self.storage.get_partial_payload(
+            request_id, is_input=True, is_modelmesh=True
+        )
+        # Should still retrieve the corrupted payload (storage doesn't validate)
+        self.assertIsNotNone(retrieved)
+        self.assertEqual(retrieved.data, corrupted_payload.data)
+
+        # Test 2: Attempt to parse corrupted payload should handle gracefully
+        # (This is where the consumer endpoint would catch parsing errors)
+        with self.assertRaises(Exception):
+            # Attempting to parse invalid base64 should raise an error
+            ModelMeshPayloadParser.parse_input_payload(corrupted_payload)
+
+        # Clean up
+        await self.storage.delete_partial_payload(request_id, is_input=True)
+
+        # Test 3: Missing payload (already deleted)
+        missing_payload = await self.storage.get_partial_payload(
+            request_id, is_input=True, is_modelmesh=True
+        )
+        self.assertIsNone(missing_payload)
+
 
 def run_async_test(coro):
     """Helper function to run async tests."""
@@ -205,6 +237,9 @@ TestPayloadReconciliation.test_persist_output_payload = lambda self: run_async_t
 TestPayloadReconciliation.test_full_reconciliation = lambda self: run_async_test(self._test_full_reconciliation())
 TestPayloadReconciliation.test_reconciliation_with_real_data = lambda self: run_async_test(
     self._test_reconciliation_with_real_data()
+)
+TestPayloadReconciliation.test_corrupted_payload_handling = lambda self: run_async_test(
+    self._test_corrupted_payload_handling()
 )
 
 

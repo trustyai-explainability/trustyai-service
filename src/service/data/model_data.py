@@ -128,8 +128,30 @@ class ModelData:
         return input_data, output_data, metadata
 
     async def get_metadata_as_df(self):
+        """Get metadata as a pandas DataFrame with validation for missing or misaligned data."""
         _, _, metadata = await self.data(get_input=False, get_output=False)
         metadata_cols = (await self.column_names())[2]
+
+        # Check if metadata or columns are missing
+        if metadata is None or metadata_cols is None:
+            logger.warning(f"Metadata or metadata columns missing for model {self.model_name}; returning empty DataFrame.")
+            return pd.DataFrame()
+
+        # Check if metadata is empty
+        if len(metadata) == 0 or len(metadata_cols) == 0:
+            logger.warning(f"Metadata or metadata columns empty for model {self.model_name}; returning empty DataFrame.")
+            return pd.DataFrame()
+
+        # Validate that metadata rows are properly formatted
+        if not all(isinstance(row, (list, tuple, np.ndarray)) for row in metadata):
+            logger.warning(f"Metadata format is invalid for model {self.model_name}; returning empty DataFrame.")
+            return pd.DataFrame()
+
+        # Check if columns and data are aligned
+        if not all(len(row) == len(metadata_cols) for row in metadata):
+            logger.warning(f"Metadata rows and columns are not aligned for model {self.model_name}; returning empty DataFrame.")
+            return pd.DataFrame()
+
         return pd.DataFrame(metadata, columns=metadata_cols)
 
 

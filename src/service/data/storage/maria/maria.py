@@ -51,6 +51,25 @@ class MariaDBStorage(StorageInterface):
      - `column_1`, LONGBLOB: the pickled data for the 1st column of this row, e.g., arr[$row][1]
      - ...
      - `column_n`, LONGBLOB: the pickled data for the final column of this row, e.g., arr[$row][n]
+
+    === SQL INJECTION SAFETY ======================================================================
+    NOTE: Static analysis tools may flag f-strings in SQL queries as potential SQL injection risks.
+    However, this implementation is safe because:
+
+    1. Table/schema identifiers (e.g., `{self.dataset_reference_table}`) are INTERNAL constants,
+       not user input. They are hardcoded strings like "trustyai_v2_table_reference".
+
+    2. Dataset table names (e.g., `trustyai_v2_dataset_42`) are constructed from auto-incrementing
+       integer indices via _build_table_name(), NOT from user-provided dataset names directly.
+
+    3. User-provided values (dataset_name, payload_id, etc.) are ALWAYS passed as parameterized
+       query arguments using ? placeholders, never concatenated into SQL strings.
+
+    4. MariaDB does not support parameterized identifiers (table/column names), so f-strings are
+       the standard approach for dynamic schema/table names when the values are trusted/internal.
+
+    The _get_clean_table_name() method ensures dataset names go through parameterized lookup to
+    retrieve their safe integer table index before any table operations.
     """
 
     def __init__(self, user: str, password: str, host: str, port: int, database: str, attempt_migration=True):
