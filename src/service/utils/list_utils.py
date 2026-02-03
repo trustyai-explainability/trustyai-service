@@ -1,13 +1,15 @@
-import numpy as np
 import pickle
+from typing import Any
+
+import numpy as np
 
 
-def get_list_shape(lst: list):
+def get_list_shape(lst: list) -> list[int]:
     """Get the shape of a nested list, assuming the sublists are not jagged"""
     return [len(lst)] + get_list_shape(lst[0]) if isinstance(lst, list) else []
 
 
-def contains_non_numeric(lst: list) -> bool:
+def contains_non_numeric(lst: list | np.ndarray | Any) -> bool:
     """Check if an arbitrarily deep nested list contains any non-numeric elements"""
     if isinstance(lst, (list, np.ndarray)):
         return any(contains_non_numeric(item) for item in lst)
@@ -15,7 +17,7 @@ def contains_non_numeric(lst: list) -> bool:
         return isinstance(lst, (bool, str))
 
 
-def serialize_rows(lst: list, max_void_type_length):
+def serialize_rows(lst: list | np.ndarray, max_void_type_length: int) -> np.ndarray:
     """
     Convert a nested list to a 1D numpy array with dynamic void type sizing.
 
@@ -52,7 +54,7 @@ def serialize_rows(lst: list, max_void_type_length):
     return np.array([np.void(s) for s in serialized], dtype=void_dtype)
 
 
-def deserialize_rows(serialized: np.ndarray):
+def deserialize_rows(serialized: np.ndarray) -> np.ndarray:
     """Convert a 1D numpy array from `serialize_rows` to a numpy object array"""
     deserialized = [pickle.loads(row) for row in serialized]
     return np.array(deserialized, dtype="O")

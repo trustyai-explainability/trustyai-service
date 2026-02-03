@@ -282,8 +282,8 @@ class PVCStorage(StorageInterface):
                 return dataset[start_row:end_row]
 
     async def read_data(
-        self, dataset_name: str, start_row: int = 0, n_rows: int = None
-    ) -> (np.ndarray, List[str]):
+        self, dataset_name: str, start_row: int = 0, n_rows: int | None = None
+    ) -> np.ndarray:
         """Read data from a dataset, automatically deserializing any byte data"""
         read = await self._read_raw_data(dataset_name, start_row, n_rows)
         if len(read) and read[0].dtype.type in {np.bytes_, np.void}:
