@@ -16,9 +16,40 @@ def contains_non_numeric(lst: list) -> bool:
 
 
 def serialize_rows(lst: list, max_void_type_length):
-    """Convert a nested list to a 1D numpy array, where the nth element contains a bytes serialization of the nth row"""
-    serialized = [np.void(pickle.dumps(row)) for row in lst]
-    return np.array(serialized, dtype=f"V{max_void_type_length}")
+    """
+    Convert a nested list to a 1D numpy array with dynamic void type sizing.
+
+    Each element contains a bytes serialization of the corresponding row.
+    The void type size is computed to fit the largest serialized row,
+    preventing silent truncation while optimizing storage.
+
+    Args:
+        lst: List of rows to serialize
+        max_void_type_length: Maximum allowed void type size (raises error if exceeded)
+
+    Returns:
+        np.ndarray with dtype V{size} where size is the maximum serialized row size
+
+    Raises:
+        ValueError: If any serialized row exceeds max_void_type_length
+    """
+    # Serialize all rows first to compute required size
+    serialized = [pickle.dumps(row) for row in lst]
+
+    # Compute required void type size (maximum of all serialized rows)
+    max_size = max(len(s) for s in serialized) if serialized else 0
+
+    # Validate against maximum allowed size
+    if max_size > max_void_type_length:
+        raise ValueError(
+            f"Serialized row size {max_size} bytes exceeds maximum allowed size "
+            f"{max_void_type_length} bytes. Consider reducing payload size, using compression, "
+            f"or increasing MAX_VOID_TYPE_LENGTH configuration."
+        )
+
+    # Use dynamic void type based on actual data size (prevents truncation and saves space)
+    void_dtype = f"V{max_size}" if max_size > 0 else f"V{max_void_type_length}"
+    return np.array([np.void(s) for s in serialized], dtype=void_dtype)
 
 
 def deserialize_rows(serialized: np.ndarray):
