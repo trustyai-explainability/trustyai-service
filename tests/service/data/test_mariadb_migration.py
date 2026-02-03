@@ -29,7 +29,7 @@ class TestMariaDBMigration(unittest.TestCase):
 
     async def _test_retrieve_data(self):
         # total data checks
-        available_datasets = self.storage.list_all_datasets()
+        available_datasets = await self.storage.list_all_datasets()
         for i in [1,2,3,4]:
             for split in ["inputs", "outputs", "metadata"]:
                 self.assertIn(f"model{i}_{split}", available_datasets)
