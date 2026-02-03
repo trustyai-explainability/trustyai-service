@@ -27,7 +27,7 @@ class TestMariaDBStorage(unittest.TestCase):
             "trustyai-database",
             attempt_migration=False
         )
-        self.original_datasets = set(self.storage.list_all_datasets())
+        self.original_datasets = set(asyncio.run(self.storage.list_all_datasets()))
 
     def tearDown(self):
         asyncio.run(self.storage.reset_database())

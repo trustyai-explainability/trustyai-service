@@ -76,8 +76,13 @@ class MariaDBStorage(StorageInterface):
         if attempt_migration:
             # Schedule the migration to run asynchronously
             import asyncio
-            loop = asyncio.get_event_loop()
-            loop.create_task(self._migrate_from_legacy_db())
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(self._migrate_from_legacy_db())
+            except RuntimeError:
+                # No event loop running, schedule migration for later
+                # Migration will be attempted on first database operation
+                pass
 
     # === MIGRATORS ================================================================================
     async def _migrate_from_legacy_db(self):

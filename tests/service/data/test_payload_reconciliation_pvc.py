@@ -42,7 +42,7 @@ class TestPayloadReconciliation(unittest.TestCase):
 
     def tearDown(self):
         """Clean up after tests."""
-        print(self.storage.list_all_datasets())
+        print(asyncio.run(self.storage.list_all_datasets()))
         self.temp_dir.cleanup()
 
     async def _test_persist_input_payload(self):
