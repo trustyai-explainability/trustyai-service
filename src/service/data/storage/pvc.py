@@ -26,7 +26,8 @@ PARTIAL_INPUT_NAME = PROTECTED_DATASET_SUFFIX + PARTIAL_PAYLOAD_DATASET_NAME + "
 PARTIAL_OUTPUT_NAME = (
     PROTECTED_DATASET_SUFFIX + PARTIAL_PAYLOAD_DATASET_NAME + "_outputs"
 )
-MAX_VOID_TYPE_LENGTH=1024
+MAX_VOID_TYPE_LENGTH = 1024
+
 
 class H5PYContext:
     """Open the corresponding H5PY file for a dataset and manage its context`"""
@@ -166,7 +167,6 @@ class PVCStorage(StorageInterface):
                     f"the largest serializable void type is V{MAX_VOID_TYPE_LENGTH}"
                 )
 
-
         if dataset_exists:  # if we've already got saved inferences for this model
             if existing_shape[1:] == inbound_shape[1:]:  # shapes match
                 async with self.get_lock(allocated_dataset_name):
@@ -194,11 +194,16 @@ class PVCStorage(StorageInterface):
                         # Ensure new_rows dtype matches existing dataset dtype for HDF5 compatibility
                         # This is necessary when using dynamic void types - we may need to upcast
                         if new_rows.dtype != dataset.dtype:
-                            if isinstance(new_rows.dtype, np.dtypes.VoidDType) and isinstance(dataset.dtype.type, type(np.void)):
+                            if isinstance(
+                                new_rows.dtype,
+                                np.dtypes.VoidDType) and isinstance(
+                                dataset.dtype.type,
+                                type(
+                                    np.void)):
                                 # Both are void types, cast new data to match existing dataset
                                 new_rows = new_rows.astype(dataset.dtype)
 
-                        dataset[existing_shape[0] :] = new_rows
+                        dataset[existing_shape[0]:] = new_rows
             else:
                 existing_shape_str = ", ".join([":"] + [str(x) for x in existing_shape[1:]])
                 inbound_shape_str = ", ".join([":"] + [str(x) for x in inbound_shape[1:]])
@@ -253,7 +258,7 @@ class PVCStorage(StorageInterface):
                 arr,
                 column_names,
                 is_bytes=True,
-)
+            )
         else:
             await self._write_raw_data(dataset_name, np.array(new_rows), column_names)
 
@@ -276,12 +281,11 @@ class PVCStorage(StorageInterface):
                     )
                 return dataset[start_row:end_row]
 
-
     async def read_data(
         self, dataset_name: str, start_row: int = 0, n_rows: int = None
     ) -> (np.ndarray, List[str]):
         """Read data from a dataset, automatically deserializing any byte data"""
-        read  = await self._read_raw_data(dataset_name, start_row, n_rows)
+        read = await self._read_raw_data(dataset_name, start_row, n_rows)
         if len(read) and read[0].dtype.type in {np.bytes_, np.void}:
             return list_utils.deserialize_rows(read)
         else:
@@ -544,7 +548,12 @@ class PVCStorage(StorageInterface):
                 recorded_inferences=False,
             )
 
-    async def persist_partial_payload(self, payload: Union[PartialPayload, KServeInferenceRequest, KServeInferenceResponse],  payload_id: str,  is_input: bool):
+    async def persist_partial_payload(self,
+                                      payload: Union[PartialPayload,
+                                                     KServeInferenceRequest,
+                                                     KServeInferenceResponse],
+                                      payload_id: str,
+                                      is_input: bool):
         """
         Save a KServe or ModelMesh payload to disk.
         """
@@ -562,14 +571,15 @@ class PVCStorage(StorageInterface):
                     dataset.attrs[payload_id] = np.void(serialized_data)
 
                 logger.debug(
-                    f"Stored {'ModelMesh' if is_modelmesh else 'KServe'} {'input' if is_input else 'output'} payload for request ID: {payload_id}"
-                )
+                    f"Stored {
+                        'ModelMesh' if is_modelmesh else 'KServe'} {
+                        'input' if is_input else 'output'} payload for request ID: {payload_id}")
             except Exception as e:
                 logger.error(f"Error storing {'ModelMesh' if is_modelmesh else 'KServe'} payload: {str(e)}")
                 raise
 
     async def get_partial_payload(self, payload_id: str, is_input: bool, is_modelmesh: bool) -> Optional[
-        Union[PartialPayload, KServeInferenceRequest, KServeInferenceResponse]]:
+            Union[PartialPayload, KServeInferenceRequest, KServeInferenceResponse]]:
         dataset_name = PARTIAL_INPUT_NAME if is_input else PARTIAL_OUTPUT_NAME
 
         try:
@@ -588,9 +598,9 @@ class PVCStorage(StorageInterface):
                         payload_dict = pkl.loads(serialized_data)
                         if is_modelmesh:
                             return PartialPayload(**payload_dict)
-                        elif is_input: # kserve input
+                        elif is_input:  # kserve input
                             return KServeInferenceRequest(**payload_dict)
-                        else: # kserve output
+                        else:  # kserve output
                             return KServeInferenceResponse(**payload_dict)
                     except Exception as e:
                         logger.error(f"Error unpickling payload: {str(e)}")

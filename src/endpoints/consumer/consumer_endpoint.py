@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 import numpy as np
 from fastapi import APIRouter, HTTPException, Header
-from typing import Literal, Union, Callable, Annotated
+from typing import Union, Callable, Annotated
 import logging
 
 from src.endpoints.consumer import InferencePartialPayload, KServeData, KServeInferenceRequest, KServeInferenceResponse
@@ -220,9 +220,8 @@ async def reconcile_modelmesh_payloads(
     )
 
 
-
 async def reconcile_kserve(
-    input_payload: KServeInferenceRequest, output_payload: KServeInferenceResponse, tag: str):
+        input_payload: KServeInferenceRequest, output_payload: KServeInferenceResponse, tag: str):
     input_array, input_names = process_payload(input_payload, lambda p: p.inputs)
     output_array, output_names = process_payload(
         output_payload, lambda p: p.outputs, input_array.shape[0]
