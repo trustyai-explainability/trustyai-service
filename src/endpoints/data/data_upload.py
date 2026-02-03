@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from src.endpoints.consumer.consumer_endpoint import consume_cloud_event
-from src.endpoints.consumer import KServeInferenceRequest, KServeInferenceResponse, KServeData
+from src.endpoints.consumer import KServeInferenceRequest, KServeInferenceResponse
 from src.exceptions import ReconciliationError
 from src.service.constants import TRUSTYAI_TAG_PREFIX
 from src.service.data.model_data import ModelData
@@ -36,7 +36,6 @@ def validate_data_tag(tag: str) -> Optional[str]:
     return None
 
 
-
 @router.post("/data/upload")
 async def upload(payload: UploadPayload) -> Dict[str, str]:
     """Upload model data"""
@@ -50,7 +49,10 @@ async def upload(payload: UploadPayload) -> Dict[str, str]:
 
         # overwrite response model name with provided model name
         if payload.response.model_name != payload.model_name:
-            logger.warning(f"Response model name '{payload.response.model_name}' differs from request model name '{payload.model_name}'. Using '{payload.model_name}'.")  
+            logger.warning(
+                f"Response model name '{payload.response.model_name}' differs from "
+                f"request model name '{payload.model_name}'. Using '{payload.model_name}'."
+            )
             payload.response.model_name = payload.model_name
 
         req_id = str(uuid.uuid4())
@@ -65,14 +67,17 @@ async def upload(payload: UploadPayload) -> Dict[str, str]:
         await consume_cloud_event(payload.response, req_id)
         await consume_cloud_event(payload.request, req_id, tag=payload.data_tag)
 
-        model_data =  ModelData(payload.model_name)
+        model_data = ModelData(payload.model_name)
         new_data_points = (await model_data.row_counts())[0]
 
         logger.info(f"Upload completed for model: {payload.model_name}")
 
         return {
             "status": "success",
-            "message": f"{new_data_points-previous_data_points} datapoints successfully added to {payload.model_name} data."
+            "message": (
+                f"{new_data_points-previous_data_points} datapoints successfully "
+                f"added to {payload.model_name} data."
+            )
         }
 
     except ReconciliationError as e:

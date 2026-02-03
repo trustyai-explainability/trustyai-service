@@ -4,10 +4,11 @@ from typing import List, Optional
 import numpy as np
 import pandas as pd
 
-from src.service.constants import *
+from src.service.constants import INPUT_SUFFIX, OUTPUT_SUFFIX, METADATA_SUFFIX
 from src.service.data.storage import get_global_storage_interface
 
 logger = logging.getLogger(__name__)
+
 
 class ModelDataContainer:
     def __init__(
@@ -55,12 +56,19 @@ class ModelData:
         # warn if we're missing one of the expected datasets
         dataset_checks = (input_exists, output_exists, metadata_exists)
         if not all(dataset_checks):
-            expected_datasets = [self.input_dataset, self.output_dataset, self.metadata_dataset]
-            missing_datasets = [dataset for idx, dataset in enumerate(expected_datasets) if not dataset_checks[idx]]
-            logger.warning(f"Not all datasets present for model {self.model_name}: missing {missing_datasets}. This could be indicative of storage corruption or"
-                           f"improper saving of previous model data.")
+            expected_datasets = [
+                self.input_dataset, self.output_dataset, self.metadata_dataset
+            ]
+            missing_datasets = [
+                dataset for idx, dataset in enumerate(expected_datasets)
+                if not dataset_checks[idx]
+            ]
+            logger.warning(
+                f"Not all datasets present for model {self.model_name}: "
+                f"missing {missing_datasets}. This could be indicative of "
+                f"storage corruption or improper saving of previous model data."
+            )
         return dataset_checks
-
 
     async def row_counts(self) -> tuple[int, int, int]:
         """
@@ -128,33 +136,46 @@ class ModelData:
         return input_data, output_data, metadata
 
     async def get_metadata_as_df(self):
-        """Get metadata as a pandas DataFrame with validation for missing or misaligned data."""
+        """
+        Get metadata as a pandas DataFrame with validation for missing or
+        misaligned data.
+        """
         _, _, metadata = await self.data(get_input=False, get_output=False)
         metadata_cols = (await self.column_names())[2]
 
         # Check if metadata or columns are missing
         if metadata is None or metadata_cols is None:
-            logger.warning(f"Metadata or metadata columns missing for model {self.model_name}; returning empty DataFrame.")
+            logger.warning(
+                f"Metadata or metadata columns missing for model "
+                f"{self.model_name}; returning empty DataFrame."
+            )
             return pd.DataFrame()
 
         # Check if metadata is empty
         if len(metadata) == 0 or len(metadata_cols) == 0:
-            logger.warning(f"Metadata or metadata columns empty for model {self.model_name}; returning empty DataFrame.")
+            logger.warning(
+                f"Metadata or metadata columns empty for model "
+                f"{self.model_name}; returning empty DataFrame."
+            )
             return pd.DataFrame()
 
         # Validate that metadata rows are properly formatted
         if not all(isinstance(row, (list, tuple, np.ndarray)) for row in metadata):
-            logger.warning(f"Metadata format is invalid for model {self.model_name}; returning empty DataFrame.")
+            logger.warning(
+                f"Metadata format is invalid for model {self.model_name}; "
+                f"returning empty DataFrame."
+            )
             return pd.DataFrame()
 
         # Check if columns and data are aligned
         if not all(len(row) == len(metadata_cols) for row in metadata):
-            logger.warning(f"Metadata rows and columns are not aligned for model {self.model_name}; returning empty DataFrame.")
+            logger.warning(
+                f"Metadata rows and columns are not aligned for model "
+                f"{self.model_name}; returning empty DataFrame."
+            )
             return pd.DataFrame()
 
         return pd.DataFrame(metadata, columns=metadata_cols)
-
-
 
     async def summary_string(self):
         out = f"=== {self.model_name} Data ==="
