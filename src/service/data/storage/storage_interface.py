@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import List, Dict, Optional, Union
 
+import numpy as np
+
 from src.endpoints.consumer import KServeInferenceResponse, KServeInferenceRequest
 from src.service.data.modelmesh_parser import PartialPayload
 
@@ -27,7 +29,9 @@ class StorageInterface(ABC):
         pass
 
     @abstractmethod
-    async def read_data(self, dataset_name: str, start_row: int = None, n_rows: int = None):
+    async def read_data(
+        self, dataset_name: str, start_row: int | None = None, n_rows: int | None = None
+    ) -> np.ndarray:
         pass
 
     @abstractmethod

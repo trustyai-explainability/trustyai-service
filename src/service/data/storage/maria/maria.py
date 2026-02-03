@@ -324,7 +324,9 @@ class MariaDBStorage(StorageInterface):
             conn.commit()
 
     @require_existing_dataset
-    async def read_data(self, dataset_name: str, start_row: int = 0, n_rows: int = None):
+    async def read_data(
+        self, dataset_name: str, start_row: int = 0, n_rows: int | None = None
+    ) -> np.ndarray:
         """
         Read saved data from the database, from `start_row` to `start_row + n_rows`
         (inclusive).
