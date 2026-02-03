@@ -9,6 +9,7 @@ from typing import Literal, Union, Callable, Annotated
 import logging
 
 from src.endpoints.consumer import InferencePartialPayload, KServeData, KServeInferenceRequest, KServeInferenceResponse
+from src.exceptions import ReconciliationError
 # Import local dependencies
 from src.service.data.model_data import ModelData
 from src.service.data.storage import get_global_storage_interface
@@ -244,24 +245,24 @@ async def reconcile_kserve(
 
 def reconcile_mismatching_shape_error(shape_tuples, payload_type, payload_id):
     msg = (
-        f"Could not reconcile_kserve KServe Inference {payload_id}, because {payload_type} shapes were mismatched. "
+        f"Could not reconcile KServe Inference {payload_id}, because {payload_type} shapes were mismatched. "
         f"When using multiple {payload_type}s to describe data columns, all shapes must match. "
         f"However, the following tensor shapes were found:"
     )
     for i, (name, shape) in enumerate(shape_tuples):
         msg += f"\n{i}:\t{name}:\t{shape}"
     logger.error(msg)
-    raise HTTPException(status_code=400, detail=msg)
+    raise ReconciliationError(msg, payload_id=payload_id)
 
 
 def reconcile_mismatching_row_count_error(payload_id, input_shape, output_shape):
     msg = (
-        f"Could not reconcile_kserve KServe Inference {payload_id}, because the number of "
+        f"Could not reconcile KServe Inference {payload_id}, because the number of "
         f"output rows ({output_shape}) did not match the number of input rows "
         f"({input_shape})."
     )
     logger.error(msg)
-    raise HTTPException(status_code=400, detail=msg)
+    raise ReconciliationError(msg, payload_id=payload_id)
 
 
 def process_payload(payload, get_data: Callable, enforced_first_shape: int = None):
