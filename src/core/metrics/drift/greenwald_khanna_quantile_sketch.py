@@ -14,7 +14,6 @@ Note that ranks are 1-based indexed, consistent with the GK paper.
 
 import bisect
 from math import ceil, floor
-from typing import List, Tuple
 
 
 class GreenwaldKhannaSketch:
@@ -47,8 +46,8 @@ class GreenwaldKhannaSketch:
 
         self.epsilon = epsilon
         self.n = 0
-        self.summary: List[Tuple[float, int, int]] = []  # (value, g, delta)
-        self._cumulative_r_max: List[int] = []
+        self.summary: list[tuple[float, int, int]] = []  # (value, g, delta)
+        self._cumulative_r_max: list[int] = []
         self._cumulative_cache_valid = False
 
     def insert(self, value: float) -> None:
@@ -309,3 +308,38 @@ class GreenwaldKhannaSketch:
 
         merged._compress()
         return merged
+
+    def to_dict(self) -> dict[str, float | int | list[tuple[float, int, int]]]:
+        """
+        Serialize the sketch to a dictionary.
+
+        :return: Dictionary containing all sketch state for serialization
+        """
+        return {
+            "epsilon": self.epsilon,
+            "n": self.n,
+            "summary": self.summary.copy(),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, float | int | list[tuple[float, int, int]]]) -> "GreenwaldKhannaSketch":
+        """
+        Deserialize a sketch from a dictionary.
+
+        :param data: Dictionary containing sketch state (from to_dict())
+        :return: Reconstructed GK sketch
+        :raises ValueError: If the data format is invalid
+        """
+        if not isinstance(data, dict):
+            raise ValueError("Data must be a dictionary")
+
+        required_keys = {"epsilon", "n", "summary"}
+        if not required_keys.issubset(data.keys()):
+            raise ValueError(f"Missing required keys: {required_keys - data.keys()}")
+
+        sketch = cls(epsilon=float(data["epsilon"]))
+        sketch.n = int(data["n"])
+        sketch.summary = list(data["summary"])
+        sketch._cumulative_cache_valid = False
+
+        return sketch
