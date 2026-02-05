@@ -12,8 +12,6 @@ CDFs for both samples, enabling computation of an approximate KS statistic
 with bounded error using sublinear space.
 """
 
-from typing import Dict, List, Union
-
 import numpy as np
 from scipy.stats import kstwo
 
@@ -75,7 +73,7 @@ class KolmogorovSmirnovStreaming:
         """
         self._current_sketch.insert(value)
 
-    def insert_reference_batch(self, values: Union[List[float], np.ndarray]) -> None:
+    def insert_reference_batch(self, values: list[float] | np.ndarray) -> None:
         """
         Insert multiple values into the reference distribution sketch.
 
@@ -84,7 +82,7 @@ class KolmogorovSmirnovStreaming:
         for v in values:
             self._reference_sketch.insert(float(v))
 
-    def insert_current_batch(self, values: Union[List[float], np.ndarray]) -> None:
+    def insert_current_batch(self, values: list[float] | np.ndarray) -> None:
         """
         Insert multiple values into the current distribution sketch.
 
@@ -197,7 +195,7 @@ class KolmogorovSmirnovStreaming:
 
         return float(p_val)
 
-    def kstest(self, alpha: float = 0.05) -> Dict[str, Union[float, bool]]:
+    def kstest(self, alpha: float = 0.05) -> dict[str, float | bool]:
         """
         Perform the streaming two-sample KS test.
 
@@ -257,3 +255,37 @@ class KolmogorovSmirnovStreaming:
     def current_sketch(self) -> GreenwaldKhannaSketch:
         """Access the current GK sketch (read-only recommended)."""
         return self._current_sketch
+
+    def to_dict(self) -> dict[str, float | dict]:
+        """
+        Serialize the streaming KS test to a dictionary.
+
+        :return: Dictionary containing all state for serialization
+        """
+        return {
+            "epsilon": self.epsilon,
+            "reference_sketch": self._reference_sketch.to_dict(),
+            "current_sketch": self._current_sketch.to_dict(),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, float | dict]) -> "KolmogorovSmirnovStreaming":
+        """
+        Deserialize a streaming KS test from a dictionary.
+
+        :param data: Dictionary containing state (from to_dict())
+        :return: Reconstructed KolmogorovSmirnovStreaming instance
+        :raises ValueError: If the data format is invalid
+        """
+        if not isinstance(data, dict):
+            raise ValueError("Data must be a dictionary")
+
+        required_keys = {"epsilon", "reference_sketch", "current_sketch"}
+        if not required_keys.issubset(data.keys()):
+            raise ValueError(f"Missing required keys: {required_keys - data.keys()}")
+
+        ks = cls(epsilon=float(data["epsilon"]))
+        ks._reference_sketch = GreenwaldKhannaSketch.from_dict(data["reference_sketch"])
+        ks._current_sketch = GreenwaldKhannaSketch.from_dict(data["current_sketch"])
+
+        return ks
