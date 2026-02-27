@@ -201,6 +201,8 @@ async def schedule_jensenshannon(request: JensenShannonMetricRequest) -> dict[st
         logger.info(f"Successfully scheduled {METRIC_NAME} computation with ID: {request_id}")
         return {"requestId": str(request_id)}
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error scheduling {METRIC_NAME} computation: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error scheduling metric: {str(e)}") from e
@@ -229,6 +231,8 @@ async def delete_jensenshannon_schedule(schedule: ScheduleId) -> dict[str, str]:
         logger.info(f"Successfully deleted {METRIC_NAME} schedule: {schedule.requestId}")
         return {"status": "success", "message": f"Schedule {schedule.requestId} deleted"}
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error deleting {METRIC_NAME} schedule: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error deleting schedule: {str(e)}")
@@ -276,6 +280,8 @@ async def list_jensenshannon_requests() -> dict[str, list[dict[str, Any]]]:
 
         return {"requests": requests_list}
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error listing {METRIC_NAME} requests: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error listing requests: {str(e)}")
