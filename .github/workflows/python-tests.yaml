@@ -24,7 +24,7 @@ jobs:
           cache: "pip"
       - name: Install MariaDB and MariaDB Connector
         run: |
-            sudo apt-get install
+            sudo apt-get update
             sudo apt-get install -y libmariadb3 libmariadb-dev mariadb-server
       - name: Install dependencies
         run: |
@@ -41,6 +41,7 @@ jobs:
 
       - name: Install protobuf compiler
         run: |
+          sudo apt-get update
           sudo apt-get install -y protobuf-compiler
       - name: Generate protobuf stubs
         run: |
