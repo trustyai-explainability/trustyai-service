@@ -1,5 +1,5 @@
 import logging
-from typing import Callable, Dict
+from typing import Callable
 
 from pandas import DataFrame
 
@@ -11,7 +11,7 @@ logger: logging.Logger = logging.getLogger(__name__)
 
 class MetricsDirectory:
     def __init__(self) -> None:
-        self.calculator_directory: Dict[str, Callable[[DataFrame, BaseMetricRequest], MetricValueCarrier]] = {}
+        self.calculator_directory: dict[str, Callable[[DataFrame, BaseMetricRequest], MetricValueCarrier]] = {}
 
     def register(
         self,

@@ -1,13 +1,13 @@
-from fastapi import APIRouter, HTTPException
-from typing import Optional
 import logging
+
+from fastapi import APIRouter, HTTPException
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
 @router.get("/metrics/all/requests")
-async def get_all_metric_requests(type: Optional[str] = None):
+async def get_all_metric_requests(type: str | None = None):
     """Retrieve a list of all currently scheduled metric computations."""
     try:
         logger.info(f"Retrieving all metric requests, type filter: {type}")
