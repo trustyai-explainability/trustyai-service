@@ -25,7 +25,7 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["isort>=5.12,<8", "flake8>=6.1,<8", "mypy>=1.5,<2", "httpx>=0.25,<0.29"]
+dev = ["isort>=5.12,<9", "flake8>=6.1,<8", "mypy>=1.5,<2", "httpx>=0.25,<0.29"]
 test = [
     "pytest>=8,<10",
     "pytest-cov>=6,<8",
