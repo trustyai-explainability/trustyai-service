@@ -30,6 +30,9 @@ from src.endpoints.metrics.fairness.group.dir import router as dir_router
 from src.endpoints.metrics.fairness.group.spd import router as spd_router
 from src.endpoints.metrics.identity.identity_endpoint import router as identity_router
 from src.endpoints.metrics.metrics_info import router as metrics_info_router
+
+# Middleware
+from src.middleware.gzip_middleware import GzipRequestMiddleware
 from src.service.prometheus.shared_prometheus_scheduler import get_shared_prometheus_scheduler
 
 try:
@@ -97,6 +100,10 @@ app = FastAPI(
     description="TrustyAI Service API",
     lifespan=lifespan,
 )
+
+# Gzip decompression middleware (must be added first to process raw request before CORS)
+# Handles gzip-compressed requests from KServe agent in RawDeployment mode
+app.add_middleware(GzipRequestMiddleware)
 
 # CORS
 app.add_middleware(

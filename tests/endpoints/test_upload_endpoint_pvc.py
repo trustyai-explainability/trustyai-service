@@ -1,4 +1,5 @@
 import asyncio
+import gzip
 import itertools
 import os
 import shutil
@@ -8,10 +9,10 @@ import uuid
 
 from fastapi.testclient import TestClient
 
-from src.service.data.model_data import ModelData
 from src.service.constants import (
     TRUSTYAI_TAG_PREFIX,
 )
+from src.service.data.model_data import ModelData
 
 MODEL_ID = "example1"
 
@@ -28,7 +29,10 @@ def generate_payload(n_rows, n_input_cols, n_output_cols, datatype, tag, input_o
                 val = val % 2
             input_data.append(val)
         else:
-            row = [(i + j + input_offset) % 2 if datatype == "BOOL" else (i + j + input_offset) for j in range(n_input_cols)]
+            row = [
+                (i + j + input_offset) % 2 if datatype == "BOOL" else (i + j + input_offset)
+                for j in range(n_input_cols)
+            ]
             input_data.append(row)
     output_data = []
     for i in range(n_rows):
@@ -39,7 +43,10 @@ def generate_payload(n_rows, n_input_cols, n_output_cols, datatype, tag, input_o
                 val = val % 2
             output_data.append(val)
         else:
-            row = [(i * 2 + j + output_offset) % 2 if datatype == "BOOL" else (i * 2 + j + output_offset) for j in range(n_output_cols)]
+            row = [
+                (i * 2 + j + output_offset) % 2 if datatype == "BOOL" else (i * 2 + j + output_offset)
+                for j in range(n_output_cols)
+            ]
             output_data.append(row)
     payload = {
         "model_name": model_name,
@@ -120,12 +127,16 @@ def generate_mismatched_shape_no_unique_name_multi_input_payload(n_rows, n_input
     if datatype == "BOOL":
         input_data_1 = [[(row_idx + col_idx * 10) % 2 for col_idx in range(n_input_cols)] for row_idx in range(n_rows)]
         mismatched_rows = n_rows - 1 if n_rows > 1 else 1
-        input_data_2 = [[(row_idx + col_idx * 20) % 2 for col_idx in range(n_input_cols)] for row_idx in range(mismatched_rows)]
+        input_data_2 = [
+            [(row_idx + col_idx * 20) % 2 for col_idx in range(n_input_cols)] for row_idx in range(mismatched_rows)
+        ]
         output_data = [[(row_idx * 2 + col_idx) % 2 for col_idx in range(n_output_cols)] for row_idx in range(n_rows)]
     else:
         input_data_1 = [[row_idx + col_idx * 10 for col_idx in range(n_input_cols)] for row_idx in range(n_rows)]
         mismatched_rows = n_rows - 1 if n_rows > 1 else 1
-        input_data_2 = [[row_idx + col_idx * 20 for col_idx in range(n_input_cols)] for row_idx in range(mismatched_rows)]
+        input_data_2 = [
+            [row_idx + col_idx * 20 for col_idx in range(n_input_cols)] for row_idx in range(mismatched_rows)
+        ]
         output_data = [[row_idx * 2 + col_idx for col_idx in range(n_output_cols)] for row_idx in range(n_rows)]
     payload = {
         "model_name": model_name,
@@ -164,36 +175,38 @@ def generate_mismatched_shape_no_unique_name_multi_input_payload(n_rows, n_input
 def count_rows_with_tag(model_name, tag):
     """Count rows with a specific tag in metadata."""
     metadata_df = asyncio.run(ModelData(model_name).get_metadata_as_df())
-    return metadata_df['tags'].apply(lambda tags: tag in tags).sum()
+    return metadata_df["tags"].apply(lambda tags: tag in tags).sum()
 
 
 def get_metadata_ids(model_name):
     """Count rows with a specific tag in metadata."""
     metadata_df = asyncio.run(ModelData(model_name).get_metadata_as_df())
-    return metadata_df['id'].tolist()
+    return metadata_df["id"].tolist()
 
 
 class TestUploadEndpointPVC(unittest.TestCase):
-
     def setUp(self):
         self.TEMP_DIR = tempfile.mkdtemp()
         os.environ["STORAGE_DATA_FOLDER"] = self.TEMP_DIR
 
         # Force reload of the global storage interface to use the new temp dir
         from src.service.data import storage
+
         storage.get_global_storage_interface(force_reload=True)
 
         # Re-create the FastAPI app to ensure it uses the new storage interface
         from importlib import reload
+
         import src.main
+
         reload(src.main)
         from src.main import app
+
         self.client = TestClient(app)
 
     def tearDown(self):
         if os.path.exists(self.TEMP_DIR):
             shutil.rmtree(self.TEMP_DIR)
-
 
     def post_test(self, payload, expected_status_code, check_msgs):
         """Post a payload and check the response."""
@@ -214,7 +227,6 @@ class TestUploadEndpointPVC(unittest.TestCase):
         self.assertEqual(response.status_code, expected_status_code)
         return response
 
-
     # data upload tests
     def test_upload_data(self):
         n_input_rows_options = [1, 5, 250]
@@ -222,15 +234,15 @@ class TestUploadEndpointPVC(unittest.TestCase):
         n_output_cols_options = [1, 2]
         datatype_options = ["INT64", "INT32", "FP32", "FP64", "BOOL"]
 
-        for idx, (n_input_rows, n_input_cols, n_output_cols, datatype) in enumerate(itertools.product(
-                n_input_rows_options, n_input_cols_options, n_output_cols_options, datatype_options
-        )):
+        for idx, (n_input_rows, n_input_cols, n_output_cols, datatype) in enumerate(
+            itertools.product(n_input_rows_options, n_input_cols_options, n_output_cols_options, datatype_options)
+        ):
             with self.subTest(
-                    f"subtest-{idx}",
-                    n_input_rows=n_input_rows,
-                    n_input_cols=n_input_cols,
-                    n_output_cols=n_output_cols,
-                    datatype=datatype,
+                f"subtest-{idx}",
+                n_input_rows=n_input_rows,
+                n_input_cols=n_input_cols,
+                n_output_cols=n_output_cols,
+                datatype=datatype,
             ):
                 """Test uploading data with various dimensions and datatypes."""
                 data_tag = "TRAINING"
@@ -250,7 +262,6 @@ class TestUploadEndpointPVC(unittest.TestCase):
                 tag_count = count_rows_with_tag(payload["model_name"], data_tag)
                 self.assertEqual(tag_count, n_input_rows, "Not all rows have the correct tag")
 
-
     def test_upload_multi_input_data(self):
         """Test uploading data with multiple input tensors."""
         n_rows_options = [1, 3, 5, 250]
@@ -259,13 +270,13 @@ class TestUploadEndpointPVC(unittest.TestCase):
         datatype_options = ["INT64", "INT32", "FP32", "FP64", "BOOL"]
 
         for n_rows, n_input_cols, n_output_cols, datatype in itertools.product(
-                n_rows_options, n_input_cols_options, n_output_cols_options, datatype_options
+            n_rows_options, n_input_cols_options, n_output_cols_options, datatype_options
         ):
             with self.subTest(
-                    n_rows=n_rows,
-                    n_input_cols=n_input_cols,
-                    n_output_cols=n_output_cols,
-                    datatype=datatype,
+                n_rows=n_rows,
+                n_input_cols=n_input_cols,
+                n_output_cols=n_output_cols,
+                datatype=datatype,
             ):
                 # Arrange
                 data_tag = "TRAINING"
@@ -277,7 +288,8 @@ class TestUploadEndpointPVC(unittest.TestCase):
                 model_data = ModelData(payload["model_name"])
                 inputs, outputs, metadata = asyncio.run(model_data.data())
                 input_column_names, output_column_names, metadata_column_names = asyncio.run(
-                    model_data.original_column_names())
+                    model_data.original_column_names()
+                )
 
                 # Assert
                 self.assertIsNotNone(inputs, "Input data not found in storage")
@@ -289,7 +301,6 @@ class TestUploadEndpointPVC(unittest.TestCase):
                 self.assertGreaterEqual(len(input_column_names), 2, "Should have at least 2 input column names")
                 tag_count = count_rows_with_tag(payload["model_name"], data_tag)
                 self.assertEqual(tag_count, n_rows, "Not all rows have the correct tag")
-
 
     def test_upload_multi_input_data_no_unique_name(self):
         """Test error case for non-unique tensor names."""
@@ -362,7 +373,6 @@ class TestUploadEndpointPVC(unittest.TestCase):
         input_rows, _, _ = asyncio.run(ModelData(payload1["model_name"]).row_counts())
         self.assertEqual(input_rows, n_payload1 + n_payload2, "Incorrect total number of rows")
 
-
     def test_upload_tag_that_uses_protected_name(self):
         """Test error when using a protected tag name."""
         invalid_tag = f"{TRUSTYAI_TAG_PREFIX}_something"
@@ -370,7 +380,6 @@ class TestUploadEndpointPVC(unittest.TestCase):
         response = self.post_test(payload, 400, ["reserved for internal TrustyAI use only"])
         expected_msg = f"The tag prefix '{TRUSTYAI_TAG_PREFIX}' is reserved for internal TrustyAI use only. Provided tag '{invalid_tag}' violates this restriction."
         self.assertIn(expected_msg, response.text)
-
 
     def test_upload_gaussian_data(self):
         """Test uploading realistic Gaussian data."""
@@ -414,6 +423,111 @@ class TestUploadEndpointPVC(unittest.TestCase):
             },
         }
         self.post_test(payload, 200, ["2 datapoints"])
+
+    def test_upload_gzip_compressed_data(self):
+        """
+        Test uploading gzip-compressed data.
+
+        This simulates the behavior of KServe agent in RawDeployment mode,
+        which automatically gzip-compresses CloudEvent payloads using Go's
+        http.Transport default compression.
+
+        This test verifies that the GzipRequestMiddleware correctly
+        decompresses the request body before it reaches the endpoint handler.
+        """
+        # Generate a test payload
+        n_rows = 5
+        payload = generate_payload(n_rows, 2, 1, "INT64", "GZIP_TEST")
+
+        # Serialize payload to JSON
+        import json
+
+        json_payload = json.dumps(payload)
+
+        # Compress with gzip
+        compressed_payload = gzip.compress(json_payload.encode("utf-8"))
+
+        # Send gzip-compressed request
+        response = self.client.post(
+            "/data/upload",
+            content=compressed_payload,
+            headers={
+                "Content-Type": "application/json",
+                "Content-Encoding": "gzip",
+            },
+        )
+
+        # Debug output if test fails
+        if response.status_code != 200:
+            print(f"\n=== DEBUG INFO ===")
+            print(f"Status: {response.status_code}")
+            print(f"Response text: {response.text}")
+            print(f"Response headers: {dict(response.headers)}")
+            print("==================")
+
+        # Verify successful upload
+        self.assertEqual(response.status_code, 200)
+        response_json = response.json()
+        self.assertEqual(response_json["status"], "success")
+        self.assertIn(f"{n_rows} datapoints", response_json["message"])
+
+        # Verify data was stored correctly
+        inputs, outputs, metadata = asyncio.run(ModelData(payload["model_name"]).data())
+        self.assertIsNotNone(inputs, "Input data not found in storage")
+        self.assertIsNotNone(outputs, "Output data not found in storage")
+        self.assertEqual(len(inputs), n_rows, "Incorrect number of input rows")
+        self.assertEqual(len(outputs), n_rows, "Incorrect number of output rows")
+
+        # Verify tag was applied
+        tag_count = count_rows_with_tag(payload["model_name"], "GZIP_TEST")
+        self.assertEqual(tag_count, n_rows, "Not all rows have the correct tag")
+
+    def test_upload_malformed_gzip_compressed_data(self):
+        """
+        Test that malformed gzip-compressed payloads return a client error (400)
+        rather than a server error (500).
+
+        This verifies that the GzipRequestMiddleware properly handles invalid
+        gzip data and returns a clear error message to the client.
+        """
+        # Create invalid gzip payload (not actually gzip-compressed)
+        invalid_gzip_payload = b"not-a-valid-gzip-stream"
+
+        # Send request with Content-Encoding: gzip but invalid gzip data
+        response = self.client.post(
+            "/data/upload",
+            content=invalid_gzip_payload,
+            headers={
+                "Content-Type": "application/json",
+                "Content-Encoding": "gzip",
+            },
+        )
+
+        # Verify it returns 400 Bad Request (not 500 Internal Server Error)
+        self.assertEqual(response.status_code, 400)
+
+        # Verify error message mentions decompression failure
+        self.assertIn("could not be decompressed", response.text.lower())
+
+    def test_gzip_middleware_not_applied_to_other_endpoints(self):
+        """
+        Test that the gzip middleware only applies to /data/upload endpoint.
+
+        This verifies path scoping to avoid unexpected behavior for other endpoints.
+        """
+        # Try sending gzip-encoded data to a different endpoint (root)
+        # The middleware should NOT decompress it
+        invalid_gzip_payload = b"not-a-valid-gzip-stream"
+
+        response = self.client.get(
+            "/",
+            headers={
+                "Content-Encoding": "gzip",
+            },
+        )
+
+        # Should succeed because middleware doesn't apply to root endpoint
+        self.assertEqual(response.status_code, 200)
 
 
 if __name__ == "__main__":
