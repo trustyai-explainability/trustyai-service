@@ -43,6 +43,7 @@ class GzipRequestMiddleware:
     """
 
     DATA_UPLOAD_PATH = "/data/upload"
+    DECOMPRESSION_ERROR_MESSAGE = "Request body could not be decompressed as gzip: invalid or corrupted content."
 
     def __init__(self, app: ASGIApp) -> None:
         """
@@ -88,6 +89,9 @@ class GzipRequestMiddleware:
 
         try:
             # Collect the entire request body
+            # Note: This implementation buffers the full compressed body into memory before decompression.
+            # For most CloudEvent payloads from KServe, this is acceptable. If very large uploads (>100MB)
+            # become common, consider implementing a streaming/chunked decompression approach.
             body_parts = []
             while True:
                 message = await receive()
@@ -109,7 +113,6 @@ class GzipRequestMiddleware:
 
             # Update headers in scope - remove only "gzip" from Content-Encoding
             new_headers = []
-            content_encoding_updated = False
 
             for name, value in scope["headers"]:
                 if name.lower() == b"content-encoding":
@@ -117,7 +120,6 @@ class GzipRequestMiddleware:
                     remaining_encodings = self._remove_gzip_encoding(value.decode())
                     if remaining_encodings:
                         new_headers.append((b"content-encoding", remaining_encodings.encode()))
-                    content_encoding_updated = True
                 # Update Content-Length header
                 elif name.lower() == b"content-length":
                     new_headers.append((b"content-length", str(len(decompressed_body)).encode()))
@@ -151,15 +153,11 @@ class GzipRequestMiddleware:
         except gzip.BadGzipFile as e:
             logger.error(f"Failed to decompress gzip request: {e}", exc_info=True)
             # Return 400 Bad Request with clear message instead of letting it surface as 500
-            await self._send_error_response(
-                send, 400, "Request body could not be decompressed as gzip: invalid or corrupted content."
-            )
+            await self._send_error_response(send, 400, self.DECOMPRESSION_ERROR_MESSAGE)
         except Exception as e:
             logger.error(f"Failed to decompress gzip request: {e}", exc_info=True)
             # Return 400 Bad Request for any decompression errors
-            await self._send_error_response(
-                send, 400, "Request body could not be decompressed as gzip: invalid or corrupted content."
-            )
+            await self._send_error_response(send, 400, self.DECOMPRESSION_ERROR_MESSAGE)
 
     def _remove_gzip_encoding(self, content_encoding: str) -> str:
         """
