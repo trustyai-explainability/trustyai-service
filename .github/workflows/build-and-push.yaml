@@ -145,7 +145,7 @@ jobs:
                   uri: https://api.github.com/repos/trustyai-explainability/trustyai-service-operator-ci/tarball/service-python-${{ env.TAG }}
             ```
       - name: Trivy scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           scan-type: 'image'
           image-ref: "${{ env.IMAGE_NAME }}:${{ env.TAG }}"
