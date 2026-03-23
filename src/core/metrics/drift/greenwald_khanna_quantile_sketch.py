@@ -400,11 +400,14 @@ class GreenwaldKhannaSketch:
         :raises ValueError: If the data format is invalid
         """
         if not isinstance(data, dict):
-            raise ValueError("Data must be a dictionary")
+            raise TypeError(f"Data must be a dictionary, got {type(data).__name__}")
 
         required_keys = {"epsilon", "n", "summary"}
         if not required_keys.issubset(data.keys()):
             raise ValueError(f"Missing required keys: {required_keys - data.keys()}")
+
+        if not isinstance(data["summary"], list):
+            raise TypeError(f"summary must be a list, got {type(data['summary']).__name__}")
 
         sketch = cls(epsilon=float(data["epsilon"]))
         sketch.n = int(data["n"])
