@@ -136,7 +136,7 @@ class TestKSTestStreamingEndpoints:
         endpoint_path="/metrics/drift/ksteststreaming/request",
         client=client,
         request_id="not-a-valid-uuid",
-        expected_status_code=500,  # Endpoint catches ValueError and returns 500
+        expected_status_code=400,  # Now properly returns 400 for invalid UUID
         expected_error_substring="Invalid request ID",
     )
 
@@ -473,3 +473,67 @@ class TestApproxKSTestDeprecatedEndpoints:
         endpoint_path="/metrics/drift/approxkstest/requests",  # Deprecated path
         client=client,
     )
+
+
+# ============================================================================
+# Multi-Feature Aggregation Tests
+# ============================================================================
+
+
+def test_ksteststreaming_multi_feature_aggregation(monkeypatch):
+    """Ensure multi-feature responses include per-feature results and correct aggregation."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    import pandas as pd
+
+    # Mock data source to return test dataframes
+    mock_data_source = MagicMock()
+
+    # Create test dataframes with multiple features
+    ref_df = pd.DataFrame({"feature1": [1.0, 2.0, 3.0, 4.0], "feature2": [10.0, 20.0, 30.0, 40.0]})
+
+    cur_df = pd.DataFrame({"feature1": [1.5, 2.5, 3.5, 4.5], "feature2": [15.0, 25.0, 35.0, 45.0]})
+
+    mock_data_source.get_dataframe_by_tag = AsyncMock(return_value=ref_df)
+    mock_data_source.get_organic_dataframe = AsyncMock(return_value=cur_df)
+
+    # Patch the get_data_source function
+    def mock_get_data_source():
+        return mock_data_source
+
+    import src.endpoints.metrics.drift.kolmogorov_smirnov_streaming as ks_module
+
+    monkeypatch.setattr(ks_module, "get_data_source", mock_get_data_source)
+
+    payload = {
+        "modelId": "test-model",
+        "referenceTag": "baseline",
+        "fitColumns": ["feature1", "feature2"],
+        "batchSize": 100,
+        "epsilon": 0.01,
+    }
+
+    response = client.post("/metrics/drift/ksteststreaming", json=payload)
+    assert response.status_code == 200
+
+    body = response.json()
+
+    # feature_results exists and has one entry per feature
+    assert "feature_results" in body
+    feature_results = body["feature_results"]
+    assert isinstance(feature_results, dict)
+    assert len(feature_results) == len(payload["fitColumns"])
+
+    # each entry has expected keys
+    expected_feature_keys = {"statistic", "p_value", "drift_detected", "n_reference", "n_current", "epsilon", "alpha"}
+    for feature_name in payload["fitColumns"]:
+        assert feature_name in feature_results
+        result = feature_results[feature_name]
+        assert expected_feature_keys.issubset(result.keys())
+
+    # top-level value and p_value aggregate per-feature statistics
+    max_statistic = max(r["statistic"] for r in feature_results.values())
+    min_p_value = min(r["p_value"] for r in feature_results.values())
+
+    assert body["value"] == max_statistic
+    assert body["p_value"] == min_p_value

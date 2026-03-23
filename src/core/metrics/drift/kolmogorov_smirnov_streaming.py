@@ -167,13 +167,15 @@ class KolmogorovSmirnovStreaming:
 
         return max_diff
 
-    def p_value(self) -> float:
+    def p_value(self, d_stat: float | None = None) -> float:
         """
         Compute the approximate p-value for the two-sample KS test.
 
-        Uses scipy's kstwo distribution (exact two-sample KS distribution)
-        with the effective sample size for the asymptotic approximation.
+        Uses SciPy's one-sample KS distribution (scipy.stats.kstwo) evaluated
+        at an effective sample size (n1 * n2) / (n1 + n2) as an asymptotic
+        approximation to the two-sample KS p-value.
 
+        :param d_stat: Precomputed KS statistic. If None, will be computed.
         :return: Approximate p-value
         :raises ValueError: If either sketch is empty
         """
@@ -183,7 +185,8 @@ class KolmogorovSmirnovStreaming:
         if n1 == 0 or n2 == 0:
             raise ValueError("Both sketches must be non-empty")
 
-        d_stat = self.statistic()
+        if d_stat is None:
+            d_stat = self.statistic()
 
         # Effective sample size for asymptotic distribution
         # This is the same formula used by scipy.stats.ks_2samp
@@ -211,7 +214,7 @@ class KolmogorovSmirnovStreaming:
         :raises ValueError: If either sketch is empty
         """
         stat = self.statistic()
-        p_val = self.p_value()
+        p_val = self.p_value(d_stat=stat)
 
         return {
             "statistic": stat,
