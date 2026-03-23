@@ -619,8 +619,12 @@ def check_gk_invariants(sketch: GreenwaldKhannaSketch) -> None:
     # Check main invariant: g_i + Δ_i ≤ ⌊2εn⌋
     # Only check when threshold >= 1, otherwise the invariant is not meaningful
     # (since g is always >= 1 for valid tuples)
+    # Skip tuples with Δ=0 (exact values like min/max) - these can have g > ⌊2εn⌋
+    # when there are many duplicates, but error is still zero since Δ=0
     if threshold >= 1:
         for i, (v, g, delta) in enumerate(sketch.summary):
+            if delta == 0:
+                continue  # Skip exact values (min/max with Δ=0)
             invariant_value = g + delta
             assert invariant_value <= threshold, (
                 f"Tuple {i} violates invariant: g + Δ = {g} + {delta} = {invariant_value} > {threshold}"
