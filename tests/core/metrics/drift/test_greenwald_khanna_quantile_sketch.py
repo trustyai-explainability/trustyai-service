@@ -23,10 +23,61 @@ class TestGreenwaldKhannaSketch:
         assert sketch.n == 0
         assert len(sketch.summary) == 0
 
+    def test_initialization_boundary_epsilon(self):
+        """Test sketch initialization with epsilon near the boundary."""
+        # Just below 0.5 should work
+        sketch = GreenwaldKhannaSketch(epsilon=0.49)
+        assert sketch.epsilon == 0.49
+        assert sketch.n == 0
+
+        # Very small epsilon should work
+        sketch_small = GreenwaldKhannaSketch(epsilon=0.001)
+        assert sketch_small.epsilon == 0.001
+
+    def test_initialization_epsilon_at_boundary(self):
+        """Test that epsilon=0.5 is allowed but triggers a warning."""
+        import warnings
+
+        # epsilon=0.5 should work but trigger a warning
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            sketch = GreenwaldKhannaSketch(epsilon=0.5)
+            assert sketch.epsilon == 0.5
+            assert sketch.n == 0
+            # Verify warning was issued
+            assert len(w) == 1
+            assert issubclass(w[0].category, UserWarning)
+            assert "close to 0.5" in str(w[0].message)
+
+    def test_initialization_epsilon_triggers_warning(self):
+        """Test that epsilon > 0.4 triggers a warning."""
+        import warnings
+
+        # epsilon=0.45 should trigger warning
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            sketch = GreenwaldKhannaSketch(epsilon=0.45)
+            assert sketch.epsilon == 0.45
+            # Verify warning was issued
+            assert len(w) == 1
+            assert issubclass(w[0].category, UserWarning)
+            assert "close to 0.5" in str(w[0].message)
+
+        # epsilon=0.3 should NOT trigger warning
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            sketch_no_warn = GreenwaldKhannaSketch(epsilon=0.3)
+            assert sketch_no_warn.epsilon == 0.3
+            # No warning should be issued
+            assert len(w) == 0
+
     def test_initialization_invalid_epsilon(self):
         """Test that invalid epsilon values raise ValueError."""
         with pytest.raises(ValueError, match="epsilon must be in the range"):
             GreenwaldKhannaSketch(epsilon=0.0)
+
+        with pytest.raises(ValueError, match="epsilon must be in the range"):
+            GreenwaldKhannaSketch(epsilon=0.51)
 
         with pytest.raises(ValueError, match="epsilon must be in the range"):
             GreenwaldKhannaSketch(epsilon=1.0)
@@ -1088,3 +1139,90 @@ class TestGKPropertyBased:
         for phi in [0.01, 0.1, 0.25, 0.5, 0.75, 0.9, 0.99]:
             result = sketch.quantile(phi)
             assert 0.0 <= result <= 49.0
+
+    def test_serialization_round_trip(self):
+        """Test that sketch state can be serialized and deserialized correctly."""
+        epsilon = 0.01
+        rng = np.random.RandomState(42)
+        data = rng.normal(loc=0.0, scale=1.0, size=500)
+
+        # Build and populate sketch
+        sketch = GreenwaldKhannaSketch(epsilon=epsilon)
+        for value in data:
+            sketch.insert(value)
+
+        # Capture properties before serialization
+        orig_epsilon = sketch.epsilon
+        orig_n = sketch.n
+        orig_summary = sketch.summary.copy()
+        orig_min = sketch.min()
+        orig_max = sketch.max()
+        orig_median = sketch.quantile(0.5)
+
+        # Serialize and deserialize
+        state = sketch.to_dict()
+        restored_sketch = GreenwaldKhannaSketch.from_dict(state)
+
+        # Verify configuration and internal state match
+        assert restored_sketch.epsilon == orig_epsilon
+        assert restored_sketch.n == orig_n
+        assert restored_sketch.summary == orig_summary
+        assert restored_sketch.min() == orig_min
+        assert restored_sketch.max() == orig_max
+        assert restored_sketch.quantile(0.5) == orig_median
+
+        # Verify quantile queries match within tolerance
+        for phi in [0.0, 0.25, 0.5, 0.75, 1.0]:
+            orig_q = sketch.quantile(phi)
+            restored_q = restored_sketch.quantile(phi)
+            assert orig_q == restored_q
+
+        # Verify rank queries match
+        test_values = [sketch.min(), sketch.quantile(0.5), sketch.max()]
+        for v in test_values:
+            orig_rank = sketch.rank(v)
+            restored_rank = restored_sketch.rank(v)
+            assert orig_rank == restored_rank
+
+    def test_from_dict_malformed_input(self):
+        """Test that from_dict raises errors on malformed input."""
+        epsilon = 0.01
+        rng = np.random.RandomState(123)
+        data = rng.normal(size=100)
+
+        sketch = GreenwaldKhannaSketch(epsilon=epsilon)
+        for value in data:
+            sketch.insert(value)
+
+        state = sketch.to_dict()
+
+        # Missing required keys
+        malformed_missing_epsilon = dict(state)
+        malformed_missing_epsilon.pop("epsilon", None)
+
+        malformed_missing_n = dict(state)
+        malformed_missing_n.pop("n", None)
+
+        malformed_missing_summary = dict(state)
+        malformed_missing_summary.pop("summary", None)
+
+        # from_dict should fail cleanly on malformed input
+        with pytest.raises((KeyError, ValueError)):
+            GreenwaldKhannaSketch.from_dict(malformed_missing_epsilon)
+
+        with pytest.raises((KeyError, ValueError)):
+            GreenwaldKhannaSketch.from_dict(malformed_missing_n)
+
+        with pytest.raises((KeyError, ValueError)):
+            GreenwaldKhannaSketch.from_dict(malformed_missing_summary)
+
+        # Wrong types
+        malformed_wrong_type_summary = dict(state)
+        malformed_wrong_type_summary["summary"] = "not a list"
+
+        with pytest.raises((TypeError, ValueError)):
+            GreenwaldKhannaSketch.from_dict(malformed_wrong_type_summary)
+
+        # Non-dict payload
+        with pytest.raises((AttributeError, TypeError)):
+            GreenwaldKhannaSketch.from_dict("not a dict")

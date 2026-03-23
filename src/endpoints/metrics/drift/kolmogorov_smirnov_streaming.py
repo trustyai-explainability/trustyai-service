@@ -47,7 +47,14 @@ class ApproxKSTestMetricRequest(BaseMetricRequest):
     fit_columns: List[str] = Field(default_factory=list, alias="fitColumns")
 
     # Streaming-specific field: epsilon for GK sketch accuracy
-    epsilon: float = Field(default=0.01, description="Error parameter for GK sketch (default: 0.01)")
+    # Must be in the interval (0, 0.5] to satisfy GK sketch requirements.
+    # Values close to 0.5 cause algorithm degeneration (constant compression).
+    epsilon: float = Field(
+        default=0.01,
+        gt=0.0,
+        le=0.5,
+        description="Error parameter for GK sketch; must be in (0, 0.5]. Default: 0.01",
+    )
 
     def retrieve_tags(self) -> Dict[str, str]:
         """Retrieve tags for this ApproxKSTest metric request."""
@@ -56,7 +63,8 @@ class ApproxKSTestMetricRequest(BaseMetricRequest):
             tags["referenceTag"] = self.reference_tag
         if self.fit_columns:
             tags["fitColumns"] = ",".join(self.fit_columns)
-        if self.epsilon:
+        # Always reflect explicitly configured epsilon, even if it's 0.0
+        if self.epsilon is not None:
             tags["epsilon"] = str(self.epsilon)
         return tags
 
@@ -216,6 +224,8 @@ async def delete_ksteststreaming_schedule(schedule: ScheduleId) -> Dict[str, str
         logger.info(f"Successfully deleted {METRIC_NAME} schedule: {schedule.requestId}")
         return {"status": "success", "message": f"Schedule {schedule.requestId} deleted"}
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error deleting {METRIC_NAME} schedule: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error deleting schedule: {str(e)}")
@@ -280,7 +290,9 @@ async def compute_approxkstest_deprecated(
 
     This endpoint is deprecated. Please use /metrics/drift/ksteststreaming instead.
     """
-    logger.warning("Deprecated endpoint /metrics/drift/approxkstest called. Use /metrics/drift/ksteststreaming instead.")
+    logger.warning(
+        "Deprecated endpoint /metrics/drift/approxkstest called. Use /metrics/drift/ksteststreaming instead."
+    )
     return await compute_ksteststreaming(request)
 
 
@@ -299,7 +311,9 @@ async def schedule_approxkstest_deprecated(request: ApproxKSTestMetricRequest) -
 
     This endpoint is deprecated. Please use /metrics/drift/ksteststreaming/request instead.
     """
-    logger.warning("Deprecated endpoint /metrics/drift/approxkstest/request called. Use /metrics/drift/ksteststreaming/request instead.")
+    logger.warning(
+        "Deprecated endpoint /metrics/drift/approxkstest/request called. Use /metrics/drift/ksteststreaming/request instead."
+    )
     return await schedule_ksteststreaming(request)
 
 

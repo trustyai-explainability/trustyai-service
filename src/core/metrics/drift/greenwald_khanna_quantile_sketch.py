@@ -35,14 +35,29 @@ class GreenwaldKhannaSketch:
         """
         Initialize a Greenwald–Khanna quantile sketch.
 
-        :param epsilon: Error parameter ε ∈ (0, 1).
+        :param epsilon: Error parameter ε ∈ (0, 0.5].
                         The sketch guarantees that quantile estimates
                         are within ε of the true quantile.
                         Smaller ε requires more space but provides better accuracy.
-        :raises ValueError: If epsilon is not in the range (0, 1)
+                        Values close to 0.5 cause the algorithm to degenerate
+                        (constant compression) and provide very loose error bounds.
+        :raises ValueError: If epsilon is not in the range (0, 0.5]
         """
-        if not 0 < epsilon < 1:
-            raise ValueError("epsilon must be in the range (0, 1)")
+        if not 0 < epsilon <= 0.5:
+            raise ValueError("epsilon must be in the range (0, 0.5]")
+
+        import warnings
+
+        if epsilon > 0.4:
+            compress_freq = floor(1 / (2 * epsilon))
+            error_factor = 2 * epsilon
+            warnings.warn(
+                f"epsilon={epsilon} is close to 0.5. This will cause frequent compression "
+                f"(every ~{compress_freq} insertions) and loose error bounds (rank error ≤ {error_factor}n). "
+                "Consider using a smaller epsilon (e.g., 0.01-0.1) for better performance.",
+                UserWarning,
+                stacklevel=2,
+            )
 
         self.epsilon = epsilon
         self.n = 0
@@ -271,6 +286,9 @@ class GreenwaldKhannaSketch:
         """
         Merge two sketches into a new sketch.
 
+        This implementation properly recalculates rank bounds (g, Δ) for the
+        merged stream to preserve GK error guarantees.
+
         :param other: Another GK sketch to merge with this one
         :return: A new merged sketch
         :raises ValueError: If the sketches have different epsilon values
@@ -290,21 +308,72 @@ class GreenwaldKhannaSketch:
             merged.summary = self.summary.copy()
             return merged
 
-        # Merge two sorted summaries
+        # Ensure cumulative caches are built for rank calculations
+        self._ensure_cumulative_cache()
+        other._ensure_cumulative_cache()
+
+        # Helper to get rank bounds from a sketch at position
+        def get_rank_bounds(sketch, idx):
+            if idx < 0:
+                return 0, 0
+            if idx >= len(sketch.summary):
+                return sketch.n, sketch.n
+
+            # r_min = sum of g values up to and including idx
+            r_min = sum(g for _, g, _ in sketch.summary[: idx + 1])
+            # r_max = r_min + delta
+            r_max = r_min + sketch.summary[idx][2]
+            return r_min, r_max
+
+        # Merge sorted summaries and recalculate g, Δ based on combined ranks
         i, j = 0, 0
+        prev_r_min = 0
+
         while i < len(self.summary) or j < len(other.summary):
+            # Determine next value to process
             if i >= len(self.summary):
-                merged.summary.append(other.summary[j])
+                v = other.summary[j][0]
+                # All of self is less than v
+                self_r_min, self_r_max = self.n, self.n
+                other_r_min, other_r_max = get_rank_bounds(other, j)
                 j += 1
             elif j >= len(other.summary):
-                merged.summary.append(self.summary[i])
+                v = self.summary[i][0]
+                self_r_min, self_r_max = get_rank_bounds(self, i)
+                # All of other is less than v
+                other_r_min, other_r_max = other.n, other.n
                 i += 1
-            elif self.summary[i][0] <= other.summary[j][0]:
-                merged.summary.append(self.summary[i])
+            elif self.summary[i][0] < other.summary[j][0]:
+                v = self.summary[i][0]
+                self_r_min, self_r_max = get_rank_bounds(self, i)
+                # All elements in other up to j-1 are < v
+                other_r_min, other_r_max = get_rank_bounds(other, j - 1)
                 i += 1
-            else:
-                merged.summary.append(other.summary[j])
+            elif self.summary[i][0] > other.summary[j][0]:
+                v = other.summary[j][0]
+                # All elements in self up to i-1 are < v
+                self_r_min, self_r_max = get_rank_bounds(self, i - 1)
+                other_r_min, other_r_max = get_rank_bounds(other, j)
                 j += 1
+            else:  # Equal values - use the one with tighter bounds
+                v = self.summary[i][0]
+                self_r_min, self_r_max = get_rank_bounds(self, i)
+                other_r_min, other_r_max = get_rank_bounds(other, j)
+                i += 1
+                j += 1
+
+            # Combined rank bounds
+            combined_r_min = self_r_min + other_r_min
+            combined_r_max = self_r_max + other_r_max
+
+            # Calculate g and Δ for merged summary
+            g = combined_r_min - prev_r_min
+            delta = combined_r_max - combined_r_min
+
+            # Only add if g > 0 (avoid duplicate entries)
+            if g > 0:
+                merged.summary.append((v, g, delta))
+                prev_r_min = combined_r_min
 
         merged._compress()
         return merged
