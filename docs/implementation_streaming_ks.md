@@ -15,7 +15,8 @@ The implementation consists of two primary components:
 
 1. **Greenwald-Khanna Quantile Sketch** (`src/core/metrics/drift/greenwald_khanna_quantile_sketch.py`)
    - Space-efficient streaming quantile data structure
-   - Maintains ε-approximate quantile summary with O(1/ε log(εn)) space complexity
+   - Maintains an ε-approximate quantile summary with O(1/ε log(εn)) space complexity
+   - Error parameter ε must be in (0, 0.5]; values > 0.4 trigger performance warnings
 
 2. **Streaming KS Test** (`src/core/metrics/drift/kolmogorov_smirnov_streaming.py`)
    - Two-sample KS test using GK sketches
@@ -63,7 +64,7 @@ The paper ["Two-sample KS test with approxQuantile in Apache Spark"](https://arx
 
 1. **Simpler Error Bound**: Single 4ε bound vs. complex δ ≤ 1/(a-1) + ε that depends on number of interpolation points. With Lall's approach, just set ε and the error bound is automatic; Spark's approach requires choosing *a* to balance accuracy vs. space.
 
-2. **Better Space Efficiency**: O(1/ε log(εn)) vs. O(√N) for CDFs. For N=1M, ε=0.01: ~2.2 KB (ours) vs. ~1,000 points (Spark interpolated CDF). Eck et al. explicitly note: "Approximate CDFs scale as O(√N), compared to O(1/ε log(ϵN)) for direct sketch methods."
+2. **Better Space Efficiency**: O(1/ε log(εn)) vs. O(√N) for CDFs. For N=1M, ε=0.01: ~2.2 KB (ours) vs. ~1,000 points (Spark interpolated CDF). Eck et al. explicitly note: "Approximate CDFs scale as O(√N), compared to O(1/ε log(εN)) for direct sketch methods."
 
 3. **No Intermediate Representation**: Direct sketch-to-KS computation eliminates the interpolated CDF layer:
    - Spark: Sketch → Quantiles → Interpolated CDF → KS statistic (3 steps)
@@ -97,6 +98,47 @@ The Greenwald-Khanna (GK) algorithm maintains an ε-approximate quantile summary
 **Key invariant:** For every tuple, `g_i + Δ_i ≤ ⌊2εn⌋`
 
 This invariant ensures that quantile queries have bounded error: rank error ≤ 2εn for any quantile.
+
+### Understanding the Error Parameter ε
+
+The epsilon (ε) parameter controls the accuracy-space tradeoff and must be in the range **(0, 0.5]** (half-open interval: excluding 0, including 0.5). This constraint is both technical and semantic:
+
+#### Why ε > 0 (must be positive)?
+
+1. **Technical requirement**: The algorithm uses `compress_period = floor(1 / (2ε))`. With ε = 0, this would cause division by zero.
+
+2. **Space complexity**: The theoretical space bound is O(1/ε log(εn)). With ε = 0, this approaches infinity—the sketch would need to store all data points exactly, defeating its purpose as an approximation algorithm.
+
+3. **Fundamental design**: The GK algorithm is an **approximation** algorithm. Setting ε = 0 would mean "zero error tolerance" (exact quantiles), which the algorithm cannot provide.
+
+#### Why ε ≤ 0.5 (must not exceed one-half)?
+
+1. **Algorithm degeneration**: When ε > 0.5, `compress_period = floor(1/(2ε)) < 1` (becomes 0), which is undefined behavior. At ε = 0.5, `compress_period = 1`, meaning compression happens **after every insertion**:
+   - Defeats batching efficiency (constant compression overhead)
+   - The algorithm becomes highly inefficient
+   - Not the intended operation mode of the GK sketch
+
+2. **Very loose error bounds**: The rank error is bounded by 2εn. At ε = 0.5:
+   - error ≤ n (any quantile could be anywhere in the dataset)
+   - The approximation provides minimal useful information
+   - While technically valid, it's rarely practical
+
+3. **Semantic interpretation**: ε represents a **fraction** or **percentage** of relative error:
+   - ε = 0.01 means ±1% error (typical usage)
+   - ε = 0.1 means ±10% error
+   - ε = 0.5 means ±50% error (boundary, allowed but not recommended)
+
+4. **Practical usage**: The algorithm is designed for **small** ε values (typically 0.001 to 0.1) where the approximation provides significant space savings while maintaining useful accuracy.
+
+#### Typical Values
+
+- **ε = 0.01 (1%)**: Default in most applications. Provides ~95-100 tuples for millions of elements (~2.2 KB memory).
+- **ε = 0.001 (0.1%)**: Higher accuracy, more space (~900-1000 tuples, ~20 KB memory).
+- **ε = 0.1 (10%)**: Lower accuracy, minimal space (~10-15 tuples, <1 KB memory).
+- **ε = 0.4 (40%)**: Near practical upper limit; still functional but error bounds are quite loose.
+- **ε = 0.5 (50%)**: Maximum allowed value. Triggers a warning due to constant compression and very loose error bounds. Rarely useful in practice.
+
+**Note**: The implementation enforces ε ∈ (0, 0.5] and issues a warning when ε > 0.4. The value 0.5 is allowed for continuity and testing purposes, but values > 0.5 are rejected as they would cause undefined behavior (compress_period = 0).
 
 ### Data Structure Design
 
@@ -145,7 +187,7 @@ Optimizing inserts from O(n) to O(log n) would yield at most 2× speedup theoret
 **5. When Alternative Data Structures Would Be Beneficial**
 
 Alternative structures like `SortedList` would only provide meaningful benefits if:
-- Summary size exceeds 1,000 tuples (requires ε ≥ 0.1, which is atypical)
+- Summary size exceeds 1,000 tuples (requires very small ε ≤ 0.001, which is atypical)
 - Inserting billions of elements in tight loops
 - Profiling shows insert operations consuming >80% of runtime
 - External dependencies are acceptable

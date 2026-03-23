@@ -319,3 +319,104 @@ class TestKolmogorovSmirnovStreamingRegression:
         # Verify they're the actual sketch objects
         assert len(ref_sketch) == 1
         assert len(cur_sketch) == 1
+
+    def test_serialization_round_trip(self):
+        """Test that streaming KS state can be serialized and deserialized correctly."""
+        epsilon = 0.01
+        rng = np.random.RandomState(42)
+
+        # Fixed reference and current data for regression
+        ref_data = rng.normal(loc=0.0, scale=1.0, size=500)
+        cur_data = rng.normal(loc=0.5, scale=1.5, size=600)
+
+        ks = KolmogorovSmirnovStreaming(epsilon=epsilon)
+        ks.insert_reference_batch(ref_data)
+        ks.insert_current_batch(cur_data)
+
+        # Capture key properties and metrics before serialization
+        orig_epsilon = ks.epsilon
+        orig_n_reference = ks.n_reference
+        orig_n_current = ks.n_current
+        orig_stat = ks.statistic()
+        orig_p_value = ks.p_value()
+
+        # Serialize and deserialize
+        state = ks.to_dict()
+        restored_ks = KolmogorovSmirnovStreaming.from_dict(state)
+
+        # Compare configuration and internal counts exactly
+        assert restored_ks.epsilon == orig_epsilon
+        assert restored_ks.n_reference == orig_n_reference
+        assert restored_ks.n_current == orig_n_current
+
+        # Compare statistic and p_value within numerical tolerance
+        assert np.isclose(restored_ks.statistic(), orig_stat, rtol=1e-12, atol=1e-12)
+        assert np.isclose(restored_ks.p_value(), orig_p_value, rtol=1e-12, atol=1e-12)
+
+    def test_from_dict_malformed_input(self):
+        """Test that from_dict fails cleanly on malformed input."""
+        epsilon = 0.01
+        rng = np.random.RandomState(123)
+
+        ref_data = rng.normal(size=100)
+        cur_data = rng.normal(size=120)
+
+        ks = KolmogorovSmirnovStreaming(epsilon=epsilon)
+        ks.insert_reference_batch(ref_data)
+        ks.insert_current_batch(cur_data)
+
+        state = ks.to_dict()
+
+        # Remove required keys to simulate malformed state
+        malformed_state_missing_reference = dict(state)
+        malformed_state_missing_reference.pop("reference_sketch", None)
+
+        malformed_state_missing_current = dict(state)
+        malformed_state_missing_current.pop("current_sketch", None)
+
+        # from_dict should fail cleanly on malformed input
+        with pytest.raises((KeyError, ValueError)):
+            KolmogorovSmirnovStreaming.from_dict(malformed_state_missing_reference)
+
+        with pytest.raises((KeyError, ValueError)):
+            KolmogorovSmirnovStreaming.from_dict(malformed_state_missing_current)
+
+    def test_alpha_parameter_affects_drift_decision(self):
+        """Test that alpha parameter controls drift_detected thresholding."""
+        rng = np.random.default_rng(123)
+
+        # Try to generate data with p-value in (0.05, 0.2) range
+        for _ in range(100):
+            # Generate two similar distributions where the KS test p-value
+            # is likely to fall in (0.05, 0.2)
+            ref_data = rng.normal(0.0, 1.0, 400)
+            cur_data = rng.normal(0.15, 1.0, 400)
+
+            ks = KolmogorovSmirnovStreaming(epsilon=0.01)
+            ks.insert_reference_batch(ref_data)
+            ks.insert_current_batch(cur_data)
+
+            low_alpha = 0.05
+            high_alpha = 0.20
+
+            result_low = ks.kstest(alpha=low_alpha)
+            p_value = result_low["p_value"]
+
+            # Only proceed when the p-value is in the desired range so that
+            # alpha=0.05 yields no drift while alpha=0.2 yields drift.
+            if low_alpha < p_value < high_alpha:
+                result_high = ks.kstest(alpha=high_alpha)
+
+                # p-value should be independent of alpha
+                assert result_high["p_value"] == pytest.approx(p_value)
+
+                # Returned alpha should match the input alpha
+                assert result_low["alpha"] == low_alpha
+                assert result_high["alpha"] == high_alpha
+
+                # With the same p-value, increasing alpha should flip the decision
+                assert result_low["drift_detected"] is False
+                assert result_high["drift_detected"] is True
+                break
+        else:
+            pytest.skip("Could not generate data with p-value between 0.05 and 0.2")
