@@ -49,7 +49,7 @@ RUN echo "========================================" && \
 # Install MariaDB connector if needed (requires version >= 3.3.1, UBI has 3.2.6)
 # Pin to 11.4.x for stability (allows patch updates)
 RUN if [[ "$EXTRAS" == *"mariadb"* ]]; then  \
-		curl -LsSO https://r.mariadb.com/downloads/mariadb_repo_setup && \
+		curl --fail -LsSO https://r.mariadb.com/downloads/mariadb_repo_setup && \
 		# Verify script integrity (basic sanity check - script should contain mariadb_repo_setup signature)
 		grep -q "mariadb_repo_setup" mariadb_repo_setup || { echo "ERROR: Downloaded script appears invalid"; exit 1; } && \
 		[ -s mariadb_repo_setup ] || { echo "ERROR: Downloaded script is empty"; exit 1; } && \
