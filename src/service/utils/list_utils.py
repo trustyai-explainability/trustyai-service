@@ -56,5 +56,5 @@ def serialize_rows(lst: list | np.ndarray, max_void_type_length: int) -> np.ndar
 
 def deserialize_rows(serialized: np.ndarray) -> np.ndarray:
     """Convert a 1D numpy array from `serialize_rows` to a numpy object array"""
-    deserialized = [pickle.loads(row) for row in serialized]
+    deserialized = [pickle.loads(row) for row in serialized]  # nosec B301 - Internal serialized data
     return np.array(deserialized, dtype="O")

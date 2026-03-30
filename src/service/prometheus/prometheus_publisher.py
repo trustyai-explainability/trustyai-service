@@ -179,5 +179,5 @@ class PrometheusPublisher:
         """
         Generates UUID with bytes to match Java's UUID.nameUUIDFromBytes()
         """
-        md5_hash = hashlib.md5(content.encode("utf-8")).digest()
+        md5_hash = hashlib.md5(content.encode("utf-8"), usedforsecurity=False).digest()
         return uuid.UUID(bytes=md5_hash, version=3)

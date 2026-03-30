@@ -525,7 +525,7 @@ class MariaDBStorage(StorageInterface):
             result = cursor.fetchone()
         if result is None or len(result) == 0:
             return None
-        payload_dict = pkl.loads(result[0])
+        payload_dict = pkl.loads(result[0])  # nosec B301 - Deserializing internal data from DB
         if is_modelmesh:
             return PartialPayload(**payload_dict)
         elif is_input:  # kserve input
