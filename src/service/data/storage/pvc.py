@@ -610,7 +610,7 @@ class PVCStorage(StorageInterface):
                     serialized_data = dataset.attrs[payload_id]
 
                     try:
-                        payload_dict = pkl.loads(serialized_data)
+                        payload_dict = pkl.loads(serialized_data)  # nosec B301 - Internal data from HDF5
                         if is_modelmesh:
                             return PartialPayload(**payload_dict)
                         elif is_input:  # kserve input

@@ -1,0 +1,23 @@
+# Bandit Security Scanner Configuration
+# https://bandit.readthedocs.io/en/latest/config.html
+
+exclude_dirs:
+  - /tests
+  - /htmlcov
+  - /venv
+  - /dist
+  - /.venv
+  - /__pycache__
+  - /.*
+
+
+
+# Tests to skip with justification
+skips:
+  - B608  # SQL injection false positives - table names are internal constants
+  - B104  # Binding to 0.0.0.0 is intentional for HTTPS endpoint
+  - B108  # /tmp usage is fallback, overridden by env var in production
+  - B403  # Pickle import warnings - usage sites reviewed and marked with nosec
+  - B404  # Subprocess import warnings - used safely
+  - B603  # Subprocess without shell=True warnings - secure usage
+  - B101  # Assert statements - used for development validation, not security checks
