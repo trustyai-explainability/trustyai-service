@@ -3,7 +3,7 @@ name = "trustyai-service"
 version = "1.0.0rc0"
 description = "TrustyAI Service"
 authors = [{ name = "Rui Vieira" }, { name = "TrustyAI team" }]
-requires-python = ">=3.11, <3.14"
+requires-python = ">=3.12, <3.15"
 readme = "README.md"
 dependencies = [
     "scikit-learn>=1.7,<2",
@@ -50,12 +50,13 @@ include = ["src"]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+
 [tool.isort]
 profile = "black"
 line_length = 88
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
@@ -79,3 +80,4 @@ exclude = [".git", ".venv", ".mypy_cache", "__pycache__"]
 testpaths = ["tests"]
 python_files = "test_*.py"
 python_functions = "test_*"
+asyncio_default_fixture_loop_scope = "function"
