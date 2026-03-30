@@ -5,7 +5,7 @@ import numpy as np
 import os
 import h5py
 import logging
-import pickle as pkl
+import pickle as pkl  # nosec B403 - Used for internal data serialization only
 
 from src.endpoints.consumer import KServeInferenceRequest, KServeInferenceResponse
 from src.service.utils import list_utils
@@ -595,6 +595,13 @@ class PVCStorage(StorageInterface):
 
     async def get_partial_payload(self, payload_id: str, is_input: bool, is_modelmesh: bool) -> Optional[
             Union[PartialPayload, KServeInferenceRequest, KServeInferenceResponse]]:
+        """
+        Retrieve a partial payload from HDF5 storage.
+
+        SECURITY NOTE: This function deserializes pickled data from HDF5 storage.
+        Data must originate from trusted internal sources only (stored via save_partial_payload).
+        Do not use with user-supplied or external data.
+        """
         dataset_name = PARTIAL_INPUT_NAME if is_input else PARTIAL_OUTPUT_NAME
 
         try:

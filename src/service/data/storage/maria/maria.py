@@ -5,7 +5,7 @@ import logging
 
 import mariadb
 import numpy as np
-import pickle as pkl
+import pickle as pkl  # nosec B403 - Used for internal data serialization only
 from typing import Optional, Dict, List, Union
 
 from src.endpoints.consumer import KServeInferenceRequest, KServeInferenceResponse
@@ -516,7 +516,13 @@ class MariaDBStorage(StorageInterface):
     async def get_partial_payload(
         self, payload_id: str, is_input: bool, is_modelmesh: bool
     ) -> Union[PartialPayload, KServeInferenceRequest, KServeInferenceResponse]:
-        """Retrieve a partial payload from the database."""
+        """
+        Retrieve a partial payload from the database.
+
+        SECURITY NOTE: This function deserializes pickled data from the database.
+        Data must originate from trusted internal sources only (stored via save_partial_payload).
+        Do not use with user-supplied or external data.
+        """
         with self.connection_manager as (conn, cursor):
             cursor.execute(
                 f"SELECT payload_data FROM `{self.partial_payload_table}` WHERE payload_id=? AND is_input=?",

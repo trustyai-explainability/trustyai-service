@@ -1,4 +1,4 @@
-import pickle
+import pickle  # nosec B403 - Used for internal data serialization only
 from typing import Any
 
 import numpy as np
@@ -55,6 +55,12 @@ def serialize_rows(lst: list | np.ndarray, max_void_type_length: int) -> np.ndar
 
 
 def deserialize_rows(serialized: np.ndarray) -> np.ndarray:
-    """Convert a 1D numpy array from `serialize_rows` to a numpy object array"""
+    """
+    Convert a 1D numpy array from `serialize_rows` to a numpy object array.
+
+    SECURITY NOTE: This function deserializes pickled data.
+    Only use with data serialized by serialize_rows() from trusted internal sources.
+    Do not use with user-supplied or external data.
+    """
     deserialized = [pickle.loads(row) for row in serialized]  # nosec B301 - Internal serialized data
     return np.array(deserialized, dtype="O")
