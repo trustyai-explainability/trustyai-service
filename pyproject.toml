@@ -30,6 +30,7 @@ test = [
     "pytest>=9",
     "pytest-cov>=7",
     "pytest-asyncio>=1",
+    "pytest-xdist>=3",       # Parallel test execution
     "hypothesis>=6",
     "aif360>=0.6",
     "pillow>=12.1",          # Security: Resolves CVE-2026-25990 (HIGH - Out-of-bounds write)
