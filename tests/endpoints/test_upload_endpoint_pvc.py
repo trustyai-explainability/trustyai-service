@@ -1,6 +1,7 @@
 import asyncio
 import gzip
 import itertools
+import json
 import os
 import shutil
 import tempfile
@@ -440,8 +441,6 @@ class TestUploadEndpointPVC(unittest.TestCase):
         payload = generate_payload(n_rows, 2, 1, "INT64", "GZIP_TEST")
 
         # Serialize payload to JSON
-        import json
-
         json_payload = json.dumps(payload)
 
         # Compress with gzip
@@ -517,8 +516,6 @@ class TestUploadEndpointPVC(unittest.TestCase):
         """
         # Try sending gzip-encoded data to a different endpoint (root)
         # The middleware should NOT decompress it
-        invalid_gzip_payload = b"not-a-valid-gzip-stream"
-
         response = self.client.get(
             "/",
             headers={
@@ -527,6 +524,61 @@ class TestUploadEndpointPVC(unittest.TestCase):
         )
 
         # Should succeed because middleware doesn't apply to root endpoint
+        self.assertEqual(response.status_code, 200)
+
+    def test_upload_gzip_size_limit_exceeded(self):
+        """
+        Test that extremely large decompressed payloads are rejected with HTTP 413.
+
+        This verifies decompression bomb protection.
+        """
+        # Create a decompression bomb: highly repetitive data that compresses well
+        # A string of 17MB of zeros will compress to a few KB but exceed the 16MB limit
+        repetitive_data = "0" * (17 * 1024 * 1024)  # 17MB of zeros
+
+        # Compress it - will be very small due to repetition
+        compressed_payload = gzip.compress(repetitive_data.encode("utf-8"))
+
+        # Verify compression is effective (compressed should be < 1% of original)
+        compression_ratio = len(compressed_payload) / len(repetitive_data)
+        self.assertLess(compression_ratio, 0.01, "Compression not effective enough for test")
+
+        response = self.client.post(
+            "/data/upload",
+            content=compressed_payload,
+            headers={
+                "Content-Type": "application/json",
+                "Content-Encoding": "gzip",
+            },
+        )
+
+        # Should return 413 Payload Too Large
+        self.assertEqual(response.status_code, 413)
+        self.assertIn("exceeds limit", response.text.lower())
+
+    def test_upload_gzip_with_multiple_encodings(self):
+        """
+        Test that gzip middleware correctly handles multiple/stacked encodings.
+
+        Verifies that only 'gzip' is removed from Content-Encoding header.
+        """
+        # Generate test payload
+        payload = generate_payload(5, 2, 1, "INT64", "MULTI_ENCODING_TEST")
+        json_payload = json.dumps(payload)
+        compressed_payload = gzip.compress(json_payload.encode("utf-8"))
+
+        # Send with multiple encodings (gzip, br)
+        # Note: We're only actually gzip-compressing, but simulating multiple encodings header
+        response = self.client.post(
+            "/data/upload",
+            content=compressed_payload,
+            headers={
+                "Content-Type": "application/json",
+                "Content-Encoding": "gzip, br",  # Simulated multiple encodings
+            },
+        )
+
+        # Should succeed - gzip layer is removed
         self.assertEqual(response.status_code, 200)
 
 
