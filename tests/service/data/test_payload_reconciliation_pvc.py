@@ -3,11 +3,11 @@ Tests for ModelMesh payload reconciliation.
 """
 
 import asyncio
-import unittest
-import tempfile
 import os
-from unittest import mock
+import tempfile
+import unittest
 import uuid
+from unittest import mock
 
 import numpy as np
 import pandas as pd
@@ -48,55 +48,35 @@ class TestPayloadReconciliation(unittest.TestCase):
 
     async def _test_persist_input_payload(self):
         """Test persisting an input payload."""
-        await self.storage.persist_partial_payload(
-            self.input_payload, payload_id=self.request_id, is_input=True
-        )
+        await self.storage.persist_partial_payload(self.input_payload, payload_id=self.request_id, is_input=True)
 
-        retrieved_payload = await self.storage.get_partial_payload(
-            self.request_id, is_input=True, is_modelmesh=True
-        )
+        retrieved_payload = await self.storage.get_partial_payload(self.request_id, is_input=True, is_modelmesh=True)
 
         self.assertIsNotNone(retrieved_payload)
         self.assertEqual(retrieved_payload.data, self.input_payload.data)
 
-        output_payload = await self.storage.get_partial_payload(
-            self.request_id, is_input=False, is_modelmesh=True
-        )
+        output_payload = await self.storage.get_partial_payload(self.request_id, is_input=False, is_modelmesh=True)
         self.assertIsNone(output_payload)
 
     async def _test_persist_output_payload(self):
         """Test persisting an output payload."""
-        await self.storage.persist_partial_payload(
-            self.output_payload, payload_id=self.request_id, is_input=False
-        )
+        await self.storage.persist_partial_payload(self.output_payload, payload_id=self.request_id, is_input=False)
 
-        retrieved_payload = await self.storage.get_partial_payload(
-            self.request_id, is_input=False, is_modelmesh=True
-        )
+        retrieved_payload = await self.storage.get_partial_payload(self.request_id, is_input=False, is_modelmesh=True)
 
         self.assertIsNotNone(retrieved_payload)
         self.assertEqual(retrieved_payload.data, self.output_payload.data)
 
-        input_payload = await self.storage.get_partial_payload(
-            self.request_id, is_input=True, is_modelmesh=True
-        )
+        input_payload = await self.storage.get_partial_payload(self.request_id, is_input=True, is_modelmesh=True)
         self.assertIsNone(input_payload)
 
     async def _test_full_reconciliation(self):
         """Test the full payload reconciliation process."""
-        await self.storage.persist_partial_payload(
-            self.input_payload, self.request_id, is_input=True
-        )
-        await self.storage.persist_partial_payload(
-            self.output_payload, self.request_id, is_input=False
-        )
+        await self.storage.persist_partial_payload(self.input_payload, self.request_id, is_input=True)
+        await self.storage.persist_partial_payload(self.output_payload, self.request_id, is_input=False)
 
-        input_payload = await self.storage.get_partial_payload(
-            self.request_id, is_input=True, is_modelmesh=True
-        )
-        output_payload = await self.storage.get_partial_payload(
-            self.request_id, is_input=False, is_modelmesh=True
-        )
+        input_payload = await self.storage.get_partial_payload(self.request_id, is_input=True, is_modelmesh=True)
+        output_payload = await self.storage.get_partial_payload(self.request_id, is_input=False, is_modelmesh=True)
 
         self.assertIsNotNone(input_payload)
         self.assertIsNotNone(output_payload)
@@ -120,12 +100,8 @@ class TestPayloadReconciliation(unittest.TestCase):
         await self.storage.delete_partial_payload(self.request_id, is_input=True)
         await self.storage.delete_partial_payload(self.request_id, is_input=False)
 
-        input_payload = await self.storage.get_partial_payload(
-            self.request_id, is_input=True, is_modelmesh=True
-        )
-        output_payload = await self.storage.get_partial_payload(
-            self.request_id, is_input=False, is_modelmesh=True
-        )
+        input_payload = await self.storage.get_partial_payload(self.request_id, is_input=True, is_modelmesh=True)
+        output_payload = await self.storage.get_partial_payload(self.request_id, is_input=False, is_modelmesh=True)
 
         self.assertIsNone(input_payload)
         self.assertIsNone(output_payload)
@@ -147,19 +123,11 @@ class TestPayloadReconciliation(unittest.TestCase):
         request_id = str(uuid.uuid4())
         model_id = "sample-model"
 
-        await self.storage.persist_partial_payload(
-            input_payload, request_id, is_input=True
-        )
-        await self.storage.persist_partial_payload(
-            output_payload, request_id, is_input=False
-        )
+        await self.storage.persist_partial_payload(input_payload, request_id, is_input=True)
+        await self.storage.persist_partial_payload(output_payload, request_id, is_input=False)
 
-        stored_input = await self.storage.get_partial_payload(
-            request_id, is_input=True, is_modelmesh=True
-        )
-        stored_output = await self.storage.get_partial_payload(
-            request_id, is_input=False, is_modelmesh=True
-        )
+        stored_input = await self.storage.get_partial_payload(request_id, is_input=True, is_modelmesh=True)
+        stored_output = await self.storage.get_partial_payload(request_id, is_input=False, is_modelmesh=True)
 
         self.assertIsNotNone(stored_input)
         self.assertIsNotNone(stored_output)
@@ -187,12 +155,8 @@ class TestPayloadReconciliation(unittest.TestCase):
         await self.storage.delete_partial_payload(request_id, is_input=True)
         await self.storage.delete_partial_payload(request_id, is_input=False)
 
-        self.assertIsNone(
-            await self.storage.get_partial_payload(request_id, is_input=True, is_modelmesh=True)
-        )
-        self.assertIsNone(
-            await self.storage.get_partial_payload(request_id, is_input=False, is_modelmesh=True)
-        )
+        self.assertIsNone(await self.storage.get_partial_payload(request_id, is_input=True, is_modelmesh=True))
+        self.assertIsNone(await self.storage.get_partial_payload(request_id, is_input=False, is_modelmesh=True))
 
     async def _test_corrupted_payload_handling(self):
         """Test error handling for corrupted or invalid payloads."""
@@ -200,13 +164,9 @@ class TestPayloadReconciliation(unittest.TestCase):
 
         # Test 1: Corrupted payload data (invalid base64)
         corrupted_payload = PartialPayload(data="!!!INVALID_BASE64_DATA!!!")
-        await self.storage.persist_partial_payload(
-            corrupted_payload, request_id, is_input=True
-        )
+        await self.storage.persist_partial_payload(corrupted_payload, request_id, is_input=True)
 
-        retrieved = await self.storage.get_partial_payload(
-            request_id, is_input=True, is_modelmesh=True
-        )
+        retrieved = await self.storage.get_partial_payload(request_id, is_input=True, is_modelmesh=True)
         # Should still retrieve the corrupted payload (storage doesn't validate)
         self.assertIsNotNone(retrieved)
         self.assertEqual(retrieved.data, corrupted_payload.data)
@@ -221,22 +181,25 @@ class TestPayloadReconciliation(unittest.TestCase):
         await self.storage.delete_partial_payload(request_id, is_input=True)
 
         # Test 3: Missing payload (already deleted)
-        missing_payload = await self.storage.get_partial_payload(
-            request_id, is_input=True, is_modelmesh=True
-        )
+        missing_payload = await self.storage.get_partial_payload(request_id, is_input=True, is_modelmesh=True)
         self.assertIsNone(missing_payload)
 
     async def _test_void_type_length_exceeds_limit(self):
         """Test that rows exceeding MAX_VOID_TYPE_LENGTH raise ValueError."""
+        import random
+
         from src.service.data.storage.pvc import MAX_VOID_TYPE_LENGTH
 
         # Use unique dataset name to avoid conflicts
         dataset_name = f"dataset_oversized_void_type_{uuid.uuid4().hex[:8]}"
 
-        # Create a payload that will exceed MAX_VOID_TYPE_LENGTH when serialized
-        oversized_string = "x" * (MAX_VOID_TYPE_LENGTH + 100)
+        # Create a payload that will exceed MAX_VOID_TYPE_LENGTH when serialized with JSON+gzip
+        # Use random data that won't compress well (repetitive data compresses to ~50 bytes)
+        # Use 2x the limit to ensure it exceeds MAX_VOID_TYPE_LENGTH even after compression
+        random.seed(42)
+        random_string = "".join(chr(random.randint(32, 126)) for _ in range(MAX_VOID_TYPE_LENGTH * 2))
         mixed_row = [
-            oversized_string,  # large non-numeric payload
+            random_string,  # large non-compressible payload
             {"key": "value"},  # non-primitive object
             123,  # numeric value
         ]
@@ -287,19 +250,19 @@ def run_async_test(coro):
     return loop.run_until_complete(coro)
 
 
-TestPayloadReconciliation.test_persist_input_payload = lambda self: run_async_test(self._test_persist_input_payload())
-TestPayloadReconciliation.test_persist_output_payload = lambda self: run_async_test(self._test_persist_output_payload())
-TestPayloadReconciliation.test_full_reconciliation = lambda self: run_async_test(self._test_full_reconciliation())
-TestPayloadReconciliation.test_reconciliation_with_real_data = lambda self: run_async_test(
+TestPayloadReconciliation.test_persist_input_payload = lambda self: run_async_test(self._test_persist_input_payload())  # type: ignore[attr-defined]
+TestPayloadReconciliation.test_persist_output_payload = lambda self: run_async_test(self._test_persist_output_payload())  # type: ignore[attr-defined]
+TestPayloadReconciliation.test_full_reconciliation = lambda self: run_async_test(self._test_full_reconciliation())  # type: ignore[attr-defined]
+TestPayloadReconciliation.test_reconciliation_with_real_data = lambda self: run_async_test(  # type: ignore[attr-defined]
     self._test_reconciliation_with_real_data()
 )
-TestPayloadReconciliation.test_void_type_length_exceeds_limit = lambda self: run_async_test(
+TestPayloadReconciliation.test_void_type_length_exceeds_limit = lambda self: run_async_test(  # type: ignore[attr-defined]
     self._test_void_type_length_exceeds_limit()
 )
-TestPayloadReconciliation.test_void_type_length_within_limit = lambda self: run_async_test(
+TestPayloadReconciliation.test_void_type_length_within_limit = lambda self: run_async_test(  # type: ignore[attr-defined]
     self._test_void_type_length_within_limit()
 )
-TestPayloadReconciliation.test_corrupted_payload_handling = lambda self: run_async_test(
+TestPayloadReconciliation.test_corrupted_payload_handling = lambda self: run_async_test(  # type: ignore[attr-defined]
     self._test_corrupted_payload_handling()
 )
 
