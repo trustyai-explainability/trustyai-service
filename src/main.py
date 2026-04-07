@@ -101,15 +101,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Gzip decompression middleware (must be added first to process raw request before CORS)
-# Handles gzip-compressed requests from KServe agent in RawDeployment mode
-# Default: paths=["/data/upload"], max_size=16MB, with Prometheus metrics
-# For custom configuration:
-#   app.add_middleware(
-#       GzipRequestMiddleware,
-#       paths=["/data/*", "/consumer/*"],
-#       max_size=32 * 1024 * 1024,
-#   )
+# Gzip decompression for KServe agent uploads (defaults: /data/upload, 16MB limit)
 app.add_middleware(GzipRequestMiddleware)
 
 # CORS

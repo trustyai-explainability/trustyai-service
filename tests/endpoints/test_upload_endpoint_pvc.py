@@ -458,7 +458,7 @@ class TestUploadEndpointPVC(unittest.TestCase):
 
         # Debug output if test fails
         if response.status_code != 200:
-            print(f"\n=== DEBUG INFO ===")
+            print("\n=== DEBUG INFO ===")
             print(f"Status: {response.status_code}")
             print(f"Response text: {response.text}")
             print(f"Response headers: {dict(response.headers)}")
@@ -471,7 +471,7 @@ class TestUploadEndpointPVC(unittest.TestCase):
         self.assertIn(f"{n_rows} datapoints", response_json["message"])
 
         # Verify data was stored correctly
-        inputs, outputs, metadata = asyncio.run(ModelData(payload["model_name"]).data())
+        inputs, outputs, _metadata = asyncio.run(ModelData(payload["model_name"]).data())
         self.assertIsNotNone(inputs, "Input data not found in storage")
         self.assertIsNotNone(outputs, "Output data not found in storage")
         self.assertEqual(len(inputs), n_rows, "Incorrect number of input rows")
@@ -558,9 +558,15 @@ class TestUploadEndpointPVC(unittest.TestCase):
 
     def test_upload_gzip_with_multiple_encodings(self):
         """
-        Test that gzip middleware correctly handles multiple/stacked encodings.
+        Test that gzip middleware handles requests with multiple Content-Encoding values.
 
-        Verifies that only 'gzip' is removed from Content-Encoding header.
+        Since the middleware only supports gzip decompression (not chained decompression),
+        it removes the entire Content-Encoding header after decompressing. This prevents
+        the downstream app from attempting to decompress using encodings we don't support.
+
+        The request body is only gzip-compressed (not actually gzip+brotli stacked),
+        while the header claims "gzip, br". After middleware processing, the body is
+        decompressed and the Content-Encoding header is removed entirely.
         """
         # Generate test payload
         payload = generate_payload(5, 2, 1, "INT64", "MULTI_ENCODING_TEST")
@@ -568,18 +574,56 @@ class TestUploadEndpointPVC(unittest.TestCase):
         compressed_payload = gzip.compress(json_payload.encode("utf-8"))
 
         # Send with multiple encodings (gzip, br)
-        # Note: We're only actually gzip-compressing, but simulating multiple encodings header
+        # Note: We're only actually gzip-compressing, testing header handling
         response = self.client.post(
             "/data/upload",
             content=compressed_payload,
             headers={
                 "Content-Type": "application/json",
-                "Content-Encoding": "gzip, br",  # Simulated multiple encodings
+                "Content-Encoding": "gzip, br",  # Multiple encodings (only gzip actually applied)
             },
         )
 
-        # Should succeed - gzip layer is removed
+        # Should succeed - body is decompressed, Content-Encoding header removed
         self.assertEqual(response.status_code, 200)
+
+    def test_gzip_middleware_skip_conditions(self):
+        """Test middleware skips requests without gzip encoding or wrong content-type."""
+        payload = generate_payload(3, 2, 1, "INT64", "SKIP_TEST")
+        json_payload = json.dumps(payload).encode("utf-8")
+
+        # No Content-Encoding - should skip middleware
+        response = self.client.post("/data/upload", content=json_payload, headers={"Content-Type": "application/json"})
+        self.assertEqual(response.status_code, 200)
+
+        # Non-gzip encoding - should skip middleware
+        response = self.client.post("/data/upload", content=json_payload, headers={"Content-Type": "application/json", "Content-Encoding": "br"})
+        self.assertEqual(response.status_code, 200)
+
+        # Missing Content-Type with gzip encoding - should skip middleware
+        response = self.client.post("/data/upload", content=json_payload, headers={"Content-Encoding": "gzip"})
+        self.assertIn(response.status_code, [200, 400, 422])
+
+        # Wrong content-type - should skip middleware (won't crash)
+        response = self.client.post("/data/upload", content=json_payload, headers={"Content-Type": "text/plain", "Content-Encoding": "gzip"})
+        self.assertLess(response.status_code, 500)
+
+    def test_upload_empty_gzip_body(self):
+        """Test that empty gzip body returns 400 Bad Request."""
+        response = self.client.post(
+            "/data/upload",
+            content=b"",
+            headers={"Content-Type": "application/json", "Content-Encoding": "gzip"},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("empty", response.text.lower())
+
+    def test_gzip_middleware_init_validation(self):
+        """Test that GzipRequestMiddleware validates max_size parameter."""
+        from src.middleware.gzip_middleware import GzipRequestMiddleware
+
+        with self.assertRaises(ValueError):
+            GzipRequestMiddleware(app=None, max_size=0)
 
 
 if __name__ == "__main__":
