@@ -128,19 +128,18 @@ class GzipRequestMiddleware:
 
         decompressed = bytearray()
 
-        with BytesIO(compressed) as bio:
-            with gzip.GzipFile(fileobj=bio) as decompressor:
-                while True:
-                    chunk = decompressor.read(_DECOMPRESSION_CHUNK_SIZE)
-                    if not chunk:
-                        break
+        with BytesIO(compressed) as bio, gzip.GzipFile(fileobj=bio) as decompressor:
+            while True:
+                chunk = decompressor.read(_DECOMPRESSION_CHUNK_SIZE)
+                if not chunk:
+                    break
 
-                    if len(decompressed) + len(chunk) > max_size:
-                        raise ValueError(
-                            f"Decompressed size exceeds limit of {max_size} bytes (potential decompression bomb)"
-                        )
+                if len(decompressed) + len(chunk) > max_size:
+                    raise ValueError(
+                        f"Decompressed size exceeds limit of {max_size} bytes (potential decompression bomb)"
+                    )
 
-                    decompressed.extend(chunk)
+                decompressed.extend(chunk)
 
         return bytes(decompressed), compressed
 
@@ -157,14 +156,22 @@ class GzipRequestMiddleware:
             return
 
         headers_list = scope["headers"]
-        content_encoding = next((v.decode("latin1") for k, v in headers_list if k.lower() == b"content-encoding"), None)
 
-        if not content_encoding:
+        # Collect all Content-Encoding headers and concatenate (RFC 7230 allows multiple)
+        encoding_values = [v.decode("latin1") for k, v in headers_list if k.lower() == b"content-encoding"]
+
+        if not encoding_values:
             await self.app(scope, receive, send)
             return
 
-        encodings = [e.strip().lower() for e in content_encoding.split(",")]
-        if "gzip" not in encodings:
+        # Concatenate multiple headers with comma (per HTTP spec)
+        content_encoding = ", ".join(encoding_values)
+
+        # Split into ordered list of codings (applied left-to-right, decode right-to-left)
+        encodings = [e.strip().lower() for e in content_encoding.split(",") if e.strip()]
+
+        # Only decompress if gzip is the outermost (last) encoding
+        if not encodings or encodings[-1] != "gzip":
             await self.app(scope, receive, send)
             return
 
@@ -191,7 +198,11 @@ class GzipRequestMiddleware:
                     body_parts.append(message.get("body", b""))
                     if not message.get("more_body", False):
                         break
-        except (OSError, EOFError, RuntimeError) as e:
+                elif message["type"] == "http.disconnect":
+                    logger.warning(f"Client disconnected while reading request body for {path}")
+                    await self._send_error_response(send, HTTPStatus.BAD_REQUEST, "Request interrupted")
+                    return
+        except (OSError, EOFError, RuntimeError):
             logger.exception(f"Failed to read request body for {path}")
             await self._send_error_response(send, HTTPStatus.INTERNAL_SERVER_ERROR, "Failed to read request body")
             return
@@ -211,12 +222,22 @@ class GzipRequestMiddleware:
 
             logger.debug(f"Decompressed {path}: {compressed_size} → {decompressed_size} bytes (ratio: {ratio:.2%})")
 
+            # Remove gzip from encodings (it was the outermost/last)
+            remaining_encodings = encodings[:-1]  # Remove last element (gzip)
+
             new_headers = []
             has_content_length = False
+            content_encoding_written = False
 
             for name, value in scope["headers"]:
                 name_lower = name.lower()
                 if name_lower == b"content-encoding":
+                    # Rewrite Content-Encoding with remaining encodings (if any)
+                    if remaining_encodings and not content_encoding_written:
+                        new_value = ", ".join(remaining_encodings).encode("latin1")
+                        new_headers.append((b"content-encoding", new_value))
+                        content_encoding_written = True
+                    # Skip this header (either rewritten or removed)
                     continue
                 elif name_lower == b"content-length":
                     has_content_length = True
@@ -240,7 +261,8 @@ class GzipRequestMiddleware:
                         "body": decompressed_body,
                         "more_body": False,
                     }
-                return {"type": "http.request", "body": b"", "more_body": False}
+                # Delegate to original receive for disconnect and other events
+                return await receive()
 
             await self.app(scope, receive_decompressed, send)
 
@@ -257,7 +279,7 @@ class GzipRequestMiddleware:
                     await self._send_error_response(send, HTTPStatus.BAD_REQUEST, error_message)
                 else:
                     raw_body = compressed_body if compressed_body is not None else b"".join(body_parts)
-                    await self._passthrough_with_body(scope, raw_body, send)
+                    await self._passthrough_with_body(scope, raw_body, send, receive)
             else:
                 if self.enable_metrics:
                     self.DECOMPRESSION_ERRORS.labels(endpoint=path, error_type="size_limit").inc()
@@ -267,9 +289,9 @@ class GzipRequestMiddleware:
                     await self._send_error_response(send, _HTTP_413, error_message)
                 else:
                     raw_body = compressed_body if compressed_body is not None else b"".join(body_parts)
-                    await self._passthrough_with_body(scope, raw_body, send)
+                    await self._passthrough_with_body(scope, raw_body, send, receive)
 
-        except gzip.BadGzipFile as e:
+        except (gzip.BadGzipFile, EOFError):
             if self.enable_metrics:
                 self.DECOMPRESSION_ERRORS.labels(endpoint=path, error_type="bad_gzip").inc()
             logger.exception(f"Invalid gzip data for {path}")
@@ -278,9 +300,9 @@ class GzipRequestMiddleware:
                 await self._send_error_response(send, HTTPStatus.BAD_REQUEST, self.DECOMPRESSION_ERROR_MESSAGE)
             else:
                 raw_body = compressed_body if compressed_body is not None else b"".join(body_parts)
-                await self._passthrough_with_body(scope, raw_body, send)
+                await self._passthrough_with_body(scope, raw_body, send, receive)
 
-        except (OSError, EOFError, RuntimeError) as e:
+        except (OSError, RuntimeError):
             if self.enable_metrics:
                 self.DECOMPRESSION_ERRORS.labels(endpoint=path, error_type="unknown").inc()
             logger.exception(f"Unexpected error decompressing {path}")
@@ -289,7 +311,7 @@ class GzipRequestMiddleware:
                 await self._send_error_response(send, HTTPStatus.INTERNAL_SERVER_ERROR, "Internal Server Error")
             else:
                 raw_body = compressed_body if compressed_body is not None else b"".join(body_parts)
-                await self._passthrough_with_body(scope, raw_body, send)
+                await self._passthrough_with_body(scope, raw_body, send, receive)
 
     async def _send_error_response(self, send: Send, status_code: HTTPStatus | int, message: str) -> None:
         """Send HTTP error response."""
@@ -309,7 +331,7 @@ class GzipRequestMiddleware:
             "body": body,
         })
 
-    async def _passthrough_with_body(self, scope: Scope, body: bytes, send: Send) -> None:
+    async def _passthrough_with_body(self, scope: Scope, body: bytes, send: Send, receive: Receive) -> None:
         """Pass request through with original body when fail_on_error=False."""
         body_sent = False
 
@@ -322,6 +344,7 @@ class GzipRequestMiddleware:
                     "body": body,
                     "more_body": False,
                 }
-            return {"type": "http.request", "body": b"", "more_body": False}
+            # Delegate to original receive for disconnect and other events
+            return await receive()
 
         await self.app(scope, receive_raw, send)
