@@ -1,9 +1,10 @@
 import asyncio
 import logging
 import os
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, AsyncGenerator
+from typing import Any
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -71,8 +72,8 @@ async def schedule_metrics_calculation() -> None:
     while True:
         try:
             await prometheus_scheduler.calculate()
-        except Exception as e:
-            logger.error(f"Error in metrics calculation: {e}")
+        except Exception:
+            logger.exception("Error in metrics calculation")
 
         # Wait for the configured interval
         interval = prometheus_scheduler.service_config.get("metrics_schedule", 30)
@@ -101,10 +102,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Gzip decompression for KServe agent uploads (defaults: /data/upload, 16MB limit)
-app.add_middleware(GzipRequestMiddleware)
-
-# CORS
+# CORS (added first, runs last)
 app.add_middleware(
     CORSMiddleware,  # type: ignore[arg-type]  # FastAPI/Starlette middleware typing limitation
     allow_origins=["*"],
@@ -112,6 +110,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Gzip decompression for KServe agent uploads (added last, runs first)
+# This ensures request decompression happens before other middleware
+app.add_middleware(GzipRequestMiddleware)
 
 # Include all routers
 app.include_router(

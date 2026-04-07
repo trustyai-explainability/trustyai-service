@@ -560,31 +560,33 @@ class TestUploadEndpointPVC(unittest.TestCase):
         """
         Test that gzip middleware handles requests with multiple Content-Encoding values.
 
-        Since the middleware only supports gzip decompression (not chained decompression),
-        it removes the entire Content-Encoding header after decompressing. This prevents
-        the downstream app from attempting to decompress using encodings we don't support.
+        The middleware only decompresses gzip when it's the outermost (last) encoding.
+        Encodings are applied left-to-right, so "br, gzip" means br was applied first,
+        then gzip. To decode, we reverse: gzip first (outermost), then br.
 
-        The request body is only gzip-compressed (not actually gzip+brotli stacked),
-        while the header claims "gzip, br". After middleware processing, the body is
-        decompressed and the Content-Encoding header is removed entirely.
+        After removing outermost gzip, the remaining "br" encoding is preserved in the
+        Content-Encoding header for any downstream middleware to handle.
+
+        The request body is only gzip-compressed (not actually br+gzip stacked),
+        demonstrating that the middleware correctly handles the header semantics.
         """
         # Generate test payload
         payload = generate_payload(5, 2, 1, "INT64", "MULTI_ENCODING_TEST")
         json_payload = json.dumps(payload)
         compressed_payload = gzip.compress(json_payload.encode("utf-8"))
 
-        # Send with multiple encodings (gzip, br)
-        # Note: We're only actually gzip-compressing, testing header handling
+        # Send with gzip as outermost encoding: "br, gzip"
+        # (br applied first, gzip applied second, so gzip is outermost)
         response = self.client.post(
             "/data/upload",
             content=compressed_payload,
             headers={
                 "Content-Type": "application/json",
-                "Content-Encoding": "gzip, br",  # Multiple encodings (only gzip actually applied)
+                "Content-Encoding": "br, gzip",  # gzip is outermost (last)
             },
         )
 
-        # Should succeed - body is decompressed, Content-Encoding header removed
+        # Should succeed - gzip layer removed, "br" preserved in Content-Encoding
         self.assertEqual(response.status_code, 200)
 
     def test_gzip_middleware_skip_conditions(self):
@@ -599,6 +601,10 @@ class TestUploadEndpointPVC(unittest.TestCase):
         # Non-gzip encoding - should skip middleware
         response = self.client.post("/data/upload", content=json_payload, headers={"Content-Type": "application/json", "Content-Encoding": "br"})
         self.assertEqual(response.status_code, 200)
+
+        # Gzip not outermost (gzip, br means br is outer) - should skip middleware
+        response = self.client.post("/data/upload", content=json_payload, headers={"Content-Type": "application/json", "Content-Encoding": "gzip, br"})
+        self.assertIn(response.status_code, [200, 400, 422])  # Skipped, downstream parses uncompressed JSON
 
         # Missing Content-Type with gzip encoding - should skip middleware
         response = self.client.post("/data/upload", content=json_payload, headers={"Content-Encoding": "gzip"})
