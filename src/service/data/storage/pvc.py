@@ -9,6 +9,7 @@ from src.endpoints.consumer import KServeInferenceRequest, KServeInferenceRespon
 from src.service.constants import PARTIAL_PAYLOAD_DATASET_NAME, PROTECTED_DATASET_SUFFIX
 from src.service.data.metadata.storage_metadata import StorageMetadata
 from src.service.data.modelmesh_parser import PartialPayload
+from src.service.data.storage.exceptions import DeserializationError
 from src.service.payloads.service.schema import Schema
 from src.service.payloads.service.schema_item import SchemaItem
 from src.service.payloads.values.data_type import DataType
@@ -586,7 +587,7 @@ class PVCStorage(StorageInterface):
         """
         Retrieve a partial payload from HDF5 storage.
 
-        Uses secure JSON + gzip deserialization with automatic migration from legacy pickle data.
+        Uses JSON + gzip deserialization.
         """
         dataset_name = PARTIAL_INPUT_NAME if is_input else PARTIAL_OUTPUT_NAME
 
@@ -617,13 +618,31 @@ class PVCStorage(StorageInterface):
 
                         return deserialize_model(serialized_data, target_class)
                     except Exception as e:
-                        logger.error(f"Error deserializing payload: {e!s}")
-                        return None
+                        # Deserialization failure indicates data corruption or format issue
+                        # This is distinct from "not found" and should be raised to caller
+                        logger.exception(
+                            f"Deserialization failed for payload '{payload_id}' "
+                            f"({'ModelMesh' if is_modelmesh else 'KServe'}, "
+                            f"{'input' if is_input else 'output'})"
+                        )
+                        raise DeserializationError(
+                            payload_id=payload_id,
+                            reason=f"Failed to deserialize {'ModelMesh' if is_modelmesh else 'KServe'} "
+                            f"{'input' if is_input else 'output'} payload from HDF5 storage",
+                            original_exception=e,
+                        ) from e
         except MissingH5PYDataException:
+            # Dataset doesn't exist - this is expected for new payloads
             return None
-        except Exception as e:
-            logger.error(f"Error retrieving {'ModelMesh' if is_modelmesh else 'KServe'} payload: {e!s}")
-            return None
+        except DeserializationError:
+            # Re-raise deserialization errors (don't catch our own exception)
+            raise
+        except Exception:
+            # Unexpected storage errors (file system, permissions, etc.)
+            logger.exception(
+                f"Unexpected error retrieving {'ModelMesh' if is_modelmesh else 'KServe'} payload '{payload_id}'"
+            )
+            raise
 
     async def delete_partial_payload(self, request_id: str, is_input: bool):
         """

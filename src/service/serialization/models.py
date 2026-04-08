@@ -1,8 +1,8 @@
 """
 Pydantic model serialization with JSON + gzip compression.
 
-Provides secure serialization for Pydantic models with automatic legacy
-pickle migration for backward compatibility.
+Provides secure serialization for Pydantic models using JSON for data
+representation and gzip for compression.
 """
 
 import gzip

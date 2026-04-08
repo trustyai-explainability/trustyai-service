@@ -2,7 +2,7 @@
 Row-level serialization for inference data.
 
 Serializes nested lists/dicts into numpy void arrays with dynamic sizing
-using JSON with gzip compression.
+using JSON with gzip compression for security and compatibility.
 """
 
 import gzip
@@ -103,8 +103,7 @@ def deserialize_rows(serialized: np.ndarray) -> np.ndarray:
                 raise ValueError(f"Failed to deserialize row as gzip-compressed JSON: {e}") from e
         else:
             raise ValueError(
-                f"Unsupported serialization format. Expected gzip-compressed JSON. "
-                f"First bytes: {row_bytes[:10]!r}"
+                f"Unsupported serialization format. Expected gzip-compressed JSON. First bytes: {row_bytes[:10]!r}"
             )
 
     return np.array(deserialized, dtype="O")

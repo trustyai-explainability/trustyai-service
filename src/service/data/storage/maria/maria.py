@@ -8,6 +8,7 @@ import numpy as np
 
 from src.endpoints.consumer import KServeInferenceRequest, KServeInferenceResponse
 from src.service.data.modelmesh_parser import PartialPayload
+from src.service.data.storage.exceptions import DeserializationError
 from src.service.data.storage.maria.legacy_maria_reader import LegacyMariaDBStorageReader
 from src.service.data.storage.maria.utils import (
     MariaConnectionManager,
@@ -518,7 +519,7 @@ class MariaDBStorage(StorageInterface):
         """
         Retrieve a partial payload from the database.
 
-        Uses secure JSON + gzip deserialization with automatic migration from legacy pickle data.
+        Uses JSON + gzip deserialization.
         """
         with self.connection_manager as (conn, cursor):
             cursor.execute(
@@ -527,6 +528,7 @@ class MariaDBStorage(StorageInterface):
             )
             result = cursor.fetchone()
         if result is None or len(result) == 0:
+            # Payload not found in database - this is expected for new payloads
             return None
 
         # Determine target class based on payload type
@@ -537,7 +539,22 @@ class MariaDBStorage(StorageInterface):
         else:  # kserve output
             target_class = KServeInferenceResponse
 
-        return deserialize_model(result[0], target_class)
+        try:
+            return deserialize_model(result[0], target_class)
+        except Exception as e:
+            # Deserialization failure indicates data corruption or format issue
+            # This is distinct from "not found" and should be raised to caller
+            logger.exception(
+                f"Deserialization failed for payload '{payload_id}' "
+                f"({'ModelMesh' if is_modelmesh else 'KServe'}, "
+                f"{'input' if is_input else 'output'})"
+            )
+            raise DeserializationError(
+                payload_id=payload_id,
+                reason=f"Failed to deserialize {'ModelMesh' if is_modelmesh else 'KServe'} "
+                f"{'input' if is_input else 'output'} payload from MariaDB",
+                original_exception=e,
+            ) from e
 
     async def delete_partial_payload(self, payload_id: str, is_input: bool):
         with self.connection_manager as (conn, cursor):

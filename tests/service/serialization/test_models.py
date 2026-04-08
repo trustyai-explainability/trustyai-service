@@ -196,3 +196,65 @@ class TestBinaryDataHandling:
 
         assert deserialized.data == model.data
         assert deserialized.name == model.name
+
+
+class TestErrorHandling:
+    """Test error handling and edge cases in serialization."""
+
+    def test_deserialize_corrupted_gzip(self):
+        """Test handling of corrupted gzip data."""
+        # Create data that starts with gzip magic bytes but is corrupted
+        corrupted_data = b"\x1f\x8b\x08\x00" + b"\xff" * 20
+
+        with pytest.raises(ValueError, match="Failed to deserialize|gzip|Bad"):
+            deserialize_model(corrupted_data, SampleModel)
+
+    def test_deserialize_invalid_json(self):
+        """Test handling of invalid JSON data."""
+        invalid_json = b"{invalid json content}"
+
+        with pytest.raises(ValueError, match="Unsupported serialization format|JSON"):
+            deserialize_model(invalid_json, SampleModel)
+
+    def test_deserialize_truncated_data(self):
+        """Test handling of truncated serialized data."""
+        model = SampleModel(name="test", value=42)
+        serialized = serialize_model(model)
+
+        # Truncate the data
+        truncated = serialized[:10]
+
+        with pytest.raises(ValueError):
+            deserialize_model(truncated, SampleModel)
+
+    def test_deserialize_schema_mismatch(self):
+        """Test handling of schema validation failures."""
+
+        class OldModel(BaseModel):
+            name: str
+            value: int
+
+        class NewModel(BaseModel):
+            name: str
+            value: int
+            required_new_field: str  # New required field
+
+        # Serialize with old schema
+        old_model = OldModel(name="test", value=42)
+        serialized = serialize_model(old_model)
+
+        # Try to deserialize with new schema (missing required field)
+        with pytest.raises(ValueError):
+            deserialize_model(serialized, NewModel)
+
+    def test_deserialize_empty_data(self):
+        """Test handling of empty data."""
+        with pytest.raises(ValueError, match="Cannot detect format of empty data|Unsupported"):
+            deserialize_model(b"", SampleModel)
+
+    def test_deserialize_random_bytes(self):
+        """Test handling of random binary data (not valid format)."""
+        random_data = b"\xaa\xbb\xcc\xdd\xee\xff\x00\x11\x22\x33"
+
+        with pytest.raises(ValueError, match="Unknown serialization format|Unsupported"):
+            deserialize_model(random_data, SampleModel)

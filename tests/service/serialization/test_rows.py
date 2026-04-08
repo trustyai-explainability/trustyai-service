@@ -151,3 +151,80 @@ class TestDeserializeRows:
 
         for i, row in enumerate(deserialized):
             assert list(row) == original_rows[i]
+
+
+class TestDecompressionSafety:
+    """Test protection against malicious or problematic compressed data."""
+
+    def test_serialize_rejects_oversized_row(self):
+        """Test that serialization rejects rows that would exceed the limit."""
+        import random
+
+        # Create random data that won't compress well
+        random.seed(42)
+        max_size = 512
+        # Create data that will exceed limit even after compression
+        # Random data doesn't compress well, so we need 2-3x the limit
+        oversized_data = "".join(chr(random.randint(32, 126)) for _ in range(max_size * 3))
+        rows = [[oversized_data]]
+
+        with pytest.raises(ValueError, match="exceeds maximum allowed size"):
+            serialize_rows(rows, max_void_type_length=max_size)
+
+    def test_deserialize_corrupted_gzip_row(self):
+        """Test handling of corrupted gzip data in rows."""
+        # Create a row with corrupted gzip data (starts with gzip magic but invalid)
+        corrupted = b"\x1f\x8b\x08\x00\xff\xff\xff\xff"  # Invalid gzip
+        void_array = np.array([np.void(corrupted)], dtype=f"V{len(corrupted)}")
+
+        with pytest.raises(ValueError, match="Failed to deserialize row as gzip"):
+            deserialize_rows(void_array)
+
+    def test_deserialize_non_gzip_row_rejected(self):
+        """Test that non-gzip rows are properly rejected."""
+        # Create data that isn't gzip
+        non_gzip_data = b"this is not gzip data"
+        void_array = np.array([np.void(non_gzip_data)], dtype=f"V{len(non_gzip_data)}")
+
+        with pytest.raises(ValueError, match="Unsupported serialization format|Expected gzip"):
+            deserialize_rows(void_array)
+
+    def test_large_but_valid_rows(self):
+        """Test that large but legitimate rows work correctly."""
+        # Create legitimately large rows (but within limits)
+        large_row = [list(range(1000))]  # 1000 integers
+        serialized = serialize_rows(large_row, max_void_type_length=MAX_VOID_TYPE_LENGTH)
+        deserialized = deserialize_rows(serialized)
+
+        assert len(deserialized) == 1
+        assert list(deserialized[0]) == large_row[0]
+
+    def test_mixed_row_sizes(self):
+        """Test handling of rows with widely varying sizes."""
+        rows = [
+            [1, 2, 3],  # Small
+            [{"key": "value"} for _ in range(50)],  # Medium
+            [list(range(100))],  # Large
+        ]
+
+        serialized = serialize_rows(rows, max_void_type_length=MAX_VOID_TYPE_LENGTH)
+        deserialized = deserialize_rows(serialized)
+
+        assert len(deserialized) == 3
+        assert list(deserialized[0]) == rows[0]
+        assert deserialized[1] == rows[1]
+        assert deserialized[2] == rows[2]
+
+    def test_compression_effectiveness(self):
+        """Test that compression actually reduces size for repetitive data."""
+        import json
+
+        # Highly repetitive data (compresses well)
+        repetitive_row = [[1, 1, 1, 1, 1] * 100]
+        json_size = len(json.dumps(repetitive_row[0]).encode("utf-8"))
+
+        serialized = serialize_rows(repetitive_row, max_void_type_length=MAX_VOID_TYPE_LENGTH)
+
+        # Compressed size should be significantly smaller than JSON
+        compressed_size = len(bytes(serialized[0]))
+        assert compressed_size < json_size * 0.5  # At least 50% compression
