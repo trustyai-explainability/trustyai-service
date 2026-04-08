@@ -1,9 +1,6 @@
 """
 Secure serialization utilities with JSON + gzip compression.
 
-Replaces pickle serialization to eliminate arbitrary code execution risks
-while maintaining backward compatibility with existing data.
-
 Public API:
     - serialize_model(obj) -> bytes
     - deserialize_model(data, target_class) -> Model

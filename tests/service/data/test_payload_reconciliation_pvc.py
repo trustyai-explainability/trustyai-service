@@ -9,6 +9,7 @@ import unittest
 import uuid
 from unittest import mock
 
+import h5py
 import numpy as np
 import pandas as pd
 
@@ -243,6 +244,77 @@ class TestPayloadReconciliation(unittest.TestCase):
         self.assertEqual({"key": "value"}, retrieved_row[1])
         self.assertEqual(456, retrieved_row[2])
 
+    async def _test_deserialize_corrupted_payload(self):
+        """Test that corrupted payload data raises DeserializationError."""
+        from src.service.data.storage.exceptions import DeserializationError
+
+        request_id = str(uuid.uuid4())
+
+        # First, manually store corrupted data
+        # We'll directly write corrupted bytes to HDF5 storage
+        from src.service.data.storage.pvc import PARTIAL_INPUT_NAME
+
+        dataset_name = PARTIAL_INPUT_NAME
+        corrupted_data = b"\x1f\x8b\x08\x00\xff\xff\xff\xff"  # Invalid gzip
+
+        async with self.storage.get_lock(dataset_name):
+            file_path = self.storage._get_filepath(dataset_name)
+            with h5py.File(file_path, "a") as db:
+                if dataset_name not in db:
+                    db.create_dataset(dataset_name, data=np.array([]), maxshape=(None,))
+
+                dataset = db[dataset_name]
+                dataset.attrs[request_id] = np.void(corrupted_data)
+
+        # Now try to retrieve it - should raise DeserializationError
+        with self.assertRaises(DeserializationError) as context:
+            await self.storage.get_partial_payload(request_id, is_input=True, is_modelmesh=True)
+
+        # Verify error contains useful information
+        self.assertIn(request_id, str(context.exception))
+        self.assertIn("Failed to deserialize", str(context.exception))
+
+        # Clean up
+        await self.storage.delete_partial_payload(request_id, is_input=True)
+
+    async def _test_deserialize_invalid_format(self):
+        """Test that invalid serialization format raises DeserializationError."""
+        from src.service.data.storage.exceptions import DeserializationError
+
+        request_id = str(uuid.uuid4())
+
+        # Store non-gzip, non-JSON data
+        from src.service.data.storage.pvc import PARTIAL_INPUT_NAME
+
+        dataset_name = PARTIAL_INPUT_NAME
+        invalid_data = b"this is not a valid format"
+
+        async with self.storage.get_lock(dataset_name):
+            file_path = self.storage._get_filepath(dataset_name)
+            with h5py.File(file_path, "a") as db:
+                if dataset_name not in db:
+                    db.create_dataset(dataset_name, data=np.array([]), maxshape=(None,))
+
+                dataset = db[dataset_name]
+                dataset.attrs[request_id] = np.void(invalid_data)
+
+        # Try to retrieve - should raise DeserializationError
+        with self.assertRaises(DeserializationError) as context:
+            await self.storage.get_partial_payload(request_id, is_input=True, is_modelmesh=True)
+
+        self.assertIn(request_id, str(context.exception))
+
+        # Clean up
+        await self.storage.delete_partial_payload(request_id, is_input=True)
+
+    async def _test_not_found_returns_none(self):
+        """Test that missing payload returns None (not an exception)."""
+        nonexistent_id = str(uuid.uuid4())
+
+        # Should return None, not raise exception
+        result = await self.storage.get_partial_payload(nonexistent_id, is_input=True, is_modelmesh=True)
+        self.assertIsNone(result)
+
 
 def run_async_test(coro):
     """Helper function to run async tests."""
@@ -264,6 +336,15 @@ TestPayloadReconciliation.test_void_type_length_within_limit = lambda self: run_
 )
 TestPayloadReconciliation.test_corrupted_payload_handling = lambda self: run_async_test(  # type: ignore[attr-defined]
     self._test_corrupted_payload_handling()
+)
+TestPayloadReconciliation.test_deserialize_corrupted_payload = lambda self: run_async_test(  # type: ignore[attr-defined]
+    self._test_deserialize_corrupted_payload()
+)
+TestPayloadReconciliation.test_deserialize_invalid_format = lambda self: run_async_test(  # type: ignore[attr-defined]
+    self._test_deserialize_invalid_format()
+)
+TestPayloadReconciliation.test_not_found_returns_none = lambda self: run_async_test(  # type: ignore[attr-defined]
+    self._test_not_found_returns_none()
 )
 
 
