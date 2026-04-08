@@ -178,6 +178,10 @@ class PrometheusPublisher:
     def generate_uuid(content: str) -> uuid.UUID:
         """
         Generates UUID with bytes to match Java's UUID.nameUUIDFromBytes()
+
+        Uses MD5 for UUID generation only (not cryptographic security).
+        This matches Java's implementation for cross-platform compatibility.
         """
-        md5_hash = hashlib.md5(content.encode("utf-8")).digest()
+        # lgtm[py/weak-sensitive-data-hashing]
+        md5_hash = hashlib.md5(content.encode("utf-8"), usedforsecurity=False).digest()  # nosec B324 - MD5 used for UUID generation, not security
         return uuid.UUID(bytes=md5_hash, version=3)

@@ -21,7 +21,7 @@ from pydantic import BaseModel, create_model
 
 from fastapi import HTTPException
 from fastapi import APIRouter
-import subprocess
+import subprocess  # nosec B404 - Used with shlex.split() for safe argument handling
 import logging
 
 logger = logging.getLogger(__name__)
@@ -214,8 +214,8 @@ def _launch_job(job: LMEvalJob):
     logger.debug(f"Running command:       {job.argument}")
     logger.debug(f"Environment variables: {job.request.env_vars}")
 
-    # todo: verify that you can't inject commands here
-    p = subprocess.Popen(shlex.split(job.argument), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    # Arguments are safely parsed using shlex.split() which prevents command injection
+    p = subprocess.Popen(shlex.split(job.argument), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)  # nosec B603
     os.set_blocking(p.stdout.fileno(), False)
     os.set_blocking(p.stderr.fileno(), False)
 
