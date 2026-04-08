@@ -5,18 +5,18 @@ import logging
 
 import mariadb
 import numpy as np
-import pickle as pkl  # nosec B403 - Used for internal data serialization only
-from typing import Optional, Dict, List, Union
 
 from src.endpoints.consumer import KServeInferenceRequest, KServeInferenceResponse
 from src.service.data.modelmesh_parser import PartialPayload
+from src.service.data.storage.exceptions import DeserializationError
 from src.service.data.storage.maria.legacy_maria_reader import LegacyMariaDBStorageReader
 from src.service.data.storage.maria.utils import (
     MariaConnectionManager,
-    require_existing_dataset,
     get_clean_column_names,
+    require_existing_dataset,
 )
 from src.service.data.storage.storage_interface import StorageInterface
+from src.service.serialization import deserialize_model, serialize_model
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.StreamHandler())
@@ -46,7 +46,7 @@ class MariaDBStorage(StorageInterface):
     `trustyai_v2_partial_payloads`: Store partial payloads prior to reconciliation
         - `payload_id`, varchar(255): The id of the partial payload
         - `is_input`, BOOLEAN: Whether the partial payload is an input or output payload
-        - `payload_data`, LONGBLOB: The pickled partial payload
+        - `payload_data`, LONGBLOB: The serialized partial payload (JSON + gzip)
 
     === Inference Data Tables ===
     Each dataset is stored in its own table named `trustyai_v2_dataset_X`, where `X` is
@@ -141,7 +141,7 @@ class MariaDBStorage(StorageInterface):
             return self._build_table_name(cursor.fetchone()[0])
 
     @require_existing_dataset
-    async def _get_dataset_metadata(self, dataset_name: str) -> Optional[Dict]:
+    async def _get_dataset_metadata(self, dataset_name: str) -> dict | None:
         """
         Return the metadata field from a particular dataset within the dataset_reference_table.
         """
@@ -209,7 +209,7 @@ class MariaDBStorage(StorageInterface):
         return tuple(shape)
 
     # === DATASET READING AND WRITING ===============================================================
-    async def write_data(self, dataset_name: str, new_rows: np.ndarray, column_names: List[str]):
+    async def write_data(self, dataset_name: str, new_rows: np.ndarray, column_names: list[str]):
         """
         Write some rows to the database
 
@@ -364,15 +364,15 @@ class MariaDBStorage(StorageInterface):
 
     # === COLUMN NAMES =============================================================================
     @require_existing_dataset
-    async def get_original_column_names(self, dataset_name: str) -> Optional[List[str]]:
+    async def get_original_column_names(self, dataset_name: str) -> list[str] | None:
         return (await self._get_dataset_metadata(dataset_name)).get("column_names")
 
     @require_existing_dataset
-    async def get_aliased_column_names(self, dataset_name: str) -> List[str]:
+    async def get_aliased_column_names(self, dataset_name: str) -> list[str]:
         return (await self._get_dataset_metadata(dataset_name)).get("aliased_names")
 
     @require_existing_dataset
-    async def apply_name_mapping(self, dataset_name: str, name_mapping: Dict[str, str]):
+    async def apply_name_mapping(self, dataset_name: str, name_mapping: dict[str, str]):
         """Apply a name mapping to a dataset.
 
         `dataset_name`: the name of the dataset to read. This is NOT the table name;
@@ -424,7 +424,7 @@ class MariaDBStorage(StorageInterface):
             )
             conn.commit()
 
-    async def get_known_models(self) -> List[str]:
+    async def get_known_models(self) -> list[str]:
         """Get a list of all model IDs that have inference data stored"""
         all_datasets = await self.list_all_datasets()
         model_ids = set()
@@ -448,7 +448,7 @@ class MariaDBStorage(StorageInterface):
         return list(model_ids)
 
     @require_existing_dataset
-    async def get_metadata(self, model_id: str) -> Dict:
+    async def get_metadata(self, model_id: str) -> dict:
         """Get metadata for a specific model including shapes, column names, etc."""
         input_dataset = f"{model_id}_inputs"
         output_dataset = f"{model_id}_outputs"
@@ -501,27 +501,25 @@ class MariaDBStorage(StorageInterface):
     # === PARTIAL PAYLOADS =========================================================================
     async def persist_partial_payload(
         self,
-        payload: Union[PartialPayload, KServeInferenceRequest, KServeInferenceResponse],
+        payload: PartialPayload | KServeInferenceRequest | KServeInferenceResponse,
         payload_id,
         is_input: bool,
     ):
-        """Save a partial payload to the database."""
+        """Save a partial payload to the database using secure JSON + gzip serialization."""
         with self.connection_manager as (conn, cursor):
             cursor.execute(
                 f"INSERT INTO `{self.partial_payload_table}` (payload_id, is_input, payload_data) VALUES (?, ?, ?)",
-                (payload_id, is_input, pkl.dumps(payload.model_dump())),
+                (payload_id, is_input, serialize_model(payload)),
             )
             conn.commit()
 
     async def get_partial_payload(
         self, payload_id: str, is_input: bool, is_modelmesh: bool
-    ) -> Union[PartialPayload, KServeInferenceRequest, KServeInferenceResponse]:
+    ) -> PartialPayload | KServeInferenceRequest | KServeInferenceResponse:
         """
         Retrieve a partial payload from the database.
 
-        SECURITY NOTE: This function deserializes pickled data from the database.
-        Data must originate from trusted internal sources only (stored via save_partial_payload).
-        Do not use with user-supplied or external data.
+        Uses JSON + gzip deserialization.
         """
         with self.connection_manager as (conn, cursor):
             cursor.execute(
@@ -530,14 +528,33 @@ class MariaDBStorage(StorageInterface):
             )
             result = cursor.fetchone()
         if result is None or len(result) == 0:
+            # Payload not found in database - this is expected for new payloads
             return None
-        payload_dict = pkl.loads(result[0])  # nosec B301 - Deserializing internal data from DB
+
+        # Determine target class based on payload type
         if is_modelmesh:
-            return PartialPayload(**payload_dict)
+            target_class = PartialPayload
         elif is_input:  # kserve input
-            return KServeInferenceRequest(**payload_dict)
+            target_class = KServeInferenceRequest
         else:  # kserve output
-            return KServeInferenceResponse(**payload_dict)
+            target_class = KServeInferenceResponse
+
+        try:
+            return deserialize_model(result[0], target_class)
+        except Exception as e:
+            # Deserialization failure indicates data corruption or format issue
+            # This is distinct from "not found" and should be raised to caller
+            logger.exception(
+                f"Deserialization failed for payload '{payload_id}' "
+                f"({'ModelMesh' if is_modelmesh else 'KServe'}, "
+                f"{'input' if is_input else 'output'})"
+            )
+            raise DeserializationError(
+                payload_id=payload_id,
+                reason=f"Failed to deserialize {'ModelMesh' if is_modelmesh else 'KServe'} "
+                f"{'input' if is_input else 'output'} payload from MariaDB",
+                original_exception=e,
+            ) from e
 
     async def delete_partial_payload(self, payload_id: str, is_input: bool):
         with self.connection_manager as (conn, cursor):
@@ -549,7 +566,7 @@ class MariaDBStorage(StorageInterface):
     async def persist_modelmesh_payload(self, payload: PartialPayload, request_id: str, is_input: bool):
         await self.persist_partial_payload(payload, request_id, is_input)
 
-    async def get_modelmesh_payload(self, request_id: str, is_input: bool) -> Optional[PartialPayload]:
+    async def get_modelmesh_payload(self, request_id: str, is_input: bool) -> PartialPayload | None:
         return await self.get_partial_payload(request_id, is_input, is_modelmesh=True)
 
     async def delete_modelmesh_payload(self, request_id: str, is_input: bool):
