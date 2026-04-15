@@ -19,6 +19,12 @@ on:
       - '**.adoc'
       - '*.txt'
     types: [labeled, opened, synchronize, reopened]
+
+# Cancel in-progress PR builds; never cancel main (could corrupt image push)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   # Ensure that tests pass before publishing a new image.
   build-and-push-ci:
@@ -44,11 +50,11 @@ jobs:
           mode: minimum
           count: 1
           labels: "ok-to-test, lgtm, approved"
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         if: env.BUILD_CONTEXT == 'ci'
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         if: env.BUILD_CONTEXT == 'main' ||  env.BUILD_CONTEXT == 'tag'
       # Print variables for debugging
       - name: Log reference variables
