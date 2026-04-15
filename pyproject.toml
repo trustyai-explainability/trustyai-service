@@ -144,10 +144,13 @@ matches = "tests/**/*.py"
 
 [tool.pyrefly.sub-config.errors]
 bad-argument-type = "ignore"
+bad-assignment = "ignore"
 bad-return = "ignore"
 missing-attribute = "ignore"
 no-access = "ignore"
 not-a-type = "ignore"
+not-iterable = "ignore"
+unsupported-operation = "ignore"
 
 # Suppress sklearn mixin false positives in fairness metrics
 [[tool.pyrefly.sub-config]]
