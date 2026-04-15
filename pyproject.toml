@@ -18,8 +18,8 @@ dependencies = [
     "prometheus-client>=0.22,<0.25",
     "pydantic>=2.12,<3",
     "hypercorn>=0.17,<0.19",
-    "protobuf>=7,<8",        # Security: Resolves CVE-2026-0994 (HIGH - Buffer overflow) [forward-looking placeholder]
-    "cryptography>=46,<47",  # Security: Resolves CVE-2026-26007 (HIGH) [forward-looking placeholder]
+    "protobuf>=7,<8",        # Security: Resolves CVE-2026-0994 (HIGH - Buffer overflow)
+    "cryptography>=46,<47",  # Security: Resolves CVE-2026-26007 (HIGH)
     "h5py>=3.13,<4",
     "isodate>=0.7,<0.8",
 ]
