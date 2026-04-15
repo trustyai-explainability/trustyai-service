@@ -6,12 +6,13 @@ JS divergence is a symmetric and smoothed version of the Kullback–Leibler dive
 bounded between 0 and 1 (or 0 and log(2) in nats).
 """
 
-from typing import Any, Literal
+from typing import Literal
 
 import numpy as np
 from scipy.spatial.distance import jensenshannon
 
 from . import utils
+from .utils import BwMethod
 
 # Default constants for Jensen-Shannon metric
 DEFAULT_STATISTIC: Literal["distance", "divergence"] = "distance"
@@ -40,7 +41,8 @@ class JensenShannon:
         method: Literal["kde", "hist"] = DEFAULT_METHOD,
         grid_points: int = DEFAULT_GRID_POINTS,
         bins: int = DEFAULT_BINS,
-        **kwargs: Any,
+        *,
+        bw_method: BwMethod = None,
     ) -> dict[str, float]:
         """
         Calculate Jensen-Shannon divergence between distributions using scipy.spatial.distance.jensenshannon.
@@ -58,6 +60,7 @@ class JensenShannon:
             estimation on a fixed grid and ``"hist"`` for histogram-based estimation.
         :param grid_points: Number of grid points used when ``method="kde"``.
         :param bins: Number of histogram bins used when ``method="hist"``.
+        :param bw_method: Bandwidth selection method for KDE (passed to scipy.stats.gaussian_kde).
         :return: Dictionary containing js_divergence and drift_detected
         """
         # Validate statistic parameter
@@ -66,9 +69,9 @@ class JensenShannon:
 
         # Generate probability distributions from data on a common grid
         if method == "kde":
-            p_ref, p_cur = utils.prob_dist_kde(data_ref, data_cur, grid_points, **kwargs)
+            p_ref, p_cur = utils.prob_dist_kde(data_ref, data_cur, grid_points, bw_method=bw_method)
         elif method == "hist":
-            p_ref, p_cur = utils.prob_dist_hist(data_ref, data_cur, bins, **kwargs)
+            p_ref, p_cur = utils.prob_dist_hist(data_ref, data_cur, bins)
         else:
             raise ValueError("`method` must be `hist` or `kde`.")
 
