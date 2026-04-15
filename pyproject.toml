@@ -75,8 +75,43 @@ build-backend = "hatchling.build"
 # Exclude generated protobuf files from all ruff operations
 exclude = ["src/proto/grpc_predict_v2_pb2.py"]
 
-# Note: select = ["ALL"] with per-file-ignores will be enabled in a
-# subsequent PR after source code is updated to comply with all rules.
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "D203",   # one-blank-line-before-class (conflicts with D211)
+    "D213",   # multi-line-summary-second-line (conflicts with D212)
+    "E501",   # line-too-long (handled by formatter)
+    "COM812", # trailing commas (conflicts with formatter)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# === SRC FILES ===
+"src/core/metrics/drift/jensen_shannon.py" = ["PLR0913"]
+"src/core/metrics/fairness/group/*.py" = ["PLR0913"]
+"src/middleware/gzip_middleware.py" = ["C901", "PLR0911", "PLR0912", "PLR0913", "PLR0915"]
+"src/service/data/datasources/data_source.py" = ["BLE001", "C901", "PLR0912"]
+"src/service/data/modelmesh_parser.py" = ["PLR0913"]
+"src/service/data/storage/**/*.py" = ["SLF001", "BLE001", "PLR0913"]
+"src/service/data/storage/pvc.py" = ["C901", "PLR0912", "PLR0915"]
+"src/service/payloads/**/*.py" = ["SLF001"]
+"src/service/payloads/metrics/request_reconciler.py" = ["C901", "PLR0912", "PLR0915"]
+"src/service/prometheus/prometheus_publisher.py" = ["SLF001"]
+"src/service/prometheus/prometheus_scheduler.py" = ["BLE001"]
+"src/endpoints/consumer/*.py" = ["N815"]
+"src/endpoints/consumer/__init__.py" = ["C901"]
+"src/endpoints/consumer/consumer_endpoint.py" = ["BLE001", "C901", "PLR0912", "PLR0913", "PLR0915"]
+"src/endpoints/evaluation/lm_evaluation_harness.py" = ["SLF001"]
+"src/endpoints/explainers/*.py" = ["N815"]
+"src/endpoints/metadata.py" = ["N815", "BLE001", "C901"]
+"src/endpoints/metrics/**/*.py" = ["N815"]
+"src/endpoints/metrics/fairness/group/*.py" = ["BLE001"]
+# === TEST FILES ===
+"tests/**" = ["S101", "PT019", "SLF001"]
+"tests/core/metrics/test_fairness.py" = ["N803", "N806"]
+"tests/endpoints/metrics/drift/factory.py" = ["PLR0913", "C901", "PLR0915"]
+"tests/endpoints/test_upload_endpoint_maria.py" = ["S105"]
+"tests/endpoints/test_upload_endpoint_pvc.py" = ["PLR0913"]
+"tests/service/data/test_utils.py" = ["PLR0913"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "strict"
