@@ -3,17 +3,17 @@ ModelMesh protobuf testing utils.
 """
 
 import base64
-import random
-from typing import Dict, List, Tuple, Any, Optional, Union
+import uuid
+from typing import Any
 
 import numpy as np
 
 try:
     from src.proto.grpc_predict_v2_pb2 import (
-        ModelInferRequest,
-        ModelInferResponse,
         InferParameter,
         InferTensorContents,
+        ModelInferRequest,
+        ModelInferResponse,
     )
 except ImportError:
     print("Warning: Protobuf classes not available. Run generate_protos.py first.")
@@ -25,7 +25,7 @@ class ModelMeshTestData:
     """
 
     @staticmethod
-    def create_infer_parameter(value: Union[bool, int, str]) -> InferParameter:
+    def create_infer_parameter(value: bool | int | str) -> InferParameter:
         """Create an InferParameter with the correct type based on value."""
         param = InferParameter()
         if isinstance(value, bool):
@@ -37,7 +37,7 @@ class ModelMeshTestData:
         return param
 
     @staticmethod
-    def generate_data(rows: int, cols: int, datatype: str, offset: int = 0) -> Tuple[np.ndarray, Any]:
+    def generate_data(rows: int, cols: int, datatype: str, offset: int = 0) -> tuple[np.ndarray, Any]:
         """
         Create test data based on the datatype.
         Returns the NumPy array and the corresponding value for InferTensorContents.
@@ -100,8 +100,8 @@ class ModelMeshTestData:
         cols: int,
         datatype: str,
         offset: int = 0,
-        parameters: Optional[Dict[str, Any]] = None,
-    ) -> Tuple[ModelInferRequest.InferInputTensor, np.ndarray]:
+        parameters: dict[str, Any] | None = None,
+    ) -> tuple[ModelInferRequest.InferInputTensor, np.ndarray]:
         """Generate an input tensor with test data."""
         tensor = ModelInferRequest.InferInputTensor()
         tensor.name = name
@@ -121,7 +121,7 @@ class ModelMeshTestData:
     @staticmethod
     def generate_output_tensor(
         name: str, rows: int, cols: int, datatype: str, offset: int = 0
-    ) -> Tuple[ModelInferResponse.InferOutputTensor, np.ndarray]:
+    ) -> tuple[ModelInferResponse.InferOutputTensor, np.ndarray]:
         """Generate an output tensor with test data."""
         tensor = ModelInferResponse.InferOutputTensor()
         tensor.name = name
@@ -137,14 +137,14 @@ class ModelMeshTestData:
     @staticmethod
     def generate_model_infer_request(
         model_name: str,
-        input_tensors: List[Tuple[str, int, int, str, int, Optional[Dict[str, Any]]]],
-    ) -> Tuple[ModelInferRequest, Dict[str, np.ndarray]]:
+        input_tensors: list[tuple[str, int, int, str, int, dict[str, Any] | None]],
+    ) -> tuple[ModelInferRequest, dict[str, np.ndarray]]:
         """
         Generate a ModelInferRequest with the specified input tensors.
         """
         request = ModelInferRequest()
         request.model_name = model_name
-        request.id = f"test-request-{random.randint(1000, 9999)}"
+        request.id = f"test-request-{uuid.uuid4().hex[:8]}"
 
         data_dict = {}
 
@@ -161,8 +161,8 @@ class ModelMeshTestData:
         model_name: str,
         model_version: str,
         request_id: str,
-        output_tensors: List[Tuple[str, int, int, str, int]],
-    ) -> Tuple[ModelInferResponse, Dict[str, np.ndarray]]:
+        output_tensors: list[tuple[str, int, int, str, int]],
+    ) -> tuple[ModelInferResponse, dict[str, np.ndarray]]:
         """
         Generate a ModelInferResponse with the specified output tensors.
         """
@@ -184,9 +184,9 @@ class ModelMeshTestData:
     @staticmethod
     def generate_test_payloads(
         model_name: str,
-        input_tensor_specs: List[Tuple[str, int, int, str, int, Optional[Dict[str, Any]]]],
-        output_tensor_specs: List[Tuple[str, int, int, str, int]],
-    ) -> Tuple[dict, dict, dict, dict]:
+        input_tensor_specs: list[tuple[str, int, int, str, int, dict[str, Any] | None]],
+        output_tensor_specs: list[tuple[str, int, int, str, int]],
+    ) -> tuple[dict, dict, dict, dict]:
         """
         Generate test input and output payloads for ModelMesh testing.
         """
