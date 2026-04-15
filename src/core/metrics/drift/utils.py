@@ -6,7 +6,8 @@ This module provides common utility functions for computing probability distribu
 from data samples using different methods (histogram and kernel density estimation).
 """
 
-from typing import Literal
+from collections.abc import Callable
+from typing import Any, Literal
 
 import numpy as np
 from scipy.stats import gaussian_kde
@@ -15,8 +16,10 @@ from scipy.stats import gaussian_kde
 DEFAULT_BINS = 64
 DEFAULT_GRID_POINTS = 256
 
-# Type aliases for validated parameter values
-BwMethod = Literal["scott", "silverman"] | float | None
+# Type alias for gaussian_kde bandwidth selection methods.
+# Supports named methods, scalar factors, None (default), and callables
+# that receive a gaussian_kde instance and return a bandwidth factor.
+BwMethod = Literal["scott", "silverman"] | float | Callable[[Any], float] | None
 
 
 def prob_dist_hist(x: np.ndarray, y: np.ndarray, bins: int = DEFAULT_BINS) -> np.ndarray:
