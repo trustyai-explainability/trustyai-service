@@ -170,6 +170,38 @@ class TestPrometheusPublisher:
         publisher.remove_gauge(name=mock_request.metric_name, id=test_id)
         assert test_id not in publisher.values
 
+    def test_remove_gauge_cleans_up_named_values(
+        self, publisher: PrometheusPublisher, mock_request: MockMetricRequest
+    ):
+        """Test that remove_gauge cleans up derived IDs created from named_values."""
+        test_id = uuid.uuid4()
+        named_values = {"feature1": 0.3, "feature2": 0.7}
+
+        # Create gauge with named_values
+        publisher.gauge(GaugeConfig(
+            model_name="test_model",
+            request_id=test_id,
+            named_values=named_values,
+            request=mock_request,
+        ))
+
+        # Verify derived IDs are tracked
+        assert test_id in publisher._derived_ids
+        derived_ids = publisher._derived_ids[test_id]
+        assert len(derived_ids) == 2
+
+        # Verify derived values exist
+        for did in derived_ids:
+            assert did in publisher.values
+
+        # Remove gauge — should clean up all derived values
+        publisher.remove_gauge(name=mock_request.metric_name, id=test_id)
+
+        # Verify root and derived values are all gone
+        assert test_id not in publisher._derived_ids
+        for did in derived_ids:
+            assert did not in publisher.values
+
     def test_duplicate_gauge_creation(self, publisher: PrometheusPublisher, mock_request: MockMetricRequest):
         """Test that creating gauges with same name but different labels."""
         test_id1 = uuid.uuid4()

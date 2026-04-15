@@ -140,8 +140,12 @@ class PrometheusPublisher:
                     tags["subcategory"] = key
                     self._create_or_update_gauge(name=full_metric_name, tags=tags, id=new_id)
 
-                # Track derived IDs so remove_gauge can clean them up
+                # Clean up old derived values (from previous calculation cycle)
+                # before tracking the new ones
                 with self._values_lock:
+                    for old_id in self._derived_ids.pop(config.request_id, []):
+                        if old_id in self.values:
+                            del self.values[old_id]
                     self._derived_ids[config.request_id] = derived_ids
 
                 logger.debug(

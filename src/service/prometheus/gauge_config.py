@@ -32,9 +32,12 @@ class GaugeConfig(BaseModel):
         2. If request is None: must have both metric_name and value
         """
         if self.request is not None:
-            # Request-based gauge: must have value or named_values
+            # Request-based gauge: must have exactly one of value or named_values
             if self.value is None and self.named_values is None:
                 msg = "Either 'value' or 'named_values' must be provided"
+                raise ValueError(msg)
+            if self.value is not None and self.named_values is not None:
+                msg = "Cannot provide both 'value' and 'named_values'"
                 raise ValueError(msg)
         else:
             # Simple gauge: must have both metric_name and value
