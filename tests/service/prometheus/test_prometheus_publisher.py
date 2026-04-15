@@ -8,6 +8,7 @@ from prometheus_client import CollectorRegistry, Gauge
 from src.service.constants import PROMETHEUS_METRIC_PREFIX
 from src.service.payloads.metrics.base_metric_request import BaseMetricRequest
 
+from src.service.prometheus.gauge_config import GaugeConfig
 from src.service.prometheus.prometheus_publisher import PrometheusPublisher
 
 
@@ -47,7 +48,9 @@ class TestPrometheusPublisher:
         test_id = uuid.uuid4()
         test_value = 0.5
 
-        publisher.gauge(model_name="test_model", id=test_id, value=test_value, request=mock_request)
+        publisher.gauge(
+            GaugeConfig(model_name="test_model", request_id=test_id, value=test_value, request=mock_request)
+        )
 
         # Verify value is stored
         assert test_id in publisher.values
@@ -73,10 +76,12 @@ class TestPrometheusPublisher:
         test_named_values = {"feature1": 0.3, "feature2": 0.7}
 
         publisher.gauge(
-            model_name="test_model",
-            id=test_id,
-            named_values=test_named_values,
-            request=mock_request,
+            GaugeConfig(
+                model_name="test_model",
+                request_id=test_id,
+                named_values=test_named_values,
+                request=mock_request,
+            )
         )
 
         # Verify multiple values are stored (one for each named value)
@@ -101,10 +106,12 @@ class TestPrometheusPublisher:
         test_value = 1.0
 
         publisher.gauge(
-            model_name="test_model",
-            id=test_id,
-            value=test_value,
-            metric_name="simple_metric",
+            GaugeConfig(
+                model_name="test_model",
+                request_id=test_id,
+                value=test_value,
+                metric_name="simple_metric",
+            )
         )
 
         # Verify value is stored
@@ -125,10 +132,12 @@ class TestPrometheusPublisher:
             test_value = thread_id * 0.1
             test_values[thread_id] = (test_id, test_value)
             publisher.gauge(
-                model_name=f"model_{thread_id}",
-                id=test_id,
-                value=test_value,
-                request=mock_request,
+                GaugeConfig(
+                    model_name=f"model_{thread_id}",
+                    request_id=test_id,
+                    value=test_value,
+                    request=mock_request,
+                )
             )
 
         # Create multiple threads
@@ -152,7 +161,9 @@ class TestPrometheusPublisher:
         test_value = 0.5
 
         # Create gauge
-        publisher.gauge(model_name="test_model", id=test_id, value=test_value, request=mock_request)
+        publisher.gauge(
+            GaugeConfig(model_name="test_model", request_id=test_id, value=test_value, request=mock_request)
+        )
         assert test_id in publisher.values
 
         # Remove gauge
@@ -165,10 +176,10 @@ class TestPrometheusPublisher:
         test_id2 = uuid.uuid4()
 
         # Create first gauge
-        publisher.gauge(model_name="test_model", id=test_id1, value=0.5, request=mock_request)
+        publisher.gauge(GaugeConfig(model_name="test_model", request_id=test_id1, value=0.5, request=mock_request))
 
         # Create second gauge with same metric name - should work with same labels
-        publisher.gauge(model_name="test_model", id=test_id2, value=0.7, request=mock_request)
+        publisher.gauge(GaugeConfig(model_name="test_model", request_id=test_id2, value=0.7, request=mock_request))
 
         # Both values should be stored
         assert test_id1 in publisher.values
@@ -206,14 +217,11 @@ class TestPrometheusPublisher:
 
         # Test missing both value and named_values
         with pytest.raises(ValueError, match="Either 'value' or 'named_values' must be provided"):
-            publisher.gauge(model_name="test_model", id=test_id, request=mock_request)
+            GaugeConfig(model_name="test_model", request_id=test_id, request=mock_request)
 
         # Test missing both request and metric_name
-        with pytest.raises(
-            ValueError,
-            match="Either 'request' or 'metric_name' & 'value' must be provided",
-        ):
-            publisher.gauge(model_name="test_model", id=test_id, value=0.5)
+        with pytest.raises(ValueError, match="Either 'request' or 'metric_name' must be provided"):
+            GaugeConfig(model_name="test_model", request_id=test_id, value=0.5)
 
     def test_valid_metric_names(self, publisher: PrometheusPublisher):
         """Test validation of valid Prometheus metric names."""
@@ -263,8 +271,10 @@ class TestPrometheusPublisher:
 
         with pytest.raises(ValueError, match="Invalid Prometheus metric name"):
             publisher.gauge(
-                model_name="test_model",
-                id=test_id,
-                value=test_value,
-                request=mock_request,
+                GaugeConfig(
+                    model_name="test_model",
+                    request_id=test_id,
+                    value=test_value,
+                    request=mock_request,
+                )
             )
