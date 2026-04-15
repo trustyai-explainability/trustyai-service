@@ -85,9 +85,9 @@ jobs:
       # Run docker commands
       - name: Put expiry date on CI-tagged image
         if:  env.BUILD_CONTEXT == 'ci'
-        run: sed -i 's#summary="odh-trustyai-service-python\"#summary="odh-trustyai-service-python" \\ \n      quay.expires-after=7d#' Dockerfile
+        run: sed -i 's#summary="odh-trustyai-service-python\"#summary="odh-trustyai-service-python" \\ \n      quay.expires-after=7d#' Containerfile
       - name: Build image
-        run: docker build -t ${{ env.IMAGE_NAME }}:$TAG .
+        run: docker build -f Containerfile -t ${{ env.IMAGE_NAME }}:$TAG .
       - name: Log in to Quay
         run: docker login -u ${{ secrets.QUAY_ROBOT_USERNAME }} -p ${{ secrets.QUAY_ROBOT_SECRET }} quay.io
       - name: Push to Quay CI repo
