@@ -189,11 +189,11 @@ class TestProbDistKDE:
         nonempty = np.array([1.0, 2.0, 3.0])
 
         with pytest.raises(ValueError, match="cannot be empty"):
-            utils.prob_dist_kde(empty, nonempty, bins=10)
+            utils.prob_dist_kde(empty, nonempty)
         with pytest.raises(ValueError, match="cannot be empty"):
-            utils.prob_dist_kde(nonempty, empty, bins=10)
+            utils.prob_dist_kde(nonempty, empty)
         with pytest.raises(ValueError, match="cannot be empty"):
-            utils.prob_dist_kde(empty, empty, bins=10)
+            utils.prob_dist_kde(empty, empty)
 
     def test_prob_dist_kde_nan_data_raises_error(self):
         """Test that NaN values in input arrays raise ValueError."""

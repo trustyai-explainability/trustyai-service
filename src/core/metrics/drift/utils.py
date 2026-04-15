@@ -6,7 +6,7 @@ This module provides common utility functions for computing probability distribu
 from data samples using different methods (histogram and kernel density estimation).
 """
 
-from typing import Any
+from typing import Literal
 
 import numpy as np
 from scipy.stats import gaussian_kde
@@ -15,8 +15,11 @@ from scipy.stats import gaussian_kde
 DEFAULT_BINS = 64
 DEFAULT_GRID_POINTS = 256
 
+# Type aliases for validated parameter values
+BwMethod = Literal["scott", "silverman"] | float | None
 
-def prob_dist_hist(x: np.ndarray, y: np.ndarray, bins: int = DEFAULT_BINS, **kwargs: Any) -> np.ndarray:
+
+def prob_dist_hist(x: np.ndarray, y: np.ndarray, bins: int = DEFAULT_BINS) -> np.ndarray:
     """
     Generate probability distributions from two datasets using histograms.
 
@@ -26,7 +29,6 @@ def prob_dist_hist(x: np.ndarray, y: np.ndarray, bins: int = DEFAULT_BINS, **kwa
     :param x: First dataset (reference distribution)
     :param y: Second dataset (current distribution)
     :param bins: Number of bins for histogram (default: 64)
-    :param kwargs: Additional keyword arguments (currently unused, for future extensibility)
     :return: List containing two normalized probability distributions [p_x, p_y]
     :raises ValueError: If either input array is empty or contains NaN values
     """
@@ -61,7 +63,13 @@ def prob_dist_hist(x: np.ndarray, y: np.ndarray, bins: int = DEFAULT_BINS, **kwa
     return [p_x, p_y]
 
 
-def prob_dist_kde(x: np.ndarray, y: np.ndarray, grid_points: int = DEFAULT_GRID_POINTS, **kwargs: Any) -> np.ndarray:
+def prob_dist_kde(
+    x: np.ndarray,
+    y: np.ndarray,
+    grid_points: int = DEFAULT_GRID_POINTS,
+    *,
+    bw_method: BwMethod = None,
+) -> np.ndarray:
     """
     Generate probability distributions from two datasets using kernel density estimation.
 
@@ -71,8 +79,7 @@ def prob_dist_kde(x: np.ndarray, y: np.ndarray, grid_points: int = DEFAULT_GRID_
     :param x: First dataset (reference distribution)
     :param y: Second dataset (current distribution)
     :param grid_points: Number of points in the evaluation grid (default: 256)
-    :param kwargs: Additional keyword arguments passed to scipy.stats.gaussian_kde
-                   (e.g., bw_method for bandwidth selection)
+    :param bw_method: Bandwidth selection method passed to scipy.stats.gaussian_kde
     :return: List containing two normalized probability distributions [p_x, p_y]
     :raises ValueError: If either input array is empty, contains NaN values, or has insufficient
                         sample size for KDE estimation
@@ -104,8 +111,8 @@ def prob_dist_kde(x: np.ndarray, y: np.ndarray, grid_points: int = DEFAULT_GRID_
     x_range = np.linspace(x_min, x_max, grid_points)
 
     # Estimate continuous distributions using kernel density estimate with Gaussian kernels
-    kde_x = gaussian_kde(x, **kwargs)
-    kde_y = gaussian_kde(y, **kwargs)
+    kde_x = gaussian_kde(x, bw_method=bw_method)
+    kde_y = gaussian_kde(y, bw_method=bw_method)
 
     # Generate probability distributions
     p_x = kde_x(x_range)
