@@ -3,9 +3,9 @@ import logging
 import re
 import threading
 import uuid
-from typing import Dict, List, Optional
 
-from prometheus_client import CollectorRegistry, Gauge, REGISTRY
+from prometheus_client import REGISTRY, CollectorRegistry, Gauge
+
 from src.service.constants import PROMETHEUS_METRIC_PREFIX
 from src.service.payloads.metrics.base_metric_request import BaseMetricRequest
 from src.service.prometheus.gauge_config import GaugeConfig
@@ -22,16 +22,16 @@ PROMETHEUS_METRIC_NAME_REGEX = re.compile(r"^[a-z_:][a-z0-9_:]*$")
 class PrometheusPublisher:
     def __init__(self, registry: CollectorRegistry = REGISTRY) -> None:
         self.registry: CollectorRegistry = registry
-        self.values: Dict[uuid.UUID, float] = {}
+        self.values: dict[uuid.UUID, float] = {}
         self._values_lock: threading.RLock = threading.RLock()
         # Track gauges by metric name to avoid re-creating them
         # This is because prometheus_client doesn't expose
         # public methods to retrieve them with name.
-        self._gauges: Dict[str, Gauge] = {}
+        self._gauges: dict[str, Gauge] = {}
         self._gauges_lock: threading.RLock = threading.RLock()
         # Track derived UUIDs created for named_values, keyed by root request ID.
         # Protected by _values_lock.
-        self._derived_ids: Dict[uuid.UUID, List[uuid.UUID]] = {}
+        self._derived_ids: dict[uuid.UUID, list[uuid.UUID]] = {}
 
     def _get_value(self, id: uuid.UUID) -> float:
         with self._values_lock:
@@ -46,7 +46,7 @@ class PrometheusPublisher:
             if id in self.values:
                 del self.values[id]
 
-    def _create_or_update_gauge(self, name: str, tags: Dict[str, str], id: uuid.UUID) -> None:
+    def _create_or_update_gauge(self, name: str, tags: dict[str, str], id: uuid.UUID) -> None:
         with self._gauges_lock:
             # We need to track gauges because prometheus_client doesn't provide
             # a way to retrieve an existing gauge by name from the registry
@@ -81,7 +81,7 @@ class PrometheusPublisher:
                 # based on the "request" label matching the provided ID.
                 # If prometheus_client adds public APIs for this in the future,
                 # this should be refactored to use those instead.
-                for labels, _ in gauge._metrics.items():
+                for labels in gauge._metrics:
                     labels_dict = dict(zip(gauge._labelnames, labels))
                     if labels_dict.get("request") == str(id):
                         gauges_to_remove.append(labels)
@@ -100,9 +100,9 @@ class PrometheusPublisher:
         self,
         model_name: str,
         id: uuid.UUID,
-        request: Optional[BaseMetricRequest] = None,
-    ) -> Dict[str, str]:
-        tags: Dict[str, str] = {}
+        request: BaseMetricRequest | None = None,
+    ) -> dict[str, str]:
+        tags: dict[str, str] = {}
 
         if request is not None:
             tags.update(request.retrieve_default_tags())
@@ -127,9 +127,9 @@ class PrometheusPublisher:
                 )
 
             elif config.named_values is not None:
-                derived_ids: List[uuid.UUID] = []
+                derived_ids: list[uuid.UUID] = []
                 for idx, (key, val) in enumerate(config.named_values.items()):
-                    concat_string = f"{str(config.request_id)}{idx}"
+                    concat_string = f"{config.request_id!s}{idx}"
                     new_id = self.generate_uuid(concat_string)
                     derived_ids.append(new_id)
                     self._set_value(new_id, val)
@@ -153,7 +153,10 @@ class PrometheusPublisher:
                 )
 
         else:
-            # Simple gauge without request (metric_name required, validated by GaugeConfig)
+            # Simple gauge without request — metric_name and value guaranteed
+            # non-None by GaugeConfig.validate_gauge_parameters()
+            assert config.metric_name is not None
+            assert config.value is not None
             full_metric_name = self._get_full_metric_name(config.metric_name)
             self._set_value(config.request_id, config.value)
 

@@ -1,13 +1,11 @@
 import threading
 import uuid
-from typing import Dict
 
 import pytest
-
 from prometheus_client import CollectorRegistry, Gauge
+
 from src.service.constants import PROMETHEUS_METRIC_PREFIX
 from src.service.payloads.metrics.base_metric_request import BaseMetricRequest
-
 from src.service.prometheus.gauge_config import GaugeConfig
 from src.service.prometheus.prometheus_publisher import PrometheusPublisher
 
@@ -23,7 +21,7 @@ class MockMetricRequest(BaseMetricRequest):
             batch_size=100,
         )
 
-    def retrieve_tags(self) -> Dict[str, str]:
+    def retrieve_tags(self) -> dict[str, str]:
         return {"custom_tag": "custom_value"}
 
 
@@ -151,7 +149,7 @@ class TestPrometheusPublisher:
             thread.join()
 
         # Verify all values were stored correctly
-        for thread_id, (test_id, test_value) in test_values.items():
+        for test_id, test_value in test_values.values():
             assert test_id in publisher.values
             assert publisher.values[test_id] == test_value
 
@@ -170,20 +168,20 @@ class TestPrometheusPublisher:
         publisher.remove_gauge(name=mock_request.metric_name, id=test_id)
         assert test_id not in publisher.values
 
-    def test_remove_gauge_cleans_up_named_values(
-        self, publisher: PrometheusPublisher, mock_request: MockMetricRequest
-    ):
+    def test_remove_gauge_cleans_up_named_values(self, publisher: PrometheusPublisher, mock_request: MockMetricRequest):
         """Test that remove_gauge cleans up derived IDs created from named_values."""
         test_id = uuid.uuid4()
         named_values = {"feature1": 0.3, "feature2": 0.7}
 
         # Create gauge with named_values
-        publisher.gauge(GaugeConfig(
-            model_name="test_model",
-            request_id=test_id,
-            named_values=named_values,
-            request=mock_request,
-        ))
+        publisher.gauge(
+            GaugeConfig(
+                model_name="test_model",
+                request_id=test_id,
+                named_values=named_values,
+                request=mock_request,
+            )
+        )
 
         # Verify derived IDs are tracked
         assert test_id in publisher._derived_ids
