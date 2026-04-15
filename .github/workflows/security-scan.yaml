@@ -43,7 +43,9 @@ jobs:
         uses: PyCQA/bandit-action@v1
         with:
           targets: "src/"
-          configFile: "pyproject.toml"
+          # Note: configFile omitted — bandit-action bundles Python 3.8 without
+          # TOML parser. Skips from [tool.bandit] in pyproject.toml are applied
+          # when running bandit locally/in pre-commit (which uses our venv).
 
       - name: Upload SARIF results to GitHub Security tab
         if: github.ref == 'refs/heads/main'
