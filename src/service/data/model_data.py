@@ -1,10 +1,9 @@
 import logging
-from typing import List, Optional
 
 import numpy as np
 import pandas as pd
 
-from src.service.constants import INPUT_SUFFIX, OUTPUT_SUFFIX, METADATA_SUFFIX
+from src.service.constants import INPUT_SUFFIX, METADATA_SUFFIX, OUTPUT_SUFFIX
 from src.service.data.storage import get_global_storage_interface
 
 logger = logging.getLogger(__name__)
@@ -15,11 +14,11 @@ class ModelDataContainer:
         self,
         model_name: str,
         input_data: np.ndarray,
-        input_names: List[str],
+        input_names: list[str],
         output_data: np.ndarray,
-        output_names: List[str],
+        output_names: list[str],
         metadata: np.ndarray,
-        metadata_names: List[str],
+        metadata_names: list[str],
     ):
         self.model_name = model_name
         self.input_data = input_data
@@ -34,7 +33,7 @@ class ModelData:
     """Main interface for retrieving model data, e.g.
 
     model_data = ModelData("example-model-name")
-    input_data_array, output_data_array, metadata_array = model_data.data()
+    input_data_array, output_data_array, metadata_array = await model_data.data()
 
     """
 
@@ -56,13 +55,8 @@ class ModelData:
         # warn if we're missing one of the expected datasets
         dataset_checks = (input_exists, output_exists, metadata_exists)
         if not all(dataset_checks):
-            expected_datasets = [
-                self.input_dataset, self.output_dataset, self.metadata_dataset
-            ]
-            missing_datasets = [
-                dataset for idx, dataset in enumerate(expected_datasets)
-                if not dataset_checks[idx]
-            ]
+            expected_datasets = [self.input_dataset, self.output_dataset, self.metadata_dataset]
+            missing_datasets = [dataset for idx, dataset in enumerate(expected_datasets) if not dataset_checks[idx]]
             logger.warning(
                 f"Not all datasets present for model {self.model_name}: "
                 f"missing {missing_datasets}. This could be indicative of "
@@ -80,7 +74,7 @@ class ModelData:
         metadata_rows = await storage_interface.dataset_rows(self.metadata_dataset)
         return input_rows, output_rows, metadata_rows
 
-    async def shapes(self) -> tuple[List[int], List[int], List[int]]:
+    async def shapes(self) -> tuple[list[int], list[int], list[int]]:
         """
         Get the shapes of the input, output, and metadata datasets that exist in a model dataset
         """
@@ -90,7 +84,7 @@ class ModelData:
         metadata_shape = await storage_interface.dataset_shape(self.metadata_dataset)
         return input_shape, output_shape, metadata_shape
 
-    async def column_names(self) -> tuple[List[str], List[str], List[str]]:
+    async def column_names(self) -> tuple[list[str], list[str], list[str]]:
         storage_interface = get_global_storage_interface()
         input_names = await storage_interface.get_aliased_column_names(self.input_dataset)
         output_names = await storage_interface.get_aliased_column_names(self.output_dataset)
@@ -99,7 +93,7 @@ class ModelData:
 
         return input_names, output_names, metadata_names
 
-    async def original_column_names(self) -> tuple[List[str], List[str], List[str]]:
+    async def original_column_names(self) -> tuple[list[str], list[str], list[str]]:
         storage_interface = get_global_storage_interface()
         input_names = await storage_interface.get_original_column_names(self.input_dataset)
         output_names = await storage_interface.get_original_column_names(self.output_dataset)
@@ -107,8 +101,9 @@ class ModelData:
 
         return input_names, output_names, metadata_names
 
-    async def data(self, start_row=0, n_rows=None, get_input=True, get_output=True, get_metadata=True) \
-            -> tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray]]:
+    async def data(
+        self, start_row=0, n_rows=None, get_input=True, get_output=True, get_metadata=True
+    ) -> tuple[np.ndarray | None, np.ndarray | None, np.ndarray | None]:
         """
         Get data from a saved model
 
@@ -146,32 +141,26 @@ class ModelData:
         # Check if metadata or columns are missing
         if metadata is None or metadata_cols is None:
             logger.warning(
-                f"Metadata or metadata columns missing for model "
-                f"{self.model_name}; returning empty DataFrame."
+                f"Metadata or metadata columns missing for model {self.model_name}; returning empty DataFrame."
             )
             return pd.DataFrame()
 
         # Check if metadata is empty
         if len(metadata) == 0 or len(metadata_cols) == 0:
             logger.warning(
-                f"Metadata or metadata columns empty for model "
-                f"{self.model_name}; returning empty DataFrame."
+                f"Metadata or metadata columns empty for model {self.model_name}; returning empty DataFrame."
             )
             return pd.DataFrame()
 
         # Validate that metadata rows are properly formatted
         if not all(isinstance(row, (list, tuple, np.ndarray)) for row in metadata):
-            logger.warning(
-                f"Metadata format is invalid for model {self.model_name}; "
-                f"returning empty DataFrame."
-            )
+            logger.warning(f"Metadata format is invalid for model {self.model_name}; returning empty DataFrame.")
             return pd.DataFrame()
 
         # Check if columns and data are aligned
         if not all(len(row) == len(metadata_cols) for row in metadata):
             logger.warning(
-                f"Metadata rows and columns are not aligned for model "
-                f"{self.model_name}; returning empty DataFrame."
+                f"Metadata rows and columns are not aligned for model {self.model_name}; returning empty DataFrame."
             )
             return pd.DataFrame()
 

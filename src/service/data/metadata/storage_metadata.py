@@ -1,6 +1,4 @@
-from typing import Dict
-
-from src.service.data.exceptions import InvalidSchemaException
+from src.service.data.exceptions import InvalidSchemaError
 from src.service.payloads.service.schema import Schema
 
 
@@ -72,14 +70,14 @@ class StorageMetadata:
     def merge_input_schema(self, other_schema: Schema) -> None:
         """Merge another schema with the input schema."""
         if other_schema != self.input_schema:
-            raise InvalidSchemaException("Original schema and schema-to-merge are not compatible")
+            raise InvalidSchemaError("Original schema and schema-to-merge are not compatible")
 
     def merge_output_schema(self, other_schema: Schema) -> None:
         """Merge another schema with the output schema."""
         if other_schema != self.output_schema:
-            raise InvalidSchemaException("Original schema and schema-to-merge are not compatible")
+            raise InvalidSchemaError("Original schema and schema-to-merge are not compatible")
 
-    def get_joint_name_aliases(self) -> Dict[str, str]:
+    def get_joint_name_aliases(self) -> dict[str, str]:
         """Get combined name mappings from input and output schemas."""
         joint_mapping = {}
         joint_mapping.update(self.input_schema.name_mapping)
