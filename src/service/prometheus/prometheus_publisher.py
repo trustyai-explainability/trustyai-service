@@ -192,5 +192,5 @@ class PrometheusPublisher:
         This matches Java's implementation for cross-platform compatibility.
         """
         # lgtm[py/weak-sensitive-data-hashing]
-        md5_hash = hashlib.md5(content.encode("utf-8"), usedforsecurity=False).digest()  # nosec B324 - MD5 used for UUID generation, not security
+        md5_hash = hashlib.md5(content.encode("utf-8"), usedforsecurity=False).digest()  # nosec B324 # CodeQL[py/weak-crypto]: MD5 used for UUID generation, not security
         return uuid.UUID(bytes=md5_hash, version=3)
