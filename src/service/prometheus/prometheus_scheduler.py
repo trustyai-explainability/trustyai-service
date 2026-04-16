@@ -15,6 +15,7 @@ from src.service.data.exceptions import DataframeCreateException, StorageReadExc
 from src.service.data.storage.pvc import MissingH5PYDataException
 from src.service.payloads.metrics.base_metric_request import BaseMetricRequest
 from src.service.payloads.metrics.request_reconciler import RequestReconciler
+from src.service.prometheus.gauge_config import GaugeConfig
 from src.service.prometheus.metric_value_carrier import MetricValueCarrier
 from src.service.prometheus.prometheus_publisher import PrometheusPublisher
 
@@ -210,10 +211,12 @@ class PrometheusScheduler:
         """
         try:
             self.publisher.gauge(
-                model_name="",
-                id=PrometheusPublisher.generate_uuid("model_count"),
-                metric_name="MODEL_COUNT_TOTAL",
-                value=len(verified_models),
+                GaugeConfig(
+                    model_name="",
+                    request_id=PrometheusPublisher.generate_uuid("model_count"),
+                    metric_name="MODEL_COUNT_TOTAL",
+                    value=len(verified_models),
+                )
             )
         except ValueError as e:
             self._handle_error(
@@ -313,10 +316,12 @@ class PrometheusScheduler:
 
         try:
             self.publisher.gauge(
-                model_name=model_id,
-                id=PrometheusPublisher.generate_uuid(model_id),
-                metric_name="MODEL_OBSERVATIONS_TOTAL",
-                value=total_observations,
+                GaugeConfig(
+                    model_name=model_id,
+                    request_id=PrometheusPublisher.generate_uuid(model_id),
+                    metric_name="MODEL_OBSERVATIONS_TOTAL",
+                    value=total_observations,
+                )
             )
         except ValueError as e:
             self._handle_error(
@@ -552,17 +557,21 @@ class PrometheusScheduler:
         try:
             if value.is_single():
                 self.publisher.gauge(
-                    model_name=model_id,
-                    id=req_id,
-                    request=request,
-                    value=value.get_value(),
+                    GaugeConfig(
+                        model_name=model_id,
+                        request_id=req_id,
+                        request=request,
+                        value=value.get_value(),
+                    )
                 )
             else:
                 self.publisher.gauge(
-                    model_name=model_id,
-                    id=req_id,
-                    request=request,
-                    named_values=value.get_named_values(),
+                    GaugeConfig(
+                        model_name=model_id,
+                        request_id=req_id,
+                        request=request,
+                        named_values=value.get_named_values(),
+                    )
                 )
         except ValueError as e:
             self._handle_error(

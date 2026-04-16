@@ -3,11 +3,12 @@ import logging
 import re
 import threading
 import uuid
-from typing import Dict, Optional
 
-from prometheus_client import CollectorRegistry, Gauge, REGISTRY
+from prometheus_client import REGISTRY, CollectorRegistry, Gauge
+
 from src.service.constants import PROMETHEUS_METRIC_PREFIX
 from src.service.payloads.metrics.base_metric_request import BaseMetricRequest
+from src.service.prometheus.gauge_config import GaugeConfig
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -21,13 +22,16 @@ PROMETHEUS_METRIC_NAME_REGEX = re.compile(r"^[a-z_:][a-z0-9_:]*$")
 class PrometheusPublisher:
     def __init__(self, registry: CollectorRegistry = REGISTRY) -> None:
         self.registry: CollectorRegistry = registry
-        self.values: Dict[uuid.UUID, float] = {}
+        self.values: dict[uuid.UUID, float] = {}
         self._values_lock: threading.RLock = threading.RLock()
         # Track gauges by metric name to avoid re-creating them
         # This is because prometheus_client doesn't expose
         # public methods to retrieve them with name.
-        self._gauges: Dict[str, Gauge] = {}
+        self._gauges: dict[str, Gauge] = {}
         self._gauges_lock: threading.RLock = threading.RLock()
+        # Track derived UUIDs created for named_values, keyed by root request ID.
+        # Protected by _values_lock.
+        self._derived_ids: dict[uuid.UUID, list[uuid.UUID]] = {}
 
     def _get_value(self, id: uuid.UUID) -> float:
         with self._values_lock:
@@ -42,7 +46,7 @@ class PrometheusPublisher:
             if id in self.values:
                 del self.values[id]
 
-    def _create_or_update_gauge(self, name: str, tags: Dict[str, str], id: uuid.UUID) -> None:
+    def _create_or_update_gauge(self, name: str, tags: dict[str, str], id: uuid.UUID) -> None:
         with self._gauges_lock:
             # We need to track gauges because prometheus_client doesn't provide
             # a way to retrieve an existing gauge by name from the registry
@@ -77,7 +81,7 @@ class PrometheusPublisher:
                 # based on the "request" label matching the provided ID.
                 # If prometheus_client adds public APIs for this in the future,
                 # this should be refactored to use those instead.
-                for labels, _ in gauge._metrics.items():
+                for labels in gauge._metrics:
                     labels_dict = dict(zip(gauge._labelnames, labels))
                     if labels_dict.get("request") == str(id):
                         gauges_to_remove.append(labels)
@@ -85,15 +89,20 @@ class PrometheusPublisher:
                 for to_remove in gauges_to_remove:
                     gauge.remove(*to_remove)
 
+        # Clean up the root value and any derived values from named_values
         self._remove_value(id)
+        with self._values_lock:
+            for derived_id in self._derived_ids.pop(id, []):
+                if derived_id in self.values:
+                    del self.values[derived_id]
 
     def _generate_tags(
         self,
         model_name: str,
         id: uuid.UUID,
-        request: Optional[BaseMetricRequest] = None,
-    ) -> Dict[str, str]:
-        tags: Dict[str, str] = {}
+        request: BaseMetricRequest | None = None,
+    ) -> dict[str, str]:
+        tags: dict[str, str] = {}
 
         if request is not None:
             tags.update(request.retrieve_default_tags())
@@ -104,57 +113,57 @@ class PrometheusPublisher:
         tags["request"] = str(id)
         return tags
 
-    def gauge(
-        self,
-        model_name: str,
-        id: uuid.UUID,
-        request: Optional[BaseMetricRequest] = None,
-        value: Optional[float] = None,
-        named_values: Optional[Dict[str, float]] = None,
-        metric_name: Optional[str] = None,
-    ) -> None:
-        """
-        Register a gauge metric with multiple possible parameter combinations:
-        - gauge(model_name, id, request, value)
-        - gauge(model_name, id, request, named_values)
-        - gauge(model_name, id, value, metric_name)
-        """
-        if request is not None:
-            full_metric_name = self._get_full_metric_name(request.metric_name)
+    def gauge(self, config: GaugeConfig) -> None:
+        """Register a gauge metric from a validated GaugeConfig."""
+        if config.request is not None:
+            full_metric_name = self._get_full_metric_name(config.request.metric_name)
 
-            if value is not None:
-                # gauge(model_name, id, request, value)
-                self._set_value(id, value)
-                tags = self._generate_tags(model_name=model_name, id=id, request=request)
-                self._create_or_update_gauge(name=full_metric_name, tags=tags, id=id)
-                logger.debug(f"Scheduled request for {request.metric_name} id={id}, value={value}")
+            if config.value is not None:
+                self._set_value(config.request_id, config.value)
+                tags = self._generate_tags(model_name=config.model_name, id=config.request_id, request=config.request)
+                self._create_or_update_gauge(name=full_metric_name, tags=tags, id=config.request_id)
+                logger.debug(
+                    f"Scheduled request for {config.request.metric_name} id={config.request_id}, value={config.value}"
+                )
 
-            elif named_values is not None:
-                # gauge(model_name, id, request, named_values)
-                for idx, (key, val) in enumerate(named_values.items()):
-                    concat_string = f"{str(id)}{idx}"
+            elif config.named_values is not None:
+                derived_ids: list[uuid.UUID] = []
+                for idx, (key, val) in enumerate(config.named_values.items()):
+                    concat_string = f"{config.request_id!s}{idx}"
                     new_id = self.generate_uuid(concat_string)
+                    derived_ids.append(new_id)
                     self._set_value(new_id, val)
 
-                    tags = self._generate_tags(model_name=model_name, id=id, request=request)
+                    tags = self._generate_tags(
+                        model_name=config.model_name, id=config.request_id, request=config.request
+                    )
                     tags["subcategory"] = key
                     self._create_or_update_gauge(name=full_metric_name, tags=tags, id=new_id)
-                logger.debug(f"Scheduled request for {request.metric_name} id={id}, value={named_values}")
-            else:
-                raise ValueError("Either 'value' or 'named_values' must be provided")
 
-        elif metric_name is not None and value is not None:
-            # gauge(model_name, id, value, metric_name)
-            full_metric_name = self._get_full_metric_name(metric_name)
-            self._set_value(id, value)
+                # Clean up old derived values (from previous calculation cycle)
+                # before tracking the new ones
+                with self._values_lock:
+                    for old_id in self._derived_ids.pop(config.request_id, []):
+                        if old_id in self.values:
+                            del self.values[old_id]
+                    self._derived_ids[config.request_id] = derived_ids
 
-            tags = self._generate_tags(model_name=model_name, id=id)
-            self._create_or_update_gauge(name=full_metric_name, tags=tags, id=id)
-
-            logger.debug(f"Scheduled request for {metric_name} id={id}, value={value}")
+                logger.debug(
+                    f"Scheduled request for {config.request.metric_name} id={config.request_id}, value={config.named_values}"
+                )
 
         else:
-            raise ValueError("Either 'request' or 'metric_name' & 'value' must be provided")
+            # Simple gauge without request — metric_name and value guaranteed
+            # non-None by GaugeConfig.validate_gauge_parameters()
+            assert config.metric_name is not None
+            assert config.value is not None
+            full_metric_name = self._get_full_metric_name(config.metric_name)
+            self._set_value(config.request_id, config.value)
+
+            tags = self._generate_tags(model_name=config.model_name, id=config.request_id)
+            self._create_or_update_gauge(name=full_metric_name, tags=tags, id=config.request_id)
+
+            logger.debug(f"Scheduled request for {config.metric_name} id={config.request_id}, value={config.value}")
 
     def _get_full_metric_name(self, metric_name: str) -> str:
         if not PROMETHEUS_METRIC_PREFIX.strip():

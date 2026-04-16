@@ -1032,6 +1032,7 @@ def make_retrieve_default_tags_called_directly_by_prometheus_publisher_test(
 
         from prometheus_client import CollectorRegistry
 
+        from src.service.prometheus.gauge_config import GaugeConfig
         from src.service.prometheus.prometheus_publisher import PrometheusPublisher
 
         # Create request without metric_name (it defaults to None, but model_validator sets it)
@@ -1057,7 +1058,7 @@ def make_retrieve_default_tags_called_directly_by_prometheus_publisher_test(
         test_id = uuid.uuid4()
 
         # This should not raise an error
-        publisher.gauge(model_name="test_model", id=test_id, value=0.5, request=request)
+        publisher.gauge(GaugeConfig(model_name="test_model", request_id=test_id, value=0.5, request=request))
 
         # Verify the gauge was created successfully
         metric_name = f"trustyai_{request.metric_name.lower()}"
