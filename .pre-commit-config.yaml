@@ -6,51 +6,67 @@ default_language_version:
 
 ci:
   autofix_prs: false # Disable autofix for PRs
+  skip: [pyrefly-check]  # Requires uv + pyrefly (language: system), not available in pre-commit.ci
 
 repos:
+  # === FAST FILE CHECKS ===
+  # Fixers run first (auto-fix issues), then validators
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: "v6.0.0"
+    rev: v6.0.0
     hooks:
-      - id: check-merge-conflict
-      - id: debug-statements
+      # Fixers - auto-fix issues
       - id: trailing-whitespace
-        args: [--markdown-linebreak-ext=md] # Do not process Markdown files.
+        args: [--markdown-linebreak-ext=md]
       - id: end-of-file-fixer
+      # Validators - read-only checks
+      - id: check-merge-conflict
       - id: check-ast
+      - id: check-toml
+      - id: check-yaml
       - id: check-builtin-literals
       - id: check-docstring-first
-      - id: check-toml
+      - id: debug-statements
 
-  - repo: https://github.com/PyCQA/flake8
-    rev: "7.3.0"
+  # === CODE FORMATTING & LINTING ===
+  # Check first (auto-fix lint issues), then format
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.10
     hooks:
-      - id: flake8
-        args: [--config=.flake8, '--ignore=FCN001,W503']
-        additional_dependencies:
-          [
-            "git+https://github.com/RedHatQE/flake8-plugins.git@v0.0.6",
-            "flake8-mutable",
-          ]
+      - id: ruff-check
+      - id: ruff-format
 
+  # === TYPE CHECKING ===
+  - repo: local
+    hooks:
+      - id: pyrefly-check
+        name: pyrefly check
+        entry: uv run pyrefly check
+        language: system
+        types: [python]
+        pass_filenames: false
+        require_serial: true
+
+  # === SECURITY SCANNING ===
   - repo: https://github.com/Yelp/detect-secrets
     rev: v1.5.0
     hooks:
       - id: detect-secrets
 
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.0
-    hooks:
-      - id: ruff
-      - id: ruff-format
-
   - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.30.0
+    rev: v8.30.1
     hooks:
       - id: gitleaks
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.19.1
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.9.4
     hooks:
-      - id: mypy
-        additional_dependencies: ["types-PyYAML", "types-requests"]
-        exclude: ^(docs/|.*/test_.*)
+      - id: bandit
+        args: [-c, pyproject.toml]
+        additional_dependencies: ["bandit[toml]"]
+
+  # === COMMIT MESSAGE VALIDATION ===
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.4.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
