@@ -228,7 +228,7 @@ class TestRequestReconciler:
         metadata.get_output_schema.return_value = output_schema
 
         # Should raise an error when field name not found
-        with pytest.raises(Exception):  # KeyError or similar
+        with pytest.raises(IllegalArgumentError, match="not found in input schema"):
             RequestReconciler.reconcile_with_metadata(mock_request, metadata)
 
     @pytest.mark.asyncio

@@ -73,9 +73,13 @@ class RequestReconciler:
                         provided_name = name_provider_method()
 
                         # Get the data type from input schema
-                        field_data_type: DataType = (
-                            storage_metadata.get_input_schema().get_name_mapped_items().get(provided_name).get_type()
-                        )
+                        schema_item = storage_metadata.get_input_schema().get_name_mapped_items().get(provided_name)
+                        if schema_item is None:
+                            raise IllegalArgumentError(
+                                f"Field '{provided_name}' not found in input schema "
+                                f"for model {request.model_id}"
+                            )
+                        field_data_type: DataType = schema_item.get_type()
                         tvs = []
 
                         for sub_node in field_value.get_raw_value_nodes():
@@ -102,9 +106,13 @@ class RequestReconciler:
                         provided_name = name_provider_method()
 
                         # Get the data type from output schema
-                        field_data_type = (
-                            storage_metadata.get_output_schema().get_name_mapped_items().get(provided_name).get_type()
-                        )
+                        schema_item = storage_metadata.get_output_schema().get_name_mapped_items().get(provided_name)
+                        if schema_item is None:
+                            raise IllegalArgumentError(
+                                f"Field '{provided_name}' not found in output schema "
+                                f"for model {request.model_id}"
+                            )
+                        field_data_type = schema_item.get_type()
                         tvs = []
 
                         for sub_node in field_value.get_raw_value_nodes():
