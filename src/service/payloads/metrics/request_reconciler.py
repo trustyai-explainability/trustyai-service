@@ -103,7 +103,7 @@ class RequestReconciler:
 
                         # Get the data type from output schema
                         field_data_type = (
-                            storage_metadata.get_output_schema().get_name_mapped_items()[provided_name].get_type()
+                            storage_metadata.get_output_schema().get_name_mapped_items().get(provided_name).get_type()
                         )
                         tvs = []
 
