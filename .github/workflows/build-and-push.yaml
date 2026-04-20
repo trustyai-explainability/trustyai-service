@@ -54,12 +54,19 @@ jobs:
         if: env.BUILD_CONTEXT == 'ci'
         with:
           ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
       - name: Apply PR diff
         if: env.BUILD_CONTEXT == 'ci'
         run: |
-          curl -s -H "Accept: application/vnd.github.v3.patch" \
+          curl -sSf --fail-with-body \
+            -H "Accept: application/vnd.github.v3.patch" \
             "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.number }}.patch" \
             -o /tmp/pr.patch
+          if ! grep -q "^diff --git" /tmp/pr.patch; then
+            echo "::error::PR patch is not a valid git patch"
+            cat /tmp/pr.patch
+            exit 1
+          fi
           git apply -3 /tmp/pr.patch
       - uses: actions/checkout@v4
         if: env.BUILD_CONTEXT == 'main' ||  env.BUILD_CONTEXT == 'tag'
