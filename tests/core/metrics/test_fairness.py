@@ -79,6 +79,7 @@ y = df["Exited"]
 
 def train_model(X: pd.DataFrame = X, y: pd.Series = y) -> pd.DataFrame:
     """Train a logistic regression model on encoded and scaled features."""
+    X_local = X.copy()
     categorical_features = [
         "Geography",
         "Gender",
@@ -90,9 +91,9 @@ def train_model(X: pd.DataFrame = X, y: pd.Series = y) -> pd.DataFrame:
     label_encoders = {}
     for feature in categorical_features:
         label_encoders[feature] = LabelEncoder()
-        X[feature] = label_encoders[feature].fit_transform(X[feature])  # type: ignore[index]
+        X_local[feature] = label_encoders[feature].fit_transform(X_local[feature])  # type: ignore[index]
     scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
+    X_scaled = scaler.fit_transform(X_local)
     lr = LogisticRegression().fit(X_scaled, y)
 
     return pd.DataFrame(lr.predict(X_scaled))
@@ -103,10 +104,12 @@ def truth_predict_output(
     y: pd.Series = y,
 ) -> tuple[pd.Series, pd.DataFrame]:
     """Generate ground truth and predictions indexed by gender for fairness testing."""
-    y.index = X["Gender"]
-    y_pred = pd.DataFrame(train_model())
-    y_pred.index = X["Gender"]
-    return y, y_pred
+    gender = X["Gender"].copy()
+    y_true = y.copy()
+    y_true.index = gender
+    y_pred = pd.DataFrame(train_model(X, y))
+    y_pred.index = gender
+    return y_true, y_pred
 
 
 def get_privileged_unprivileged_split(
