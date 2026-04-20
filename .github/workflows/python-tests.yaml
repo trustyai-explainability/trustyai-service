@@ -37,7 +37,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libmariadb3 libmariadb-dev mariadb-server protobuf-compiler
+          sudo apt-get install -y libmariadb3 libmariadb-dev mariadb-client protobuf-compiler
 
       - name: Install Python dependencies
         run: uv sync --all-groups --extra mariadb
@@ -46,7 +46,9 @@ jobs:
         run: bash scripts/generate_protos.sh
 
       - name: Shutdown Ubuntu MySQL
-        run: sudo service mysql stop
+        run: |
+          sudo service mysql stop || true
+          sudo service mariadb stop || true
 
       - name: Set up MariaDB
         uses: getong/mariadb-action@v1.11
