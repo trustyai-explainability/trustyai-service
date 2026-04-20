@@ -23,7 +23,7 @@ on:
 # Cancel in-progress PR builds; never cancel main (could corrupt image push)
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request_target' }}
 
 jobs:
   # Ensure that tests pass before publishing a new image.
