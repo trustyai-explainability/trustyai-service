@@ -26,6 +26,7 @@ from src.endpoints.metadata import router as metadata_router
 
 # from src.endpoints.drift_metrics import router as drift_metrics_router
 from src.endpoints.metrics.drift.compare_means import router as drift_comparemeans_router
+from src.endpoints.metrics.drift.jensen_shannon import router as drift_jensenshannon_router
 from src.endpoints.metrics.drift.kolmogorov_smirnov import router as drift_kstest_router
 from src.endpoints.metrics.fairness.group.dir import router as dir_router
 from src.endpoints.metrics.fairness.group.spd import router as spd_router
@@ -128,6 +129,12 @@ app.include_router(
     drift_comparemeans_router,
     tags=[
         "Drift Metrics: CompareMeans",
+    ],
+)
+app.include_router(
+    drift_jensenshannon_router,
+    tags=[
+        "Drift Metrics: JensenShannon",
     ],
 )
 app.include_router(
