@@ -46,7 +46,9 @@ def calculate_spd_metric(dataframe: pd.DataFrame, request: GroupMetricRequest) -
         # Check for sufficient data
         if len(privileged_data) == 0 or len(unprivileged_data) == 0:
             logger.warning(
-                f"Insufficient data for SPD calculation: privileged={len(privileged_data)}, unprivileged={len(unprivileged_data)} samples. Returning NaN."
+                "Insufficient data for SPD calculation: privileged=%d, unprivileged=%d samples. Returning NaN.",
+                len(privileged_data),
+                len(unprivileged_data),
             )
             return MetricValueCarrier(float("nan"))
 
@@ -67,7 +69,7 @@ def calculate_spd_metric(dataframe: pd.DataFrame, request: GroupMetricRequest) -
         return MetricValueCarrier(spd_value)
 
     except Exception as e:
-        logger.error(f"Error calculating SPD: {str(e)}")
+        logger.error(f"Error calculating SPD: {e!s}")
         raise e
 
 
@@ -124,8 +126,8 @@ async def compute_spd(request: GroupMetricRequest, delta: float | None = Query(N
             },
         }
     except Exception as e:
-        logger.error(f"Error computing SPD: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error computing metric: {str(e)}") from e
+        logger.error(f"Error computing SPD: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Error computing metric: {e!s}") from e
 
 
 @router.get("/metrics/group/fairness/spd/definition")
@@ -147,8 +149,8 @@ async def interpret_spd_value(request: GroupDefinitionRequest):
         # TODO: Implement interpretation
         return {"interpretation": "The SPD value indicates the difference in favorable outcome rates between groups."}
     except Exception as e:
-        logger.error(f"Error interpreting SPD value: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error interpreting value: {str(e)}")
+        logger.error(f"Error interpreting SPD value: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Error interpreting value: {e!s}")
 
 
 @router.post("/metrics/group/fairness/spd/request")
@@ -174,8 +176,8 @@ async def schedule_spd(request: GroupMetricRequest):
         return {"requestId": str(request_id)}
 
     except Exception as e:
-        logger.error(f"Error scheduling SPD computation: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error scheduling metric: {str(e)}") from e
+        logger.error(f"Error scheduling SPD computation: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Error scheduling metric: {e!s}") from e
 
 
 @router.delete("/metrics/group/fairness/spd/request")
@@ -202,8 +204,8 @@ async def delete_spd_schedule(schedule: ScheduleId):
         return {"status": "success", "message": f"Schedule {schedule.requestId} deleted"}
 
     except Exception as e:
-        logger.error(f"Error deleting SPD schedule: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error deleting schedule: {str(e)}")
+        logger.error(f"Error deleting SPD schedule: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Error deleting schedule: {e!s}")
 
 
 @router.get("/metrics/group/fairness/spd/requests")
@@ -244,8 +246,8 @@ async def list_spd_requests():
         return {"requests": requests_list}
 
     except Exception as e:
-        logger.error(f"Error listing SPD requests: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error listing requests: {str(e)}")
+        logger.error(f"Error listing SPD requests: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Error listing requests: {e!s}")
 
 
 # Deprecated SPD endpoints
