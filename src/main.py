@@ -29,6 +29,9 @@ from src.endpoints.metrics.batch_mean import router as batch_mean_router
 from src.endpoints.metrics.drift.compare_means import (
     router as drift_comparemeans_router,
 )
+from src.endpoints.metrics.drift.jensen_shannon import (
+    router as drift_jensenshannon_router,
+)
 from src.endpoints.metrics.drift.kolmogorov_smirnov import router as drift_kstest_router
 from src.endpoints.metrics.fairness.group.dir import router as dir_router
 from src.endpoints.metrics.fairness.group.spd import router as spd_router
@@ -36,6 +39,7 @@ from src.endpoints.metrics.metrics_info import router as metrics_info_router
 
 # Middleware
 from src.middleware.gzip_middleware import GzipRequestMiddleware
+from src.service.config.registry import register_if_enabled_with_group
 from src.service.prometheus.shared_prometheus_scheduler import (
     get_shared_prometheus_scheduler,
 )
@@ -46,8 +50,6 @@ try:
 
     lm_evaluation_harness_router = router
 except ImportError:
-    # LM evaluation harness requires optional 'eval' extra dependencies
-    # ImportError (not ModuleNotFoundError) because the module may exist but fail to import
     pass
 
 logging.basicConfig(
@@ -143,29 +145,63 @@ app.include_router(
     consumer_router,
     tags=["{Internal Only} Inference Consumer", "{Internal Only} ModelMesh Consumer"],
 )
-app.include_router(dir_router, tags=["Fairness Metrics: Group: Disparate Impact Ratio"])
 app.include_router(data_upload_router, tags=["Data Upload"])
 
-#   Drift metrics
-app.include_router(
-    drift_comparemeans_router,
-    tags=[
-        "Drift Metrics: CompareMeans",
-    ],
+# Fairness metrics (gated by "fairness" group + individual flags)
+register_if_enabled_with_group(
+    app,
+    dir_router,
+    "fairness",
+    "fairness_dir",
+    "Fairness Metrics: Group: Disparate Impact Ratio",
 )
-app.include_router(
-    drift_kstest_router,
-    tags=[
-        "Drift Metrics: KSTest",
-    ],
+register_if_enabled_with_group(
+    app,
+    spd_router,
+    "fairness",
+    "fairness_spd",
+    "Fairness Metrics: Group: Statistical Parity Difference",
 )
 
-app.include_router(explainers_global_router, tags=["Explainers: Global"])
-app.include_router(explainers_local_router, tags=["Explainers: Local"])
-app.include_router(
-    spd_router,
-    tags=["Fairness Metrics: Group: Statistical Parity Difference"],
+# Drift metrics (gated by "drift" group + individual flags)
+register_if_enabled_with_group(
+    app,
+    drift_comparemeans_router,
+    "drift",
+    "drift_compare_means",
+    "Drift Metrics: CompareMeans",
 )
+register_if_enabled_with_group(
+    app,
+    drift_kstest_router,
+    "drift",
+    "drift_ks_test",
+    "Drift Metrics: KSTest",
+)
+register_if_enabled_with_group(
+    app,
+    drift_jensenshannon_router,
+    "drift",
+    "drift_jensen_shannon",
+    "Drift Metrics: JensenShannon",
+)
+
+# Explainer endpoints (gated by "explainer" group + individual flags)
+register_if_enabled_with_group(
+    app,
+    explainers_local_router,
+    "explainer",
+    "explainer_local",
+    "Explainers: Local",
+)
+register_if_enabled_with_group(
+    app,
+    explainers_global_router,
+    "explainer",
+    "explainer_global",
+    "Explainers: Global",
+)
+
 app.include_router(batch_mean_router, tags=["Metrics: Batch Mean"])
 app.include_router(metadata_router, tags=["Service Metadata"])
 app.include_router(metrics_info_router, tags=["Metrics Information Endpoint"])
@@ -175,14 +211,22 @@ if lm_evaluation_harness_router is not None:
         lm_evaluation_harness_router, tags=["LM Evaluation Harness Endpoint"]
     )
 
-# Deprecated endpoints
-app.include_router(
-    dir_router, prefix="/metrics", tags=["{Legacy}: Disparate Impact Ratio"]
-)
-app.include_router(
-    spd_router,
+# Deprecated endpoints (gated by fairness group + individual flags)
+register_if_enabled_with_group(
+    app,
+    dir_router,
+    "fairness",
+    "fairness_dir",
     prefix="/metrics",
-    tags=["{Legacy}: Statistical Parity Difference"],
+    tag="{Legacy}: Disparate Impact Ratio",
+)
+register_if_enabled_with_group(
+    app,
+    spd_router,
+    "fairness",
+    "fairness_spd",
+    prefix="/metrics",
+    tag="{Legacy}: Statistical Parity Difference",
 )
 
 
