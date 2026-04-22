@@ -28,6 +28,7 @@ from src.endpoints.metadata import router as metadata_router
 from src.endpoints.metrics.drift.compare_means import router as drift_comparemeans_router
 from src.endpoints.metrics.drift.jensen_shannon import router as drift_jensenshannon_router
 from src.endpoints.metrics.drift.kolmogorov_smirnov import router as drift_kstest_router
+from src.endpoints.metrics.fairness.group.apvd import router as apvd_router
 from src.endpoints.metrics.fairness.group.dir import router as dir_router
 from src.endpoints.metrics.fairness.group.spd import router as spd_router
 from src.endpoints.metrics.metrics_info import router as metrics_info_router
@@ -124,6 +125,13 @@ app.include_router(
 app.include_router(data_upload_router, tags=["Data Upload"])
 
 # Fairness metrics (gated by "fairness" group + individual flags)
+register_if_enabled_with_group(
+    app,
+    apvd_router,
+    "fairness",
+    "fairness_apvd",
+    "Fairness Metrics: Group: Average Predictive Value Difference",
+)
 register_if_enabled_with_group(
     app,
     dir_router,
