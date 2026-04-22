@@ -30,6 +30,7 @@ from src.endpoints.metrics.drift.jensen_shannon import router as drift_jensensha
 from src.endpoints.metrics.drift.kolmogorov_smirnov import router as drift_kstest_router
 from src.endpoints.metrics.fairness.group.dir import router as dir_router
 from src.endpoints.metrics.fairness.group.spd import router as spd_router
+from src.endpoints.metrics.fairness.individual.consistency import router as consistency_router
 from src.endpoints.metrics.metrics_info import router as metrics_info_router
 
 # Middleware
@@ -177,6 +178,14 @@ register_if_enabled_with_group(
     "explainer_global",
     "Explainers: Global",
 )
+register_if_enabled_with_group(
+    app,
+    consistency_router,
+    "fairness",
+    "fairness_individual_consistency",
+    "Fairness Metrics: Individual: Consistency",
+)
+
 app.include_router(metadata_router, tags=["Service Metadata"])
 app.include_router(metrics_info_router, tags=["Metrics Information Endpoint"])
 

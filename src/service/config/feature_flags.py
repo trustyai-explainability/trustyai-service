@@ -35,8 +35,9 @@ def _flag(name: str, default: bool) -> bool:
 
 ENDPOINTS: dict[str, bool] = {
     "fairness": _flag("fairness", True),
-    "fairness_spd": _flag("fairness_spd", True),
     "fairness_dir": _flag("fairness_dir", True),
+    "fairness_individual_consistency": _flag("fairness_individual_consistency", True),
+    "fairness_spd": _flag("fairness_spd", True),
     "drift": _flag("drift", True),
     "drift_ks_test": _flag("drift_ks_test", True),
     "drift_jensen_shannon": _flag("drift_jensen_shannon", True),

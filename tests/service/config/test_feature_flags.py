@@ -13,8 +13,9 @@ class TestEndpointFlags:
     def test_all_known_flags_present(self):
         expected = {
             "fairness",
-            "fairness_spd",
             "fairness_dir",
+            "fairness_individual_consistency",
+            "fairness_spd",
             "drift",
             "drift_ks_test",
             "drift_jensen_shannon",
