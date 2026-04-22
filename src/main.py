@@ -31,6 +31,7 @@ from src.endpoints.metrics.drift.kolmogorov_smirnov import router as drift_kstes
 from src.endpoints.metrics.fairness.group.dir import router as dir_router
 from src.endpoints.metrics.fairness.group.spd import router as spd_router
 from src.endpoints.metrics.metrics_info import router as metrics_info_router
+from src.endpoints.metrics.moving_average import router as moving_average_router
 
 # Middleware
 from src.middleware.gzip_middleware import GzipRequestMiddleware
@@ -177,6 +178,15 @@ register_if_enabled_with_group(
     "explainer_global",
     "Explainers: Global",
 )
+# Moving Average (replaces deprecated Identity metric)
+register_if_enabled_with_group(
+    app,
+    moving_average_router,
+    "moving_average",
+    "moving_average",
+    "Metrics: Moving Average",
+)
+
 app.include_router(metadata_router, tags=["Service Metadata"])
 app.include_router(metrics_info_router, tags=["Metrics Information Endpoint"])
 

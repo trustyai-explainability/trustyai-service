@@ -19,6 +19,7 @@ class TestEndpointFlags:
             "drift_ks_test",
             "drift_jensen_shannon",
             "drift_compare_means",
+            "moving_average",
             "explainer",
             "explainer_local",
             "explainer_global",
