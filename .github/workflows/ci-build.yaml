@@ -30,7 +30,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Add expiry label to CI image
-        run: sed -i 's#summary="odh-trustyai-service-python\"#summary="odh-trustyai-service-python" \\ \n      quay.expires-after=7d#' Containerfile
+        run: |
+          sed -i 's#summary="odh-trustyai-service-python\"#summary="odh-trustyai-service-python" \\ \n      quay.expires-after=7d#' Containerfile
+          grep -q 'quay.expires-after=7d' Containerfile || { echo "::error::Failed to inject quay.expires-after label"; exit 1; }
 
       - name: Build image
         run: docker build -f Containerfile -t trustyai-ci:${{ github.event.pull_request.head.sha }} .
