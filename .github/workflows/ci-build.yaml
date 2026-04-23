@@ -1,0 +1,54 @@
+name: CI Build
+
+on:
+  pull_request:
+    paths-ignore:
+      - 'LICENSE'
+      - '**/.gitignore'
+      - '**.md'
+      - '**.adoc'
+      - '*.txt'
+    types: [labeled, opened, synchronize, reopened]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: mheap/github-action-required-labels@v4
+        with:
+          mode: minimum
+          count: 1
+          labels: "ok-to-test, lgtm, approved"
+
+      - uses: actions/checkout@v4
+
+      - name: Add expiry label to CI image
+        run: sed -i 's#summary="odh-trustyai-service-python\"#summary="odh-trustyai-service-python" \\ \n      quay.expires-after=7d#' Containerfile
+
+      - name: Build image
+        run: docker build -f Containerfile -t trustyai-ci:${{ github.event.pull_request.head.sha }} .
+
+      - name: Save image
+        run: docker save trustyai-ci:${{ github.event.pull_request.head.sha }} | gzip > /tmp/image.tar.gz
+
+      - name: Save PR metadata
+        run: |
+          echo "${{ github.event.pull_request.number }}" > /tmp/pr-number.txt
+          echo "${{ github.event.pull_request.head.sha }}" > /tmp/pr-sha.txt
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-build
+          path: |
+            /tmp/image.tar.gz
+            /tmp/pr-number.txt
+            /tmp/pr-sha.txt
+          retention-days: 1
