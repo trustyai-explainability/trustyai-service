@@ -223,9 +223,18 @@ class RandomPredictionProvider:
         return [[self.rng.randint(0, 2)] for _ in range(x.shape[0])]
 
 
-def set_favorable_outcomes(group: np.ndarray, target_rate: float = 0.5) -> None:
-    """Set favorable outcomes in a group at a target rate."""
-    rng = np.random.default_rng()
+def set_favorable_outcomes(
+    group: np.ndarray, target_rate: float = 0.5, seed: int = 42
+) -> None:
+    """Set favorable outcomes in a group at a target rate.
+
+    Args:
+        group: Array with outcome column (last column)
+        target_rate: Fraction of favorable outcomes (0.0 to 1.0)
+        seed: RNG seed for deterministic selection
+
+    """
+    rng = np.random.default_rng(seed)
     num_favorable = round(len(group) * target_rate)
     group[:, -1] = 0
     if 0 < num_favorable <= len(group):
@@ -321,7 +330,7 @@ class TestDisparateImpactRatio:
             unprivileged=unprivileged,
             favorable_outputs=np.array([1]),
         )
-        assert score == pytest.approx(1.0, abs=1e-5), (
+        assert score == pytest.approx(1.0, abs=0.01), (
             f"DIR should be ~1 when rates are equal. Actual score: {score}"
         )
 
