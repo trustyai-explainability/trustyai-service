@@ -231,15 +231,16 @@ class TestUploadEndpointPVC(unittest.TestCase):
         self.client = TestClient(app)
 
     def tearDown(self):
-        # Clean up temp directory
-        if os.path.exists(self.TEMP_DIR):
-            shutil.rmtree(self.TEMP_DIR)
-
-        # Restore original environment variable
-        if self._original_storage_folder is None:
-            os.environ.pop("STORAGE_DATA_FOLDER", None)
-        else:
-            os.environ["STORAGE_DATA_FOLDER"] = self._original_storage_folder
+        try:
+            # Clean up temp directory
+            if os.path.exists(self.TEMP_DIR):
+                shutil.rmtree(self.TEMP_DIR)
+        finally:
+            # Restore original environment variable even if cleanup fails
+            if self._original_storage_folder is None:
+                os.environ.pop("STORAGE_DATA_FOLDER", None)
+            else:
+                os.environ["STORAGE_DATA_FOLDER"] = self._original_storage_folder
 
     def post_test(self, payload, expected_status_code, check_msgs):
         """Post a payload and check the response."""
