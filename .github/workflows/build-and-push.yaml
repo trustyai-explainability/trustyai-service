@@ -25,22 +25,37 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set image tag
-        id: tag
+      - name: Set image tags
+        id: tags
         env:
           GIT_REF: ${{ github.ref }}
           REF_NAME: ${{ github.ref_name }}
         run: |
           if [[ "${GIT_REF}" == refs/tags/v* ]]; then
-            echo "tag=${REF_NAME}" >> "$GITHUB_OUTPUT"
+            # Push both version tag and latest for releases
+            echo "tags=${REF_NAME} latest" >> "$GITHUB_OUTPUT"
+            echo "primary_tag=${REF_NAME}" >> "$GITHUB_OUTPUT"
           else
-            echo "tag=latest" >> "$GITHUB_OUTPUT"
+            # Push only latest for main branch
+            echo "tags=latest" >> "$GITHUB_OUTPUT"
+            echo "primary_tag=latest" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Build image
         env:
-          IMAGE_REF: "${{ vars.QUAY_RELEASE_REPO }}:${{ steps.tag.outputs.tag }}"
-        run: docker build -f Containerfile -t "${IMAGE_REF}" .
+          QUAY_REPO: ${{ vars.QUAY_RELEASE_REPO }}
+          TAGS: ${{ steps.tags.outputs.tags }}
+        run: |
+          # Build image with first tag
+          FIRST_TAG=$(echo "${TAGS}" | awk '{print $1}')
+          docker build -f Containerfile -t "${QUAY_REPO}:${FIRST_TAG}" .
+
+          # Tag with additional tags if present
+          for tag in ${TAGS}; do
+            if [[ "${tag}" != "${FIRST_TAG}" ]]; then
+              docker tag "${QUAY_REPO}:${FIRST_TAG}" "${QUAY_REPO}:${tag}"
+            fi
+          done
 
       - name: Log in to Quay
         env:
@@ -50,14 +65,19 @@ jobs:
 
       - name: Push to Quay
         env:
-          IMAGE_REF: "${{ vars.QUAY_RELEASE_REPO }}:${{ steps.tag.outputs.tag }}"
-        run: docker push "${IMAGE_REF}"
+          QUAY_REPO: ${{ vars.QUAY_RELEASE_REPO }}
+          TAGS: ${{ steps.tags.outputs.tags }}
+        run: |
+          # Push all tags
+          for tag in ${TAGS}; do
+            docker push "${QUAY_REPO}:${tag}"
+          done
 
       - name: Trivy scan
         uses: aquasecurity/trivy-action@0.35.0
         with:
           scan-type: 'image'
-          image-ref: "${{ vars.QUAY_RELEASE_REPO }}:${{ steps.tag.outputs.tag }}"
+          image-ref: "${{ vars.QUAY_RELEASE_REPO }}:${{ steps.tags.outputs.primary_tag }}"
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'MEDIUM,HIGH,CRITICAL'
