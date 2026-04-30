@@ -18,7 +18,9 @@ from src.service.data.model_data import ModelData
 MODEL_ID = "example1"
 
 
-def generate_payload(n_rows, n_input_cols, n_output_cols, datatype, tag, input_offset=0, output_offset=0):
+def generate_payload(
+    n_rows, n_input_cols, n_output_cols, datatype, tag, input_offset=0, output_offset=0
+):
     """Generate a test payload with specific dimensions and data types."""
     model_name = f"{MODEL_ID}_{uuid.uuid4().hex[:8]}"
     input_data = []
@@ -31,7 +33,9 @@ def generate_payload(n_rows, n_input_cols, n_output_cols, datatype, tag, input_o
             input_data.append(val)
         else:
             row = [
-                (i + j + input_offset) % 2 if datatype == "BOOL" else (i + j + input_offset)
+                (i + j + input_offset) % 2
+                if datatype == "BOOL"
+                else (i + j + input_offset)
                 for j in range(n_input_cols)
             ]
             input_data.append(row)
@@ -45,7 +49,9 @@ def generate_payload(n_rows, n_input_cols, n_output_cols, datatype, tag, input_o
             output_data.append(val)
         else:
             row = [
-                (i * 2 + j + output_offset) % 2 if datatype == "BOOL" else (i * 2 + j + output_offset)
+                (i * 2 + j + output_offset) % 2
+                if datatype == "BOOL"
+                else (i * 2 + j + output_offset)
                 for j in range(n_output_cols)
             ]
             output_data.append(row)
@@ -122,23 +128,39 @@ def generate_multi_input_payload(n_rows, n_input_cols, n_output_cols, datatype, 
     return payload
 
 
-def generate_mismatched_shape_no_unique_name_multi_input_payload(n_rows, n_input_cols, n_output_cols, datatype, tag):
+def generate_mismatched_shape_no_unique_name_multi_input_payload(
+    n_rows, n_input_cols, n_output_cols, datatype, tag
+):
     """Generate a payload with mismatched shapes and non-unique names."""
     model_name = f"{MODEL_ID}_{uuid.uuid4().hex[:8]}"
     if datatype == "BOOL":
-        input_data_1 = [[(row_idx + col_idx * 10) % 2 for col_idx in range(n_input_cols)] for row_idx in range(n_rows)]
+        input_data_1 = [
+            [(row_idx + col_idx * 10) % 2 for col_idx in range(n_input_cols)]
+            for row_idx in range(n_rows)
+        ]
         mismatched_rows = n_rows - 1 if n_rows > 1 else 1
         input_data_2 = [
-            [(row_idx + col_idx * 20) % 2 for col_idx in range(n_input_cols)] for row_idx in range(mismatched_rows)
+            [(row_idx + col_idx * 20) % 2 for col_idx in range(n_input_cols)]
+            for row_idx in range(mismatched_rows)
         ]
-        output_data = [[(row_idx * 2 + col_idx) % 2 for col_idx in range(n_output_cols)] for row_idx in range(n_rows)]
+        output_data = [
+            [(row_idx * 2 + col_idx) % 2 for col_idx in range(n_output_cols)]
+            for row_idx in range(n_rows)
+        ]
     else:
-        input_data_1 = [[row_idx + col_idx * 10 for col_idx in range(n_input_cols)] for row_idx in range(n_rows)]
+        input_data_1 = [
+            [row_idx + col_idx * 10 for col_idx in range(n_input_cols)]
+            for row_idx in range(n_rows)
+        ]
         mismatched_rows = n_rows - 1 if n_rows > 1 else 1
         input_data_2 = [
-            [row_idx + col_idx * 20 for col_idx in range(n_input_cols)] for row_idx in range(mismatched_rows)
+            [row_idx + col_idx * 20 for col_idx in range(n_input_cols)]
+            for row_idx in range(mismatched_rows)
         ]
-        output_data = [[row_idx * 2 + col_idx for col_idx in range(n_output_cols)] for row_idx in range(n_rows)]
+        output_data = [
+            [row_idx * 2 + col_idx for col_idx in range(n_output_cols)]
+            for row_idx in range(n_rows)
+        ]
     payload = {
         "model_name": model_name,
         "data_tag": tag,
@@ -187,6 +209,9 @@ def get_metadata_ids(model_name):
 
 class TestUploadEndpointPVC(unittest.TestCase):
     def setUp(self):
+        # Save original environment variable
+        self._original_storage_folder = os.environ.get("STORAGE_DATA_FOLDER")
+
         self.TEMP_DIR = tempfile.mkdtemp()
         os.environ["STORAGE_DATA_FOLDER"] = self.TEMP_DIR
 
@@ -206,14 +231,21 @@ class TestUploadEndpointPVC(unittest.TestCase):
         self.client = TestClient(app)
 
     def tearDown(self):
+        # Clean up temp directory
         if os.path.exists(self.TEMP_DIR):
             shutil.rmtree(self.TEMP_DIR)
+
+        # Restore original environment variable
+        if self._original_storage_folder is None:
+            os.environ.pop("STORAGE_DATA_FOLDER", None)
+        else:
+            os.environ["STORAGE_DATA_FOLDER"] = self._original_storage_folder
 
     def post_test(self, payload, expected_status_code, check_msgs):
         """Post a payload and check the response."""
         response = self.client.post("/data/upload", json=payload)
         if response.status_code != expected_status_code:
-            print(f"\n=== DEBUG INFO ===")
+            print("\n=== DEBUG INFO ===")
             print(f"Expected status: {expected_status_code}")
             print(f"Actual status: {response.status_code}")
             print(f"Response text: {response.text}")
@@ -221,7 +253,7 @@ class TestUploadEndpointPVC(unittest.TestCase):
             if hasattr(response, "json"):
                 try:
                     print(f"Response JSON: {response.json()}")
-                except:
+                except Exception:
                     pass
             print("==================")
 
@@ -236,7 +268,12 @@ class TestUploadEndpointPVC(unittest.TestCase):
         datatype_options = ["INT64", "INT32", "FP32", "FP64", "BOOL"]
 
         for idx, (n_input_rows, n_input_cols, n_output_cols, datatype) in enumerate(
-            itertools.product(n_input_rows_options, n_input_cols_options, n_output_cols_options, datatype_options)
+            itertools.product(
+                n_input_rows_options,
+                n_input_cols_options,
+                n_output_cols_options,
+                datatype_options,
+            )
         ):
             with self.subTest(
                 f"subtest-{idx}",
@@ -247,21 +284,31 @@ class TestUploadEndpointPVC(unittest.TestCase):
             ):
                 """Test uploading data with various dimensions and datatypes."""
                 data_tag = "TRAINING"
-                payload = generate_payload(n_input_rows, n_input_cols, n_output_cols, datatype, data_tag)
+                payload = generate_payload(
+                    n_input_rows, n_input_cols, n_output_cols, datatype, data_tag
+                )
                 response = self.post_test(payload, 200, [f"{n_input_rows} datapoints"])
 
-                inputs, outputs, metadata = asyncio.run(ModelData(payload["model_name"]).data())
+                inputs, outputs, metadata = asyncio.run(
+                    ModelData(payload["model_name"]).data()
+                )
 
                 self.assertEqual(response.status_code, 200)
                 self.assertIn(str(n_input_rows), response.text)
                 self.assertIsNotNone(inputs, "Input data not found in storage")
                 self.assertIsNotNone(outputs, "Output data not found in storage")
 
-                self.assertEqual(len(inputs), n_input_rows, "Incorrect number of input rows")
-                self.assertEqual(len(outputs), n_input_rows, "Incorrect number of output rows")
+                self.assertEqual(
+                    len(inputs), n_input_rows, "Incorrect number of input rows"
+                )
+                self.assertEqual(
+                    len(outputs), n_input_rows, "Incorrect number of output rows"
+                )
 
                 tag_count = count_rows_with_tag(payload["model_name"], data_tag)
-                self.assertEqual(tag_count, n_input_rows, "Not all rows have the correct tag")
+                self.assertEqual(
+                    tag_count, n_input_rows, "Not all rows have the correct tag"
+                )
 
     def test_upload_multi_input_data(self):
         """Test uploading data with multiple input tensors."""
@@ -271,7 +318,10 @@ class TestUploadEndpointPVC(unittest.TestCase):
         datatype_options = ["INT64", "INT32", "FP32", "FP64", "BOOL"]
 
         for n_rows, n_input_cols, n_output_cols, datatype in itertools.product(
-            n_rows_options, n_input_cols_options, n_output_cols_options, datatype_options
+            n_rows_options,
+            n_input_cols_options,
+            n_output_cols_options,
+            datatype_options,
         ):
             with self.subTest(
                 n_rows=n_rows,
@@ -281,31 +331,49 @@ class TestUploadEndpointPVC(unittest.TestCase):
             ):
                 # Arrange
                 data_tag = "TRAINING"
-                payload = generate_multi_input_payload(n_rows, n_input_cols, n_output_cols, datatype, data_tag)
+                payload = generate_multi_input_payload(
+                    n_rows, n_input_cols, n_output_cols, datatype, data_tag
+                )
 
                 # Act
                 self.post_test(payload, 200, [f"{n_rows} datapoints"])
 
                 model_data = ModelData(payload["model_name"])
                 inputs, outputs, metadata = asyncio.run(model_data.data())
-                input_column_names, output_column_names, metadata_column_names = asyncio.run(
-                    model_data.original_column_names()
+                input_column_names, output_column_names, metadata_column_names = (
+                    asyncio.run(model_data.original_column_names())
                 )
 
                 # Assert
                 self.assertIsNotNone(inputs, "Input data not found in storage")
                 self.assertIsNotNone(outputs, "Output data not found in storage")
                 self.assertEqual(len(inputs), n_rows, "Incorrect number of input rows")
-                self.assertEqual(len(outputs), n_rows, "Incorrect number of output rows")
-                self.assertEqual(len(input_column_names), n_input_cols, "Incorrect number of input columns")
-                self.assertEqual(len(output_column_names), n_output_cols, "Incorrect number of output columns")
-                self.assertGreaterEqual(len(input_column_names), 2, "Should have at least 2 input column names")
+                self.assertEqual(
+                    len(outputs), n_rows, "Incorrect number of output rows"
+                )
+                self.assertEqual(
+                    len(input_column_names),
+                    n_input_cols,
+                    "Incorrect number of input columns",
+                )
+                self.assertEqual(
+                    len(output_column_names),
+                    n_output_cols,
+                    "Incorrect number of output columns",
+                )
+                self.assertGreaterEqual(
+                    len(input_column_names),
+                    2,
+                    "Should have at least 2 input column names",
+                )
                 tag_count = count_rows_with_tag(payload["model_name"], data_tag)
                 self.assertEqual(tag_count, n_rows, "Not all rows have the correct tag")
 
     def test_upload_multi_input_data_no_unique_name(self):
         """Test error case for non-unique tensor names."""
-        payload = generate_mismatched_shape_no_unique_name_multi_input_payload(250, 4, 3, "FP64", "TRAINING")
+        payload = generate_mismatched_shape_no_unique_name_multi_input_payload(
+            250, 4, 3, "FP64", "TRAINING"
+        )
         response = self.client.post("/data/upload", json=payload)
         self.assertEqual(response.status_code, 400)
         print(response.text)
@@ -368,17 +436,25 @@ class TestUploadEndpointPVC(unittest.TestCase):
         tag1_count = count_rows_with_tag(model_name, tag1)
         tag2_count = count_rows_with_tag(model_name, tag2)
 
-        self.assertEqual(tag1_count, n_payload1, f"Expected {n_payload1} rows with tag {tag1}")
-        self.assertEqual(tag2_count, n_payload2, f"Expected {n_payload2} rows with tag {tag2}")
+        self.assertEqual(
+            tag1_count, n_payload1, f"Expected {n_payload1} rows with tag {tag1}"
+        )
+        self.assertEqual(
+            tag2_count, n_payload2, f"Expected {n_payload2} rows with tag {tag2}"
+        )
 
         input_rows, _, _ = asyncio.run(ModelData(payload1["model_name"]).row_counts())
-        self.assertEqual(input_rows, n_payload1 + n_payload2, "Incorrect total number of rows")
+        self.assertEqual(
+            input_rows, n_payload1 + n_payload2, "Incorrect total number of rows"
+        )
 
     def test_upload_tag_that_uses_protected_name(self):
         """Test error when using a protected tag name."""
         invalid_tag = f"{TRUSTYAI_TAG_PREFIX}_something"
         payload = generate_payload(5, 10, 1, "INT64", invalid_tag)
-        response = self.post_test(payload, 400, ["reserved for internal TrustyAI use only"])
+        response = self.post_test(
+            payload, 400, ["reserved for internal TrustyAI use only"]
+        )
         expected_msg = f"The tag prefix '{TRUSTYAI_TAG_PREFIX}' is reserved for internal TrustyAI use only. Provided tag '{invalid_tag}' violates this restriction."
         self.assertIn(expected_msg, response.text)
 
@@ -471,7 +547,9 @@ class TestUploadEndpointPVC(unittest.TestCase):
         self.assertIn(f"{n_rows} datapoints", response_json["message"])
 
         # Verify data was stored correctly
-        inputs, outputs, _metadata = asyncio.run(ModelData(payload["model_name"]).data())
+        inputs, outputs, _metadata = asyncio.run(
+            ModelData(payload["model_name"]).data()
+        )
         self.assertIsNotNone(inputs, "Input data not found in storage")
         self.assertIsNotNone(outputs, "Output data not found in storage")
         self.assertEqual(len(inputs), n_rows, "Incorrect number of input rows")
@@ -541,7 +619,9 @@ class TestUploadEndpointPVC(unittest.TestCase):
 
         # Verify compression is effective (compressed should be < 1% of original)
         compression_ratio = len(compressed_payload) / len(repetitive_data)
-        self.assertLess(compression_ratio, 0.01, "Compression not effective enough for test")
+        self.assertLess(
+            compression_ratio, 0.01, "Compression not effective enough for test"
+        )
 
         response = self.client.post(
             "/data/upload",
@@ -595,23 +675,46 @@ class TestUploadEndpointPVC(unittest.TestCase):
         json_payload = json.dumps(payload).encode("utf-8")
 
         # No Content-Encoding - should skip middleware
-        response = self.client.post("/data/upload", content=json_payload, headers={"Content-Type": "application/json"})
+        response = self.client.post(
+            "/data/upload",
+            content=json_payload,
+            headers={"Content-Type": "application/json"},
+        )
         self.assertEqual(response.status_code, 200)
 
         # Non-gzip encoding - should skip middleware
-        response = self.client.post("/data/upload", content=json_payload, headers={"Content-Type": "application/json", "Content-Encoding": "br"})
+        response = self.client.post(
+            "/data/upload",
+            content=json_payload,
+            headers={"Content-Type": "application/json", "Content-Encoding": "br"},
+        )
         self.assertEqual(response.status_code, 200)
 
         # Gzip not outermost (gzip, br means br is outer) - should skip middleware
-        response = self.client.post("/data/upload", content=json_payload, headers={"Content-Type": "application/json", "Content-Encoding": "gzip, br"})
-        self.assertIn(response.status_code, [200, 400, 422])  # Skipped, downstream parses uncompressed JSON
+        response = self.client.post(
+            "/data/upload",
+            content=json_payload,
+            headers={
+                "Content-Type": "application/json",
+                "Content-Encoding": "gzip, br",
+            },
+        )
+        self.assertIn(
+            response.status_code, [200, 400, 422]
+        )  # Skipped, downstream parses uncompressed JSON
 
         # Missing Content-Type with gzip encoding - should skip middleware
-        response = self.client.post("/data/upload", content=json_payload, headers={"Content-Encoding": "gzip"})
+        response = self.client.post(
+            "/data/upload", content=json_payload, headers={"Content-Encoding": "gzip"}
+        )
         self.assertIn(response.status_code, [200, 400, 422])
 
         # Wrong content-type - should skip middleware (won't crash)
-        response = self.client.post("/data/upload", content=json_payload, headers={"Content-Type": "text/plain", "Content-Encoding": "gzip"})
+        response = self.client.post(
+            "/data/upload",
+            content=json_payload,
+            headers={"Content-Type": "text/plain", "Content-Encoding": "gzip"},
+        )
         self.assertLess(response.status_code, 500)
 
     def test_upload_empty_gzip_body(self):

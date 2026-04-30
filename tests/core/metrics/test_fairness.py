@@ -127,7 +127,9 @@ def get_labeled_data(df: pd.DataFrame = df) -> tuple[np.ndarray, np.ndarray]:
     """Generate ground truth and predicted data arrays for fairness testing."""
     data_df = df[[col for col in df.columns if col != "Exited"] + ["Exited"]]
     data = data_df.to_numpy()
-    y_pred = pd.DataFrame(train_model())
+    X_local = data_df.drop(columns=["Exited"])
+    y_local = data_df["Exited"]
+    y_pred = pd.DataFrame(train_model(X_local, y_local))
     data_pred = data.copy()
     data_pred[:, -1] = y_pred.to_numpy().flatten()
     return data, data_pred
@@ -272,9 +274,11 @@ class TestDisparateImpactRatio:
         """Property-based test to verify the result of DIR calculation is always positive."""
         privileged, unprivileged = get_privileged_unprivileged_split(df=df)
 
-        # Filter out cases with no favorable outcomes to prevent division by zero
+        # DIR only requires privileged group to have favorable outcomes (denominator)
+        # Zero favorable outcomes in unprivileged group is valid (numerator = 0, DIR = 0)
+        assume(len(privileged) > 0)
+        assume(len(unprivileged) > 0)
         assume(np.any(privileged[:, -1] == 1))
-        assume(np.any(unprivileged[:, -1] == 1))
 
         score = DisparateImpactRatio.calculate(
             privileged=privileged,
@@ -357,12 +361,12 @@ class TestGroupStatisticalParityDifference:
     @given(bank_data_strategy())
     @settings(max_examples=20, verbosity=Verbosity.normal)
     def test_spd_range(self, df: pd.DataFrame) -> None:
-        """Property-based test to verify the result of DIR calculation is always positive."""
+        """Property-based test to verify the result of SPD calculation is within expected range."""
         privileged, unprivileged = get_privileged_unprivileged_split(df=df)
 
-        # Filter out cases with no favorable outcomes to prevent division by zero
-        assume(np.any(privileged[:, -1] == 1))
-        assume(np.any(unprivileged[:, -1] == 1))
+        # SPD is valid for zero favorable-rate groups; only empty groups are invalid
+        assume(len(privileged) > 0)
+        assume(len(unprivileged) > 0)
 
         score = GroupStatisticalParityDifference.calculate(
             privileged=privileged,
