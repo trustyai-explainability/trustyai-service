@@ -17,6 +17,7 @@ class TestUploadEndpointMaria(TestUploadEndpointPVC):
             "DATABASE_HOST": os.environ.get("DATABASE_HOST"),
             "DATABASE_PORT": os.environ.get("DATABASE_PORT"),
             "DATABASE_DATABASE": os.environ.get("DATABASE_DATABASE"),
+            "DATABASE_ATTEMPT_MIGRATION": os.environ.get("DATABASE_ATTEMPT_MIGRATION"),
         }
 
         os.environ["SERVICE_STORAGE_FORMAT"] = "MARIA"
