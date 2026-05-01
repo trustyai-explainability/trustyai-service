@@ -209,6 +209,7 @@ matches = "tests/service/data/test_utils.py"
 
 [tool.pyrefly.sub-config.errors]
 not-a-type = "ignore"
+missing-module-attribute = "ignore"
 
 # Suppress intentional private attribute access in test files
 [[tool.pyrefly.sub-config]]
