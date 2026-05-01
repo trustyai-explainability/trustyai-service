@@ -178,8 +178,10 @@ def prepare_fairness_data(
     )
 
     # Extract privileged/unprivileged group values from request
-    if hasattr(request, "privilegedAttribute") and hasattr(
-        request.privilegedAttribute, "reconciledType"
+    if (
+        hasattr(request, "privilegedAttribute")
+        and hasattr(request.privilegedAttribute, "reconciledType")
+        and request.privilegedAttribute.reconciledType is not None
     ):
         privileged_values = [
             item.get("value")
@@ -192,14 +194,22 @@ def prepare_fairness_data(
             "privilegedAttribute",
             getattr(request, "privileged_attribute", None),
         )
-        privileged_values = (
-            [privileged_attr]
-            if not isinstance(privileged_attr, list)
-            else privileged_attr
-        )
+        # Unwrap ReconcilableField objects to get raw values
+        if hasattr(privileged_attr, "get_raw_value_nodes"):
+            privileged_values = [
+                node.get("value") for node in privileged_attr.get_raw_value_nodes()
+            ]
+        else:
+            privileged_values = (
+                [privileged_attr]
+                if not isinstance(privileged_attr, list)
+                else privileged_attr
+            )
 
-    if hasattr(request, "unprivilegedAttribute") and hasattr(
-        request.unprivilegedAttribute, "reconciledType"
+    if (
+        hasattr(request, "unprivilegedAttribute")
+        and hasattr(request.unprivilegedAttribute, "reconciledType")
+        and request.unprivilegedAttribute.reconciledType is not None
     ):
         unprivileged_values = [
             item.get("value")
@@ -212,11 +222,17 @@ def prepare_fairness_data(
             "unprivilegedAttribute",
             getattr(request, "unprivileged_attribute", None),
         )
-        unprivileged_values = (
-            [unprivileged_attr]
-            if not isinstance(unprivileged_attr, list)
-            else unprivileged_attr
-        )
+        # Unwrap ReconcilableField objects to get raw values
+        if hasattr(unprivileged_attr, "get_raw_value_nodes"):
+            unprivileged_values = [
+                node.get("value") for node in unprivileged_attr.get_raw_value_nodes()
+            ]
+        else:
+            unprivileged_values = (
+                [unprivileged_attr]
+                if not isinstance(unprivileged_attr, list)
+                else unprivileged_attr
+            )
 
     # Extract favorable outcome values from request
     if (
@@ -233,9 +249,17 @@ def prepare_fairness_data(
         favorable_attr = getattr(
             request, "favorableOutcome", getattr(request, "favorable_outcome", None)
         )
-        favorable_values = (
-            [favorable_attr] if not isinstance(favorable_attr, list) else favorable_attr
-        )
+        # Unwrap ReconcilableField objects to get raw values
+        if hasattr(favorable_attr, "get_raw_value_nodes"):
+            favorable_values = [
+                node.get("value") for node in favorable_attr.get_raw_value_nodes()
+            ]
+        else:
+            favorable_values = (
+                [favorable_attr]
+                if not isinstance(favorable_attr, list)
+                else favorable_attr
+            )
 
     # Filter the dataframe into privileged and unprivileged groups
     privileged_mask = dataframe[protected_attr].isin(privileged_values)

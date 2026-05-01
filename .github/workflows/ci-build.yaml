@@ -31,7 +31,7 @@ jobs:
 
       - name: Add expiry label to CI image
         run: |
-          sed -i 's#io.trustyai.fips.documentation="\([^"]*\)"$#io.trustyai.fips.documentation="\1" \\ \n      quay.expires-after=7d#' Containerfile
+          sed -i 's#io.trustyai.fips.documentation="\([^"]*\)"$#io.trustyai.fips.documentation="\1" \\\n      quay.expires-after=7d#' Containerfile
           grep -q 'quay.expires-after=7d' Containerfile || { echo "::error::Failed to inject quay.expires-after label"; exit 1; }
 
       - name: Build image

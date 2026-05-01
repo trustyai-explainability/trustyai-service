@@ -40,11 +40,23 @@ class IndividualConsistency:
             prediction_output = prediction_outputs[0]
             # Handle both scalar and array predictions
             output_width = int(np.size(prediction_output))
+
+            # Validate non-zero divisor terms to prevent ZeroDivisionError
+            if output_width == 0:
+                msg = "Model output has zero size - cannot compute consistency."
+                raise ValueError(msg)
+
             neighbors = proximity_function(sample, samples)
+
+            if len(neighbors) == 0:
+                msg = "Proximity function returned no neighbors - cannot compute consistency."
+                raise ValueError(msg)
+
             neighbors_outputs = model.predict(neighbors)
             for output in prediction_outputs:
                 for neighbor_output in neighbors_outputs:
-                    if neighbor_output != output:
+                    # Use array-safe comparison (NumPy 2.0+ requires this for arrays)
+                    if not np.array_equal(neighbor_output, output):
                         consistency -= 1 / (
                             len(neighbors) * output_width * len(samples)
                         )

@@ -11,6 +11,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Least-privilege permissions
+permissions:
+  contents: read
+
 jobs:
   lint:
     runs-on: ubuntu-latest

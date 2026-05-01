@@ -243,6 +243,19 @@ async def schedule_compare_means(request: CompareMeansMetricRequest) -> dict[str
             detail="batch_size must be positive",
         )
 
+    # Validate drift-specific required fields before scheduling
+    if not request.reference_tag:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail="referenceTag is required for drift detection",
+        )
+
+    if not request.fit_columns:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail="fitColumns is required - specify which features to test for drift",
+        )
+
     try:
         # Generate UUID for this request
         request_id = uuid.uuid4()

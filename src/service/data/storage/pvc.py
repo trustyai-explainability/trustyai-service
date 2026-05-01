@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import pickle as pkl  # nosec B403 - Used for internal data serialization only
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
@@ -117,11 +118,16 @@ class PVCStorage(StorageInterface):
         # one_file_per_dataset=True minimizes the ramifications of file corruption
         # one_file_per_dataset=True also allows read/write concurrence between different datasets
         self.one_file_per_dataset = True
-        self.locks = {
-            file_path.name: asyncio.Lock()
-            for file_path in Path(self.data_directory).iterdir()
-            if self.data_file in file_path.name
-        }
+        # Initialize locks for existing datasets (create directory if it doesn't exist)
+        data_dir = Path(self.data_directory)
+        if data_dir.exists():
+            self.locks = {
+                file_path.name: asyncio.Lock()
+                for file_path in data_dir.iterdir()
+                if self.data_file in file_path.name
+            }
+        else:
+            self.locks = {}
         self.global_lock = asyncio.Lock()
 
     def _get_filename(self, dataset_name: str) -> str:
@@ -386,8 +392,8 @@ class PVCStorage(StorageInterface):
         async with self.get_lock(allocated_dataset_name):
             # Check if HDF5 file exists before opening to prevent phantom file creation
             # Opening in "a" mode creates the file if it doesn't exist
-            filename = Path(self.data_directory) / self.data_file
-            if not filename.exists():
+            filename = self._get_filename(allocated_dataset_name)
+            if not os.path.exists(filename):
                 return
             try:
                 with H5PYContext(self, allocated_dataset_name, "a") as db:
