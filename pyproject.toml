@@ -148,6 +148,8 @@ ignore-missing-imports = [
     "pytest.*",
     "hypothesis.*",
     "matplotlib.*",
+    # Generated protobuf - excluded from analysis but imported optionally in tests
+    "src.proto.grpc_predict_v2_pb2.*",
 ]
 
 # Broad suppressions for pre-existing type issues.
@@ -202,14 +204,6 @@ matches = "**/*.ipynb"
 [tool.pyrefly.sub-config.errors]
 unexpected-keyword = "ignore"
 no-matching-overload = "ignore"
-
-# Suppress optional protobuf imports in test utils
-# Pyrefly doesn't understand contextlib.suppress(ImportError) and tries to verify imports
-[[tool.pyrefly.sub-config]]
-matches = "tests/service/data/test_utils.py"
-
-[tool.pyrefly.sub-config.errors]
-missing-module-attribute = "ignore"
 
 # Suppress intentional private attribute access in test files
 [[tool.pyrefly.sub-config]]
