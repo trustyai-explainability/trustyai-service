@@ -1,16 +1,27 @@
+"""Tests for DataSource interface."""
+
 from unittest.mock import AsyncMock, Mock, patch
 
 import numpy as np
 import pandas as pd
 import pytest
+
 from src.service.constants import UNLABELED_TAG
 from src.service.data.datasources.data_source import DataSource
-from src.service.data.exceptions import DataframeCreateException, StorageReadException
-from src.service.data.metadata.storage_metadata import StorageMetadata
+from src.service.data.exceptions import DataframeCreateError, StorageReadError
+from src.service.data.metadata.storage_metadata import (
+    StorageMetadata,
+    StorageMetadataConfig,
+)
 from src.service.data.model_data import ModelData
 from src.service.payloads.service.schema import Schema
 from src.service.payloads.service.schema_item import SchemaItem
 from src.service.payloads.values.data_type import DataType
+
+# Test constants
+EXPECTED_ORGANIC_ROWS = 2  # Expected rows after filtering synthetic data
+EXPECTED_OBSERVATION_COUNT = 100  # Expected total observations
+EXPECTED_AVAILABLE_ROWS = 10  # Expected available rows in batch test
 
 
 class TestDataSource:
@@ -18,21 +29,28 @@ class TestDataSource:
 
     @pytest.fixture
     def data_source(self) -> DataSource:
+        """Create a DataSource instance for testing."""
         return DataSource()
 
     @pytest.fixture
     def mock_model_data(self) -> Mock:
+        """Create a mock ModelData instance with async methods."""
         mock = Mock(spec=ModelData)
 
         # Mock async methods
         mock.row_counts = AsyncMock(return_value=(100, 100, 100))
-        mock.column_names = AsyncMock(return_value=(["feature1", "feature2"], ["target"], ["metadata1"]))
-        mock.data = AsyncMock(return_value=([[1, 2], [3, 4]], [[0], [1]], [["meta1"], ["meta2"]]))
+        mock.column_names = AsyncMock(
+            return_value=(["feature1", "feature2"], ["target"], ["metadata1"]),
+        )
+        mock.data = AsyncMock(
+            return_value=([[1, 2], [3, 4]], [[0], [1]], [["meta1"], ["meta2"]]),
+        )
 
         return mock
 
     @pytest.fixture
     def sample_metadata(self) -> StorageMetadata:
+        """Create sample StorageMetadata for testing."""
         input_items = {
             "feature1": SchemaItem(DataType.DOUBLE, "feature1", 0),
             "feature2": SchemaItem(DataType.DOUBLE, "feature2", 1),
@@ -43,11 +61,13 @@ class TestDataSource:
         output_schema = Schema(output_items)
 
         return StorageMetadata(
-            model_id="test_model",
-            input_schema=input_schema,
-            output_schema=output_schema,
-            observations=100,
-            recorded_inferences=True,
+            StorageMetadataConfig(
+                model_id="test_model",
+                input_schema=input_schema,
+                output_schema=output_schema,
+                observations=100,
+                recorded_inferences=True,
+            )
         )
 
     def test_initialization(self, data_source: DataSource) -> None:
@@ -62,7 +82,6 @@ class TestDataSource:
     @pytest.mark.asyncio
     async def test_add_model_to_known(self, data_source: DataSource) -> None:
         """Test adding model to known models."""
-
         model_id = "test_model"
         await data_source.add_model_to_known(model_id)
 
@@ -72,7 +91,6 @@ class TestDataSource:
     @pytest.mark.asyncio
     async def test_get_known_models(self, data_source: DataSource) -> None:
         """Test getting known models."""
-
         model_ids = ["model1", "model2", "model3"]
 
         for model_id in model_ids:
@@ -94,7 +112,6 @@ class TestDataSource:
         mock_model_data: Mock,
     ) -> None:
         """Test successful dataframe retrieval with batch size."""
-
         mock_model_data_class.return_value = mock_model_data
 
         mock_model_data.data.return_value = (
@@ -106,7 +123,7 @@ class TestDataSource:
         df = await data_source.get_dataframe_with_batch_size("test_model", 50)
 
         assert isinstance(df, pd.DataFrame)
-        assert len(df) == 2
+        assert len(df) == EXPECTED_ORGANIC_ROWS
         assert "feature1" in df.columns
         assert "feature2" in df.columns
         assert "target" in df.columns
@@ -126,7 +143,6 @@ class TestDataSource:
         mock_model_data: Mock,
     ) -> None:
         """Test dataframe retrieval with default batch size."""
-
         mock_model_data_class.return_value = mock_model_data
 
         mock_model_data.data.return_value = (
@@ -143,15 +159,18 @@ class TestDataSource:
 
     @patch("src.service.data.datasources.data_source.ModelData")
     @pytest.mark.asyncio
-    async def test_get_dataframe_handles_exceptions(self, mock_model_data_class: Mock, data_source: DataSource) -> None:
+    async def test_get_dataframe_handles_exceptions(
+        self,
+        mock_model_data_class: Mock,
+        data_source: DataSource,
+    ) -> None:
         """Test that dataframe creation exceptions are handled properly."""
-
         mock_model_data = Mock()
         mock_model_data.row_counts.side_effect = Exception("Test error")
         mock_model_data_class.return_value = mock_model_data
 
         with pytest.raises(
-            DataframeCreateException,
+            DataframeCreateError,
             match="Error creating dataframe for model=test_model",
         ):
             await data_source.get_dataframe("test_model")
@@ -165,7 +184,6 @@ class TestDataSource:
         mock_model_data: Mock,
     ) -> None:
         """Test that organic dataframe filters out unlabeled (synthetic) data."""
-
         mock_model_data_class.return_value = mock_model_data
 
         # Add unlabeled column to mock data
@@ -183,7 +201,7 @@ class TestDataSource:
         df = await data_source.get_organic_dataframe("test_model", 100)
 
         # Should filter out synthetic rows
-        assert len(df) == 2  # Should exclude the synthetic row
+        assert len(df) == EXPECTED_ORGANIC_ROWS
         assert not df[UNLABELED_TAG].any()  # No True values should remain
 
     @patch("src.service.data.datasources.data_source.ModelData")
@@ -195,7 +213,6 @@ class TestDataSource:
         mock_model_data: Mock,
     ) -> None:
         """Test metadata creation and caching."""
-
         mock_model_data_class.return_value = mock_model_data
 
         metadata = await data_source.get_metadata("test_model")
@@ -210,29 +227,41 @@ class TestDataSource:
 
     @patch("src.service.data.datasources.data_source.ModelData")
     @pytest.mark.asyncio
-    async def test_get_metadata_handles_exceptions(self, mock_model_data_class: Mock, data_source: DataSource) -> None:
+    async def test_get_metadata_handles_exceptions(
+        self,
+        mock_model_data_class: Mock,
+        data_source: DataSource,
+    ) -> None:
         """Test metadata retrieval exception handling."""
-
         mock_model_data = Mock()
         mock_model_data.row_counts.side_effect = Exception("Test error")
         mock_model_data_class.return_value = mock_model_data
 
-        with pytest.raises(StorageReadException, match="Error getting metadata for model=test_model"):
+        with pytest.raises(
+            StorageReadError,
+            match="Error getting metadata for model=test_model",
+        ):
             await data_source.get_metadata("test_model")
 
     @pytest.mark.asyncio
-    async def test_has_metadata_true(self, data_source: DataSource, sample_metadata: StorageMetadata) -> None:
+    async def test_has_metadata_true(
+        self,
+        data_source: DataSource,
+        sample_metadata: StorageMetadata,
+    ) -> None:
         """Test has_metadata returns True when metadata exists."""
-
         data_source.metadata_cache["test_model"] = sample_metadata
 
         assert await data_source.has_metadata("test_model") is True
 
     @patch("src.service.data.datasources.data_source.ModelData")
     @pytest.mark.asyncio
-    async def test_has_metadata_false(self, mock_model_data_class: Mock, data_source: DataSource) -> None:
+    async def test_has_metadata_false(
+        self,
+        mock_model_data_class: Mock,
+        data_source: DataSource,
+    ) -> None:
         """Test has_metadata returns False when metadata doesn't exist."""
-
         mock_model_data = Mock()
         mock_model_data.row_counts.side_effect = Exception("Not found")
         mock_model_data_class.return_value = mock_model_data
@@ -240,18 +269,24 @@ class TestDataSource:
         assert await data_source.has_metadata("nonexistent_model") is False
 
     @pytest.mark.asyncio
-    async def test_get_num_observations(self, data_source: DataSource, sample_metadata: StorageMetadata) -> None:
+    async def test_get_num_observations(
+        self,
+        data_source: DataSource,
+        sample_metadata: StorageMetadata,
+    ) -> None:
         """Test getting number of observations."""
-
         data_source.metadata_cache["test_model"] = sample_metadata
 
         count = await data_source.get_num_observations("test_model")
-        assert count == 100
+        assert count == EXPECTED_OBSERVATION_COUNT
 
     @pytest.mark.asyncio
-    async def test_has_recorded_inferences(self, data_source: DataSource, sample_metadata: StorageMetadata) -> None:
+    async def test_has_recorded_inferences(
+        self,
+        data_source: DataSource,
+        sample_metadata: StorageMetadata,
+    ) -> None:
         """Test checking for recorded inferences."""
-
         data_source.metadata_cache["test_model"] = sample_metadata
 
         has_inferences = await data_source.has_recorded_inferences("test_model")
@@ -259,10 +294,11 @@ class TestDataSource:
 
     @pytest.mark.asyncio
     async def test_get_verified_models_from_known(
-        self, data_source: DataSource, sample_metadata: StorageMetadata
+        self,
+        data_source: DataSource,
+        sample_metadata: StorageMetadata,
     ) -> None:
         """Test getting verified models from known models."""
-
         await data_source.add_model_to_known("test_model")
         await data_source.add_model_to_known("invalid_model")
         data_source.metadata_cache["test_model"] = sample_metadata
@@ -282,14 +318,15 @@ class TestDataSource:
         mock_model_data: Mock,
     ) -> None:
         """Test discovering models from storage when no known models exist."""
-
         mock_model_data_class.return_value = mock_model_data
 
         # Mock the storage interface to return discovered_model
-        data_source.storage_interface.get_known_models = AsyncMock(return_value=["discovered_model"])
+        data_source.storage_interface.get_known_models = AsyncMock(
+            return_value=["discovered_model"],
+        )
 
         # Mock has_metadata to return True for the discovered model
-        data_source.has_metadata = AsyncMock(return_value=True)
+        data_source.has_metadata = AsyncMock(return_value=True)  # type: ignore[method-assign]
 
         verified = await data_source.get_verified_models()
 
@@ -302,9 +339,12 @@ class TestDataSource:
         assert name == "test_model-ground-truths"
 
     @pytest.mark.asyncio
-    async def test_has_ground_truths(self, data_source: DataSource, sample_metadata: StorageMetadata) -> None:
+    async def test_has_ground_truths(
+        self,
+        data_source: DataSource,
+        sample_metadata: StorageMetadata,
+    ) -> None:
         """Test checking for ground truths."""
-
         gt_name = DataSource.get_ground_truth_name("test_model")
         data_source.metadata_cache[gt_name] = sample_metadata
 
@@ -341,7 +381,6 @@ class TestDataSource:
     @pytest.mark.asyncio
     async def test_save_dataframe(self, data_source: DataSource) -> None:
         """Test saving dataframe."""
-
         df = pd.DataFrame({"feature": [1, 2, 3], "target": [0, 1, 0]})
 
         await data_source.save_dataframe(df, "test_model", overwrite=True)
@@ -349,9 +388,12 @@ class TestDataSource:
         # Should add model to known models
         assert "test_model" in data_source.known_models
 
-    def test_save_metadata(self, data_source: DataSource, sample_metadata: StorageMetadata) -> None:
+    def test_save_metadata(
+        self,
+        data_source: DataSource,
+        sample_metadata: StorageMetadata,
+    ) -> None:
         """Test saving metadata."""
-
         data_source.save_metadata(sample_metadata, "test_model")
 
         # Should cache the metadata
@@ -381,9 +423,9 @@ class TestDataSource:
         df = await data_source.get_dataframe_with_batch_size("test_model", 100)
 
         # Should get all available data
-        assert len(df) == 10
+        assert len(df) == EXPECTED_AVAILABLE_ROWS
 
         # Verify correct parameters were passed to ModelData.data()
         call_args = mock_model_data.data.call_args[1]
         assert call_args["start_row"] == 0  # Should start from beginning
-        assert call_args["n_rows"] == 10  # Should get all 10 rows
+        assert call_args["n_rows"] == EXPECTED_AVAILABLE_ROWS

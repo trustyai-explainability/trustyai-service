@@ -1,10 +1,10 @@
-from enum import Enum
+"""Data type enumeration for schema field types."""
+
+from enum import StrEnum
 
 
-class DataType(str, Enum):
-    """
-    Enumeration of supported data types.
-    """
+class DataType(StrEnum):
+    """Enumeration of supported data types."""
 
     BOOL = "BOOL"
     FLOAT = "FLOAT"

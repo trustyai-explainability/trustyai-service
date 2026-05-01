@@ -1,65 +1,74 @@
-from fastapi import APIRouter, HTTPException, BackgroundTasks
-from pydantic import BaseModel
-from typing import List, Optional
+"""Fourier Maximum Mean Discrepancy (MMD) endpoint for drift detection."""
+
 import logging
-import uuid
+from http import HTTPStatus
+from typing import Never
+
+from fastapi import APIRouter, BackgroundTasks, HTTPException
+from pydantic import BaseModel
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
 class ScheduleId(BaseModel):
+    """Identifier for a scheduled metric computation request."""
+
     requestId: str
 
 
 # FourierMMD
 class FourierMMDParameters(BaseModel):
-    nWindow: Optional[int] = None
-    nTest: Optional[int] = None
-    nMode: Optional[int] = None
-    randomSeed: Optional[int] = None
-    sig: Optional[float] = None
-    deltaStat: Optional[bool] = None
-    epsilon: Optional[float] = None
+    """Parameters for Fourier MMD drift detection algorithm."""
+
+    nWindow: int | None = None
+    nTest: int | None = None
+    nMode: int | None = None
+    randomSeed: int | None = None
+    sig: float | None = None
+    deltaStat: bool | None = None
+    epsilon: float | None = None
 
 
 class FourierMMDFitting(BaseModel):
-    randomSeed: Optional[int] = None
-    deltaStat: Optional[bool] = None
-    nMode: Optional[int] = None
-    scale: Optional[List[float]] = None
-    aRef: Optional[List[float]] = None
-    meanMMD: Optional[float] = None
-    stdMMD: Optional[float] = None
+    """Fitted reference distribution parameters for Fourier MMD."""
+
+    randomSeed: int | None = None
+    deltaStat: bool | None = None
+    nMode: int | None = None
+    scale: list[float] | None = None
+    aRef: list[float] | None = None
+    meanMMD: float | None = None
+    stdMMD: float | None = None
 
 
 class FourierMMDMetricRequest(BaseModel):
+    """Request parameters for Fourier MMD drift detection metric computation."""
+
     modelId: str
-    requestName: Optional[str] = None
-    metricName: Optional[str] = None
-    batchSize: Optional[int] = 100
-    thresholdDelta: Optional[float] = None
-    referenceTag: Optional[str] = None
-    fitColumns: List[str] = []
-    parameters: Optional[FourierMMDParameters] = None
-    gamma: Optional[float] = None
-    fitting: Optional[FourierMMDFitting] = None
+    requestName: str | None = None
+    metricName: str | None = None
+    batchSize: int | None = 100
+    thresholdDelta: float | None = None
+    referenceTag: str | None = None
+    fitColumns: list[str] = []
+    parameters: FourierMMDParameters | None = None
+    gamma: float | None = None
+    fitting: FourierMMDFitting | None = None
 
 
-@router.post("/metrics/drift/fouriermmd")
-async def compute_fouriermmd(request: FourierMMDMetricRequest):
+@router.post("/metrics/drift/fouriermmd", response_model=None)
+async def compute_fouriermmd(request: FourierMMDMetricRequest) -> Never:
     """Compute the current value of FourierMMD metric."""
-    try:
-        logger.info(f"Computing FourierMMD for model: {request.modelId}")
-        # TODO: Implement
-        return {"status": "success", "value": 0.5}
-    except Exception as e:
-        logger.error(f"Error computing FourierMMD: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error computing metric: {str(e)}")
+    logger.info("Computing FourierMMD for model: %s", request.modelId)
+    raise HTTPException(
+        status_code=HTTPStatus.NOT_IMPLEMENTED,
+        detail="FourierMMD metric computation is not yet implemented",
+    )
 
 
 @router.get("/metrics/drift/fouriermmd/definition")
-async def get_fouriermmd_definition():
+async def get_fouriermmd_definition() -> dict[str, str]:
     """Provide a general definition of FourierMMD metric."""
     return {
         "name": "FourierMMD Drift",
@@ -67,25 +76,32 @@ async def get_fouriermmd_definition():
     }
 
 
-@router.post("/metrics/drift/fouriermmd/request")
-async def schedule_fouriermmd(request: FourierMMDMetricRequest, background_tasks: BackgroundTasks):
+@router.post("/metrics/drift/fouriermmd/request", response_model=None)
+async def schedule_fouriermmd(
+    _request: FourierMMDMetricRequest, _background_tasks: BackgroundTasks
+) -> Never:
     """Schedule a recurring computation of FourierMMD metric."""
-    request_id = str(uuid.uuid4())
-    logger.info(f"Scheduling FourierMMD computation with ID: {request_id}")
-    # TODO: Implement
-    return {"requestId": request_id}
+    logger.info("Scheduling FourierMMD computation")
+    raise HTTPException(
+        status_code=HTTPStatus.NOT_IMPLEMENTED,
+        detail="FourierMMD metric scheduling is not yet implemented",
+    )
 
 
-@router.delete("/metrics/drift/fouriermmd/request")
-async def delete_fouriermmd_schedule(schedule: ScheduleId):
+@router.delete("/metrics/drift/fouriermmd/request", response_model=None)
+async def delete_fouriermmd_schedule(schedule: ScheduleId) -> Never:
     """Delete a recurring computation of FourierMMD metric."""
-    logger.info(f"Deleting FourierMMD schedule: {schedule.requestId}")
-    # TODO: Implement
-    return {"status": "success", "message": f"Schedule {schedule.requestId} deleted"}
+    logger.info("Deleting FourierMMD schedule: %s", schedule.requestId)
+    raise HTTPException(
+        status_code=HTTPStatus.NOT_IMPLEMENTED,
+        detail="FourierMMD metric schedule deletion is not yet implemented",
+    )
 
 
-@router.get("/metrics/drift/fouriermmd/requests")
-async def list_fouriermmd_requests():
+@router.get("/metrics/drift/fouriermmd/requests", response_model=None)
+async def list_fouriermmd_requests() -> Never:
     """List the currently scheduled computations of FourierMMD metric."""
-    # TODO: Implement
-    return {"requests": []}
+    raise HTTPException(
+        status_code=HTTPStatus.NOT_IMPLEMENTED,
+        detail="FourierMMD metric schedule listing is not yet implemented",
+    )

@@ -1,10 +1,9 @@
-class UnsupportedOperationException(Exception):
-    """Exception raised for unsupported operations"""
+"""Custom exception classes for service utility operations."""
 
-    pass
+
+class UnsupportedOperationError(Exception):
+    """Exception raised for unsupported operations."""
 
 
 class IllegalArgumentError(Exception):
-    """Exception raised for illegal arguments"""
-
-    pass
+    """Exception raised for illegal arguments."""

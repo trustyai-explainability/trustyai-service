@@ -1,5 +1,8 @@
+"""Compare means endpoint for detecting drift through statistical comparison of means."""
+
 import logging
 import uuid
+from http import HTTPStatus
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -11,9 +14,13 @@ from src.core.metrics.drift.compare_means import (
     DEFAULT_NAN_POLICY,
     CompareMeans,
 )
+from src.service.data.datasources.data_source import DataSource
 from src.service.data.shared_data_source import get_shared_data_source
 from src.service.payloads.metrics.base_metric_request import BaseMetricRequest
-from src.service.prometheus.shared_prometheus_scheduler import get_shared_prometheus_scheduler
+from src.service.prometheus.prometheus_scheduler import PrometheusScheduler
+from src.service.prometheus.shared_prometheus_scheduler import (
+    get_shared_prometheus_scheduler,
+)
 from src.service.utils.logging_utils import log_deprecated_endpoint
 
 router = APIRouter()
@@ -29,26 +36,32 @@ DEFAULT_BATCH_SIZE = 100
 # from src.core.metrics.drift.compare_means to ensure consistency
 
 
-def get_prometheus_scheduler():
+def get_prometheus_scheduler() -> PrometheusScheduler:
     """Get the shared prometheus scheduler instance."""
     return get_shared_prometheus_scheduler()
 
 
-def get_data_source():
+def get_data_source() -> DataSource:
     """Get the shared data source instance."""
     return get_shared_data_source()
 
 
 class ScheduleId(BaseModel):
+    """Identifier for a scheduled metric computation request."""
+
     requestId: str
 
 
 class CompareMeansMetricRequest(BaseMetricRequest):
+    """Request parameters for compare means drift detection metric."""
+
     # Use field aliases to accept camelCase from API while keeping snake_case internally
     model_config = ConfigDict(populate_by_name=True)
 
     model_id: str = Field(alias="modelId")
-    metric_name: str | None = Field(default=None, alias="metricName")  # Will be set by endpoint
+    metric_name: str | None = Field(
+        default=None, alias="metricName"
+    )  # Will be set by endpoint
     request_name: str | None = Field(default=None, alias="requestName")
     batch_size: int = Field(default=DEFAULT_BATCH_SIZE, alias="batchSize")
 
@@ -77,97 +90,119 @@ class CompareMeansMetricRequest(BaseMetricRequest):
 
 
 @router.post("/metrics/drift/comparemeans")
-async def compute_CompareMeans(
+async def compute_compare_means(
     request: CompareMeansMetricRequest,
 ) -> dict[str, float | bool | str | dict[str, dict[str, float | bool]]]:
     """Compute the current value of CompareMeans metric."""
+    # Validate inputs before try block
+    if not request.reference_tag:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail="referenceTag is required for drift detection",
+        )
+
+    if not request.fit_columns:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail="fitColumns is required - specify which features to test for drift",
+        )
+
     try:
-        logger.info(f"Computing {METRIC_NAME} for model: {request.model_id}")
+        logger.info("Computing %s for model: %s", METRIC_NAME, request.model_id)
 
         # Get data source
         data_source = get_data_source()
         batch_size = request.batch_size
 
         # Get reference dataframe (tagged with referenceTag)
-        if request.reference_tag:
-            reference_df = await data_source.get_dataframe_by_tag(request.model_id, request.reference_tag)
-        else:
-            raise HTTPException(status_code=400, detail="referenceTag is required for drift detection")
+        reference_df = await data_source.get_dataframe_by_tag(
+            request.model_id, request.reference_tag
+        )
 
         # Get current dataframe (most recent organic data)
-        current_df = await data_source.get_organic_dataframe(request.model_id, batch_size)
-
-        if len(reference_df) == 0:
-            raise HTTPException(
-                status_code=404,
-                detail=f"No reference data found for model: {request.model_id} with tag: {request.reference_tag}",
-            )
-
-        if len(current_df) == 0:
-            raise HTTPException(status_code=404, detail=f"No current data found for model: {request.model_id}")
-
-        # Calculate t-test for each feature
-        alpha = request.alpha
-        equal_var = request.equal_var
-        nan_policy = request.nan_policy
-
-        if request.fit_columns:
-            # Multi-feature case: iterate over features
-            results = {}
-            for feature_name in request.fit_columns:
-                if feature_name not in reference_df.columns or feature_name not in current_df.columns:
-                    raise HTTPException(status_code=400, detail=f"Feature {feature_name} not found in data")
-
-                reference_data = reference_df[feature_name].to_numpy()
-                current_data = current_df[feature_name].to_numpy()
-
-                results[feature_name] = CompareMeans.ttest_ind(
-                    reference_data=reference_data,
-                    current_data=current_data,
-                    alpha=alpha,
-                    equal_var=equal_var,
-                    nan_policy=nan_policy,
-                )
-
-            # Aggregate: drift detected if any feature shows drift
-            drift_detected = any(r["drift_detected"] for r in results.values())
-
-            # Find the feature with the maximum absolute statistic
-            # If drift is detected, prioritize features that detected drift to ensure
-            # consistency: drift_detected=True implies p_value < alpha
-            if drift_detected:
-                # Among features that detected drift, find the one with max absolute statistic
-                drifting_features = [r for r in results.values() if r["drift_detected"]]
-                max_feature_result = max(drifting_features, key=lambda r: abs(r["statistic"]))
-            else:
-                # If no drift detected, use the feature with max absolute statistic overall
-                max_feature_result = max(results.values(), key=lambda r: abs(r["statistic"]))
-
-            max_statistic = max_feature_result["statistic"]
-            corresponding_p_value = max_feature_result["p_value"]
-
-            return {
-                "status": "success",
-                "value": abs(max_statistic),
-                "drift_detected": drift_detected,
-                "p_value": corresponding_p_value,
-                "alpha": alpha,
-                "feature_results": results,
-            }
-        else:
-            raise HTTPException(
-                status_code=400, detail="fitColumns is required - specify which features to test for drift"
-            )
+        current_df = await data_source.get_organic_dataframe(
+            request.model_id, batch_size
+        )
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Error computing {METRIC_NAME}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error computing metric: {str(e)}")
+    except Exception as e:  # Broad catch intentional: endpoint catch-all for unknown computation errors
+        logger.exception("Error computing %s", METRIC_NAME)
+        raise HTTPException(
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+            detail=f"Error computing metric: {e!s}",
+        ) from e
+
+    # Validate data availability (after try block to avoid TRY301)
+    if len(reference_df) == 0:
+        raise HTTPException(
+            status_code=HTTPStatus.NOT_FOUND,
+            detail=f"No reference data found for model: {request.model_id} with tag: {request.reference_tag}",
+        )
+
+    if len(current_df) == 0:
+        raise HTTPException(
+            status_code=HTTPStatus.NOT_FOUND,
+            detail=f"No current data found for model: {request.model_id}",
+        )
+
+    # Calculate t-test for each feature
+    alpha = request.alpha
+    equal_var = request.equal_var
+    nan_policy = request.nan_policy
+
+    # Multi-feature case: iterate over features
+    results = {}
+    for feature_name in request.fit_columns:
+        if (
+            feature_name not in reference_df.columns
+            or feature_name not in current_df.columns
+        ):
+            raise HTTPException(
+                status_code=HTTPStatus.BAD_REQUEST,
+                detail=f"Feature {feature_name} not found in data",
+            )
+
+        reference_data = reference_df[feature_name].to_numpy()
+        current_data = current_df[feature_name].to_numpy()
+
+        results[feature_name] = CompareMeans.ttest_ind(
+            reference_data=reference_data,
+            current_data=current_data,
+            alpha=alpha,
+            equal_var=equal_var,
+            nan_policy=nan_policy,
+        )
+
+    # Aggregate: drift detected if any feature shows drift
+    drift_detected = any(r["drift_detected"] for r in results.values())
+
+    # Find the feature with the maximum absolute statistic
+    # If drift is detected, prioritize features that detected drift to ensure
+    # consistency: drift_detected=True implies p_value < alpha
+    if drift_detected:
+        # Among features that detected drift, find the one with max absolute statistic
+        drifting_features = [r for r in results.values() if r["drift_detected"]]
+        max_feature_result = max(drifting_features, key=lambda r: abs(r["statistic"]))
+    else:
+        # If no drift detected, use the feature with max absolute statistic overall
+        max_feature_result = max(results.values(), key=lambda r: abs(r["statistic"]))
+
+    max_statistic = max_feature_result["statistic"]
+    corresponding_p_value = max_feature_result["p_value"]
+
+    return {
+        "status": "success",
+        "value": abs(max_statistic),
+        "drift_detected": drift_detected,
+        "p_value": corresponding_p_value,
+        "alpha": alpha,
+        "feature_results": results,
+    }
 
 
 @router.get("/metrics/drift/comparemeans/definition")
-async def get_CompareMeans_definition() -> dict[str, str]:
+async def get_compare_means_definition() -> dict[str, str]:
     """Provide a general definition of CompareMeans metric."""
     description = """The independent two-sample t-test is used to determine whether two independent samples
     have significantly different means. This implementation uses Welch's t-test by default (equal_var=False),
@@ -185,69 +220,97 @@ async def get_CompareMeans_definition() -> dict[str, str]:
 
 
 @router.post("/metrics/drift/comparemeans/request")
-async def schedule_CompareMeans(request: CompareMeansMetricRequest) -> dict[str, str]:
+async def schedule_compare_means(request: CompareMeansMetricRequest) -> dict[str, str]:
     """Schedule a recurring computation of CompareMeans metric."""
+    # Get the scheduler and validate availability
+    scheduler = get_prometheus_scheduler()
+    if not scheduler:
+        raise HTTPException(
+            status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+            detail="Prometheus scheduler not available",
+        )
+
     try:
         # Generate UUID for this request
         request_id = uuid.uuid4()
-        logger.info(f"Scheduling {METRIC_NAME} computation with ID: {request_id}.")
+        logger.info("Scheduling %s computation with ID: %s.", METRIC_NAME, request_id)
 
         # Set metric name automatically
         request.metric_name = METRIC_NAME
 
-        # Get the scheduler and register the request
-        scheduler = get_prometheus_scheduler()
-        if not scheduler:
-            raise HTTPException(status_code=500, detail="Prometheus scheduler not available")
-
         # Register with the scheduler (this will reconcile the request and store it)
         await scheduler.register(request.metric_name, request_id, request)
 
-        logger.info(f"Successfully scheduled {METRIC_NAME} computation with ID: {request_id}")
+    except Exception as e:  # Broad catch intentional: scheduler registration errors should not crash endpoint
+        logger.exception("Error scheduling %s computation", METRIC_NAME)
+        raise HTTPException(
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+            detail=f"Error scheduling metric: {e!s}",
+        ) from e
+    else:
+        logger.info(
+            "Successfully scheduled %s computation with ID: %s", METRIC_NAME, request_id
+        )
         return {"requestId": str(request_id)}
-
-    except Exception as e:
-        logger.error(f"Error scheduling {METRIC_NAME} computation: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error scheduling metric: {str(e)}") from e
 
 
 @router.delete("/metrics/drift/comparemeans/request")
-async def delete_CompareMeans_schedule(schedule: ScheduleId) -> dict[str, str]:
+async def delete_compare_means_schedule(schedule: ScheduleId) -> dict[str, str]:
     """Delete a recurring computation of CompareMeans metric."""
+    # Get the scheduler and validate availability
+    scheduler = get_prometheus_scheduler()
+    if not scheduler:
+        raise HTTPException(
+            status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+            detail="Prometheus scheduler not available",
+        )
+
+    # Convert string ID to UUID
     try:
-        logger.info(f"Deleting {METRIC_NAME} schedule: {schedule.requestId}")
+        request_uuid = uuid.UUID(schedule.requestId)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST, detail="Invalid request ID format"
+        ) from e
 
-        # Get the scheduler and delete the request
-        scheduler = get_prometheus_scheduler()
-        if not scheduler:
-            raise HTTPException(status_code=500, detail="Prometheus scheduler not available")
-
-        # Convert string ID to UUID
-        try:
-            request_uuid = uuid.UUID(schedule.requestId)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid request ID format")
+    try:
+        logger.info("Deleting %s schedule: %s", METRIC_NAME, schedule.requestId)
 
         # Delete from scheduler
         await scheduler.delete(METRIC_NAME, request_uuid)
 
-        logger.info(f"Successfully deleted {METRIC_NAME} schedule: {schedule.requestId}")
-        return {"status": "success", "message": f"Schedule {schedule.requestId} deleted"}
-
-    except Exception as e:
-        logger.error(f"Error deleting {METRIC_NAME} schedule: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error deleting schedule: {str(e)}")
+    except HTTPException:
+        raise
+    except (
+        Exception
+    ) as e:  # Broad catch intentional: endpoint catch-all for unknown deletion errors
+        logger.exception("Error deleting %s schedule", METRIC_NAME)
+        raise HTTPException(
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting schedule: {e!s}",
+        ) from e
+    else:
+        logger.info(
+            "Successfully deleted %s schedule: %s", METRIC_NAME, schedule.requestId
+        )
+        return {
+            "status": "success",
+            "message": f"Schedule {schedule.requestId} deleted",
+        }
 
 
 @router.get("/metrics/drift/comparemeans/requests")
-async def list_CompareMeans_requests() -> dict[str, list[dict[str, Any]]]:
+async def list_compare_means_requests() -> dict[str, list[dict[str, Any]]]:
     """List the currently scheduled computations of CompareMeans metric."""
-    try:
-        # Get the scheduler and list CompareMeans requests
-        scheduler = get_prometheus_scheduler()
-        if not scheduler:
-            raise HTTPException(status_code=500, detail="Prometheus scheduler not available")
+    # Get the scheduler and validate availability
+    scheduler = get_prometheus_scheduler()
+    if not scheduler:
+        raise HTTPException(
+            status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+            detail="Prometheus scheduler not available",
+        )
 
+    try:
         # Get all requests for CompareMeans
         requests = scheduler.get_requests(METRIC_NAME)
 
@@ -261,27 +324,40 @@ async def list_CompareMeans_requests() -> dict[str, list[dict[str, Any]]]:
                 and hasattr(request, "reference_tag")
                 and hasattr(request, "fit_columns")
             ):
-                requests_list.append({
-                    "requestId": str(request_id),
-                    "modelId": request.model_id,
-                    "metricName": METRIC_NAME,
-                    "batchSize": request.batch_size,
-                    "referenceTag": request.reference_tag,
-                    "fitColumns": request.fit_columns,
-                    "alpha": getattr(request, "alpha", DEFAULT_ALPHA),
-                    "equalVar": getattr(request, "equal_var", DEFAULT_EQUAL_VAR),
-                    "nanPolicy": getattr(request, "nan_policy", DEFAULT_NAN_POLICY),
-                })
+                requests_list.append(
+                    {
+                        "requestId": str(request_id),
+                        "modelId": request.model_id,
+                        "metricName": METRIC_NAME,
+                        "batchSize": request.batch_size,
+                        "referenceTag": request.reference_tag,
+                        "fitColumns": request.fit_columns,
+                        "alpha": getattr(request, "alpha", DEFAULT_ALPHA),
+                        "equalVar": getattr(request, "equal_var", DEFAULT_EQUAL_VAR),
+                        "nanPolicy": getattr(request, "nan_policy", DEFAULT_NAN_POLICY),
+                    }
+                )
             else:
                 # Log warning for malformed request objects and skip them
-                logger.warning(f"Skipping malformed {METRIC_NAME} request {request_id}: missing required attributes")
+                logger.warning(
+                    "Skipping malformed %s request %s: missing required attributes",
+                    METRIC_NAME,
+                    request_id,
+                )
                 continue
 
+    except HTTPException:
+        raise
+    except (
+        Exception
+    ) as e:  # Broad catch intentional: endpoint catch-all for unknown listing errors
+        logger.exception("Error listing %s requests", METRIC_NAME)
+        raise HTTPException(
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+            detail=f"Error listing requests: {e!s}",
+        ) from e
+    else:
         return {"requests": requests_list}
-
-    except Exception as e:
-        logger.error(f"Error listing {METRIC_NAME} requests: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error listing requests: {str(e)}")
 
 
 # ============================================================================
@@ -295,66 +371,76 @@ async def list_CompareMeans_requests() -> dict[str, list[dict[str, Any]]]:
 
 
 class MeanshiftMetricRequest(CompareMeansMetricRequest):
-    """
-    DEPRECATED: Use CompareMeansMetricRequest instead.
-    Maintained for backward compatibility with old API clients.
+    """DEPRECATED: Use CompareMeansMetricRequest instead.
 
+    Maintained for backward compatibility with old API clients.
     This class inherits from CompareMeansMetricRequest to ensure consistency
     and reduce duplication. All fields and validation behavior are inherited.
     """
 
 
 @router.post("/metrics/drift/meanshift", deprecated=True)
-async def compute_meanshift(request: MeanshiftMetricRequest):
+async def compute_meanshift(
+    request: MeanshiftMetricRequest,
+) -> dict[str, float | bool | str | dict[str, dict[str, float | bool]]]:
     """Compute the current value of Meanshift metric (deprecated).
 
-    This endpoint is deprecated. Please use /metrics/drift/comparemeans instead.
+    This endpoint is deprecated. Please use /metrics/drift/comparemeans
+    instead.
     """
     log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
     # Convert to CompareMeans request format
     # Use exclude_none=True so that omitted fields get their defaults applied
-    compare_means_request = CompareMeansMetricRequest.model_validate(request.model_dump(exclude_none=True))
-    return await compute_CompareMeans(compare_means_request)
+    compare_means_request = CompareMeansMetricRequest.model_validate(
+        request.model_dump(exclude_none=True)
+    )
+    return await compute_compare_means(compare_means_request)
 
 
 @router.get("/metrics/drift/meanshift/definition", deprecated=True)
-async def get_meanshift_definition():
+async def get_meanshift_definition() -> dict[str, str]:
     """Provide a general definition of Meanshift metric (deprecated).
 
-    This endpoint is deprecated. Please use /metrics/drift/comparemeans/definition instead.
+    This endpoint is deprecated. Please use
+    /metrics/drift/comparemeans/definition instead.
     """
     log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
-    return await get_CompareMeans_definition()
+    return await get_compare_means_definition()
 
 
 @router.post("/metrics/drift/meanshift/request", deprecated=True)
-async def schedule_meanshift(request: MeanshiftMetricRequest):
+async def schedule_meanshift(request: MeanshiftMetricRequest) -> dict[str, str]:
     """Schedule a recurring computation of Meanshift metric (deprecated).
 
-    This endpoint is deprecated. Please use /metrics/drift/comparemeans/request instead.
+    This endpoint is deprecated. Please use
+    /metrics/drift/comparemeans/request instead.
     """
     log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
     # Convert to CompareMeans request format
     # Use exclude_none=True so that omitted fields get their defaults applied
-    compare_means_request = CompareMeansMetricRequest.model_validate(request.model_dump(exclude_none=True))
-    return await schedule_CompareMeans(compare_means_request)
+    compare_means_request = CompareMeansMetricRequest.model_validate(
+        request.model_dump(exclude_none=True)
+    )
+    return await schedule_compare_means(compare_means_request)
 
 
 @router.delete("/metrics/drift/meanshift/request", deprecated=True)
-async def delete_meanshift_schedule(schedule: ScheduleId):
+async def delete_meanshift_schedule(schedule: ScheduleId) -> dict[str, str]:
     """Delete a recurring computation of Meanshift metric (deprecated).
 
-    This endpoint is deprecated. Please use /metrics/drift/comparemeans/request instead.
+    This endpoint is deprecated. Please use
+    /metrics/drift/comparemeans/request instead.
     """
     log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
-    return await delete_CompareMeans_schedule(schedule)
+    return await delete_compare_means_schedule(schedule)
 
 
 @router.get("/metrics/drift/meanshift/requests", deprecated=True)
-async def list_meanshift_requests():
+async def list_meanshift_requests() -> dict[str, list[dict[str, Any]]]:
     """List the currently scheduled computations of Meanshift metric (deprecated).
 
-    This endpoint is deprecated. Please use /metrics/drift/comparemeans/requests instead.
+    This endpoint is deprecated. Please use
+    /metrics/drift/comparemeans/requests instead.
     """
     log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
-    return await list_CompareMeans_requests()
+    return await list_compare_means_requests()

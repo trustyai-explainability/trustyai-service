@@ -1,9 +1,9 @@
 # pylint: disable=line-too-long
-"""
-Jensen–Shannon distance and divergence for measuring distribution similarity.
+"""Jensen-Shannon distance and divergence for measuring distribution similarity.
 
-JS divergence is a symmetric and smoothed version of the Kullback–Leibler divergence,
-bounded between 0 and 1 (or 0 and log(2) in nats).
+JS divergence is a symmetric and smoothed version of the
+Kullback-Leibler divergence, bounded between 0 and 1 (or 0 and log(2) in
+nats).
 """
 
 from typing import Literal
@@ -12,7 +12,6 @@ import numpy as np
 from scipy.spatial.distance import jensenshannon
 
 from . import utils
-from .utils import BwMethod
 
 # Default constants for Jensen-Shannon metric
 DEFAULT_STATISTIC: Literal["distance", "divergence"] = "distance"
@@ -25,8 +24,7 @@ DEFAULT_GRID_POINTS = utils.DEFAULT_GRID_POINTS
 
 
 class JensenShannon:
-    """
-    Jensen-Shannon distance and divergence for measuring distribution similarity.
+    """Jensen-Shannon distance and divergence for measuring distribution similarity.
 
     JS divergence is a symmetric and smoothed version of KL divergence,
     bounded between 0 and 1 (or 0 and log(2) in nats).
@@ -41,11 +39,11 @@ class JensenShannon:
         method: Literal["kde", "hist"] = DEFAULT_METHOD,
         grid_points: int = DEFAULT_GRID_POINTS,
         bins: int = DEFAULT_BINS,
-        *,
-        bw_method: BwMethod = None,
+        bw_method: utils.BwMethod = None,
     ) -> dict[str, float]:
-        """
-        Calculate Jensen-Shannon divergence between distributions using scipy.spatial.distance.jensenshannon.
+        """Calculate Jensen-Shannon divergence between distributions.
+
+        Uses scipy.spatial.distance.jensenshannon.
 
         :param data_ref: Reference distribution data.
         :param data_cur: Current distribution data.
@@ -60,29 +58,42 @@ class JensenShannon:
             estimation on a fixed grid and ``"hist"`` for histogram-based estimation.
         :param grid_points: Number of grid points used when ``method="kde"``.
         :param bins: Number of histogram bins used when ``method="hist"``.
-        :param bw_method: Bandwidth selection method for KDE (passed to scipy.stats.gaussian_kde).
+        :param bw_method: Bandwidth selection method for KDE, passed to
+            ``scipy.stats.gaussian_kde``. Can be 'scott', 'silverman', a
+            scalar constant, or None (scipy default). Only used when
+            ``method="kde"``.
         :return: Dictionary containing js_divergence and drift_detected
         """
         # Validate statistic parameter
         if statistic not in ("distance", "divergence"):
-            raise ValueError(f"statistic must be 'distance' or 'divergence', got '{statistic}'")
+            msg = f"statistic must be 'distance' or 'divergence', got '{statistic}'"
+            raise ValueError(
+                msg,
+            )
 
         # Generate probability distributions from data on a common grid
         if method == "kde":
-            p_ref, p_cur = utils.prob_dist_kde(data_ref, data_cur, grid_points, bw_method=bw_method)
+            p_ref, p_cur = utils.prob_dist_kde(
+                data_ref,
+                data_cur,
+                grid_points,
+                bw_method=bw_method,
+            )
         elif method == "hist":
             p_ref, p_cur = utils.prob_dist_hist(data_ref, data_cur, bins)
         else:
-            raise ValueError("`method` must be `hist` or `kde`.")
+            msg = "`method` must be `hist` or `kde`."
+            raise ValueError(msg)
 
         # The metric
-        distance = jensenshannon(p_ref, p_cur)
-        divergence = distance**2
+        distance_raw = jensenshannon(p_ref, p_cur)
+        distance = float(distance_raw)
+        divergence = float(distance_raw**2)
         actual = distance if statistic == "distance" else divergence
 
         return {
             "Jensen-Shannon_distance": distance,
             "Jensen-Shannon_divergence": divergence,
-            "drift_detected": bool(actual > threshold),
+            "drift_detected": actual > threshold,
             "threshold": threshold,
         }

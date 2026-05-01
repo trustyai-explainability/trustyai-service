@@ -1,3 +1,5 @@
+"""Tests for ReconcilableOutput."""
+
 from src.service.payloads.values.reconcilable_field import ReconcilableField
 from src.service.payloads.values.reconcilable_output import ReconcilableOutput
 
@@ -5,7 +7,7 @@ from src.service.payloads.values.reconcilable_output import ReconcilableOutput
 class TestReconcilableOutput:
     """Test ReconcilableOutput functionality."""
 
-    def test_reconcilable_output_inheritance(self):
+    def test_reconcilable_output_inheritance(self) -> None:
         """Test that ReconcilableOutput inherits from ReconcilableField."""
         value_node = {"type": "DOUBLE", "value": 1.0}
         output = ReconcilableOutput(value_node)

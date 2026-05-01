@@ -1,3 +1,5 @@
+"""Tests for Kolmogorov-Smirnov drift detection endpoint."""
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -26,7 +28,13 @@ class TestKSTestEndpoints:
             "fitColumns": ["feature1", "feature2"],
             "batchSize": 100,
         },
-        expected_response_keys=["status", "value", "drift_detected", "p_value", "alpha"],
+        expected_response_keys=[
+            "status",
+            "value",
+            "drift_detected",
+            "p_value",
+            "alpha",
+        ],
         df_type="Pandas",
     )
 
@@ -42,7 +50,13 @@ class TestKSTestEndpoints:
             "fitColumns": ["feature1", "feature2"],
             "batchSize": 100,
         },
-        expected_response_keys=["status", "value", "drift_detected", "p_value", "alpha"],
+        expected_response_keys=[
+            "status",
+            "value",
+            "drift_detected",
+            "p_value",
+            "alpha",
+        ],
         df_type="Polars",
     )
 
@@ -133,7 +147,7 @@ class TestKSTestEndpoints:
         endpoint_path="/metrics/drift/kstest/request",
         client=client,
         request_id="not-a-valid-uuid",
-        expected_status_code=500,  # Endpoint catches ValueError and returns 500
+        expected_status_code=400,  # Invalid UUID returns 400 (Bad Request)
         expected_error_substring="Invalid request ID",
     )
 
@@ -147,13 +161,15 @@ class TestKSTestEndpoints:
     )
 
     # List endpoint with malformed requests (defensive logic test)
-    test_list_requests_filters_malformed = factory.make_list_requests_with_malformed_data_test(
-        metric_name="KSTest",
-        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
-        endpoint_path="/metrics/drift/kstest/requests",
-        client=client,
-        num_valid_requests=2,
-        num_malformed_requests=3,
+    test_list_requests_filters_malformed = (
+        factory.make_list_requests_with_malformed_data_test(
+            metric_name="KSTest",
+            module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+            endpoint_path="/metrics/drift/kstest/requests",
+            client=client,
+            num_valid_requests=2,
+            num_malformed_requests=3,
+        )
     )
 
     # ========================================================================
@@ -235,8 +251,9 @@ class TestKSTestEndpoints:
     )
 
     # Scheduler unavailable tests
-    # Note: Current endpoint implementation returns 500 instead of 503 for scheduler unavailable
-    # This could be improved to return 503 (Service Unavailable) in a future update
+    # Note: Current endpoint implementation returns 500 instead of 503 for
+    # scheduler unavailable. This could be improved to return 503
+    # (Service Unavailable) in a future update
     test_schedule_scheduler_unavailable = factory.make_schedule_endpoint_error_test(
         metric_name="KSTest",
         module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
@@ -247,8 +264,9 @@ class TestKSTestEndpoints:
             "referenceTag": "baseline",
             "fitColumns": ["feature1"],
         },
-        expected_status_code=500,  # TODO: Should be 503 Service Unavailable
-        expected_error_substring="not available",  # Matches "Prometheus scheduler not available"
+        expected_status_code=503,
+        # Matches "Prometheus scheduler not available"
+        expected_error_substring="not available",
         mock_scheduler_none=True,
     )
 
@@ -258,8 +276,9 @@ class TestKSTestEndpoints:
         endpoint_path="/metrics/drift/kstest/request",
         client=client,
         request_id="123e4567-e89b-12d3-a456-426614174000",
-        expected_status_code=500,  # TODO: Should be 503 Service Unavailable
-        expected_error_substring="not available",  # Matches "Prometheus scheduler not available"
+        expected_status_code=503,
+        # Matches "Prometheus scheduler not available"
+        expected_error_substring="not available",
         mock_scheduler_none=True,
     )
 
@@ -295,11 +314,13 @@ class TestKSTestEndpoints:
     # List Endpoint Exception Tests
     # ========================================================================
 
-    test_list_scheduler_unavailable = factory.make_list_endpoint_scheduler_unavailable_test(
-        metric_name="KSTest",
-        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
-        endpoint_path="/metrics/drift/kstest/requests",
-        client=client,
+    test_list_scheduler_unavailable = (
+        factory.make_list_endpoint_scheduler_unavailable_test(
+            metric_name="KSTest",
+            module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+            endpoint_path="/metrics/drift/kstest/requests",
+            client=client,
+        )
     )
 
     test_list_exception_handling = factory.make_list_endpoint_exception_test(
@@ -342,7 +363,13 @@ class TestKSTestEndpoints:
             "thresholdDelta": 0.01,  # Custom alpha value
             "batchSize": 50,  # Also test custom batch size (line 63)
         },
-        expected_response_keys=["status", "value", "drift_detected", "p_value", "alpha"],
+        expected_response_keys=[
+            "status",
+            "value",
+            "drift_detected",
+            "p_value",
+            "alpha",
+        ],
         df_type="Polars",
     )
 
@@ -350,7 +377,7 @@ class TestKSTestEndpoints:
     # KSTestMetricRequest.retrieve_tags() Tests
     # ========================================================================
 
-    def test_retrieve_tags_with_all_fields(self):
+    def test_retrieve_tags_with_all_fields(self) -> None:
         """Test retrieve_tags method with all fields populated."""
         request = KSTestMetricRequest(
             modelId="test-model",
@@ -368,7 +395,7 @@ class TestKSTestEndpoints:
         assert "fitColumns" in tags
         assert tags["fitColumns"] == "feature1,feature2"
 
-    def test_retrieve_tags_without_reference_tag(self):
+    def test_retrieve_tags_without_reference_tag(self) -> None:
         """Test retrieve_tags method without referenceTag."""
         request = KSTestMetricRequest(
             modelId="test-model",
@@ -383,7 +410,7 @@ class TestKSTestEndpoints:
         assert "referenceTag" not in tags
         assert "fitColumns" in tags
 
-    def test_retrieve_tags_without_fit_columns(self):
+    def test_retrieve_tags_without_fit_columns(self) -> None:
         """Test retrieve_tags method without fitColumns."""
         request = KSTestMetricRequest(
             modelId="test-model",

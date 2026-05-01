@@ -1,11 +1,17 @@
-import javaobj
+"""Legacy MariaDB storage reader for backward compatibility with Java-.
+
+serialized data.
+"""
+
 import logging
-import pandas as pd
-from typing import List, Tuple
 import uuid
 
+import javaobj
+import pandas as pd
+from numpy import ndarray
+
+from src.service.constants import INPUT_SUFFIX, METADATA_SUFFIX, OUTPUT_SUFFIX
 from src.service.data.storage.maria.utils import MariaConnectionManager
-from src.service.constants import *
 from src.service.data.storage.storage_interface import StorageInterface
 
 logger = logging.getLogger(__name__)
@@ -14,45 +20,79 @@ logger.addHandler(logging.StreamHandler())
 
 
 class LegacyMariaDBStorageReader:
-    def __init__(self, user, password, host, port, database):
-        self.connection_manager = MariaConnectionManager(user, password, host, port, database)
+    """Reads legacy Java-serialized data from MariaDB for migration."""
 
-    def legacy_data_exists(self):
-        with self.connection_manager as (conn, cursor):
+    def __init__(
+        self,
+        user: str | None,
+        password: str | None,
+        host: str | None,
+        port: int,
+        database: str | None,
+    ) -> None:
+        """Initialize legacy reader with database connection parameters.
+
+        :param user: Database user
+        :param password: Database password
+        :param host: Database host
+        :param port: Database port
+        :param database: Database name
+        """
+        self.connection_manager = MariaConnectionManager(
+            user, password, host, port, database
+        )
+
+    def legacy_data_exists(self) -> bool:
+        """Check if legacy schema tables exist in the database."""
+        with self.connection_manager as (_conn, cursor):
             cursor.execute("SHOW TABLES LIKE 'DataframeMetadata'")
             return len(cursor.fetchall()) != 0
 
-    def list_datasets(self):
-        """List all legacy datasets in the DB"""
-        with self.connection_manager as (conn, cursor):
-            cursor.execute("SELECT DISTINCT id" + " FROM DataframeMetadata")
+    def list_datasets(self) -> list[str]:
+        """List all legacy datasets in the DB."""
+        with self.connection_manager as (_conn, cursor):
+            cursor.execute("SELECT DISTINCT id FROM DataframeMetadata")
             return [x[0] for x in cursor]
 
     def dataset_exists(self, dataset_name: str) -> bool:
-        """Check if a legacy dataset exists"""
-        with self.connection_manager as (conn, cursor):
-            cursor.execute("SELECT modelId" + " FROM DataframeRow" + " WHERE modelId=?" + " LIMIT 1;", (dataset_name,))
+        """Check if a legacy dataset exists."""
+        with self.connection_manager as (_conn, cursor):
+            cursor.execute(
+                "SELECT modelId FROM DataframeRow WHERE modelId=? LIMIT 1;",
+                (dataset_name,),
+            )
             return cursor.fetchone() is not None
 
     def dataset_rows(self, dataset_name: str) -> int:
-        """Count the rows in a legacy dataset"""
-        with self.connection_manager as (conn, cursor):
-            cursor.execute("SELECT COUNT(rowId)" + " FROM DataframeRow" + " WHERE modelId=?", (dataset_name,))
+        """Count the rows in a legacy dataset."""
+        with self.connection_manager as (_conn, cursor):
+            cursor.execute(
+                "SELECT COUNT(rowId) FROM DataframeRow WHERE modelId=?",
+                (dataset_name,),
+            )
             return cursor.fetchone()[0]
 
-    def _get_column_names(self, dataset_name: str) -> List[str]:
-        """Get the column names of a legacy dataset"""
-        with self.connection_manager as (conn, cursor):
+    def _get_column_names(self, dataset_name: str) -> list[str]:
+        """Get the column names of a legacy dataset."""
+        with self.connection_manager as (_conn, cursor):
             cursor.execute(
-                "SELECT names" + " FROM DataframeMetadata_names" + " WHERE DataframeMetadata_id=?", (dataset_name,)
+                "SELECT names"
+                " FROM DataframeMetadata_names"
+                " WHERE DataframeMetadata_id=?",
+                (dataset_name,),
             )
             return [x[0] for x in cursor]
 
-    def _get_input_and_output_columns(self, dataset_name: str, column_names: List[str]) -> Tuple[List[str], List[str]]:
-        """Get the input and output column names of a legacy dataset"""
-        with self.connection_manager as (conn, cursor):
+    def _get_input_and_output_columns(
+        self, dataset_name: str, column_names: list[str]
+    ) -> tuple[list[str], list[str]]:
+        """Get the input and output column names of a legacy dataset."""
+        with self.connection_manager as (_conn, cursor):
             cursor.execute(
-                "SELECT inputs" + " FROM DataframeMetadata_inputs" + " WHERE DataframeMetadata_id=?", (dataset_name,)
+                "SELECT inputs"
+                " FROM DataframeMetadata_inputs"
+                " WHERE DataframeMetadata_id=?",
+                (dataset_name,),
             )
             input_columns = []
             output_columns = []
@@ -64,16 +104,20 @@ class LegacyMariaDBStorageReader:
 
             return input_columns, output_columns
 
-    def _get_name_mapping(self, dataset_name, input_names, output_names):
-        """Read name mappings from legacy dataset"""
-
-        with self.connection_manager as (conn, cursor):
+    def _get_name_mapping(
+        self,
+        dataset_name: str,
+        input_names: ndarray[tuple[int]],
+        output_names: ndarray[tuple[int]],
+    ) -> tuple[dict[str, str], dict[str, str]]:
+        """Read name mappings from legacy dataset."""
+        with self.connection_manager as (_conn, cursor):
             cursor.execute(
                 "SELECT items_KEY, mappedItems_KEY"
-                + " FROM StorageMetadata_StorageSchema"
-                + " JOIN (storageSchema_mappedItems) ON (storageSchema_mappedItems.Schema_id = StorageMetadata_StorageSchema.schemas_id)"
-                + " JOIN (storageSchema_originalItems) ON (storageSchema_originalItems.items_id = storageSchema_mappedItems.mappedItems_id)"
-                + " WHERE StorageMetadata_modelId=?",
+                " FROM StorageMetadata_StorageSchema"
+                " JOIN (storageSchema_mappedItems) ON (storageSchema_mappedItems.Schema_id = StorageMetadata_StorageSchema.schemas_id)"
+                " JOIN (storageSchema_originalItems) ON (storageSchema_originalItems.items_id = storageSchema_mappedItems.mappedItems_id)"
+                " WHERE StorageMetadata_modelId=?",
                 (dataset_name,),
             )
 
@@ -88,33 +132,35 @@ class LegacyMariaDBStorageReader:
             return input_mapping, output_mapping
 
     def read_data_as_pandas(
-        self, dataset_name: str, start_row: int = None, n_rows: int = None
-    ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-        """Read the input, output, and metadata of a legacy DB"""
+        self, dataset_name: str, start_row: int | None = None, n_rows: int | None = None
+    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        """Read the input, output, and metadata of a legacy DB."""
         if start_row is None:
             start_row = 0
 
         if n_rows is None:
             n_rows = self.dataset_rows(dataset_name)
 
-        with self.connection_manager as (conn, cursor):
+        with self.connection_manager as (_conn, cursor):
             # get a uuid to use as a string separator in returned sql
             sep = f",-{uuid.uuid4()}-,"
 
             cursor.execute(
-                f"SELECT timestamp, modelId, rowId, tag, GROUP_CONCAT(serializableObject SEPARATOR '{sep}')"
-                + " FROM DataframeRow"
-                + " LEFT JOIN (DataframeRow_Values) ON (DataframeRow.dbId = DataframeRow_Values.DataframeRow_dbId)"
-                + " WHERE modelId=?"
-                + " GROUP BY DataframeRow.dbId"
-                + " LIMIT ? OFFSET ?;",
+                f"SELECT timestamp, modelId, rowId, tag, GROUP_CONCAT(serializableObject SEPARATOR '{sep}')"  # noqa: S608  # sep is an internal UUID, not user input
+                " FROM DataframeRow"
+                " LEFT JOIN (DataframeRow_Values) ON (DataframeRow.dbId = DataframeRow_Values.DataframeRow_dbId)"
+                " WHERE modelId=?"
+                " GROUP BY DataframeRow.dbId"
+                " LIMIT ? OFFSET ?;",
                 (dataset_name, n_rows, start_row),
             )
 
             internal_metadata = []
             data = []
             for row in cursor:
-                internal_metadata.append({"timestamp": row[0], "rowId": row[2], "tag": row[3]})
+                internal_metadata.append(
+                    {"timestamp": row[0], "rowId": row[2], "tag": row[3]}
+                )
 
                 parsed_values = []
                 for value in row[-1].split(sep.encode()):
@@ -125,11 +171,13 @@ class LegacyMariaDBStorageReader:
             metadata_df = pd.DataFrame(internal_metadata)
 
         all_data_df.columns = self._get_column_names(dataset_name)
-        input_columns, output_columns = self._get_input_and_output_columns(dataset_name, all_data_df.columns)
+        input_columns, output_columns = self._get_input_and_output_columns(
+            dataset_name, all_data_df.columns.tolist()
+        )
         return all_data_df[input_columns], all_data_df[output_columns], metadata_df
 
-    async def migrate_data(self, new_maria_storage: StorageInterface):
-        """MMigrate all legacy datasets to a new storage interface"""
+    async def migrate_data(self, new_maria_storage: StorageInterface) -> None:
+        """MMigrate all legacy datasets to a new storage interface."""
         existing_datasets = await new_maria_storage.list_all_datasets()
         migrations = []
 
@@ -146,24 +194,31 @@ class LegacyMariaDBStorageReader:
             if input_has_migrated and output_has_migrated and metadata_has_migrated:
                 migrations.append(False)
                 continue  # we've already migrated this DB
-            else:
-                input_df, output_df, metadata_df = self.read_data_as_pandas(dataset_name)
-                input_mapping, output_mapping = self._get_name_mapping(
-                    dataset_name, input_df.columns.values, output_df.columns.values
-                )
+            input_df, output_df, metadata_df = self.read_data_as_pandas(dataset_name)
+            input_mapping, output_mapping = self._get_name_mapping(
+                dataset_name, input_df.columns.values, output_df.columns.values
+            )
 
-                if not input_has_migrated:
-                    await new_maria_storage.write_data(input_dataset, input_df.to_numpy(), input_df.columns.to_list())
-                    await new_maria_storage.apply_name_mapping(input_dataset, input_mapping)
-                if not output_has_migrated:
-                    await new_maria_storage.write_data(output_dataset, output_df.to_numpy(),
-                                                       output_df.columns.to_list())
-                    await new_maria_storage.apply_name_mapping(output_dataset, output_mapping)
-                if not metadata_has_migrated:
-                    await new_maria_storage.write_data(metadata_dataset, metadata_df.to_numpy(),
-                                                       metadata_df.columns.to_list())
-                migrations.append(True)
-                logger.info(f"Dataset {dataset_name} successfully migrated.")
+            if not input_has_migrated:
+                await new_maria_storage.write_data(
+                    input_dataset, input_df.to_numpy(), input_df.columns.to_list()
+                )
+                await new_maria_storage.apply_name_mapping(input_dataset, input_mapping)
+            if not output_has_migrated:
+                await new_maria_storage.write_data(
+                    output_dataset, output_df.to_numpy(), output_df.columns.to_list()
+                )
+                await new_maria_storage.apply_name_mapping(
+                    output_dataset, output_mapping
+                )
+            if not metadata_has_migrated:
+                await new_maria_storage.write_data(
+                    metadata_dataset,
+                    metadata_df.to_numpy(),
+                    metadata_df.columns.to_list(),
+                )
+            migrations.append(True)
+            logger.info("Dataset %s successfully migrated.", dataset_name)
 
         if not any(migrations):
             logger.info("All datasets already migrated- no migration necessary.")

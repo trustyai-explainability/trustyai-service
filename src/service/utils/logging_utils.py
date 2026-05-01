@@ -1,6 +1,5 @@
-"""
-Utility functions for logging, including deprecation warnings.
-"""
+"""Utility functions for logging, including deprecation warnings."""
+
 import logging
 
 
@@ -10,8 +9,7 @@ def log_deprecated_endpoint(
     replacement_name: str | None = None,
     additional_context: str | None = None,
 ) -> None:
-    """
-    Log a deprecation warning for a deprecated endpoint.
+    """Log a deprecation warning for a deprecated endpoint.
 
     Args:
         logger: The logger instance to use for logging
@@ -27,12 +25,13 @@ def log_deprecated_endpoint(
 
         >>> log_deprecated_endpoint(logger, "OldEndpoint")
         # Logs: "Deprecated OldEndpoint endpoint called."
+
     """
     if replacement_name:
         message = f"Deprecated {deprecated_name} endpoint called. Use {replacement_name} endpoint instead."
     else:
         message = f"Deprecated {deprecated_name} endpoint called."
-    
+
     if additional_context:
         message = f"{message} {additional_context}"
     logger.warning(message)
@@ -44,8 +43,7 @@ def log_deprecation(
     replacement_item: str | None = None,
     message: str | None = None,
 ) -> None:
-    """
-    Log a general deprecation warning.
+    """Log a general deprecation warning.
 
     This is a more flexible function that can be used for any deprecation warning,
     not just endpoints.
@@ -63,10 +61,15 @@ def log_deprecation(
 
         >>> log_deprecation(logger, "old_config", message="This config will be removed in v2.0")
         # Logs: "Deprecated: old_config. This config will be removed in v2.0"
+
     """
     if message:
-        logger.warning(f"Deprecated: {deprecated_item}. {message}")
+        logger.warning("Deprecated: %s. %s", deprecated_item, message)
     elif replacement_item:
-        logger.warning(f"Deprecated: {deprecated_item}. Use {replacement_item} instead.")
+        logger.warning(
+            "Deprecated: %s. Use %s instead.",
+            deprecated_item,
+            replacement_item,
+        )
     else:
-        logger.warning(f"Deprecated: {deprecated_item}")
+        logger.warning("Deprecated: %s", deprecated_item)

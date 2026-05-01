@@ -1,13 +1,19 @@
+"""Tests for ReconcilableField."""
+
 import pytest
+
 from src.service.payloads.values.data_type import DataType
 from src.service.payloads.values.reconcilable_field import ReconcilableField
 from src.service.payloads.values.typed_value import TypedValue
+
+# Test constants
+EXPECTED_NODE_COUNT = 2  # Expected number of value nodes in multi-valued tests
 
 
 class TestReconcilableField:
     """Test ReconcilableField functionality."""
 
-    def test_single_value_initialization(self):
+    def test_single_value_initialization(self) -> None:
         """Test initialization with single value node."""
         value_node = {"type": "DOUBLE", "value": 1.0}
         field = ReconcilableField(value_node)
@@ -17,7 +23,7 @@ class TestReconcilableField:
         assert not field.is_multiple_valued()
         assert field.get_reconciled_type() is None
 
-    def test_multiple_values_initialization(self):
+    def test_multiple_values_initialization(self) -> None:
         """Test initialization with multiple value nodes."""
         value_nodes = [
             {"type": "DOUBLE", "value": 1.0},
@@ -29,7 +35,7 @@ class TestReconcilableField:
         assert field.raw_value_node is None
         assert field.is_multiple_valued()
 
-    def test_get_raw_value_nodes_single(self):
+    def test_get_raw_value_nodes_single(self) -> None:
         """Test getting raw value nodes from single-valued field."""
         value_node = {"type": "DOUBLE", "value": 1.0}
         field = ReconcilableField(value_node)
@@ -38,7 +44,7 @@ class TestReconcilableField:
         assert len(nodes) == 1
         assert nodes[0] == value_node
 
-    def test_get_raw_value_nodes_multiple(self):
+    def test_get_raw_value_nodes_multiple(self) -> None:
         """Test getting raw value nodes from multi-valued field."""
         value_nodes = [
             {"type": "DOUBLE", "value": 1.0},
@@ -47,10 +53,10 @@ class TestReconcilableField:
         field = ReconcilableField(value_nodes)
 
         nodes = field.get_raw_value_nodes()
-        assert len(nodes) == 2
+        assert len(nodes) == EXPECTED_NODE_COUNT
         assert nodes == value_nodes
 
-    def test_get_raw_value_node_single(self):
+    def test_get_raw_value_node_single(self) -> None:
         """Test getting single raw value node."""
         value_node = {"type": "DOUBLE", "value": 1.0}
         field = ReconcilableField(value_node)
@@ -58,7 +64,7 @@ class TestReconcilableField:
         node = field.get_raw_value_node()
         assert node == value_node
 
-    def test_get_raw_value_node_multiple_raises_error(self):
+    def test_get_raw_value_node_multiple_raises_error(self) -> None:
         """Test that getting single node from multi-valued field raises error."""
         value_nodes = [
             {"type": "DOUBLE", "value": 1.0},
@@ -72,7 +78,7 @@ class TestReconcilableField:
         ):
             field.get_raw_value_node()
 
-    def test_set_and_get_reconciled_type(self):
+    def test_set_and_get_reconciled_type(self) -> None:
         """Test setting and getting reconciled type."""
         field = ReconcilableField({"type": "DOUBLE", "value": 1.0})
 
@@ -87,11 +93,13 @@ class TestReconcilableField:
 
         # Set reconciled type
         field.set_reconciled_type(reconciled_types)
-        assert field.get_reconciled_type() == reconciled_types
-        assert len(field.get_reconciled_type()) == 1
-        assert field.get_reconciled_type()[0].get_type() == DataType.DOUBLE
+        reconciled = field.get_reconciled_type()
+        assert reconciled == reconciled_types
+        assert reconciled is not None  # Type narrowing for mypy
+        assert len(reconciled) == 1
+        assert reconciled[0].get_type() == DataType.DOUBLE
 
-    def test_str_representation(self):
+    def test_str_representation(self) -> None:
         """Test string representation of reconcilable field."""
         # Single value
         single_field = ReconcilableField({"type": "DOUBLE", "value": 1.0})

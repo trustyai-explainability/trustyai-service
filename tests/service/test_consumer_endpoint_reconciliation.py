@@ -1,54 +1,63 @@
-"""
-Tests for ModelMesh payload reconciliation through the consumer endpoint.
-"""
+"""Tests for ModelMesh payload reconciliation through the consumer endpoint."""
 
 import asyncio
-import unittest
 import tempfile
+import unittest
 import uuid
+from collections.abc import Coroutine
+from http import HTTPStatus
+from typing import Any
 from unittest import mock
 
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.service.data.modelmesh_parser import ModelMeshPayloadParser, PartialPayload
 from src.endpoints.consumer.consumer_endpoint import router as consumer_router
+from src.service.data.modelmesh_parser import ModelMeshPayloadParser, PartialPayload
 from tests.service.data.test_utils import ModelMeshTestData
 
 
 class TestConsumerEndpointReconciliation(unittest.TestCase):
-    """
-    Test class for ModelMesh payload reconciliation through the consumer endpoint.
-    """
+    """Test class for ModelMesh payload reconciliation through the consumer endpoint."""
 
-    def setUp(self):
+    def setUp(self) -> None:
         """Set up the test environment."""
         self.temp_dir = tempfile.TemporaryDirectory()
 
         self.storage_patch = mock.patch(
-            "src.endpoints.consumer.consumer_endpoint.get_global_storage_interface"
+            "src.endpoints.consumer.consumer_endpoint.get_global_storage_interface",
         )
         self.mock_get_storage = self.storage_patch.start()
         self.mock_storage = mock.AsyncMock()
         self.mock_get_storage.return_value = self.mock_storage
 
-        self.parser_patch = mock.patch.object(ModelMeshPayloadParser, "parse_input_payload")
+        self.parser_patch = mock.patch.object(
+            ModelMeshPayloadParser,
+            "parse_input_payload",
+        )
         self.mock_parse_input = self.parser_patch.start()
 
-        self.parser_output_patch = mock.patch.object(ModelMeshPayloadParser, "parse_output_payload")
+        self.parser_output_patch = mock.patch.object(
+            ModelMeshPayloadParser,
+            "parse_output_payload",
+        )
         self.mock_parse_output = self.parser_output_patch.start()
 
-        self.parser_dataframe_patch = mock.patch.object(ModelMeshPayloadParser, "payloads_to_dataframe")
+        self.parser_dataframe_patch = mock.patch.object(
+            ModelMeshPayloadParser,
+            "payloads_to_dataframe",
+        )
         self.mock_to_dataframe = self.parser_dataframe_patch.start()
 
-        self.model_data_patch = mock.patch("src.endpoints.consumer.consumer_endpoint.ModelData")
+        self.model_data_patch = mock.patch(
+            "src.endpoints.consumer.consumer_endpoint.ModelData",
+        )
         self.mock_model_data = self.model_data_patch.start()
         self.mock_model_data.return_value.shapes.return_value = [
             (5, 10),
             (5, 1),
             (5, 3),
         ]
-
-        from fastapi import FastAPI
 
         self.app = FastAPI()
         self.app.include_router(consumer_router)
@@ -60,8 +69,12 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
         input_specs = [("input", 5, 10, "INT32", 0, None)]
         output_specs = [("output", 5, 1, "INT32", 0)]
 
-        self.input_payload_dict, self.output_payload_dict, _, _ = ModelMeshTestData.generate_test_payloads(
-            self.model_name, input_specs, output_specs
+        self.input_payload_dict, self.output_payload_dict, _, _ = (
+            ModelMeshTestData.generate_test_payloads(
+                self.model_name,
+                input_specs,
+                output_specs,
+            )
         )
 
         self.input_payload = PartialPayload(**self.input_payload_dict)
@@ -72,7 +85,7 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
         self.mock_df.__len__.return_value = 5
         self.mock_df.__getitem__.return_value.values = mock.MagicMock()
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         """Clean up after tests."""
         self.temp_dir.cleanup()
         self.storage_patch.stop()
@@ -81,7 +94,7 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
         self.parser_dataframe_patch.stop()
         self.model_data_patch.stop()
 
-    async def _test_consume_input_payload(self):
+    async def _test_consume_input_payload(self) -> None:
         """Test consuming an input payload."""
         self.mock_storage.persist_partial_payload = mock.AsyncMock()
         self.mock_storage.get_partial_payload = mock.AsyncMock(return_value=None)
@@ -95,23 +108,19 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
         }
 
         response = self.client.post("/consumer/kserve/v2", json=inference_payload)
-        print(response.text)
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(
-            response.json(),
-            {
-                "status": "success",
-                "message": f"Payload for {self.request_id} processed successfully",
-            },
-        )
+        assert response.status_code == HTTPStatus.OK
+        assert response.json() == {
+            "status": "success",
+            "message": f"Payload for {self.request_id} processed successfully",
+        }
 
         self.mock_storage.persist_partial_payload.assert_called_once()
         call_kwargs = self.mock_storage.persist_partial_payload.call_args[1]
-        self.assertEqual(call_kwargs["payload_id"], self.request_id)
-        self.assertTrue(call_kwargs["is_input"])  # is_input=True
+        assert call_kwargs["payload_id"] == self.request_id
+        assert call_kwargs["is_input"]  # is_input=True
 
-    async def _test_consume_output_payload(self):
+    async def _test_consume_output_payload(self) -> None:
         """Test consuming an output payload."""
         self.mock_storage.persist_partial_payload = mock.AsyncMock()
         self.mock_storage.get_partial_payload = mock.AsyncMock(return_value=None)
@@ -126,21 +135,18 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
 
         response = self.client.post("/consumer/kserve/v2", json=inference_payload)
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(
-            response.json(),
-            {
-                "status": "success",
-                "message": f"Payload for {self.request_id} processed successfully",
-            },
-        )
+        assert response.status_code == HTTPStatus.OK
+        assert response.json() == {
+            "status": "success",
+            "message": f"Payload for {self.request_id} processed successfully",
+        }
 
         self.mock_storage.persist_partial_payload.assert_called_once()
         call_kwargs = self.mock_storage.persist_partial_payload.call_args[1]
-        self.assertEqual(call_kwargs["payload_id"], self.request_id)
-        self.assertFalse(call_kwargs["is_input"])  # is_input=True
+        assert call_kwargs["payload_id"] == self.request_id
+        assert not call_kwargs["is_input"]  # is_input=True
 
-    async def _test_reconcile_payloads(self):
+    async def _test_reconcile_payloads(self) -> None:
         """Test reconciling both input and output payloads."""
         # Setup mocks for correct interactions
         self.mock_storage.get_partial_payload = mock.AsyncMock()
@@ -156,7 +162,7 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
         with (
             mock.patch(
                 "src.endpoints.consumer.consumer_endpoint.ModelMeshPayloadParser.parse_input_payload",
-                side_effect=lambda x: True,
+                side_effect=lambda _x: True,
             ) as mock_parse_input,
             mock.patch(
                 "src.endpoints.consumer.consumer_endpoint.ModelMeshPayloadParser.parse_output_payload",
@@ -165,7 +171,7 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
             mock.patch(
                 "src.endpoints.consumer.consumer_endpoint.ModelMeshPayloadParser.payloads_to_dataframe",
                 return_value=self.mock_df,
-            ) as mock_df,
+            ) as _mock_df,
             mock.patch(
                 "src.endpoints.consumer.consumer_endpoint.asyncio.gather",
             ) as mock_gather,
@@ -175,12 +181,8 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
             ) as mock_reconcile,
         ):
 
-            async def mock_gather_impl(*args, **kwargs):
-                results = []
-                for coro in args:
-                    if hasattr(coro, "__await__"):
-                        results.append(None)
-                return results
+            async def mock_gather_impl(*args: object, **_kwargs: object) -> list[None]:
+                return [None for coro in args if hasattr(coro, "__await__")]
 
             mock_gather.side_effect = mock_gather_impl
 
@@ -193,27 +195,27 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
                 },
             }
 
-            response_input = self.client.post("/consumer/kserve/v2", json=input_inference_payload)
-
-            self.assertEqual(response_input.status_code, 200)
-            self.assertEqual(
-                response_input.json(),
-                {
-                    "status": "success",
-                    "message": f"Payload for {self.request_id} processed successfully",
-                },
+            response_input = self.client.post(
+                "/consumer/kserve/v2",
+                json=input_inference_payload,
             )
+
+            assert response_input.status_code == HTTPStatus.OK
+            assert response_input.json() == {
+                "status": "success",
+                "message": f"Payload for {self.request_id} processed successfully",
+            }
 
             self.mock_storage.persist_partial_payload.assert_called_once()
             call_kwargs = self.mock_storage.persist_partial_payload.call_args[1]
 
-            self.assertEqual(call_kwargs['payload_id'], self.request_id)
-            self.assertTrue(call_kwargs['is_input'])  # is_input=True
+            assert call_kwargs["payload_id"] == self.request_id
+            assert call_kwargs["is_input"]  # is_input=True
 
             self.mock_storage.persist_partial_payload.reset_mock()
 
             mock_parse_input.side_effect = ValueError("Not an input")
-            mock_parse_output.side_effect = lambda x: True
+            mock_parse_output.side_effect = lambda _x: True
 
             output_inference_payload = {
                 "data": self.output_payload.data,
@@ -224,29 +226,29 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
                 },
             }
 
-            response_output = self.client.post("/consumer/kserve/v2", json=output_inference_payload)
-
-            self.assertEqual(response_output.status_code, 200)
-            self.assertEqual(
-                response_output.json(),
-                {
-                    "status": "success",
-                    "message": f"Payload for {self.request_id} processed successfully",
-                },
+            response_output = self.client.post(
+                "/consumer/kserve/v2",
+                json=output_inference_payload,
             )
 
+            assert response_output.status_code == HTTPStatus.OK
+            assert response_output.json() == {
+                "status": "success",
+                "message": f"Payload for {self.request_id} processed successfully",
+            }
+
             call_kwargs = self.mock_storage.persist_partial_payload.call_args[1]
-            self.assertEqual(call_kwargs["payload_id"], self.request_id)
-            self.assertFalse(call_kwargs["is_input"])  # is_input=False
+            assert call_kwargs["payload_id"] == self.request_id
+            assert not call_kwargs["is_input"]  # is_input=False
 
             mock_reconcile.assert_called_once()
             reconcile_args = mock_reconcile.call_args[0]
-            self.assertEqual(reconcile_args[2], self.request_id)  # request_id
-            self.assertEqual(reconcile_args[3], self.model_name)  # model_id
+            assert reconcile_args[2] == self.request_id  # request_id
+            assert reconcile_args[3] == self.model_name  # model_id
 
 
-def run_async_test(coro):
-    """Helper function to run async tests."""
+def run_async_test(coro: Coroutine[Any, Any, None]) -> None:
+    """Run async tests."""
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
@@ -255,14 +257,14 @@ def run_async_test(coro):
         loop.close()
 
 
-TestConsumerEndpointReconciliation.test_consume_input_payload = lambda self: run_async_test(
-    self._test_consume_input_payload()
+TestConsumerEndpointReconciliation.test_consume_input_payload = lambda self: (  # type: ignore[attr-defined]
+    run_async_test(self._test_consume_input_payload())
 )
-TestConsumerEndpointReconciliation.test_consume_output_payload = lambda self: run_async_test(
-    self._test_consume_output_payload()
+TestConsumerEndpointReconciliation.test_consume_output_payload = lambda self: (  # type: ignore[attr-defined]
+    run_async_test(self._test_consume_output_payload())
 )
-TestConsumerEndpointReconciliation.test_reconcile_payloads = lambda self: run_async_test(
-    self._test_reconcile_payloads()
+TestConsumerEndpointReconciliation.test_reconcile_payloads = lambda self: (  # type: ignore[attr-defined]
+    run_async_test(self._test_reconcile_payloads())
 )
 
 

@@ -1,9 +1,8 @@
-"""
-ModelMesh protobuf payload parsing.
-"""
+"""ModelMesh protobuf payload parsing."""
 
 import base64
-from typing import Dict, List, Tuple, Any
+import binascii
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -15,22 +14,21 @@ try:
         ModelInferResponse,
     )
 except ImportError as e:
-    raise ImportError("Protobuf modules not found. Make sure to run the generate_protos.py script first.") from e
+    msg = "Protobuf modules not found. Make sure to run the generate_protos.py script first."
+    raise ImportError(
+        msg,
+    ) from e
 
 
 class PartialPayload(BaseModel):
-    """
-    A partial payload (either input or output) from ModelMesh.
-    """
+    """A partial payload (either input or output) from ModelMesh."""
 
     data: str
-    metadata: Dict[str, str] = {}
+    metadata: dict[str, str] = {}
 
 
 class ModelMeshPayloadParser:
-    """
-    ModelMesh protobuf payloads.
-    """
+    """ModelMesh protobuf payloads."""
 
     MM_MODEL_SUFFIX = "__isvc"
     BIAS_IGNORE_PARAM = "bias_ignore"
@@ -44,48 +42,59 @@ class ModelMeshPayloadParser:
         return model_id
 
     @staticmethod
-    def parse_input_payload(payload: PartialPayload) -> ModelInferRequest:
+    def parse_input_payload(payload: PartialPayload) -> ModelInferRequest:  # type: ignore[valid-type]
         """Parse the input payload from base64 to ModelInferRequest."""
         try:
             input_bytes = base64.b64decode(payload.data)
             input_request = ModelInferRequest()
             input_request.ParseFromString(input_bytes)
-            return input_request
-        except Exception as e:
-            raise ValueError(f"Failed to parse input payload: {e}") from e
+        except (TypeError, ValueError, binascii.Error) as e:
+            msg = f"Failed to parse input payload: {e}"
+            raise ValueError(msg) from e
+        else:
+            return input_request  # type: ignore[no-any-return]
 
     @staticmethod
-    def parse_output_payload(payload: PartialPayload) -> ModelInferResponse:
+    def parse_output_payload(payload: PartialPayload) -> ModelInferResponse:  # type: ignore[valid-type]
         """Parse the output payload from base64 to ModelInferResponse."""
         try:
             output_bytes = base64.b64decode(payload.data)
             output_response = ModelInferResponse()
             output_response.ParseFromString(output_bytes)
-            return output_response
-        except Exception as e:
-            raise ValueError(f"Failed to parse output payload: {e}") from e
+        except (TypeError, ValueError, binascii.Error) as e:
+            msg = f"Failed to parse output payload: {e}"
+            raise ValueError(msg) from e
+        else:
+            return output_response  # type: ignore[no-any-return]
 
     @staticmethod
-    def _extract_tensor_data(tensor, tensor_type: str) -> np.ndarray:
+    def _extract_tensor_data(
+        tensor: Any,  # noqa: ANN401  # protobuf InferTensorContents has no type stubs
+        tensor_type: str,
+    ) -> np.ndarray:
         """Extract data from a tensor based on its type."""
-        if tensor_type == "BOOL":
-            return np.array(tensor.contents.bool_contents)
-        elif tensor_type in {"INT8", "INT16", "INT32"}:
-            return np.array(tensor.contents.int_contents)
-        elif tensor_type == "INT64":
-            return np.array(tensor.contents.int64_contents)
-        elif tensor_type in {"UINT8", "UINT16", "UINT32"}:
-            return np.array(tensor.contents.uint_contents)
-        elif tensor_type == "UINT64":
-            return np.array(tensor.contents.uint64_contents)
-        elif tensor_type == "FP32":
-            return np.array(tensor.contents.fp32_contents)
-        elif tensor_type == "FP64":
-            return np.array(tensor.contents.fp64_contents)
-        elif tensor_type == "BYTES":
-            return np.array([bytes(b) for b in tensor.contents.bytes_contents])
-        else:
-            raise ValueError(f"Unsupported tensor type: {tensor_type}")
+        # Mapping of tensor types to their corresponding content attributes
+        type_extractors = {
+            "BOOL": lambda t: np.array(t.contents.bool_contents),
+            "INT8": lambda t: np.array(t.contents.int_contents),
+            "INT16": lambda t: np.array(t.contents.int_contents),
+            "INT32": lambda t: np.array(t.contents.int_contents),
+            "INT64": lambda t: np.array(t.contents.int64_contents),
+            "UINT8": lambda t: np.array(t.contents.uint_contents),
+            "UINT16": lambda t: np.array(t.contents.uint_contents),
+            "UINT32": lambda t: np.array(t.contents.uint_contents),
+            "UINT64": lambda t: np.array(t.contents.uint64_contents),
+            "FP32": lambda t: np.array(t.contents.fp32_contents),
+            "FP64": lambda t: np.array(t.contents.fp64_contents),
+            "BYTES": lambda t: np.array([bytes(b) for b in t.contents.bytes_contents]),
+        }
+
+        extractor = type_extractors.get(tensor_type)
+        if extractor is None:
+            msg = f"Unsupported tensor type: {tensor_type}"
+            raise ValueError(msg)
+
+        return extractor(tensor)
 
     @staticmethod
     def _get_tensor_type(datatype: str) -> str:
@@ -114,34 +123,41 @@ class ModelMeshPayloadParser:
         return datatype_mapping.get(datatype.upper(), datatype.upper())
 
     @staticmethod
-    def _has_tensor_data(tensor) -> bool:
+    def _has_tensor_data(tensor: Any) -> bool:  # noqa: ANN401  # protobuf type has no stubs
         """Check if a tensor has data."""
-        return tensor.contents and (
-            tensor.contents.bool_contents
-            or tensor.contents.int_contents
-            or tensor.contents.int64_contents
-            or tensor.contents.uint_contents
-            or tensor.contents.uint64_contents
-            or tensor.contents.fp32_contents
-            or tensor.contents.fp64_contents
-            or tensor.contents.bytes_contents
+        return bool(
+            tensor.contents
+            and (
+                tensor.contents.bool_contents
+                or tensor.contents.int_contents
+                or tensor.contents.int64_contents
+                or tensor.contents.uint_contents
+                or tensor.contents.uint64_contents
+                or tensor.contents.fp32_contents
+                or tensor.contents.fp64_contents
+                or tensor.contents.bytes_contents
+            ),
         )
 
     @staticmethod
     def _extract_input_tensors(
-        input_request: ModelInferRequest,
-    ) -> Tuple[List[np.ndarray], List[str], List[bool]]:
+        input_request: ModelInferRequest,  # type: ignore[valid-type]
+    ) -> tuple[list[np.ndarray], list[str], list[bool]]:
         """Extract features, names and synthetic flags from input request."""
         input_features = []
         input_names = []
         synthetic_flags = []
 
-        for tensor in input_request.inputs:
+        for tensor in input_request.inputs:  # type: ignore[attr-defined]
             is_synthetic = ModelMeshPayloadParser._is_synthetic_tensor(tensor)
             tensor_type = ModelMeshPayloadParser._get_tensor_type(tensor.datatype)
             shape = list(tensor.shape)
 
-            data = ModelMeshPayloadParser._get_tensor_data(tensor, tensor_type, input_request)
+            data = ModelMeshPayloadParser._get_tensor_data(
+                tensor,
+                tensor_type,
+                input_request,
+            )
 
             if len(shape) > 1:
                 data = data.reshape(shape)
@@ -153,7 +169,7 @@ class ModelMeshPayloadParser:
         return input_features, input_names, synthetic_flags
 
     @staticmethod
-    def _is_synthetic_tensor(tensor) -> bool:
+    def _is_synthetic_tensor(tensor: Any) -> bool:  # noqa: ANN401  # protobuf type has no stubs
         """Check if a tensor is synthetic (has bias_ignore parameter set to 'true')."""
         if not tensor.parameters:
             return False
@@ -166,30 +182,46 @@ class ModelMeshPayloadParser:
         return hasattr(param, "string_param") and param.string_param == "true"
 
     @staticmethod
-    def _get_tensor_data(tensor, tensor_type: str, request_obj: Any) -> np.ndarray:
+    def _get_tensor_data(
+        tensor: Any,  # noqa: ANN401  # protobuf type has no stubs
+        tensor_type: str,
+        request_obj: Any,  # noqa: ANN401  # protobuf ModelInferRequest | ModelInferResponse
+    ) -> np.ndarray:
         """Extract data from a tensor."""
         if ModelMeshPayloadParser._has_tensor_data(tensor):
             return ModelMeshPayloadParser._extract_tensor_data(tensor, tensor_type)
-        elif hasattr(request_obj, "raw_input_contents") and request_obj.raw_input_contents:
-            raise NotImplementedError("Raw input contents parsing not yet implemented")
-        elif hasattr(request_obj, "raw_output_contents") and request_obj.raw_output_contents:
-            raise NotImplementedError("Raw output contents parsing not yet implemented")
-        else:
-            raise ValueError(f"No data found in tensor {tensor.name}")
+        if (
+            hasattr(request_obj, "raw_input_contents")
+            and request_obj.raw_input_contents
+        ):
+            msg = "Raw input contents parsing not yet implemented"
+            raise NotImplementedError(msg)
+        if (
+            hasattr(request_obj, "raw_output_contents")
+            and request_obj.raw_output_contents
+        ):
+            msg = "Raw output contents parsing not yet implemented"
+            raise NotImplementedError(msg)
+        msg = f"No data found in tensor {tensor.name}"
+        raise ValueError(msg)
 
     @staticmethod
     def _extract_output_tensors(
-        output_response: ModelInferResponse,
-    ) -> Tuple[List[np.ndarray], List[str]]:
+        output_response: ModelInferResponse,  # type: ignore[valid-type]
+    ) -> tuple[list[np.ndarray], list[str]]:
         """Extract features and names from output response."""
         output_features = []
         output_names = []
 
-        for tensor in output_response.outputs:
+        for tensor in output_response.outputs:  # type: ignore[attr-defined]
             tensor_type = ModelMeshPayloadParser._get_tensor_type(tensor.datatype)
             shape = list(tensor.shape)
 
-            data = ModelMeshPayloadParser._get_tensor_data(tensor, tensor_type, output_response)
+            data = ModelMeshPayloadParser._get_tensor_data(
+                tensor,
+                tensor_type,
+                output_response,
+            )
 
             if len(shape) > 1:
                 data = data.reshape(shape)
@@ -201,15 +233,15 @@ class ModelMeshPayloadParser:
 
     @staticmethod
     def _build_dataframe_rows(
-        input_features: List[np.ndarray],
-        input_names: List[str],
-        output_features: List[np.ndarray],
-        output_names: List[str],
-        synthetic_flags: List[bool],
-        id: str,
+        input_features: list[np.ndarray],
+        input_names: list[str],
+        output_features: list[np.ndarray],
+        output_names: list[str],
+        synthetic_flags: list[bool],
+        id_: str,
         model_id: str,
         batch_size: int,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Build DataFrame rows from extracted features."""
         rows = []
         for i in range(batch_size):
@@ -225,7 +257,7 @@ class ModelMeshPayloadParser:
                 data = output_features[j]
                 row[f"output_{name}"] = data[i] if i < len(data) else None
 
-            row["id"] = id
+            row["id"] = id_
             row["model_id"] = ModelMeshPayloadParser.standardize_model_id(model_id)
             row["synthetic"] = any(synthetic_flags)
 
@@ -237,19 +269,21 @@ class ModelMeshPayloadParser:
     def payloads_to_dataframe(
         input_payload: PartialPayload,
         output_payload: PartialPayload,
-        id: str,
+        id_: str,
         model_id: str,
     ) -> pd.DataFrame:
-        """
-        Convert both input and output payloads to a pandas DataFrame.
-        """
+        """Convert both input and output payloads to a pandas DataFrame."""
         # Parse payloads
         input_request = ModelMeshPayloadParser.parse_input_payload(input_payload)
         output_response = ModelMeshPayloadParser.parse_output_payload(output_payload)
 
         # Extract input and output tensor data
-        input_features, input_names, synthetic_flags = ModelMeshPayloadParser._extract_input_tensors(input_request)
-        output_features, output_names = ModelMeshPayloadParser._extract_output_tensors(output_response)
+        input_features, input_names, synthetic_flags = (
+            ModelMeshPayloadParser._extract_input_tensors(input_request)
+        )
+        output_features, output_names = ModelMeshPayloadParser._extract_output_tensors(
+            output_response,
+        )
 
         # Determine batch size
         batch_size = 1
@@ -263,7 +297,7 @@ class ModelMeshPayloadParser:
             output_features,
             output_names,
             synthetic_flags,
-            id,
+            id_,
             model_id,
             batch_size,
         )

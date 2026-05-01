@@ -1,21 +1,28 @@
-from typing import Dict, Optional, Set
+"""Schema definition for model input and output data structures."""
 
 from src.service.payloads.service.schema_item import SchemaItem
 
 
 class Schema:
-    items: Dict[str, SchemaItem]
-    name_mapping: Dict[str, str]
+    """Schema definition for model data with column types and name mappings."""
+
+    items: dict[str, SchemaItem]
+    name_mapping: dict[str, str]
 
     def __init__(
         self,
-        items: Optional[Dict[str, SchemaItem]] = None,
-        name_mapping: Optional[Dict[str, str]] = None,
+        items: dict[str, SchemaItem] | None = None,
+        name_mapping: dict[str, str] | None = None,
     ) -> None:
-        self.items = items
-        self.name_mapping = name_mapping
+        """Initialize schema with items and optional name mappings.
 
-    def get_name_mapped_items(self) -> Dict[str, SchemaItem]:
+        :param items: Dictionary mapping column names to SchemaItem definitions
+        :param name_mapping: Optional dictionary mapping original names to aliases
+        """
+        self.items = items if items is not None else {}
+        self.name_mapping = name_mapping if name_mapping is not None else {}
+
+    def get_name_mapped_items(self) -> dict[str, SchemaItem]:
         """Get items with name mappings applied."""
         mapped_items = dict(self.items)
         if self.name_mapping:
@@ -25,6 +32,6 @@ class Schema:
                     mapped_items[mapped_name] = self.items[original_name]
         return mapped_items
 
-    def get_name_mapped_key_set(self) -> Set[str]:
+    def get_name_mapped_key_set(self) -> set[str]:
         """Get the set of mapped column names."""
         return set(self.get_name_mapped_items().keys())
