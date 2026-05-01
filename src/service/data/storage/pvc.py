@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import pickle as pkl  # nosec B403 - Used for internal data serialization only
-import traceback
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
@@ -270,7 +269,15 @@ class PVCStorage(StorageInterface):
                             and isinstance(new_rows.dtype, np.dtypes.VoidDType)
                             and isinstance(dataset.dtype.type, type(np.void))
                         ):
-                            # Both are void types, cast new data to match existing dataset
+                            # Prevent silent downcast that would corrupt data
+                            if new_rows.dtype.itemsize > dataset.dtype.itemsize:
+                                msg = (
+                                    f"Cannot append rows: serialized data ({new_rows.dtype.itemsize} bytes) "
+                                    f"exceeds existing dataset capacity ({dataset.dtype.itemsize} bytes). "
+                                    "Recreate or migrate the dataset before appending."
+                                )
+                                raise ValueError(msg)
+                            # Both are void types with compatible sizes, cast new data to match existing dataset
                             new_rows = new_rows.astype(dataset.dtype)
 
                         dataset[existing_shape[0] :] = new_rows
@@ -383,7 +390,7 @@ class PVCStorage(StorageInterface):
             if not filename.exists():
                 return
             try:
-                with H5PYContext(self, dataset_name, "a") as db:
+                with H5PYContext(self, allocated_dataset_name, "a") as db:
                     if allocated_dataset_name in db:
                         del db[allocated_dataset_name]
                     if allocated_dataset_name in self.locks:
@@ -537,8 +544,6 @@ class PVCStorage(StorageInterface):
                 }
             except Exception:  # Broad catch intentional: input metadata errors should not break entire metadata retrieval
                 logger.exception("Error getting input metadata for %s", model_id)
-                # Log detailed traceback for debugging
-                logger.exception("Traceback: %s", traceback.format_exc())
 
         # Get output data metadata
         if output_exists:

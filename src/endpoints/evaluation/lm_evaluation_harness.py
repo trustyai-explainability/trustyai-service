@@ -262,11 +262,17 @@ async def _process_queue() -> None:
     )
     while _get_num_running_jobs() < MAX_CONCURRENCY and job_queue.qsize() > 0:
         job_id = job_queue.get()
+        # Check job state atomically while holding lock
         with job_registry_lock:
             job_to_run = job_registry.get(job_id)
-        if job_to_run is not None and job_to_run.is_in_queue:
-            logger.info("Launching job %s", job_to_run.job_id)
-            _launch_job(job_to_run)
+            # Verify job is still in queue (not dequeued by another thread)
+            if job_to_run is not None and job_to_run.is_in_queue:
+                logger.info("Launching job %s", job_to_run.job_id)
+                _launch_job(job_to_run)
+            elif job_to_run is None:
+                logger.warning("Job %s not found in registry, skipping", job_id)
+            else:
+                logger.debug("Job %s already dequeued, skipping launch", job_id)
 
 
 def _launch_job(job: LMEvalJob) -> None:
@@ -320,9 +326,11 @@ def lm_eval_job(request: LMEvalRequest) -> dict[str, int | str]:
     # store job
     job_id = _generate_job_id()
     queued_job = LMEvalJob(job_id=job_id, request=request, argument=cli_cmd)
-    job_queue.put(job_id)
+
+    # Register job before enqueuing to prevent race condition
     with job_registry_lock:
         job_registry[job_id] = queued_job
+    job_queue.put(job_id)
 
     return {
         "status": "success",

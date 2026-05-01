@@ -105,7 +105,8 @@ ignore = [
 "src/endpoints/explainers/*.py" = ["N815"]
 "src/endpoints/metadata.py" = ["N815", "BLE001", "C901"]
 "src/endpoints/metrics/**/*.py" = ["N815"]
-"src/endpoints/metrics/fairness/group/*.py" = ["BLE001"]
+"src/endpoints/metrics/fairness/group/*.py" = ["BLE001", "TRY300", "TRY301"]
+"src/endpoints/metrics/drift/jensen_shannon.py" = ["TRY300", "TRY301"]
 # === TEST FILES ===
 "tests/**" = ["S101", "PT019", "SLF001"]
 "tests/core/metrics/test_fairness.py" = ["N803", "N806"]

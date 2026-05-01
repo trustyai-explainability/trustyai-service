@@ -124,6 +124,44 @@ async def compute_dir(
             batch_size,
         )
 
+        # Validate data availability
+        if dataframe.empty:
+            raise HTTPException(
+                status_code=HTTPStatus.NOT_FOUND,
+                detail=f"No data found for model: {request.model_id}",
+            )
+
+        # Calculate DIR using our calculator
+        result = calculate_dir_metric(dataframe, request)
+
+        # Use delta from query parameter, then request.threshold_delta, then default
+        if delta is None:
+            delta = (
+                request.threshold_delta
+                if request.threshold_delta is not None
+                else DEFAULT_DIR_THRESHOLD_DELTA
+            )
+
+        # Validate delta is non-negative
+        if delta < 0:
+            raise HTTPException(
+                status_code=HTTPStatus.BAD_REQUEST,
+                detail="Threshold delta must be non-negative",
+            )
+
+        return {
+            "name": "DIR",
+            "value": result.get_value(),
+            "type": "FAIRNESS",
+            "specificDefinition": f"Disparate Impact Ratio value of {result.get_value():.4f}",
+            "thresholds": {
+                "lowerBound": DIR_FAIRNESS_TARGET - delta,
+                "upperBound": DIR_FAIRNESS_TARGET + delta,
+                "outsideBounds": result.get_value() < DIR_FAIRNESS_TARGET - delta
+                or result.get_value() > DIR_FAIRNESS_TARGET + delta,
+            },
+        }
+
     except HTTPException:
         raise
     except Exception as e:  # Broad catch intentional: endpoint catch-all for unknown computation errors
@@ -132,36 +170,6 @@ async def compute_dir(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
             detail="Error computing metric. Check server logs for details.",
         ) from e
-
-    # Validate data availability (after try block to avoid TRY301)
-    if dataframe.empty:
-        raise HTTPException(
-            status_code=HTTPStatus.NOT_FOUND,
-            detail=f"No data found for model: {request.model_id}",
-        )
-
-    # Calculate DIR using our calculator
-    result = calculate_dir_metric(dataframe, request)
-
-    # Use delta from query parameter, then request.threshold_delta, then default
-    if delta is None:
-        delta = (
-            request.threshold_delta
-            if request.threshold_delta is not None
-            else DEFAULT_DIR_THRESHOLD_DELTA
-        )
-    return {
-        "name": "DIR",
-        "value": result.get_value(),
-        "type": "FAIRNESS",
-        "specificDefinition": f"Disparate Impact Ratio value of {result.get_value():.4f}",
-        "thresholds": {
-            "lowerBound": DIR_FAIRNESS_TARGET - delta,
-            "upperBound": DIR_FAIRNESS_TARGET + delta,
-            "outsideBounds": result.get_value() < DIR_FAIRNESS_TARGET - delta
-            or result.get_value() > DIR_FAIRNESS_TARGET + delta,
-        },
-    }
 
 
 @router.get("/metrics/group/fairness/dir/definition")

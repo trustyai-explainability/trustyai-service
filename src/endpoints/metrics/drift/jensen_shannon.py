@@ -128,6 +128,68 @@ async def compute_jensenshannon(
             request.model_id, batch_size
         )
 
+        # Validate data availability
+        if len(reference_df) == 0:
+            raise HTTPException(
+                status_code=HTTPStatus.NOT_FOUND,
+                detail=f"No reference data found for model: {request.model_id} with tag: {request.reference_tag}",
+            )
+
+        if len(current_df) == 0:
+            raise HTTPException(
+                status_code=HTTPStatus.NOT_FOUND,
+                detail=f"No current data found for model: {request.model_id}",
+            )
+
+        # Calculate Jensen-Shannon divergence for each feature
+        statistic = request.statistic
+        threshold = request.threshold
+        method = request.method
+        grid_points = request.grid_points
+        bins = request.bins
+
+        # Multi-feature case: iterate over features
+        results = {}
+        for feature_name in request.fit_columns:
+            if (
+                feature_name not in reference_df.columns
+                or feature_name not in current_df.columns
+            ):
+                raise HTTPException(
+                    status_code=HTTPStatus.BAD_REQUEST,
+                    detail=f"Feature {feature_name} not found in data",
+                )
+
+            reference_data = reference_df[feature_name].to_numpy()
+            current_data = current_df[feature_name].to_numpy()
+
+            results[feature_name] = JensenShannon.jensenshannon(
+                data_ref=reference_data,
+                data_cur=current_data,
+                statistic=cast("Literal['distance', 'divergence']", statistic),
+                threshold=threshold,
+                method=cast("Literal['kde', 'hist']", method),
+                grid_points=grid_points,
+                bins=bins,
+            )
+
+        # Aggregate: drift detected if any feature shows drift
+        drift_detected = any(r["drift_detected"] for r in results.values())
+        max_distance = max(r["Jensen-Shannon_distance"] for r in results.values())
+        max_divergence = max(r["Jensen-Shannon_divergence"] for r in results.values())
+
+        return {
+            "status": "success",
+            "value": max_distance,
+            "drift_detected": drift_detected,
+            "Jensen-Shannon_distance": max_distance,
+            "Jensen-Shannon_divergence": max_divergence,
+            "threshold": threshold,
+            "statistic": statistic,
+            "method": method,
+            "feature_results": results,
+        }
+
     except HTTPException:
         raise
     except Exception as e:  # Broad catch intentional: endpoint catch-all for unknown computation errors
@@ -136,68 +198,6 @@ async def compute_jensenshannon(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
             detail="Error computing metric. Check server logs for details.",
         ) from e
-
-    # Validate data availability (after try block to avoid TRY301)
-    if len(reference_df) == 0:
-        raise HTTPException(
-            status_code=HTTPStatus.NOT_FOUND,
-            detail=f"No reference data found for model: {request.model_id} with tag: {request.reference_tag}",
-        )
-
-    if len(current_df) == 0:
-        raise HTTPException(
-            status_code=HTTPStatus.NOT_FOUND,
-            detail=f"No current data found for model: {request.model_id}",
-        )
-
-    # Calculate Jensen-Shannon divergence for each feature
-    statistic = request.statistic
-    threshold = request.threshold
-    method = request.method
-    grid_points = request.grid_points
-    bins = request.bins
-
-    # Multi-feature case: iterate over features
-    results = {}
-    for feature_name in request.fit_columns:
-        if (
-            feature_name not in reference_df.columns
-            or feature_name not in current_df.columns
-        ):
-            raise HTTPException(
-                status_code=HTTPStatus.BAD_REQUEST,
-                detail=f"Feature {feature_name} not found in data",
-            )
-
-        reference_data = reference_df[feature_name].to_numpy()
-        current_data = current_df[feature_name].to_numpy()
-
-        results[feature_name] = JensenShannon.jensenshannon(
-            data_ref=reference_data,
-            data_cur=current_data,
-            statistic=cast("Literal['distance', 'divergence']", statistic),
-            threshold=threshold,
-            method=cast("Literal['kde', 'hist']", method),
-            grid_points=grid_points,
-            bins=bins,
-        )
-
-    # Aggregate: drift detected if any feature shows drift
-    drift_detected = any(r["drift_detected"] for r in results.values())
-    max_distance = max(r["Jensen-Shannon_distance"] for r in results.values())
-    max_divergence = max(r["Jensen-Shannon_divergence"] for r in results.values())
-
-    return {
-        "status": "success",
-        "value": max_distance,
-        "drift_detected": drift_detected,
-        "Jensen-Shannon_distance": max_distance,
-        "Jensen-Shannon_divergence": max_divergence,
-        "threshold": threshold,
-        "statistic": statistic,
-        "method": method,
-        "feature_results": results,
-    }
 
 
 @router.get("/metrics/drift/jensenshannon/definition")
