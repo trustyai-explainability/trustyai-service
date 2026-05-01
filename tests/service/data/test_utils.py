@@ -1,12 +1,16 @@
 """ModelMesh protobuf testing utils."""
 
+from __future__ import annotations
+
 import base64
 import contextlib
 import uuid
-from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 with contextlib.suppress(ImportError):
     from src.proto.grpc_predict_v2_pb2 import (
@@ -21,7 +25,7 @@ class ModelMeshTestData:
     """ModelMesh test data for testing the protobuf parser."""
 
     @staticmethod
-    def create_infer_parameter(*, value: bool | int | str) -> InferParameter:
+    def create_infer_parameter(*, value: bool | int | str) -> "InferParameter":  # type: ignore[name-defined]
         """Create an InferParameter with the correct type based on value."""
         param = InferParameter()
         if isinstance(value, bool):
@@ -90,7 +94,7 @@ class ModelMeshTestData:
     @staticmethod
     def create_tensor_contents(
         datatype: str, data: list[bool] | list[int] | list[float] | bytes
-    ) -> InferTensorContents:
+    ) -> "InferTensorContents":  # type: ignore[name-defined]
         """InferTensorContents with the appropriate field based on datatype."""
         contents = InferTensorContents()
 
@@ -121,7 +125,7 @@ class ModelMeshTestData:
         datatype: str,
         offset: int = 0,
         parameters: dict[str, Any] | None = None,
-    ) -> tuple[ModelInferRequest.InferInputTensor, np.ndarray]:  # type: ignore[name-defined]
+    ) -> tuple["ModelInferRequest.InferInputTensor", np.ndarray]:  # type: ignore[name-defined]
         """Generate an input tensor with test data."""
         tensor = ModelInferRequest.InferInputTensor()  # type: ignore[attr-defined]
         tensor.name = name
@@ -154,7 +158,7 @@ class ModelMeshTestData:
         cols: int,
         datatype: str,
         offset: int = 0,
-    ) -> tuple[ModelInferResponse.InferOutputTensor, np.ndarray]:  # type: ignore[name-defined]
+    ) -> tuple["ModelInferResponse.InferOutputTensor", np.ndarray]:  # type: ignore[name-defined]
         """Generate an output tensor with test data."""
         tensor = ModelInferResponse.InferOutputTensor()  # type: ignore[attr-defined]
         tensor.name = name
@@ -178,7 +182,7 @@ class ModelMeshTestData:
     def generate_model_infer_request(
         model_name: str,
         input_tensors: list[tuple[str, int, int, str, int, dict[str, Any] | None]],
-    ) -> tuple[ModelInferRequest, dict[str, np.ndarray]]:
+    ) -> tuple["ModelInferRequest", dict[str, np.ndarray]]:  # type: ignore[name-defined]
         """Generate a ModelInferRequest with the specified input tensors."""
         request = ModelInferRequest()
         request.model_name = model_name
@@ -207,7 +211,7 @@ class ModelMeshTestData:
         model_version: str,
         request_id: str,
         output_tensors: list[tuple[str, int, int, str, int]],
-    ) -> tuple[ModelInferResponse, dict[str, np.ndarray]]:
+    ) -> tuple["ModelInferResponse", dict[str, np.ndarray]]:  # type: ignore[name-defined]
         """Generate a ModelInferResponse with the specified output tensors."""
         response = ModelInferResponse()
         response.model_name = model_name

@@ -112,7 +112,7 @@ ignore = [
 "tests/endpoints/metrics/drift/factory.py" = ["PLR0913", "C901", "PLR0915"]
 "tests/endpoints/test_upload_endpoint_maria.py" = ["S105"]
 "tests/endpoints/test_upload_endpoint_pvc.py" = ["PLR0913"]
-"tests/service/data/test_utils.py" = ["PLR0913"]
+"tests/service/data/test_utils.py" = ["PLR0913", "UP037"]  # UP037: Keep quoted annotations for optional protobuf imports
 
 [tool.pytest.ini_options]
 asyncio_mode = "strict"
@@ -183,7 +183,6 @@ bad-argument-type = "ignore"
 bad-assignment = "ignore"
 bad-return = "ignore"
 missing-attribute = "ignore"
-missing-module-attribute = "ignore"
 no-access = "ignore"
 not-a-type = "ignore"
 not-iterable = "ignore"
@@ -203,14 +202,6 @@ matches = "**/*.ipynb"
 [tool.pyrefly.sub-config.errors]
 unexpected-keyword = "ignore"
 no-matching-overload = "ignore"
-
-# Suppress protobuf type issues in test utils
-[[tool.pyrefly.sub-config]]
-matches = "tests/service/data/test_utils.py"
-
-[tool.pyrefly.sub-config.errors]
-not-a-type = "ignore"
-missing-module-attribute = "ignore"
 
 # Suppress intentional private attribute access in test files
 [[tool.pyrefly.sub-config]]
