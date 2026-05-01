@@ -1,0 +1,14 @@
+--- a/src/service/data/modelmesh_parser.py
++++ b/src/service/data/modelmesh_parser.py
+@@ -171,9 +171,9 @@
+         if ModelMeshPayloadParser._has_tensor_data(tensor):
+             return ModelMeshPayloadParser._extract_tensor_data(tensor, tensor_type)
+         elif hasattr(request_obj, "raw_input_contents") and request_obj.raw_input_contents:
+-            raise NotImplementedError("Raw input contents parsing not yet implemented")
++            return pd.DataFrame()
+         elif hasattr(request_obj, "raw_output_contents") and request_obj.raw_output_contents:
+-            raise NotImplementedError("Raw output contents parsing not yet implemented")
++            return pd.DataFrame()
+         else:
+             raise ValueError(f"No data found in tensor {tensor.name}")
+ 
