@@ -203,6 +203,14 @@ matches = "**/*.ipynb"
 unexpected-keyword = "ignore"
 no-matching-overload = "ignore"
 
+# Suppress optional protobuf imports in test utils
+# Pyrefly doesn't understand contextlib.suppress(ImportError) and tries to verify imports
+[[tool.pyrefly.sub-config]]
+matches = "tests/service/data/test_utils.py"
+
+[tool.pyrefly.sub-config.errors]
+missing-module-attribute = "ignore"
+
 # Suppress intentional private attribute access in test files
 [[tool.pyrefly.sub-config]]
 matches = "tests/service/payloads/metrics/test_request_reconciler.py"
