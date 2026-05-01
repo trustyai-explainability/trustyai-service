@@ -46,6 +46,8 @@ try:
 
     lm_evaluation_harness_router = router
 except ImportError:
+    # LM evaluation harness requires optional 'eval' extra dependencies
+    # ImportError (not ModuleNotFoundError) because the module may exist but fail to import
     pass
 
 logging.basicConfig(

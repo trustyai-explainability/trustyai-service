@@ -219,8 +219,10 @@ def prepare_fairness_data(
         )
 
     # Extract favorable outcome values from request
-    if hasattr(request, "favorableOutcome") and hasattr(
-        request.favorableOutcome, "reconciledType"
+    if (
+        hasattr(request, "favorableOutcome")
+        and hasattr(request.favorableOutcome, "reconciledType")
+        and request.favorableOutcome.reconciledType is not None
     ):
         favorable_values = [
             item.get("value")

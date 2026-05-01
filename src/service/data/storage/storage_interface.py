@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 import numpy as np
 
 from src.endpoints.consumer import KServeInferenceRequest, KServeInferenceResponse
+from src.service.data.metadata.storage_metadata import StorageMetadata
 from src.service.data.modelmesh_parser import PartialPayload
 
 
@@ -62,8 +63,11 @@ class StorageInterface(ABC):
         """Get a list of all model IDs that have inference data stored."""
 
     @abstractmethod
-    async def get_metadata(self, model_id: str) -> dict:
-        """Get metadata for a specific model including shapes, column names, etc."""
+    async def get_metadata(self, model_id: str) -> StorageMetadata | None:
+        """Get metadata for a specific model including shapes, column names, etc.
+
+        Returns None if metadata cannot be retrieved or model doesn't exist.
+        """
 
     @abstractmethod
     async def delete_dataset(self, dataset_name: str) -> None:

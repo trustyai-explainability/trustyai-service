@@ -62,7 +62,7 @@ jobs:
         run: bash scripts/generate_protos.sh
 
       - name: Type check with pyrefly
-        run: uv run pyrefly check src/
+        run: uv run pyrefly check
 
   test:
     runs-on: ubuntu-latest

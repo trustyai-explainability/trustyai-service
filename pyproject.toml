@@ -29,6 +29,7 @@ dev = [
     "ruff>=0.15.10",
     "pyrefly>=0.61",
     "bandit[toml]>=1.9.4",
+    "bandit-sarif-formatter>=1.1.1",
     "httpx>=0.28.1",
 ]
 types = [

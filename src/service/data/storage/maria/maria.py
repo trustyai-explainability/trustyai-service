@@ -134,10 +134,10 @@ class MariaDBStorage(StorageInterface):
             try:
                 loop = asyncio.get_running_loop()
                 # Fire-and-forget migration task (errors logged within migration)
-                # Store task reference to prevent garbage collection
-                migration_task = loop.create_task(self._migrate_from_legacy_db())
+                # Store task reference on instance to prevent garbage collection
+                self._migration_task = loop.create_task(self._migrate_from_legacy_db())
                 # Suppress task exception warnings - errors are logged within the migration
-                migration_task.add_done_callback(
+                self._migration_task.add_done_callback(
                     lambda t: t.exception() if not t.cancelled() else None
                 )
             except RuntimeError:
@@ -491,9 +491,11 @@ class MariaDBStorage(StorageInterface):
 
         return list(model_ids)
 
-    @require_existing_dataset
     async def get_metadata(self, model_id: str) -> dict:
-        """Get metadata for a specific model including shapes, column names, etc."""
+        """Get metadata for a specific model including shapes, column names, etc.
+
+        Returns partial metadata even if some datasets don't exist.
+        """
         input_dataset = f"{model_id}_inputs"
         output_dataset = f"{model_id}_outputs"
         metadata_dataset = f"{model_id}_metadata"
@@ -575,8 +577,10 @@ class MariaDBStorage(StorageInterface):
 
     async def get_partial_payload(
         self, payload_id: str, *, is_input: bool, is_modelmesh: bool
-    ) -> PartialPayload | KServeInferenceRequest | KServeInferenceResponse:
+    ) -> PartialPayload | KServeInferenceRequest | KServeInferenceResponse | None:
         """Retrieve a partial payload from the database.
+
+        Returns None if the payload is not found.
 
         SECURITY NOTE: This function deserializes pickled data from the database.
         Data must originate from trusted internal sources only (stored via save_partial_payload).

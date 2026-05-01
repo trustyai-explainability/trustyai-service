@@ -134,7 +134,7 @@ async def compute_jensenshannon(
         logger.exception("Error computing %s", METRIC_NAME)
         raise HTTPException(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
-            detail=f"Error computing metric: {e!s}",
+            detail="Error computing metric. Check server logs for details.",
         ) from e
 
     # Validate data availability (after try block to avoid TRY301)

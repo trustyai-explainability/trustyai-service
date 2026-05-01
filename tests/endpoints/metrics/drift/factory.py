@@ -819,7 +819,7 @@ def make_compute_empty_current_data_test(
         # Return empty DataFrame for current data
         empty_df = pl.DataFrame()
         mock_data_source.get_organic_dataframe = AsyncMock(return_value=empty_df)
-        mock_data_source.get_dataframe = AsyncMock(return_value=reference_df)
+        mock_data_source.get_dataframe = AsyncMock(return_value=empty_df)
 
         mock_ds.return_value = mock_data_source
 

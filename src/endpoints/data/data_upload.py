@@ -106,7 +106,7 @@ async def upload(payload: UploadPayload) -> dict[str, str]:
         )
         raise HTTPException(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {e!s}",
+            detail="Internal server error occurred during data upload. Check server logs for details.",
         ) from e
     else:
         logger.info("Upload completed for model: %s", payload.model_name)

@@ -102,6 +102,14 @@ K_SERVE_NUMPY_DTYPES = {
 }
 
 
+class InferParameter(BaseModel):
+    """KServe V2 inference parameter supporting bool, int, or string values."""
+
+    bool_param: bool | None = None
+    int_param: int | None = None
+    string_param: str | None = None
+
+
 class KServeData(BaseModel):
     """KServe tensor data with shape, type, and validation."""
 
@@ -110,7 +118,9 @@ class KServeData(BaseModel):
     name: str
     shape: list[int]
     datatype: KServeDataType
-    parameters: dict[str, str] | None = None
+    # KServe V2 spec: parameters should be dict[str, InferParameter]
+    # Also accept dict[str, str] for backward compatibility
+    parameters: dict[str, InferParameter | str] | None = None
     data: list[Any]
 
     @model_validator(mode="after")

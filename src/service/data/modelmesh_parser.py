@@ -6,6 +6,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from google.protobuf.message import DecodeError as ProtobufDecodeError
 from pydantic import BaseModel
 
 try:
@@ -48,7 +49,7 @@ class ModelMeshPayloadParser:
             input_bytes = base64.b64decode(payload.data)
             input_request = ModelInferRequest()
             input_request.ParseFromString(input_bytes)
-        except (TypeError, ValueError, binascii.Error) as e:
+        except (TypeError, ValueError, binascii.Error, ProtobufDecodeError) as e:
             msg = f"Failed to parse input payload: {e}"
             raise ValueError(msg) from e
         else:
@@ -61,7 +62,7 @@ class ModelMeshPayloadParser:
             output_bytes = base64.b64decode(payload.data)
             output_response = ModelInferResponse()
             output_response.ParseFromString(output_bytes)
-        except (TypeError, ValueError, binascii.Error) as e:
+        except (TypeError, ValueError, binascii.Error, ProtobufDecodeError) as e:
             msg = f"Failed to parse output payload: {e}"
             raise ValueError(msg) from e
         else:

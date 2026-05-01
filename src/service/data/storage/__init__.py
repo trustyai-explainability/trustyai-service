@@ -63,15 +63,17 @@ def get_storage_interface() -> MariaDBStorage | PVCStorage:
                 MariaDBStorage,
             )
 
+            # Parse DATABASE_ATTEMPT_MIGRATION with tolerance for boolean strings
+            migration_str = os.environ.get("DATABASE_ATTEMPT_MIGRATION", "0").lower()
+            attempt_migration = migration_str in ("1", "true", "yes", "on")
+
             return MariaDBStorage(
                 user=os.environ.get("DATABASE_USERNAME"),
                 password=os.environ.get("DATABASE_PASSWORD"),
                 host=os.environ.get("DATABASE_HOST"),
                 port=int(os.environ.get("DATABASE_PORT", "3306")),
                 database=os.environ.get("DATABASE_DATABASE"),
-                attempt_migration=bool(
-                    int(os.environ.get("DATABASE_ATTEMPT_MIGRATION", "0"))
-                ),
+                attempt_migration=attempt_migration,
             )
         except ImportError as e:
             msg = (

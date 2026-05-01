@@ -38,12 +38,14 @@ class IndividualConsistency:
                 msg = "Model output cannot be empty."
                 raise ValueError(msg)
             prediction_output = prediction_outputs[0]
+            # Handle both scalar and array predictions
+            output_width = int(np.size(prediction_output))
             neighbors = proximity_function(sample, samples)
             neighbors_outputs = model.predict(neighbors)
             for output in prediction_outputs:
                 for neighbor_output in neighbors_outputs:
                     if neighbor_output != output:
                         consistency -= 1 / (
-                            len(neighbors) * len(prediction_output) * len(samples)
+                            len(neighbors) * output_width * len(samples)
                         )
         return consistency

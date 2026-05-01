@@ -130,7 +130,7 @@ async def compute_compare_means(
         logger.exception("Error computing %s", METRIC_NAME)
         raise HTTPException(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
-            detail=f"Error computing metric: {e!s}",
+            detail="Error computing metric. Check server logs for details.",
         ) from e
 
     # Validate data availability (after try block to avoid TRY301)
@@ -230,6 +230,19 @@ async def schedule_compare_means(request: CompareMeansMetricRequest) -> dict[str
             detail="Prometheus scheduler not available",
         )
 
+    # Validate request before scheduling
+    if not request.model_id or not request.model_id.strip():
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail="model_id is required and cannot be empty",
+        )
+
+    if request.batch_size <= 0:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail="batch_size must be positive",
+        )
+
     try:
         # Generate UUID for this request
         request_id = uuid.uuid4()
@@ -241,11 +254,13 @@ async def schedule_compare_means(request: CompareMeansMetricRequest) -> dict[str
         # Register with the scheduler (this will reconcile the request and store it)
         await scheduler.register(request.metric_name, request_id, request)
 
+    except HTTPException:
+        raise
     except Exception as e:  # Broad catch intentional: scheduler registration errors should not crash endpoint
         logger.exception("Error scheduling %s computation", METRIC_NAME)
         raise HTTPException(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
-            detail=f"Error scheduling metric: {e!s}",
+            detail="Error scheduling metric. Check server logs for details.",
         ) from e
     else:
         logger.info(

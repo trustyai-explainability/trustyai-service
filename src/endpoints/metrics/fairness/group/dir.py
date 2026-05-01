@@ -130,7 +130,7 @@ async def compute_dir(
         logger.exception("Error computing DIR")
         raise HTTPException(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
-            detail=f"Error computing metric: {e!s}",
+            detail="Error computing metric. Check server logs for details.",
         ) from e
 
     # Validate data availability (moved outside try block to avoid TRY301)
