@@ -223,6 +223,19 @@ async def get_jensenshannon_definition() -> dict[str, str]:
 @router.post("/metrics/drift/jensenshannon/request")
 async def schedule_jensenshannon(request: JensenShannonMetricRequest) -> dict[str, str]:
     """Schedule a recurring computation of Jensen-Shannon metric."""
+    # Validate inputs before scheduling
+    if not request.reference_tag:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail="referenceTag is required for drift detection",
+        )
+
+    if not request.fit_columns:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail="fitColumns is required - specify which features to test for drift",
+        )
+
     # Get the scheduler and validate availability
     scheduler = get_prometheus_scheduler()
     if not scheduler:

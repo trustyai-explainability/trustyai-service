@@ -28,7 +28,6 @@ from pydantic import BaseModel, create_model
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
 API_PREFIX = "/eval/lm-evaluation-harness"
 
 
@@ -151,6 +150,7 @@ class LMEvalJob:
 
 
 job_registry: dict[int, LMEvalJob] = {}  # track all jobs
+job_registry_lock = threading.Lock()  # protects job_registry from concurrent access
 job_queue = queue.Queue()
 
 
@@ -261,7 +261,9 @@ async def _process_queue() -> None:
         job_queue.qsize(),
     )
     while _get_num_running_jobs() < MAX_CONCURRENCY and job_queue.qsize() > 0:
-        job_to_run = job_registry.get(job_queue.get())
+        job_id = job_queue.get()
+        with job_registry_lock:
+            job_to_run = job_registry.get(job_id)
         if job_to_run is not None and job_to_run.is_in_queue:
             logger.info("Launching job %s", job_to_run.job_id)
             _launch_job(job_to_run)
@@ -270,11 +272,15 @@ async def _process_queue() -> None:
 def _launch_job(job: LMEvalJob) -> None:
     """Launch a job."""
     logger.debug("Running command:       %s", job.argument)
-    logger.debug("Environment variables: %s", job.request.env_vars)
+    logger.debug("Launching with custom env vars: %s keys", len(job.request.env_vars))
+
+    # Merge environment variables (user overrides take precedence)
+    merged_env = {**os.environ, **job.request.env_vars}
 
     # Arguments are safely parsed using shlex.split() which prevents command injection
     p = subprocess.Popen(  # noqa: S603  # args safely parsed via shlex.split
         shlex.split(job.argument),
+        env=merged_env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -284,9 +290,10 @@ def _launch_job(job: LMEvalJob) -> None:
     os.set_blocking(cast("subprocess.IO", p.stderr).fileno(), False)
 
     # register the subprocess in the global registry
-    job_registry[job.job_id].mark_launch(
-        process=p, start_time=datetime.datetime.now(datetime.UTC).isoformat()
-    )
+    with job_registry_lock:
+        job_registry[job.job_id].mark_launch(
+            process=p, start_time=datetime.datetime.now(datetime.UTC).isoformat()
+        )
 
 
 # === ROUTER =======================================================================================
@@ -314,7 +321,8 @@ def lm_eval_job(request: LMEvalRequest) -> dict[str, int | str]:
     job_id = _generate_job_id()
     queued_job = LMEvalJob(job_id=job_id, request=request, argument=cli_cmd)
     job_queue.put(job_id)
-    job_registry[job_id] = queued_job
+    with job_registry_lock:
+        job_registry[job_id] = queued_job
 
     return {
         "status": "success",
@@ -328,7 +336,9 @@ def lm_eval_job(request: LMEvalRequest) -> dict[str, int | str]:
 def list_running_lm_eval_jobs(*, include_finished: bool = True) -> AllLMEvalJobs:
     """Provide a list of all lm-evaluation-harness jobs with attached summary information."""
     jobs = []
-    for pid in job_registry:
+    with job_registry_lock:
+        job_ids = list(job_registry.keys())
+    for pid in job_ids:
         job_information = check_lm_eval_job(pid)
 
         if not include_finished and job_information.status not in {
@@ -348,13 +358,13 @@ def list_running_lm_eval_jobs(*, include_finished: bool = True) -> AllLMEvalJobs
 )
 def check_lm_eval_job(job_id: int) -> LMEvalJobDetail:
     """Get detailed report of an lm-evaluation-harness job by ID."""
-    if job_id not in job_registry:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail=f"No lm-evaluation-harness job with ID={job_id} found.",
-        )
-
-    job = job_registry[job_id]
+    with job_registry_lock:
+        if job_id not in job_registry:
+            raise HTTPException(
+                status_code=HTTPStatus.BAD_REQUEST,
+                detail=f"No lm-evaluation-harness job with ID={job_id} found.",
+            )
+        job = job_registry[job_id]
     status, status_code = _get_job_status(job)
 
     progress = 0
@@ -383,19 +393,21 @@ def check_lm_eval_job(job_id: int) -> LMEvalJobDetail:
 
 # === DELETE DATA ==================================================================================
 @router.delete(
-    API_PREFIX + "/job/{id}",
+    API_PREFIX + "/job/{job_id}",
     summary="Delete an lm-evaluation-harness job's data from the server.",
 )
 def delete_lm_eval_job(job_id: int) -> dict[str, str]:
     """Delete an lm-evaluation-harness job's data from the server by ID, terminating the job if it's still running."""
-    if job_id not in job_registry:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail=f"No lm-evaluation-harness job with ID={job_id} found.",
-        )
+    with job_registry_lock:
+        if job_id not in job_registry:
+            raise HTTPException(
+                status_code=HTTPStatus.BAD_REQUEST,
+                detail=f"No lm-evaluation-harness job with ID={job_id} found.",
+            )
 
     stop_lm_eval_job(job_id)
-    del job_registry[job_id]
+    with job_registry_lock:
+        del job_registry[job_id]
     return {"status": "success", "message": f"Job {job_id} deleted successfully."}
 
 
@@ -406,10 +418,13 @@ def delete_lm_eval_job(job_id: int) -> dict[str, str]:
 def delete_all_lm_eval_job() -> dict[str, str]:
     """Delete data from all lm-evaluation-harness job's data from the server, terminating any job that its still running."""
     deleted = []
-    for job_id in job_registry:
+    with job_registry_lock:
+        job_ids = list(job_registry.keys())
+    for job_id in job_ids:
         stop_lm_eval_job(job_id)
         deleted.append(job_id)
-    job_registry.clear()
+    with job_registry_lock:
+        job_registry.clear()
     return {"status": "success", "message": f"Jobs {deleted} deleted successfully."}
 
 
@@ -420,16 +435,21 @@ def delete_all_lm_eval_job() -> dict[str, str]:
 )
 def stop_lm_eval_job(job_id: int) -> dict[str, str]:
     """Stop an lm-evaluation-harness job by ID."""
-    if job_id not in job_registry:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail=f"No lm-evaluation-harness job with ID={job_id} found.",
-        )
-
-    job = job_registry[job_id]
+    with job_registry_lock:
+        if job_id not in job_registry:
+            raise HTTPException(
+                status_code=HTTPStatus.BAD_REQUEST,
+                detail=f"No lm-evaluation-harness job with ID={job_id} found.",
+            )
+        job = job_registry[job_id]
     if job.is_in_queue:
         job.dequeue()
         return {"status": "success", "message": f"Job {job_id} dequeued successfully."}
+    if job.has_been_stopped:
+        return {
+            "status": "success",
+            "message": f"Job {job_id} has already been stopped.",
+        }
     if job.process is None:
         raise HTTPException(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
@@ -448,7 +468,9 @@ def stop_lm_eval_job(job_id: int) -> dict[str, str]:
 def stop_all_lm_eval_job() -> dict[str, str]:
     """Stop all lm-evaluation-harness jobs."""
     stopped = []
-    for job_id in job_registry:
+    with job_registry_lock:
+        job_ids = list(job_registry.keys())
+    for job_id in job_ids:
         stop_lm_eval_job(job_id)
         stopped.append(job_id)
 

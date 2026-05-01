@@ -133,7 +133,7 @@ async def compute_dir(
             detail="Error computing metric. Check server logs for details.",
         ) from e
 
-    # Validate data availability (moved outside try block to avoid TRY301)
+    # Validate data availability (after try block to avoid TRY301)
     if dataframe.empty:
         raise HTTPException(
             status_code=HTTPStatus.NOT_FOUND,

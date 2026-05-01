@@ -123,7 +123,7 @@ def get_privileged_unprivileged_split(
     return privileged, unprivileged
 
 
-def get_labeled_data(df: pd.DataFrame = df) -> tuple[np.ndarray, np.ndarray]:
+def get_labeled_data(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
     """Generate ground truth and predicted data arrays for fairness testing."""
     data_df = df[[col for col in df.columns if col != "Exited"] + ["Exited"]]
     data = data_df.to_numpy()
@@ -245,7 +245,7 @@ def set_favorable_outcomes(
 
 y, y_pred = truth_predict_output()
 privileged, unprivileged = get_privileged_unprivileged_split()
-data, data_pred = get_labeled_data()
+data, data_pred = get_labeled_data(df)
 
 
 @st.composite

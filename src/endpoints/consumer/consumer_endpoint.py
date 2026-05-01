@@ -197,7 +197,7 @@ async def consume_inference_payload(
         logger.exception("Error processing payload")
         raise HTTPException(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
-            detail=f"Error processing payload: {e!s}",
+            detail="An internal error occurred while processing the payload",
         ) from e
     else:
         return {
@@ -472,8 +472,9 @@ async def consume_cloud_event(
     :param tag: Optional tag to associate with the data
     :raises HTTPException: If payload processing fails
     """
-    # set payload if from cloud event header
-    payload.id = ce_id
+    # set payload id from cloud event header if present
+    if ce_id is not None:
+        payload.id = ce_id
 
     if payload.id is None:
         raise HTTPException(
