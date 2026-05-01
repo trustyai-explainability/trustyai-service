@@ -482,7 +482,7 @@ class PVCStorage(StorageInterface):
         logger.info("Extracted model IDs: %s", list(model_ids))
         return list(model_ids)
 
-    async def get_metadata(self, model_id: str) -> StorageMetadata:
+    async def get_metadata(self, model_id: str) -> StorageMetadata | None:
         """Get metadata for a specific model including shapes, column names, etc."""
         input_dataset = model_id + INPUT_SUFFIX
         output_dataset = model_id + OUTPUT_SUFFIX
