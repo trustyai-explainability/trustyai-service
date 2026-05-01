@@ -377,6 +377,11 @@ class PVCStorage(StorageInterface):
         """Delete dataset data, ignoring non-existent datasets."""
         allocated_dataset_name = self.allocate_valid_dataset_name(dataset_name)
         async with self.get_lock(allocated_dataset_name):
+            # Check if HDF5 file exists before opening to prevent phantom file creation
+            # Opening in "a" mode creates the file if it doesn't exist
+            filename = Path(self.data_directory) / self.data_file
+            if not filename.exists():
+                return
             try:
                 with H5PYContext(self, dataset_name, "a") as db:
                     if allocated_dataset_name in db:

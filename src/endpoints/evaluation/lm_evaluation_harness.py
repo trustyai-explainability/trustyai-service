@@ -29,7 +29,6 @@ from pydantic import BaseModel, create_model
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
 API_PREFIX = "/eval/lm-evaluation-harness"
 
 

@@ -127,7 +127,10 @@ def get_labeled_data(df: pd.DataFrame = df) -> tuple[np.ndarray, np.ndarray]:
     """Generate ground truth and predicted data arrays for fairness testing."""
     data_df = df[[col for col in df.columns if col != "Exited"] + ["Exited"]]
     data = data_df.to_numpy()
-    y_pred = pd.DataFrame(train_model())
+    # Extract features and labels from the passed dataframe
+    X_local = df[[col for col in df.columns if col != "Exited"]]
+    y_local = df["Exited"]
+    y_pred = pd.DataFrame(train_model(X_local, y_local))
     data_pred = data.copy()
     data_pred[:, -1] = y_pred.to_numpy().flatten()
     return data, data_pred

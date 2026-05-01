@@ -547,6 +547,13 @@ async def consume_cloud_event(
                 "message": f"Output payload {payload.id} processed successfully",
             }
 
+        # Defensive programming: this should never happen due to type annotation
+        # but adding explicit fallback for type safety
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail="Payload must be either KServeInferenceRequest or KServeInferenceResponse",
+        )
+
     except ReconciliationError as e:
         logger.exception("Reconciliation failed for payload %s", payload.id)
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=str(e)) from e
