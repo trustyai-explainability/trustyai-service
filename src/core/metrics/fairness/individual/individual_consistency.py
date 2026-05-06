@@ -1,4 +1,3 @@
-# pylint: disable=too-few-public-methods, line-too-long
 """Individual fairness consistency metric implementation."""
 
 from collections.abc import Callable
@@ -21,13 +20,14 @@ class IndividualConsistency:
         :param proximity_function: a function that finds the top k
             similar inputs, given a reference input and a list of inputs
         :param samples: a list of inputs to be tested for consistency
-        :param model: the model under inspection return the consistency
-            measure
+        :param model: the model under inspection
+        :return: the consistency measure in [0, 1]
         """
         if len(samples) == 0:
             msg = "Samples cannot be empty - cannot compute consistency."
             raise ValueError(msg)
-        consistency = 1.0
+        mismatches = 0
+        total_comparisons = 0
         for sample in samples:
             prediction_outputs = model.predict(sample)
             if len(prediction_outputs) == 0:
@@ -53,7 +53,6 @@ class IndividualConsistency:
                 for neighbor_output in neighbors_outputs:
                     # Use array-safe comparison (NumPy 2.0+ requires this for arrays)
                     if not np.array_equal(neighbor_output, output):
-                        consistency -= 1 / (
-                            len(neighbors) * output_width * len(samples)
-                        )
-        return consistency
+                        mismatches += 1
+            total_comparisons += len(neighbors) * output_width * len(prediction_outputs)
+        return 1.0 - (mismatches / total_comparisons) if total_comparisons > 0 else 1.0

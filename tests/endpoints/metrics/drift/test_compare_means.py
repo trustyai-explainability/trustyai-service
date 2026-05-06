@@ -111,7 +111,7 @@ class TestCompareMeansEndpoints:
     # ========================================================================
 
     def test_multi_feature_drift_consistency(self) -> None:
-        """Test that when drift is detected, the returned p_value is consistent. with drift_detected.
+        """Test that when drift is detected, the returned p_value is consistent with drift_detected.
 
         This test verifies the fix for the issue where
         drift_detected=True but p_value > alpha when multiple features
@@ -530,7 +530,7 @@ class TestCompareMeansEndpoints:
     )
 
     def test_deprecated_compute_endpoint_with_omitted_optional_fields(self) -> None:
-        """Test that deprecated Meanshift endpoint works with omitted optional. fields.
+        """Test that deprecated Meanshift endpoint works with omitted optional fields.
 
         This verifies the fix for backward compatibility where legacy
         clients may omit optional fields like alpha, equalVar,

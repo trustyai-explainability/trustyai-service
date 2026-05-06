@@ -64,7 +64,7 @@ class CompareMeansMetricRequest(BaseMetricRequest):
         default=None, alias="metricName"
     )  # Will be set by endpoint
     request_name: str | None = Field(default=None, alias="requestName")
-    batch_size: int = Field(default=DEFAULT_BATCH_SIZE, alias="batchSize")
+    batch_size: int = Field(default=DEFAULT_BATCH_SIZE, alias="batchSize", gt=0)
 
     # CompareMeans-specific fields
     alpha: float = Field(default=DEFAULT_ALPHA, alias="alpha", gt=0, lt=1)
@@ -244,12 +244,6 @@ async def schedule_compare_means(request: CompareMeansMetricRequest) -> dict[str
         raise HTTPException(
             status_code=HTTPStatus.BAD_REQUEST,
             detail="model_id is required and cannot be empty",
-        )
-
-    if request.batch_size <= 0:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="batch_size must be positive",
         )
 
     # Validate drift-specific required fields before scheduling

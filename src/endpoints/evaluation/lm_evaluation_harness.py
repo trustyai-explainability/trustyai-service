@@ -1,5 +1,6 @@
 """LM Evaluation Harness endpoint for language model benchmarking and testing."""
 
+import contextlib
 import datetime
 import os
 import queue
@@ -20,7 +21,7 @@ import logging
 import subprocess  # nosec B404 - Used with shlex.split() for safe argument handling
 from collections.abc import AsyncGenerator
 from http import HTTPStatus
-from typing import Any
+from typing import Any, TextIO
 
 from fastapi import APIRouter, HTTPException
 from fastapi.applications import FastAPI
@@ -133,6 +134,35 @@ class LMEvalJob:
         self.is_in_queue = True
         self.has_been_stopped = False
         self.output_lock = threading.Lock()  # Protects cumulative_out/err/progress
+        self.stdout_thread = None
+        self.stderr_thread = None
+
+    def _read_stream(
+        self, stream: TextIO, output_list: list[str], stream_name: str
+    ) -> None:
+        """Read lines from a stream and append to output list (runs in background thread).
+
+        :param stream: The stream to read from (stdout or stderr)
+        :param output_list: The list to append lines to (cumulative_out or cumulative_err)
+        :param stream_name: Name for logging purposes
+        """
+        try:
+            for line in stream:
+                stripped = line.strip()
+                with self.output_lock:
+                    output_list.append(stripped)
+                    # Update progress from stderr
+                    if stream_name == "stderr" and stripped.startswith(
+                        "Requesting API:"
+                    ):
+                        with contextlib.suppress(ValueError, IndexError):
+                            self.progress = int(
+                                stripped.split("Requesting API:")[1]
+                                .split("%")[0]
+                                .strip()
+                            )
+        except Exception:  # noqa: BLE001, S110  # nosec B110 - Thread should not crash on stream errors
+            pass  # Stream closed or process terminated
 
     def mark_launch(self, process: subprocess.Popen, start_time: str) -> None:
         """Mark the job as launched with process and timestamp.
@@ -143,6 +173,20 @@ class LMEvalJob:
         self.start_time = start_time
         self.process = process
         self.is_in_queue = False
+
+        # Start background reader threads for stdout/stderr
+        self.stdout_thread = threading.Thread(
+            target=self._read_stream,
+            args=(process.stdout, self.cumulative_out, "stdout"),
+            daemon=True,
+        )
+        self.stderr_thread = threading.Thread(
+            target=self._read_stream,
+            args=(process.stderr, self.cumulative_err, "stderr"),
+            daemon=True,
+        )
+        self.stdout_thread.start()
+        self.stderr_thread.start()
 
     def dequeue(self) -> None:
         """Remove the job from the queue and mark it as stopped."""
@@ -336,7 +380,7 @@ router = APIRouter(lifespan=lifespan)
 
 
 # === API ==========================================================================================
-@router.post("/job", summary="Launch an lm-evaluation-harness job")
+@router.post(API_PREFIX + "/job", summary="Launch an lm-evaluation-harness job")
 def lm_eval_job(request: LMEvalRequest) -> dict[str, int | str]:
     """Launch an lm-evaluation-harness job according to the inbound arguments.
 
@@ -397,20 +441,12 @@ def check_lm_eval_job(job_id: int) -> LMEvalJobDetail:
         job = job_registry[job_id]
     status, status_code = _get_job_status(job)
 
-    progress = 0
-    if not job.is_in_queue and job.process is not None:
-        with job.output_lock:
-            job.cumulative_out += [line.strip() for line in job.process.stdout]
-            job.cumulative_err += [line.strip() for line in job.process.stderr]
-
-            for line in reversed(job.cumulative_err):
-                if line.startswith("Requesting API:"):
-                    progress = int(
-                        line.split("Requesting API:")[1].split("%")[0].strip()
-                    )
-                    break
-
-            job.progress = progress
+    # Progress is updated by background reader threads in mark_launch
+    # Just read the current progress value under lock
+    with job.output_lock:
+        progress = job.progress
+        cumulative_out = job.cumulative_out.copy()
+        cumulative_err = job.cumulative_err.copy()
 
     return LMEvalJobDetail(
         job_id=job_id,
@@ -418,9 +454,9 @@ def check_lm_eval_job(job_id: int) -> LMEvalJobDetail:
         timestamp=job.start_time,
         status=status,
         exit_code=status_code,
-        inference_progress_pct=job.progress,
-        stdout=job.cumulative_out,
-        stderr=job.cumulative_err,
+        inference_progress_pct=progress,
+        stdout=cumulative_out,
+        stderr=cumulative_err,
     )
 
 
