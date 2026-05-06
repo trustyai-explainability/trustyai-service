@@ -8,14 +8,7 @@ from sklearn.base import ClassifierMixin
 
 
 class IndividualConsistency:
-    """Calculate individual fairness in terms of consistency of predictions across similar inputs.
-
-    :param proximity_function: a function that finds the top k similar
-        inputs, given a reference input and a list of inputs :param
-        samples a list of inputs to be tested for consistency :param
-        predictionProvider the model under inspection return the
-        consistency measure
-    """
+    """Calculate individual fairness in terms of consistency of predictions across similar inputs."""
 
     @staticmethod
     def calculate(

@@ -203,10 +203,14 @@ def convert_to_cli(request: BaseModel) -> str:
         if field in NON_CLI_ARGUMENTS:
             continue
 
-        cli_cmd += " "
         arg = args[field]
         if arg["argparse_type"] in {"_StoreTrueAction", "_StoreFalseAction"}:
-            cli_cmd += args[field]["cli"]
+            # Only add flag when actual value matches the action type
+            field_value = getattr(request, field)
+            if (arg["argparse_type"] == "_StoreTrueAction" and field_value) or (
+                arg["argparse_type"] == "_StoreFalseAction" and not field_value
+            ):
+                cli_cmd += f" {args[field]['cli']}"
         else:
             field_value = getattr(request, field)
             field_value = (
@@ -214,7 +218,7 @@ def convert_to_cli(request: BaseModel) -> str:
                 if isinstance(field_value, str)
                 else field_value
             )
-            cli_cmd += f"{args[field]['cli']} {field_value}"
+            cli_cmd += f" {args[field]['cli']} {field_value}"
 
     return cli_cmd
 
@@ -269,12 +273,15 @@ async def _process_queue() -> None:
             # Verify job is still in queue (not dequeued by another thread)
             if job_to_run is not None and job_to_run.is_in_queue:
                 job_to_launch = job_to_run
+                # Mark as no longer in queue BEFORE launching to prevent race
+                # with stop_lm_eval_job() dequeuing while Popen() is running
+                job_to_run.is_in_queue = False
             elif job_to_run is None:
                 logger.warning("Job %s not found in registry, skipping", job_id)
             else:
                 logger.debug("Job %s already dequeued, skipping launch", job_id)
 
-        # Launch job outside the lock to avoid deadlock (_launch_job acquires lock again)
+        # Launch job outside the lock (process creation doesn't need lock)
         if job_to_launch is not None:
             logger.info("Launching job %s", job_to_launch.job_id)
             _launch_job(job_to_launch)
@@ -282,7 +289,7 @@ async def _process_queue() -> None:
 
 def _launch_job(job: LMEvalJob) -> None:
     """Launch a job."""
-    logger.debug("Running command:       %s", job.argument)
+    logger.debug("Launching lm-eval job %s", job.job_id)
     logger.debug("Launching with custom env vars: %s keys", len(job.request.env_vars))
 
     # Merge environment variables (user overrides take precedence)

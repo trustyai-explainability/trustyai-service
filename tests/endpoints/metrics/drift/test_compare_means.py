@@ -8,12 +8,10 @@ import pandas as pd
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from src.core.metrics.drift.compare_means import DEFAULT_ALPHA
 from src.endpoints.metrics.drift.compare_means import CompareMeansMetricRequest, router
 
 from . import factory
-
-# Test constants
-DEFAULT_ALPHA = 0.05  # Default significance level for statistical tests
 
 # Create test app with CompareMeans router
 app = FastAPI()

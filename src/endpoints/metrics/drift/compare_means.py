@@ -13,6 +13,7 @@ from src.core.metrics.drift.compare_means import (
     DEFAULT_EQUAL_VAR,
     DEFAULT_NAN_POLICY,
     CompareMeans,
+    NanPolicy,
 )
 from src.service.data.datasources.data_source import DataSource
 from src.service.data.shared_data_source import get_shared_data_source
@@ -66,9 +67,9 @@ class CompareMeansMetricRequest(BaseMetricRequest):
     batch_size: int = Field(default=DEFAULT_BATCH_SIZE, alias="batchSize")
 
     # CompareMeans-specific fields
-    alpha: float = Field(default=DEFAULT_ALPHA, alias="alpha")
+    alpha: float = Field(default=DEFAULT_ALPHA, alias="alpha", gt=0, lt=1)
     equal_var: bool = Field(default=DEFAULT_EQUAL_VAR, alias="equalVar")
-    nan_policy: str = Field(default=DEFAULT_NAN_POLICY, alias="nanPolicy")
+    nan_policy: NanPolicy = Field(default=DEFAULT_NAN_POLICY, alias="nanPolicy")
     reference_tag: str | None = Field(default=None, alias="referenceTag")
     fit_columns: list[str] = Field(default_factory=list, alias="fitColumns")
 
@@ -315,7 +316,7 @@ async def delete_compare_means_schedule(schedule: ScheduleId) -> dict[str, str]:
         logger.exception("Error deleting %s schedule", METRIC_NAME)
         raise HTTPException(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
-            detail=f"Error deleting schedule: {e!s}",
+            detail="Error deleting schedule. Check server logs for details.",
         ) from e
     else:
         logger.info(
@@ -382,7 +383,7 @@ async def list_compare_means_requests() -> dict[str, list[dict[str, Any]]]:
         logger.exception("Error listing %s requests", METRIC_NAME)
         raise HTTPException(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
-            detail=f"Error listing requests: {e!s}",
+            detail="Error listing requests. Check server logs for details.",
         ) from e
     else:
         return {"requests": requests_list}
