@@ -1,5 +1,7 @@
 """Tests for Kolmogorov-Smirnov drift detection endpoint."""
 
+from http import HTTPStatus
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -108,7 +110,7 @@ class TestKSTestEndpoints:
             # Missing referenceTag
             "fitColumns": ["feature1"],
         },
-        expected_status_code=400,
+        expected_status_code=HTTPStatus.BAD_REQUEST,
         expected_error_substring="referenceTag is required",
     )
 
@@ -122,7 +124,7 @@ class TestKSTestEndpoints:
             "referenceTag": "baseline",
             # Missing fitColumns
         },
-        expected_status_code=400,
+        expected_status_code=HTTPStatus.BAD_REQUEST,
         expected_error_substring="fitColumns is required",
     )
 
@@ -136,7 +138,7 @@ class TestKSTestEndpoints:
             "referenceTag": "baseline",
             "fitColumns": ["nonexistent_feature"],
         },
-        expected_status_code=400,
+        expected_status_code=HTTPStatus.BAD_REQUEST,
         expected_error_substring="not found in data",
     )
 
@@ -147,7 +149,7 @@ class TestKSTestEndpoints:
         endpoint_path="/metrics/drift/kstest/request",
         client=client,
         request_id="not-a-valid-uuid",
-        expected_status_code=400,  # Invalid UUID returns 400 (Bad Request)
+        expected_status_code=HTTPStatus.BAD_REQUEST,  # Invalid UUID returns 400 (Bad Request)
         expected_error_substring="Invalid request ID",
     )
 
@@ -187,7 +189,7 @@ class TestKSTestEndpoints:
             "referenceTag": "baseline",
             "fitColumns": ["feature1"],
         },
-        expected_status_code=500,
+        expected_status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
         expected_error_substring="connect",  # Match "Failed to connect"
         mock_scheduler_none=False,
         register_side_effect=ConnectionError("Failed to connect to scheduler database"),
@@ -203,7 +205,7 @@ class TestKSTestEndpoints:
             "referenceTag": "baseline",
             "fitColumns": ["feature1"],
         },
-        expected_status_code=500,
+        expected_status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
         expected_error_substring="timeout",
         mock_scheduler_none=False,
         register_side_effect=TimeoutError("Scheduler registration timeout after 30s"),
@@ -219,7 +221,7 @@ class TestKSTestEndpoints:
             "referenceTag": "baseline",
             "fitColumns": ["feature1"],
         },
-        expected_status_code=500,
+        expected_status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
         expected_error_substring="error",
         mock_scheduler_none=False,
         register_side_effect=RuntimeError("Internal scheduler error occurred"),
@@ -232,7 +234,7 @@ class TestKSTestEndpoints:
         endpoint_path="/metrics/drift/kstest/request",
         client=client,
         request_id="123e4567-e89b-12d3-a456-426614174000",
-        expected_status_code=500,
+        expected_status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
         expected_error_substring="connect",  # Match "Failed to connect"
         mock_scheduler_none=False,
         delete_side_effect=ConnectionError("Failed to connect to scheduler database"),
@@ -244,7 +246,7 @@ class TestKSTestEndpoints:
         endpoint_path="/metrics/drift/kstest/request",
         client=client,
         request_id="123e4567-e89b-12d3-a456-426614174000",
-        expected_status_code=500,
+        expected_status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
         expected_error_substring="failed",
         mock_scheduler_none=False,
         delete_side_effect=RuntimeError("Scheduler deletion failed"),
@@ -264,7 +266,7 @@ class TestKSTestEndpoints:
             "referenceTag": "baseline",
             "fitColumns": ["feature1"],
         },
-        expected_status_code=503,
+        expected_status_code=HTTPStatus.SERVICE_UNAVAILABLE,
         # Matches "Prometheus scheduler not available"
         expected_error_substring="not available",
         mock_scheduler_none=True,
@@ -276,7 +278,7 @@ class TestKSTestEndpoints:
         endpoint_path="/metrics/drift/kstest/request",
         client=client,
         request_id="123e4567-e89b-12d3-a456-426614174000",
-        expected_status_code=503,
+        expected_status_code=HTTPStatus.SERVICE_UNAVAILABLE,
         # Matches "Prometheus scheduler not available"
         expected_error_substring="not available",
         mock_scheduler_none=True,

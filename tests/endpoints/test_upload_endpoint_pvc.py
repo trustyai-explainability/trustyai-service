@@ -313,7 +313,9 @@ class TestUploadEndpointPVC(unittest.TestCase):
                     datatype,
                     data_tag,
                 )
-                response = self.post_test(payload, 200, [f"{n_input_rows} datapoints"])
+                response = self.post_test(
+                    payload, HTTPStatus.OK, [f"{n_input_rows} datapoints"]
+                )
 
                 inputs, outputs, _ = asyncio.run(
                     ModelData(payload["model_name"]).data(),
@@ -362,7 +364,7 @@ class TestUploadEndpointPVC(unittest.TestCase):
                 )
 
                 # Act
-                self.post_test(payload, 200, [f"{n_rows} datapoints"])
+                self.post_test(payload, HTTPStatus.OK, [f"{n_rows} datapoints"])
 
                 model_data = ModelData(payload["model_name"])
                 inputs, outputs, _ = asyncio.run(model_data.data())
@@ -450,11 +452,11 @@ class TestUploadEndpointPVC(unittest.TestCase):
 
         payload1 = generate_payload(n_payload1, 10, 1, "INT64", tag1)
         payload1["model_name"] = model_name
-        self.post_test(payload1, 200, [f"{n_payload1} datapoints"])
+        self.post_test(payload1, HTTPStatus.OK, [f"{n_payload1} datapoints"])
 
         payload2 = generate_payload(n_payload2, 10, 1, "INT64", tag2)
         payload2["model_name"] = model_name
-        self.post_test(payload2, 200, [f"{n_payload2} datapoints"])
+        self.post_test(payload2, HTTPStatus.OK, [f"{n_payload2} datapoints"])
 
         tag1_count = count_rows_with_tag(model_name, tag1)
         tag2_count = count_rows_with_tag(model_name, tag2)
@@ -471,7 +473,7 @@ class TestUploadEndpointPVC(unittest.TestCase):
         payload = generate_payload(5, 10, 1, "INT64", invalid_tag)
         response = self.post_test(
             payload,
-            400,
+            HTTPStatus.BAD_REQUEST,
             ["reserved for internal TrustyAI use only"],
         )
         expected_msg = (
@@ -522,7 +524,7 @@ class TestUploadEndpointPVC(unittest.TestCase):
                 ],
             },
         }
-        self.post_test(payload, 200, ["2 datapoints"])
+        self.post_test(payload, HTTPStatus.OK, ["2 datapoints"])
 
 
 if __name__ == "__main__":

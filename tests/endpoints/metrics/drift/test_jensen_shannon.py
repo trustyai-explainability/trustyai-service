@@ -1,5 +1,7 @@
 """Tests for Jensen-Shannon drift detection endpoint."""
 
+from http import HTTPStatus
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -123,7 +125,7 @@ class TestJensenShannonEndpoints:
             # Missing referenceTag
             "fitColumns": ["feature1"],
         },
-        expected_status_code=400,
+        expected_status_code=HTTPStatus.BAD_REQUEST,
         expected_error_substring="referenceTag is required",
     )
 
@@ -137,7 +139,7 @@ class TestJensenShannonEndpoints:
             "referenceTag": "baseline",
             # Missing fitColumns
         },
-        expected_status_code=400,
+        expected_status_code=HTTPStatus.BAD_REQUEST,
         expected_error_substring="fitColumns is required",
     )
 
@@ -151,7 +153,7 @@ class TestJensenShannonEndpoints:
             "referenceTag": "baseline",
             "fitColumns": ["nonexistent_feature"],
         },
-        expected_status_code=400,
+        expected_status_code=HTTPStatus.BAD_REQUEST,
         expected_error_substring="not found in data",
     )
 
@@ -163,7 +165,7 @@ class TestJensenShannonEndpoints:
         client=client,
         request_id="not-a-valid-uuid",
         # Endpoint raises HTTPException with status_code=400 for invalid UUID
-        expected_status_code=400,
+        expected_status_code=HTTPStatus.BAD_REQUEST,
         expected_error_substring="Invalid request ID",
     )
 
@@ -257,7 +259,7 @@ class TestJensenShannonEndpoints:
             "referenceTag": "baseline",
             "fitColumns": ["feature1"],
         },
-        expected_status_code=503,
+        expected_status_code=HTTPStatus.SERVICE_UNAVAILABLE,
         expected_error_substring="scheduler not available",
         mock_scheduler_none=True,
     )
@@ -272,7 +274,7 @@ class TestJensenShannonEndpoints:
             "referenceTag": "baseline",
             "fitColumns": ["feature1"],
         },
-        expected_status_code=500,
+        expected_status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
         expected_error_substring="Error scheduling metric",
         register_side_effect=Exception("Database connection failed"),
     )
@@ -283,7 +285,7 @@ class TestJensenShannonEndpoints:
         endpoint_path="/metrics/drift/jensenshannon/request",
         client=client,
         request_id="123e4567-e89b-12d3-a456-426614174000",
-        expected_status_code=503,
+        expected_status_code=HTTPStatus.SERVICE_UNAVAILABLE,
         expected_error_substring="scheduler not available",
         mock_scheduler_none=True,
     )
@@ -294,7 +296,7 @@ class TestJensenShannonEndpoints:
         endpoint_path="/metrics/drift/jensenshannon/request",
         client=client,
         request_id="123e4567-e89b-12d3-a456-426614174000",
-        expected_status_code=500,
+        expected_status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
         expected_error_substring="Error deleting schedule",
         delete_side_effect=Exception("Database connection failed"),
     )

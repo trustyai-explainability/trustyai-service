@@ -55,8 +55,8 @@ class TestAppCoreEndpoints:
         response = client.options("/", headers={"Origin": "http://example.com"})
         # CORS middleware should allow the request
         assert response.status_code in [
-            200,
-            405,
+            HTTPStatus.OK,
+            HTTPStatus.METHOD_NOT_ALLOWED,
         ]  # OPTIONS may not be defined but CORS should process it
 
 

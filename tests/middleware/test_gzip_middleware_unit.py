@@ -7,6 +7,7 @@ test_upload_endpoint_pvc.py.
 
 import gzip
 from collections.abc import Awaitable, Callable
+from http import HTTPStatus
 from typing import Any, Never
 from unittest.mock import AsyncMock, patch
 
@@ -14,9 +15,7 @@ import pytest
 
 from src.middleware.gzip_middleware import GzipRequestMiddleware
 
-# Test constants for HTTP status codes and call counts
-HTTP_STATUS_400 = 400  # Bad Request
-HTTP_STATUS_500 = 500  # Internal Server Error
+# Test constants for call counts
 EXPECTED_SEND_CALLS_ERROR = 2  # Start + body for error responses
 
 
@@ -174,7 +173,7 @@ class TestGzipMiddlewareUnit:
         # Should send 400 error response for disconnect
         assert send.call_count == EXPECTED_SEND_CALLS_ERROR
         start_call = send.call_args_list[0][0][0]
-        assert start_call["status"] == HTTP_STATUS_400
+        assert start_call["status"] == HTTPStatus.BAD_REQUEST
 
     @pytest.mark.asyncio
     async def test_unexpected_error_during_body_read(self) -> None:
@@ -201,7 +200,7 @@ class TestGzipMiddlewareUnit:
         # Should send error response
         assert send.call_count == EXPECTED_SEND_CALLS_ERROR
         start_call = send.call_args_list[0][0][0]
-        assert start_call["status"] == HTTP_STATUS_500
+        assert start_call["status"] == HTTPStatus.INTERNAL_SERVER_ERROR
 
     @pytest.mark.asyncio
     async def test_unexpected_error_passthrough_when_fail_on_error_false(self) -> None:
@@ -265,7 +264,7 @@ class TestGzipMiddlewareUnit:
         # Should send 500 error response
         assert send.call_count == EXPECTED_SEND_CALLS_ERROR
         start_call = send.call_args_list[0][0][0]
-        assert start_call["status"] == HTTP_STATUS_500
+        assert start_call["status"] == HTTPStatus.INTERNAL_SERVER_ERROR
 
     # === Path Matching Tests ===
 
