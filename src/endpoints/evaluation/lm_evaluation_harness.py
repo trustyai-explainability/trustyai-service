@@ -457,7 +457,9 @@ def delete_all_lm_eval_job() -> dict[str, str]:
         stop_lm_eval_job(job_id)
         deleted.append(job_id)
     with job_registry_lock:
-        job_registry.clear()
+        # Only remove the jobs we actually stopped, not all jobs (prevents race with new submissions)
+        for job_id in deleted:
+            job_registry.pop(job_id, None)
     return {"status": "success", "message": f"Jobs {deleted} deleted successfully."}
 
 

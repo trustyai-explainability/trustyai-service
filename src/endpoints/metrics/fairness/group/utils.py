@@ -5,7 +5,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from src.service.data.datasources.data_source import DataSource
 from src.service.data.shared_data_source import get_shared_data_source
@@ -72,48 +72,25 @@ class GroupMetricRequest(BaseMetricRequest):
 class GroupDefinitionRequest(BaseModel):
     """Request payload for defining fairness groups with camelCase fields."""
 
-    modelId: str
-    requestName: str | None = None
-    metricName: str | None = None
-    batchSize: int | None = 100
-    protectedAttribute: str
-    outcomeName: str
-    privilegedAttribute: ReconcilableFeature | int | float | str
-    unprivilegedAttribute: ReconcilableFeature | int | float | str
-    favorableOutcome: ReconcilableOutput | int | float | str
-    thresholdDelta: float | None = None
-    metricValue: dict[str, Any]
+    model_config = ConfigDict(populate_by_name=True)
 
-    # Additional snake_case properties for metrics processing
-    @property
-    def protected_attribute(self) -> str:
-        """Protected attribute name for fairness analysis."""
-        return self.protectedAttribute
-
-    @property
-    def outcome_name(self) -> str:
-        """Outcome field name for fairness analysis."""
-        return self.outcomeName
-
-    @property
-    def privileged_attribute(self) -> ReconcilableFeature | int | float | str:
-        """Value representing the privileged group."""
-        return self.privilegedAttribute
-
-    @property
-    def unprivileged_attribute(self) -> ReconcilableFeature | int | float | str:
-        """Value representing the unprivileged group."""
-        return self.unprivilegedAttribute
-
-    @property
-    def favorable_outcome(self) -> ReconcilableOutput | int | float | str:
-        """Value representing the favorable outcome."""
-        return self.favorableOutcome
-
-    @property
-    def threshold_delta(self) -> float | None:
-        """Threshold for determining fairness violations."""
-        return self.thresholdDelta
+    model_id: str = Field(alias="modelId")
+    request_name: str | None = Field(default=None, alias="requestName")
+    metric_name: str | None = Field(default=None, alias="metricName")
+    batch_size: int | None = Field(default=100, alias="batchSize")
+    protected_attribute: str = Field(alias="protectedAttribute")
+    outcome_name: str = Field(alias="outcomeName")
+    privileged_attribute: ReconcilableFeature | int | float | str = Field(
+        alias="privilegedAttribute"
+    )
+    unprivileged_attribute: ReconcilableFeature | int | float | str = Field(
+        alias="unprivilegedAttribute"
+    )
+    favorable_outcome: ReconcilableOutput | int | float | str = Field(
+        alias="favorableOutcome"
+    )
+    threshold_delta: float | None = Field(default=None, alias="thresholdDelta")
+    metric_value: dict[str, Any] = Field(alias="metricValue")
 
 
 class ScheduleId(BaseModel):
@@ -170,6 +147,11 @@ def _extract_values(
     ):
         return [value.rawValueNode["value"]]
 
+    # Reject Reconcilable* objects that had no usable values
+    if isinstance(value, (ReconcilableFeature, ReconcilableOutput)):
+        # All known value-bearing attributes were None/empty
+        return []
+
     # Handle primitives and lists
     return value if isinstance(value, list) else [value]
 
@@ -209,46 +191,32 @@ def prepare_fairness_data(
             P(loan_decision in favorable_values | gender='female') vs P(loan_decision in favorable_values | gender='male')
 
     """
-    # Extract attribute names
-    protected_attr = (
-        request.protectedAttribute
-        if hasattr(request, "protectedAttribute")
-        else request.protected_attribute
-    )
-    outcome_name = (
-        request.outcomeName if hasattr(request, "outcomeName") else request.outcome_name
-    )
+    # Extract attribute names (both request types now expose snake_case attributes)
+    protected_attr = request.protected_attribute
+    outcome_name = request.outcome_name
 
     # Extract privileged/unprivileged group values from request
-    privileged_attr = getattr(
-        request,
-        "privilegedAttribute",
-        getattr(request, "privileged_attribute", None),
-    )
-    privileged_values = _extract_values(privileged_attr)
-
-    unprivileged_attr = getattr(
-        request,
-        "unprivilegedAttribute",
-        getattr(request, "unprivileged_attribute", None),
-    )
-    unprivileged_values = _extract_values(unprivileged_attr)
+    privileged_values = _extract_values(request.privileged_attribute)
+    unprivileged_values = _extract_values(request.unprivileged_attribute)
 
     # Extract favorable outcome values from request
-    favorable_attr = getattr(
-        request, "favorableOutcome", getattr(request, "favorable_outcome", None)
-    )
-    favorable_values = _extract_values(favorable_attr)
+    favorable_values = _extract_values(request.favorable_outcome)
 
     # Validate extracted values are non-empty and scalar-compatible
-    if not privileged_values:
-        msg = "privilegedAttribute must contain at least one value"
+    if not privileged_values or any(
+        isinstance(v, (BaseModel, dict, list)) for v in privileged_values
+    ):
+        msg = "privilegedAttribute must contain at least one scalar value"
         raise ValueError(msg)
-    if not unprivileged_values:
-        msg = "unprivilegedAttribute must contain at least one value"
+    if not unprivileged_values or any(
+        isinstance(v, (BaseModel, dict, list)) for v in unprivileged_values
+    ):
+        msg = "unprivilegedAttribute must contain at least one scalar value"
         raise ValueError(msg)
-    if not favorable_values:
-        msg = "favorableOutcome must contain at least one value"
+    if not favorable_values or any(
+        isinstance(v, (BaseModel, dict, list)) for v in favorable_values
+    ):
+        msg = "favorableOutcome must contain at least one scalar value"
         raise ValueError(msg)
 
     # Filter the dataframe into privileged and unprivileged groups
