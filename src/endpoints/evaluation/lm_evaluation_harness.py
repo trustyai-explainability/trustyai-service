@@ -20,7 +20,7 @@ import logging
 import subprocess  # nosec B404 - Used with shlex.split() for safe argument handling
 from collections.abc import AsyncGenerator
 from http import HTTPStatus
-from typing import Any, cast
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from fastapi.applications import FastAPI
@@ -132,6 +132,7 @@ class LMEvalJob:
         self.progress = 0
         self.is_in_queue = True
         self.has_been_stopped = False
+        self.output_lock = threading.Lock()  # Protects cumulative_out/err/progress
 
     def mark_launch(self, process: subprocess.Popen, start_time: str) -> None:
         """Mark the job as launched with process and timestamp.
@@ -231,8 +232,12 @@ def _get_job_status(job: LMEvalJob) -> tuple[JobStatus, int | None]:
     elif job.has_been_stopped:
         status = JobStatus.STOPPED
         status_code = None
+    elif job.process is None:
+        # Transitional state: dequeued by _process_queue but Popen() has not returned yet
+        status = JobStatus.QUEUED
+        status_code = None
     else:
-        status_code = job.process.poll()  # type: ignore[union-attr]
+        status_code = job.process.poll()
         if status_code == 0:
             status = JobStatus.COMPLETED
         elif status_code is None:
@@ -250,10 +255,18 @@ def _generate_job_id() -> int:
 
 # === Queuing ======================================================================================
 def _get_num_running_jobs() -> int:
-    """Get the number of currently running jobs."""
-    jobs = list_running_lm_eval_jobs(include_finished=False).jobs
-    jobs = [job for job in jobs if job.status == JobStatus.RUNNING]
-    return len(jobs)
+    """Get the number of currently running jobs (lightweight check, no I/O)."""
+    count = 0
+    with job_registry_lock:
+        for job in job_registry.values():
+            # Count jobs that are launched and still running (no I/O draining)
+            if (
+                not job.is_in_queue
+                and job.process is not None
+                and job.process.poll() is None
+            ):
+                count += 1
+    return count
 
 
 @repeat_every(seconds=QUEUE_PROCESS_INTERVAL, logger=logger)
@@ -303,9 +316,6 @@ def _launch_job(job: LMEvalJob) -> None:
         stderr=subprocess.PIPE,
         text=True,
     )  # nosec B603
-    # Safe: subprocess.PIPE guarantees stdout and stderr are not None
-    os.set_blocking(cast("subprocess.IO", p.stdout).fileno(), False)
-    os.set_blocking(cast("subprocess.IO", p.stderr).fileno(), False)
 
     # register the subprocess in the global registry
     with job_registry_lock:
@@ -389,15 +399,18 @@ def check_lm_eval_job(job_id: int) -> LMEvalJobDetail:
 
     progress = 0
     if not job.is_in_queue and job.process is not None:
-        job.cumulative_out += [line.strip() for line in job.process.stdout]
-        job.cumulative_err += [line.strip() for line in job.process.stderr]
+        with job.output_lock:
+            job.cumulative_out += [line.strip() for line in job.process.stdout]
+            job.cumulative_err += [line.strip() for line in job.process.stderr]
 
-        for line in reversed(job.cumulative_err):
-            if line.startswith("Requesting API:"):
-                progress = int(line.split("Requesting API:")[1].split("%")[0].strip())
-                break
+            for line in reversed(job.cumulative_err):
+                if line.startswith("Requesting API:"):
+                    progress = int(
+                        line.split("Requesting API:")[1].split("%")[0].strip()
+                    )
+                    break
 
-        job.progress = progress
+            job.progress = progress
 
     return LMEvalJobDetail(
         job_id=job_id,
@@ -477,6 +490,16 @@ def stop_lm_eval_job(job_id: int) -> dict[str, str]:
         )
     if not job.has_been_stopped and job.process.poll() is None:
         job.process.terminate()
+        try:
+            job.process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            # Process didn't terminate gracefully, force kill
+            job.process.kill()
+            try:
+                job.process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                # Process still won't die - log and continue
+                logger.warning("Job %s did not terminate after SIGKILL", job_id)
         job.has_been_stopped = True
         return {"status": "success", "message": f"Job {job_id} stopped successfully."}
     return {"status": "success", "message": f"Job {job_id} has already completed."}

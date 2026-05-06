@@ -240,6 +240,17 @@ def prepare_fairness_data(
     )
     favorable_values = _extract_values(favorable_attr)
 
+    # Validate extracted values are non-empty and scalar-compatible
+    if not privileged_values:
+        msg = "privilegedAttribute must contain at least one value"
+        raise ValueError(msg)
+    if not unprivileged_values:
+        msg = "unprivilegedAttribute must contain at least one value"
+        raise ValueError(msg)
+    if not favorable_values:
+        msg = "favorableOutcome must contain at least one value"
+        raise ValueError(msg)
+
     # Filter the dataframe into privileged and unprivileged groups
     privileged_mask = dataframe[protected_attr].isin(privileged_values)
     unprivileged_mask = dataframe[protected_attr].isin(unprivileged_values)

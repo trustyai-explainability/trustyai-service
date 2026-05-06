@@ -24,6 +24,9 @@ class IndividualConsistency:
         :param model: the model under inspection return the consistency
             measure
         """
+        if len(samples) == 0:
+            msg = "Samples cannot be empty - cannot compute consistency."
+            raise ValueError(msg)
         consistency = 1.0
         for sample in samples:
             prediction_outputs = model.predict(sample)

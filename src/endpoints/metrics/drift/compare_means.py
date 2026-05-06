@@ -96,7 +96,7 @@ async def compute_compare_means(
 ) -> dict[str, float | bool | str | dict[str, dict[str, float | bool]]]:
     """Compute the current value of CompareMeans metric."""
     # Validate inputs before try block
-    if not request.reference_tag:
+    if not request.reference_tag or not request.reference_tag.strip():
         raise HTTPException(
             status_code=HTTPStatus.BAD_REQUEST,
             detail="referenceTag is required for drift detection",
@@ -106,6 +106,14 @@ async def compute_compare_means(
         raise HTTPException(
             status_code=HTTPStatus.BAD_REQUEST,
             detail="fitColumns is required - specify which features to test for drift",
+        )
+
+    # Validate feature names are not blank/whitespace
+    valid_features = [f.strip() for f in request.fit_columns if f.strip()]
+    if not valid_features:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail="fitColumns must contain at least one non-empty feature name",
         )
 
     try:
@@ -125,6 +133,47 @@ async def compute_compare_means(
             request.model_id, batch_size
         )
 
+        # Validate data availability
+        if len(reference_df) == 0:
+            raise HTTPException(
+                status_code=HTTPStatus.NOT_FOUND,
+                detail=f"No reference data found for model: {request.model_id} with tag: {request.reference_tag}",
+            )
+
+        if len(current_df) == 0:
+            raise HTTPException(
+                status_code=HTTPStatus.NOT_FOUND,
+                detail=f"No current data found for model: {request.model_id}",
+            )
+
+        # Calculate t-test for each feature
+        alpha = request.alpha
+        equal_var = request.equal_var
+        nan_policy = request.nan_policy
+
+        # Multi-feature case: iterate over features
+        results = {}
+        for feature_name in valid_features:
+            if (
+                feature_name not in reference_df.columns
+                or feature_name not in current_df.columns
+            ):
+                raise HTTPException(
+                    status_code=HTTPStatus.BAD_REQUEST,
+                    detail=f"Feature {feature_name} not found in data",
+                )
+
+            reference_data = reference_df[feature_name].to_numpy()
+            current_data = current_df[feature_name].to_numpy()
+
+            results[feature_name] = CompareMeans.ttest_ind(
+                reference_data=reference_data,
+                current_data=current_data,
+                alpha=alpha,
+                equal_var=equal_var,
+                nan_policy=nan_policy,
+            )
+
     except HTTPException:
         raise
     except Exception as e:  # Broad catch intentional: endpoint catch-all for unknown computation errors
@@ -133,47 +182,6 @@ async def compute_compare_means(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
             detail="Error computing metric. Check server logs for details.",
         ) from e
-
-    # Validate data availability (after try block to avoid TRY301)
-    if len(reference_df) == 0:
-        raise HTTPException(
-            status_code=HTTPStatus.NOT_FOUND,
-            detail=f"No reference data found for model: {request.model_id} with tag: {request.reference_tag}",
-        )
-
-    if len(current_df) == 0:
-        raise HTTPException(
-            status_code=HTTPStatus.NOT_FOUND,
-            detail=f"No current data found for model: {request.model_id}",
-        )
-
-    # Calculate t-test for each feature
-    alpha = request.alpha
-    equal_var = request.equal_var
-    nan_policy = request.nan_policy
-
-    # Multi-feature case: iterate over features
-    results = {}
-    for feature_name in request.fit_columns:
-        if (
-            feature_name not in reference_df.columns
-            or feature_name not in current_df.columns
-        ):
-            raise HTTPException(
-                status_code=HTTPStatus.BAD_REQUEST,
-                detail=f"Feature {feature_name} not found in data",
-            )
-
-        reference_data = reference_df[feature_name].to_numpy()
-        current_data = current_df[feature_name].to_numpy()
-
-        results[feature_name] = CompareMeans.ttest_ind(
-            reference_data=reference_data,
-            current_data=current_data,
-            alpha=alpha,
-            equal_var=equal_var,
-            nan_policy=nan_policy,
-        )
 
     # Aggregate: drift detected if any feature shows drift
     drift_detected = any(r["drift_detected"] for r in results.values())
@@ -245,7 +253,7 @@ async def schedule_compare_means(request: CompareMeansMetricRequest) -> dict[str
         )
 
     # Validate drift-specific required fields before scheduling
-    if not request.reference_tag:
+    if not request.reference_tag or not request.reference_tag.strip():
         raise HTTPException(
             status_code=HTTPStatus.BAD_REQUEST,
             detail="referenceTag is required for drift detection",
@@ -255,6 +263,14 @@ async def schedule_compare_means(request: CompareMeansMetricRequest) -> dict[str
         raise HTTPException(
             status_code=HTTPStatus.BAD_REQUEST,
             detail="fitColumns is required - specify which features to test for drift",
+        )
+
+    # Validate feature names are not blank/whitespace
+    valid_features = [f.strip() for f in request.fit_columns if f.strip()]
+    if not valid_features:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail="fitColumns must contain at least one non-empty feature name",
         )
 
     try:
