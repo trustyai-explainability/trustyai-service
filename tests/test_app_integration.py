@@ -1,10 +1,25 @@
 """Integration tests for main application endpoint registration."""
 
 from http import HTTPStatus
+from unittest.mock import patch
 
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from src.endpoints.metrics.drift.compare_means import (
+    router as drift_comparemeans_router,
+)
+from src.endpoints.metrics.drift.jensen_shannon import (
+    router as drift_jensenshannon_router,
+)
+from src.endpoints.metrics.drift.kolmogorov_smirnov import (
+    router as drift_kstest_router,
+)
+from src.endpoints.metrics.fairness.group.dir import router as dir_router
+from src.endpoints.metrics.fairness.group.spd import router as spd_router
 from src.main import app
+from src.service.config.feature_flags import ENDPOINTS
+from src.service.config.registry import register_if_enabled_with_group
 
 client = TestClient(app)
 
@@ -215,3 +230,111 @@ class TestCompareMeansMetricIntegration:
 
         meanshift_list = openapi["paths"]["/metrics/drift/meanshift/requests"]["get"]
         assert meanshift_list.get("deprecated") is True
+
+
+def _build_app_with_flags(overrides: dict[str, bool]) -> FastAPI:
+    """Build a minimal FastAPI app with custom feature flag overrides.
+
+    Constructs a fresh app and registers drift/fairness routers using
+    the same ``register_if_enabled_with_group`` helper that ``src/main.py``
+    uses, but with patched flags.
+    """
+    test_app = FastAPI()
+    patched = {**ENDPOINTS, **overrides}
+
+    with patch.dict("src.service.config.registry.ENDPOINTS", patched, clear=True):
+        register_if_enabled_with_group(
+            test_app,
+            dir_router,
+            "fairness",
+            "fairness_dir",
+            "Fairness: DIR",
+        )
+        register_if_enabled_with_group(
+            test_app,
+            spd_router,
+            "fairness",
+            "fairness_spd",
+            "Fairness: SPD",
+        )
+        register_if_enabled_with_group(
+            test_app,
+            drift_comparemeans_router,
+            "drift",
+            "drift_compare_means",
+            "Drift: CompareMeans",
+        )
+        register_if_enabled_with_group(
+            test_app,
+            drift_kstest_router,
+            "drift",
+            "drift_ks_test",
+            "Drift: KSTest",
+        )
+        register_if_enabled_with_group(
+            test_app,
+            drift_jensenshannon_router,
+            "drift",
+            "drift_jensen_shannon",
+            "Drift: JensenShannon",
+        )
+        register_if_enabled_with_group(
+            test_app,
+            dir_router,
+            "fairness",
+            "fairness_dir",
+            prefix="/metrics",
+            tag="{Legacy}: DIR",
+        )
+        register_if_enabled_with_group(
+            test_app,
+            spd_router,
+            "fairness",
+            "fairness_spd",
+            prefix="/metrics",
+            tag="{Legacy}: SPD",
+        )
+
+    return test_app
+
+
+class TestFeatureFlagGating:
+    """Verify that disabling a feature flag removes endpoints from OpenAPI."""
+
+    def test_disabling_fairness_removes_dir_and_spd(self) -> None:
+        """Setting fairness=False removes all fairness endpoints."""
+        test_app = _build_app_with_flags({"fairness": False})
+        test_client = TestClient(test_app)
+
+        response = test_client.get("/openapi.json")
+        assert response.status_code == HTTPStatus.OK
+        paths = response.json()["paths"]
+
+        fairness_paths = [
+            p for p in paths if "/fairness/" in p or "/dir" in p or "/spd" in p
+        ]
+        assert fairness_paths == []
+
+    def test_disabling_drift_removes_all_drift_endpoints(self) -> None:
+        """Setting drift=False removes KSTest, CompareMeans, and JensenShannon."""
+        test_app = _build_app_with_flags({"drift": False})
+        test_client = TestClient(test_app)
+
+        response = test_client.get("/openapi.json")
+        assert response.status_code == HTTPStatus.OK
+        paths = response.json()["paths"]
+
+        drift_paths = [p for p in paths if "/metrics/drift/" in p]
+        assert drift_paths == []
+
+    def test_disabling_individual_metric_keeps_others(self) -> None:
+        """Disabling drift_ks_test removes KS but keeps CompareMeans."""
+        test_app = _build_app_with_flags({"drift_ks_test": False})
+        test_client = TestClient(test_app)
+
+        response = test_client.get("/openapi.json")
+        assert response.status_code == HTTPStatus.OK
+        paths = response.json()["paths"]
+
+        assert "/metrics/drift/kstest" not in paths
+        assert "/metrics/drift/comparemeans" in paths

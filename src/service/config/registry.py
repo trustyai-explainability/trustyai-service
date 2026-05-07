@@ -9,6 +9,24 @@ from src.service.config.feature_flags import ENDPOINTS
 logger = logging.getLogger(__name__)
 
 
+def _is_enabled(flag: str) -> bool:
+    return ENDPOINTS.get(flag, False)
+
+
+def _include_router(
+    app: FastAPI,
+    router: APIRouter,
+    tag: str | None = None,
+    prefix: str | None = None,
+) -> None:
+    kwargs: dict[str, str | list[str]] = {}
+    if tag:
+        kwargs["tags"] = [tag]
+    if prefix:
+        kwargs["prefix"] = prefix
+    app.include_router(router, **kwargs)  # type: ignore[arg-type]
+
+
 def register_if_enabled(
     app: FastAPI,
     router: APIRouter,
@@ -24,15 +42,10 @@ def register_if_enabled(
     :param tag: Optional tag for OpenAPI grouping.
     :param prefix: Optional URL prefix (e.g. "/metrics" for legacy endpoints).
     """
-    if not ENDPOINTS.get(flag, False):
+    if not _is_enabled(flag):
         logger.debug("Skipping router: flag '%s' is disabled", flag)
         return
-    kwargs: dict[str, str | list[str]] = {}
-    if tag:
-        kwargs["tags"] = [tag]
-    if prefix:
-        kwargs["prefix"] = prefix
-    app.include_router(router, **kwargs)  # type: ignore[arg-type]
+    _include_router(app, router, tag, prefix)
 
 
 def register_if_enabled_with_group(
@@ -52,23 +65,18 @@ def register_if_enabled_with_group(
     :param tag: Optional tag for OpenAPI grouping.
     :param prefix: Optional URL prefix (e.g. "/metrics" for legacy endpoints).
     """
-    if not ENDPOINTS.get(group_flag, False):
+    if not _is_enabled(group_flag):
         logger.debug(
             "Skipping %s: group flag '%s' is disabled",
             metric_flag,
             group_flag,
         )
         return
-    if not ENDPOINTS.get(metric_flag, False):
+    if not _is_enabled(metric_flag):
         logger.debug(
             "Skipping %s: metric flag '%s' is disabled",
             metric_flag,
             metric_flag,
         )
         return
-    kwargs: dict[str, str | list[str]] = {}
-    if tag:
-        kwargs["tags"] = [tag]
-    if prefix:
-        kwargs["prefix"] = prefix
-    app.include_router(router, **kwargs)  # type: ignore[arg-type]
+    _include_router(app, router, tag, prefix)

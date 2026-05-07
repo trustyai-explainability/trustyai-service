@@ -40,7 +40,6 @@ ENDPOINTS: dict[str, bool] = {
     "drift_ks_test": _flag("drift_ks_test", default=True),
     "drift_jensen_shannon": _flag("drift_jensen_shannon", default=True),
     "drift_compare_means": _flag("drift_compare_means", default=True),
-    "data_download": _flag("data_download", default=False),
     "explainer": _flag("explainer", default=False),
     "explainer_local": _flag("explainer_local", default=False),
     "explainer_global": _flag("explainer_global", default=False),
