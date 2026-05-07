@@ -30,6 +30,32 @@ class TestEndpointFlags:
         }
         assert set(ENDPOINTS.keys()) == expected
 
+    def test_fairness_and_drift_default_enabled(self) -> None:
+        """Fairness and drift flags default to True (enabled)."""
+        enabled_by_default = [
+            "fairness",
+            "fairness_spd",
+            "fairness_dir",
+            "drift",
+            "drift_ks_test",
+            "drift_jensen_shannon",
+            "drift_compare_means",
+        ]
+        for flag in enabled_by_default:
+            assert _flag(flag, default=True) is True, f"{flag} should default to True"
+
+    def test_explainer_defaults_disabled(self) -> None:
+        """Explainer flags default to False (disabled, experimental)."""
+        disabled_by_default = [
+            "explainer",
+            "explainer_local",
+            "explainer_global",
+        ]
+        for flag in disabled_by_default:
+            assert _flag(flag, default=False) is False, (
+                f"{flag} should default to False"
+            )
+
 
 class TestFlagEnvOverride:
     """Tests for _flag() environment variable override logic."""

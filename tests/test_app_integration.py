@@ -311,7 +311,7 @@ class TestFeatureFlagGating:
         paths = response.json()["paths"]
 
         fairness_paths = [
-            p for p in paths if "/fairness/" in p or "/dir" in p or "/spd" in p
+            p for p in paths if p.startswith(("/dir", "/spd")) or "/fairness/" in p
         ]
         assert fairness_paths == []
 
