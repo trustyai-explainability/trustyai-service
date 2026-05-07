@@ -112,6 +112,9 @@ class TestKolmogorovSmirnovStreamingBasic:
         with pytest.raises(ValueError, match="epsilon must be in the range"):
             KolmogorovSmirnovStreaming(epsilon=-0.1)
 
+        with pytest.raises(ValueError, match="epsilon must be in the range"):
+            KolmogorovSmirnovStreaming(epsilon=0.7)
+
     def test_insert_reference(self) -> None:
         """Test inserting values into reference sketch."""
         ks = KolmogorovSmirnovStreaming(epsilon=EPSILON_DEFAULT)

@@ -131,17 +131,18 @@ class GreenwaldKhannaSketch:
 
         if pos == 0:
             if len(self.summary) > 1:
-                v_next, g_next, delta_next = self.summary[1]
-                self.summary[1] = (v_next, g_next + g_pos - 1, delta_next)
+                v_next, g_next, _ = self.summary[1]
+                self.summary[1] = (v_next, g_next + g_pos - 1, 0)
             self.summary.pop(0)
         elif pos == len(self.summary) - 1:
             self.summary.pop()
-        # Transfer g-1 to next tuple (removing one element from the rank count)
-        elif pos < len(self.summary) - 1:
+            if self.summary:
+                v_last, g_last, _ = self.summary[-1]
+                self.summary[-1] = (v_last, g_last, 0)
+        else:
             v_next, g_next, delta_next = self.summary[pos + 1]
             self.summary.pop(pos)
-            if pos < len(self.summary):
-                self.summary[pos] = (v_next, g_next + g_pos - 1, delta_next)
+            self.summary[pos] = (v_next, g_next + g_pos - 1, delta_next)
 
         compress_period = floor(1 / (2 * self.epsilon))
         if self.n > 0 and self.n % compress_period == 0:
@@ -324,7 +325,7 @@ class GreenwaldKhannaSketch:
         self._ensure_cumulative_cache()
         other._ensure_cumulative_cache()  # noqa: SLF001
 
-        # Helper to get rank bounds from a sketch at position
+        # Helper to get rank bounds from a sketch at position (O(1) via cache)
         def get_rank_bounds(
             sketch: "GreenwaldKhannaSketch", idx: int
         ) -> tuple[int, int]:
@@ -333,9 +334,8 @@ class GreenwaldKhannaSketch:
             if idx >= len(sketch.summary):
                 return sketch.n, sketch.n
 
-            # r_min is the sum of g values up to and including idx
-            r_min = sum(g for _, g, _ in sketch.summary[: idx + 1])
-            r_max = r_min + sketch.summary[idx][2]
+            r_max = sketch._cumulative_r_max[idx]  # noqa: SLF001
+            r_min = r_max - sketch.summary[idx][2]
             return r_min, r_max
 
         # Merge sorted summaries and recalculate g, Δ based on combined ranks

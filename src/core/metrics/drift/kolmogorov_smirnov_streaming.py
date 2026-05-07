@@ -15,7 +15,11 @@ from typing import Any
 import numpy as np
 from scipy.stats import kstwo
 
-from .greenwald_khanna_quantile_sketch import EPSILON_DEFAULT, GreenwaldKhannaSketch
+from .greenwald_khanna_quantile_sketch import (
+    EPSILON_DEFAULT,
+    EPSILON_MAX,
+    GreenwaldKhannaSketch,
+)
 
 
 class KolmogorovSmirnovStreaming:
@@ -43,13 +47,13 @@ class KolmogorovSmirnovStreaming:
     def __init__(self, epsilon: float = EPSILON_DEFAULT) -> None:
         """Initialize a streaming KS test with two GK sketches.
 
-        :param epsilon: Error parameter for the GK sketches.
+        :param epsilon: Error parameter for the GK sketches; must be in (0, 0.5].
                         The KS statistic approximation error is bounded by 4*epsilon.
                         Smaller epsilon requires more space but provides better accuracy.
-        :raises ValueError: If epsilon is not in (0, 1)
+        :raises ValueError: If epsilon is not in (0, 0.5]
         """
-        if not 0 < epsilon < 1:
-            msg = "epsilon must be in the range (0, 1)"
+        if not 0 < epsilon <= EPSILON_MAX:
+            msg = "epsilon must be in the range (0, 0.5]"
             raise ValueError(msg)
 
         self.epsilon = epsilon
@@ -189,7 +193,7 @@ class KolmogorovSmirnovStreaming:
 
         # Use scipy's kstwo survival function
         # kstwo.sf(d, n) computes P(D_n > d) for the two-sample KS statistic
-        p_val = kstwo.sf(d_stat, round(n_eff))
+        p_val = kstwo.sf(d_stat, max(1, round(n_eff)))
 
         return float(p_val)
 
