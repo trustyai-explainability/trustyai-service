@@ -1,31 +1,31 @@
-"""
-ModelMesh protobuf testing utils.
-"""
+"""ModelMesh protobuf testing utils."""
+
+from __future__ import annotations
 
 import base64
+import contextlib
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-try:
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+with contextlib.suppress(ImportError):
     from src.proto.grpc_predict_v2_pb2 import (
         InferParameter,
         InferTensorContents,
         ModelInferRequest,
         ModelInferResponse,
     )
-except ImportError:
-    print("Warning: Protobuf classes not available. Run generate_protos.py first.")
 
 
 class ModelMeshTestData:
-    """
-    ModelMesh test data for testing the protobuf parser.
-    """
+    """ModelMesh test data for testing the protobuf parser."""
 
     @staticmethod
-    def create_infer_parameter(value: bool | int | str) -> InferParameter:
+    def create_infer_parameter(*, value: bool | int | str) -> "InferParameter":  # type: ignore[name-defined]
         """Create an InferParameter with the correct type based on value."""
         param = InferParameter()
         if isinstance(value, bool):
@@ -34,43 +34,67 @@ class ModelMeshTestData:
             param.int64_param = value
         elif isinstance(value, str):
             param.string_param = value
-        return param
+        return param  # type: ignore[no-any-return]
 
     @staticmethod
-    def generate_data(rows: int, cols: int, datatype: str, offset: int = 0) -> tuple[np.ndarray, Any]:
-        """
-        Create test data based on the datatype.
-        Returns the NumPy array and the corresponding value for InferTensorContents.
+    def generate_data(
+        rows: int,
+        cols: int,
+        datatype: str,
+        offset: int = 0,
+    ) -> tuple[np.ndarray, Any]:
+        """Create test data based on the datatype.
+
+        Returns the NumPy array and the corresponding value for
+        InferTensorContents.
         """
         if datatype == "BOOL":
-            data = np.array([(i + offset) % 2 == 0 for i in range(rows * cols)]).reshape(rows, cols)
+            data = np.array(
+                [(i + offset) % 2 == 0 for i in range(rows * cols)],
+            ).reshape(rows, cols)
             tensor_data = data.flatten().tolist()
             return data, tensor_data
-        elif datatype in {"INT8", "INT16", "INT32"}:
-            data = np.array([i + offset for i in range(rows * cols)], dtype=np.int32).reshape(rows, cols)
+        if datatype in {"INT8", "INT16", "INT32"}:
+            data = np.array(
+                [i + offset for i in range(rows * cols)],
+                dtype=np.int32,
+            ).reshape(rows, cols)
             tensor_data = data.flatten().tolist()
             return data, tensor_data
-        elif datatype == "INT64":
-            data = np.array([i + offset for i in range(rows * cols)], dtype=np.int64).reshape(rows, cols)
+        if datatype == "INT64":
+            data = np.array(
+                [i + offset for i in range(rows * cols)],
+                dtype=np.int64,
+            ).reshape(rows, cols)
             tensor_data = data.flatten().tolist()
             return data, tensor_data
-        elif datatype == "FP32":
-            data = np.array([float(i + offset) for i in range(rows * cols)], dtype=np.float32).reshape(rows, cols)
+        if datatype == "FP32":
+            data = np.array(
+                [float(i + offset) for i in range(rows * cols)],
+                dtype=np.float32,
+            ).reshape(rows, cols)
             tensor_data = data.flatten().tolist()
             return data, tensor_data
-        elif datatype == "FP64":
-            data = np.array([(i + offset) / 2.0 for i in range(rows * cols)], dtype=np.float64).reshape(rows, cols)
+        if datatype == "FP64":
+            data = np.array(
+                [(i + offset) / 2.0 for i in range(rows * cols)],
+                dtype=np.float64,
+            ).reshape(rows, cols)
             tensor_data = data.flatten().tolist()
             return data, tensor_data
-        elif datatype == "BYTES":
-            data = np.array([str(i + offset).encode() for i in range(rows * cols)]).reshape(rows, cols)
+        if datatype == "BYTES":
+            data = np.array(
+                [str(i + offset).encode() for i in range(rows * cols)],
+            ).reshape(rows, cols)
             tensor_data = data.flatten().tolist()
             return data, tensor_data
-        else:
-            raise ValueError(f"Unsupported datatype: {datatype}")
+        msg = f"Unsupported datatype: {datatype}"
+        raise ValueError(msg)
 
     @staticmethod
-    def create_tensor_contents(datatype: str, data: Any) -> InferTensorContents:
+    def create_tensor_contents(
+        datatype: str, data: list[bool] | list[int] | list[float] | bytes
+    ) -> "InferTensorContents":  # type: ignore[name-defined]
         """InferTensorContents with the appropriate field based on datatype."""
         contents = InferTensorContents()
 
@@ -91,7 +115,7 @@ class ModelMeshTestData:
         elif datatype == "BYTES":
             contents.bytes_contents.extend(data)
 
-        return contents
+        return contents  # type: ignore[no-any-return]
 
     @staticmethod
     def generate_input_tensor(
@@ -101,36 +125,56 @@ class ModelMeshTestData:
         datatype: str,
         offset: int = 0,
         parameters: dict[str, Any] | None = None,
-    ) -> tuple[ModelInferRequest.InferInputTensor, np.ndarray]:
+    ) -> tuple["ModelInferRequest.InferInputTensor", np.ndarray]:  # type: ignore[name-defined]
         """Generate an input tensor with test data."""
-        tensor = ModelInferRequest.InferInputTensor()
+        tensor = ModelInferRequest.InferInputTensor()  # type: ignore[attr-defined]
         tensor.name = name
         tensor.datatype = datatype
         tensor.shape.extend([rows, cols])
 
         if parameters:
             for key, value in parameters.items():
-                tensor.parameters[key].CopyFrom(ModelMeshTestData.create_infer_parameter(value))
+                tensor.parameters[key].CopyFrom(
+                    ModelMeshTestData.create_infer_parameter(value=value),
+                )
 
-        data_np, tensor_data = ModelMeshTestData.generate_data(rows, cols, datatype, offset)
+        data_np, tensor_data = ModelMeshTestData.generate_data(
+            rows,
+            cols,
+            datatype,
+            offset,
+        )
 
-        tensor.contents.CopyFrom(ModelMeshTestData.create_tensor_contents(datatype, tensor_data))
+        tensor.contents.CopyFrom(
+            ModelMeshTestData.create_tensor_contents(datatype, tensor_data),
+        )
 
         return tensor, data_np
 
     @staticmethod
     def generate_output_tensor(
-        name: str, rows: int, cols: int, datatype: str, offset: int = 0
-    ) -> tuple[ModelInferResponse.InferOutputTensor, np.ndarray]:
+        name: str,
+        rows: int,
+        cols: int,
+        datatype: str,
+        offset: int = 0,
+    ) -> tuple["ModelInferResponse.InferOutputTensor", np.ndarray]:  # type: ignore[name-defined]
         """Generate an output tensor with test data."""
-        tensor = ModelInferResponse.InferOutputTensor()
+        tensor = ModelInferResponse.InferOutputTensor()  # type: ignore[attr-defined]
         tensor.name = name
         tensor.datatype = datatype
         tensor.shape.extend([rows, cols])
 
-        data_np, tensor_data = ModelMeshTestData.generate_data(rows, cols, datatype, offset)
+        data_np, tensor_data = ModelMeshTestData.generate_data(
+            rows,
+            cols,
+            datatype,
+            offset,
+        )
 
-        tensor.contents.CopyFrom(ModelMeshTestData.create_tensor_contents(datatype, tensor_data))
+        tensor.contents.CopyFrom(
+            ModelMeshTestData.create_tensor_contents(datatype, tensor_data),
+        )
 
         return tensor, data_np
 
@@ -138,19 +182,24 @@ class ModelMeshTestData:
     def generate_model_infer_request(
         model_name: str,
         input_tensors: list[tuple[str, int, int, str, int, dict[str, Any] | None]],
-    ) -> tuple[ModelInferRequest, dict[str, np.ndarray]]:
-        """
-        Generate a ModelInferRequest with the specified input tensors.
-        """
+    ) -> tuple["ModelInferRequest", dict[str, np.ndarray]]:  # type: ignore[name-defined]
+        """Generate a ModelInferRequest with the specified input tensors."""
         request = ModelInferRequest()
         request.model_name = model_name
-        request.id = f"test-request-{uuid.uuid4().hex[:8]}"
+        request.id = f"test-request-{uuid.uuid4()}"
 
         data_dict = {}
 
         for tensor_spec in input_tensors:
             name, rows, cols, datatype, offset, params = tensor_spec
-            tensor, data_np = ModelMeshTestData.generate_input_tensor(name, rows, cols, datatype, offset, params)
+            tensor, data_np = ModelMeshTestData.generate_input_tensor(
+                name,
+                rows,
+                cols,
+                datatype,
+                offset,
+                params,
+            )
             request.inputs.append(tensor)
             data_dict[name] = data_np
 
@@ -162,10 +211,8 @@ class ModelMeshTestData:
         model_version: str,
         request_id: str,
         output_tensors: list[tuple[str, int, int, str, int]],
-    ) -> tuple[ModelInferResponse, dict[str, np.ndarray]]:
-        """
-        Generate a ModelInferResponse with the specified output tensors.
-        """
+    ) -> tuple["ModelInferResponse", dict[str, np.ndarray]]:  # type: ignore[name-defined]
+        """Generate a ModelInferResponse with the specified output tensors."""
         response = ModelInferResponse()
         response.model_name = model_name
         response.model_version = model_version
@@ -175,7 +222,13 @@ class ModelMeshTestData:
 
         for tensor_spec in output_tensors:
             name, rows, cols, datatype, offset = tensor_spec
-            tensor, data_np = ModelMeshTestData.generate_output_tensor(name, rows, cols, datatype, offset)
+            tensor, data_np = ModelMeshTestData.generate_output_tensor(
+                name,
+                rows,
+                cols,
+                datatype,
+                offset,
+            )
             response.outputs.append(tensor)
             data_dict[name] = data_np
 
@@ -184,23 +237,26 @@ class ModelMeshTestData:
     @staticmethod
     def generate_test_payloads(
         model_name: str,
-        input_tensor_specs: list[tuple[str, int, int, str, int, dict[str, Any] | None]],
-        output_tensor_specs: list[tuple[str, int, int, str, int]],
+        input_tensor_specs: Sequence[
+            tuple[str, int, int, str, int, dict[str, Any] | None]
+        ],
+        output_tensor_specs: Sequence[tuple[str, int, int, str, int]],
     ) -> tuple[dict, dict, dict, dict]:
-        """
-        Generate test input and output payloads for ModelMesh testing.
-        """
-        request, input_data_dict = ModelMeshTestData.generate_model_infer_request(model_name, input_tensor_specs)
+        """Generate test input and output payloads for ModelMesh testing."""
+        request, input_data_dict = ModelMeshTestData.generate_model_infer_request(
+            model_name,
+            list(input_tensor_specs),
+        )
 
         response, output_data_dict = ModelMeshTestData.generate_model_infer_response(
             f"{model_name}__isvc-123456",  # Add ModelMesh suffix
             "1",
-            request.id,
-            output_tensor_specs,
+            request.id,  # type: ignore[attr-defined]
+            list(output_tensor_specs),
         )
 
-        request_bytes = request.SerializeToString()
-        response_bytes = response.SerializeToString()
+        request_bytes = request.SerializeToString()  # type: ignore[attr-defined]
+        response_bytes = response.SerializeToString()  # type: ignore[attr-defined]
 
         request_b64 = base64.b64encode(request_bytes).decode("utf-8")
         response_b64 = base64.b64encode(response_bytes).decode("utf-8")

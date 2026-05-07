@@ -1,3 +1,5 @@
+"""Tests for ReconcilableFeature."""
+
 from src.service.payloads.values.reconcilable_feature import ReconcilableFeature
 from src.service.payloads.values.reconcilable_field import ReconcilableField
 
@@ -5,7 +7,7 @@ from src.service.payloads.values.reconcilable_field import ReconcilableField
 class TestReconcilableFeature:
     """Test ReconcilableFeature functionality."""
 
-    def test_reconcilable_feature_inheritance(self):
+    def test_reconcilable_feature_inheritance(self) -> None:
         """Test that ReconcilableFeature inherits from ReconcilableField."""
         value_node = {"type": "STRING", "value": "gender"}
         feature = ReconcilableFeature(value_node)

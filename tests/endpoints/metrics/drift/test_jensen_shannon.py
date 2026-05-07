@@ -1,7 +1,15 @@
+"""Tests for Jensen-Shannon drift detection endpoint."""
+
+from http import HTTPStatus
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.endpoints.metrics.drift.jensen_shannon import router
+from src.endpoints.metrics.drift.jensen_shannon import (
+    get_data_source,
+    get_prometheus_scheduler,
+    router,
+)
 
 from . import factory
 
@@ -117,7 +125,7 @@ class TestJensenShannonEndpoints:
             # Missing referenceTag
             "fitColumns": ["feature1"],
         },
-        expected_status_code=400,
+        expected_status_code=HTTPStatus.BAD_REQUEST,
         expected_error_substring="referenceTag is required",
     )
 
@@ -131,7 +139,7 @@ class TestJensenShannonEndpoints:
             "referenceTag": "baseline",
             # Missing fitColumns
         },
-        expected_status_code=400,
+        expected_status_code=HTTPStatus.BAD_REQUEST,
         expected_error_substring="fitColumns is required",
     )
 
@@ -145,7 +153,7 @@ class TestJensenShannonEndpoints:
             "referenceTag": "baseline",
             "fitColumns": ["nonexistent_feature"],
         },
-        expected_status_code=400,
+        expected_status_code=HTTPStatus.BAD_REQUEST,
         expected_error_substring="not found in data",
     )
 
@@ -156,7 +164,8 @@ class TestJensenShannonEndpoints:
         endpoint_path="/metrics/drift/jensenshannon/request",
         client=client,
         request_id="not-a-valid-uuid",
-        expected_status_code=400,  # Endpoint raises HTTPException with status_code=400 for invalid UUID
+        # Endpoint raises HTTPException with status_code=400 for invalid UUID
+        expected_status_code=HTTPStatus.BAD_REQUEST,
         expected_error_substring="Invalid request ID",
     )
 
@@ -170,13 +179,15 @@ class TestJensenShannonEndpoints:
     )
 
     # List endpoint with malformed requests (defensive logic test)
-    test_list_requests_filters_malformed = factory.make_list_requests_with_malformed_data_test(
-        metric_name="JensenShannon",
-        module_path="src.endpoints.metrics.drift.jensen_shannon",
-        endpoint_path="/metrics/drift/jensenshannon/requests",
-        client=client,
-        num_valid_requests=2,
-        num_malformed_requests=3,
+    test_list_requests_filters_malformed = (
+        factory.make_list_requests_with_malformed_data_test(
+            metric_name="JensenShannon",
+            module_path="src.endpoints.metrics.drift.jensen_shannon",
+            endpoint_path="/metrics/drift/jensenshannon/requests",
+            client=client,
+            num_valid_requests=2,
+            num_malformed_requests=3,
+        )
     )
 
     # Empty data tests
@@ -205,11 +216,13 @@ class TestJensenShannonEndpoints:
     )
 
     # List endpoint error tests
-    test_list_scheduler_unavailable = factory.make_list_endpoint_scheduler_unavailable_test(
-        metric_name="JensenShannon",
-        module_path="src.endpoints.metrics.drift.jensen_shannon",
-        endpoint_path="/metrics/drift/jensenshannon/requests",
-        client=client,
+    test_list_scheduler_unavailable = (
+        factory.make_list_endpoint_scheduler_unavailable_test(
+            metric_name="JensenShannon",
+            module_path="src.endpoints.metrics.drift.jensen_shannon",
+            endpoint_path="/metrics/drift/jensenshannon/requests",
+            client=client,
+        )
     )
 
     test_list_exception = factory.make_list_endpoint_exception_test(
@@ -246,7 +259,7 @@ class TestJensenShannonEndpoints:
             "referenceTag": "baseline",
             "fitColumns": ["feature1"],
         },
-        expected_status_code=500,  # TODO: Should be 503 Service Unavailable
+        expected_status_code=HTTPStatus.SERVICE_UNAVAILABLE,
         expected_error_substring="scheduler not available",
         mock_scheduler_none=True,
     )
@@ -261,7 +274,7 @@ class TestJensenShannonEndpoints:
             "referenceTag": "baseline",
             "fitColumns": ["feature1"],
         },
-        expected_status_code=500,
+        expected_status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
         expected_error_substring="Error scheduling metric",
         register_side_effect=Exception("Database connection failed"),
     )
@@ -272,7 +285,7 @@ class TestJensenShannonEndpoints:
         endpoint_path="/metrics/drift/jensenshannon/request",
         client=client,
         request_id="123e4567-e89b-12d3-a456-426614174000",
-        expected_status_code=500,  # TODO: Should be 503 Service Unavailable
+        expected_status_code=HTTPStatus.SERVICE_UNAVAILABLE,
         expected_error_substring="scheduler not available",
         mock_scheduler_none=True,
     )
@@ -283,7 +296,7 @@ class TestJensenShannonEndpoints:
         endpoint_path="/metrics/drift/jensenshannon/request",
         client=client,
         request_id="123e4567-e89b-12d3-a456-426614174000",
-        expected_status_code=500,
+        expected_status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
         expected_error_substring="Error deleting schedule",
         delete_side_effect=Exception("Database connection failed"),
     )
@@ -292,50 +305,64 @@ class TestJensenShannonEndpoints:
     # JensenShannonMetricRequest.retrieve_tags() Tests
     # ========================================================================
 
-    test_retrieve_tags_with_all_fields = factory.make_retrieve_tags_with_all_fields_test(
-        request_class=__import__(
-            "src.endpoints.metrics.drift.jensen_shannon", fromlist=["JensenShannonMetricRequest"]
-        ).JensenShannonMetricRequest,
-    )
-
-    test_retrieve_tags_without_reference_tag = factory.make_retrieve_tags_without_reference_tag_test(
-        request_class=__import__(
-            "src.endpoints.metrics.drift.jensen_shannon", fromlist=["JensenShannonMetricRequest"]
-        ).JensenShannonMetricRequest,
-    )
-
-    test_retrieve_tags_without_fit_columns = factory.make_retrieve_tags_without_fit_columns_test(
-        request_class=__import__(
-            "src.endpoints.metrics.drift.jensen_shannon", fromlist=["JensenShannonMetricRequest"]
-        ).JensenShannonMetricRequest,
-    )
-
-    test_retrieve_tags_with_empty_fit_columns = factory.make_retrieve_tags_with_empty_fit_columns_test(
-        request_class=__import__(
-            "src.endpoints.metrics.drift.jensen_shannon", fromlist=["JensenShannonMetricRequest"]
-        ).JensenShannonMetricRequest,
-    )
-
-    test_retrieve_default_tags_with_none_metric_name = factory.make_retrieve_default_tags_with_none_metric_name_test(
-        request_class=__import__(
-            "src.endpoints.metrics.drift.jensen_shannon", fromlist=["JensenShannonMetricRequest"]
-        ).JensenShannonMetricRequest,
-        expected_metric_name="JensenShannon",
-    )
-
-    test_retrieve_default_tags_called_directly_by_prometheus_publisher = (
-        factory.make_retrieve_default_tags_called_directly_by_prometheus_publisher_test(
+    test_retrieve_tags_with_all_fields = (
+        factory.make_retrieve_tags_with_all_fields_test(
             request_class=__import__(
-                "src.endpoints.metrics.drift.jensen_shannon", fromlist=["JensenShannonMetricRequest"]
+                "src.endpoints.metrics.drift.jensen_shannon",
+                fromlist=["JensenShannonMetricRequest"],
+            ).JensenShannonMetricRequest,
+        )
+    )
+
+    test_retrieve_tags_without_reference_tag = (
+        factory.make_retrieve_tags_without_reference_tag_test(
+            request_class=__import__(
+                "src.endpoints.metrics.drift.jensen_shannon",
+                fromlist=["JensenShannonMetricRequest"],
+            ).JensenShannonMetricRequest,
+        )
+    )
+
+    test_retrieve_tags_without_fit_columns = (
+        factory.make_retrieve_tags_without_fit_columns_test(
+            request_class=__import__(
+                "src.endpoints.metrics.drift.jensen_shannon",
+                fromlist=["JensenShannonMetricRequest"],
+            ).JensenShannonMetricRequest,
+        )
+    )
+
+    test_retrieve_tags_with_empty_fit_columns = (
+        factory.make_retrieve_tags_with_empty_fit_columns_test(
+            request_class=__import__(
+                "src.endpoints.metrics.drift.jensen_shannon",
+                fromlist=["JensenShannonMetricRequest"],
+            ).JensenShannonMetricRequest,
+        )
+    )
+
+    test_retrieve_default_tags_with_none_metric_name = (
+        factory.make_retrieve_default_tags_with_none_metric_name_test(
+            request_class=__import__(
+                "src.endpoints.metrics.drift.jensen_shannon",
+                fromlist=["JensenShannonMetricRequest"],
             ).JensenShannonMetricRequest,
             expected_metric_name="JensenShannon",
         )
     )
 
-    def test_helper_functions(self):
-        """Test that helper functions return the correct shared instances."""
-        from src.endpoints.metrics.drift.jensen_shannon import get_data_source, get_prometheus_scheduler
+    test_retrieve_default_tags_called_directly_by_prometheus_publisher = (
+        factory.make_retrieve_default_tags_called_directly_by_prometheus_publisher_test(
+            request_class=__import__(
+                "src.endpoints.metrics.drift.jensen_shannon",
+                fromlist=["JensenShannonMetricRequest"],
+            ).JensenShannonMetricRequest,
+            expected_metric_name="JensenShannon",
+        )
+    )
 
+    def test_helper_functions(self) -> None:
+        """Test that helper functions return the correct shared instances."""
         # These are thin wrappers around shared functions
         # Test that they return the correct instances
         data_source = get_data_source()

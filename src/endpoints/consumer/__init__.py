@@ -1,78 +1,98 @@
-from typing import Optional, Dict, List, Literal, Any
-from enum import Enum
-from pydantic import BaseModel, model_validator, ConfigDict
-import numpy as np
+"""Inference payload consumer endpoints."""
 
+from enum import StrEnum
+from typing import Any, Literal
+
+import numpy as np
+from pydantic import BaseModel, ConfigDict, model_validator
 
 PartialKind = Literal["request", "response"]
 
-class PartialPayloadId(BaseModel):
-    prediction_id: Optional[str] = None
-    kind: Optional[PartialKind] = None
 
-    def get_prediction_id(self) -> str:
+class PartialPayloadId(BaseModel):
+    """Identifier for partial inference payloads."""
+
+    prediction_id: str | None = None
+    kind: PartialKind | None = None
+
+    def get_prediction_id(self) -> str | None:
+        """Get prediction ID."""
         return self.prediction_id
 
-    def set_prediction_id(self, id: str):
-        self.prediction_id = id
+    def set_prediction_id(self, id_: str) -> None:
+        """Set prediction ID."""
+        self.prediction_id = id_
 
-    def get_kind(self) -> PartialKind:
+    def get_kind(self) -> PartialKind | None:
+        """Get payload kind (request or response)."""
         return self.kind
 
-    def set_kind(self, kind: PartialKind):
+    def set_kind(self, kind: PartialKind) -> None:
+        """Set payload kind (request or response)."""
         self.kind = kind
 
 
 class InferencePartialPayload(BaseModel):
-    partialPayloadId: Optional[PartialPayloadId] = None
-    metadata: Optional[Dict[str, str]] = {}
-    data: Optional[str] = None
-    modelid: Optional[str] = None
+    """Partial inference payload for KServe agent uploads."""
 
-    def get_id(self) -> str:
+    partialPayloadId: PartialPayloadId | None = None
+    metadata: dict[str, str] | None = {}
+    data: str | None = None
+    modelid: str | None = None
+
+    def get_id(self) -> str | None:
+        """Get prediction ID from partial payload."""
         return self.partialPayloadId.prediction_id if self.partialPayloadId else None
 
-    def set_id(self, id: str):
+    def set_id(self, id_: str) -> None:
+        """Set prediction ID on partial payload."""
         if not self.partialPayloadId:
             self.partialPayloadId = PartialPayloadId()
-        self.partialPayloadId.prediction_id = id
+        self.partialPayloadId.prediction_id = id_
 
-    def get_kind(self) -> PartialKind:
+    def get_kind(self) -> PartialKind | None:
+        """Get payload kind (request or response)."""
         return self.partialPayloadId.kind if self.partialPayloadId else None
 
-    def set_kind(self, kind: PartialKind):
+    def set_kind(self, kind: PartialKind) -> None:
+        """Set payload kind (request or response)."""
         if not self.partialPayloadId:
             self.partialPayloadId = PartialPayloadId()
         self.partialPayloadId.kind = kind
 
-    def get_model_id(self) -> str:
+    def get_model_id(self) -> str | None:
+        """Get model ID."""
         return self.modelid
 
-    def set_model_id(self, model_id: str):
+    def set_model_id(self, model_id: str) -> None:
+        """Set model ID."""
         self.modelid = model_id
 
 
-class KServeDataType(str, Enum):
-    BOOL  = "BOOL"
-    INT8  = "INT8"
+class KServeDataType(StrEnum):
+    """KServe inference protocol data types."""
+
+    BOOL = "BOOL"
+    INT8 = "INT8"
     INT16 = "INT16"
     INT32 = "INT32"
     INT64 = "INT64"
-    UINT8  = "UINT8"
+    UINT8 = "UINT8"
     UINT16 = "UINT16"
     UINT32 = "UINT32"
     UINT64 = "UINT64"
     FP16 = "FP16"
     FP32 = "FP32"
     FP64 = "FP64"
-    BYTES = "BYTES" 
+    BYTES = "BYTES"
+
 
 K_SERVE_NUMPY_DTYPES = {
-    KServeDataType.INT8:  np.int8,
+    KServeDataType.INT8: np.int8,
     KServeDataType.INT16: np.int16,
     KServeDataType.INT32: np.int32,
     KServeDataType.INT64: np.int64,
-    KServeDataType.UINT8:  np.uint8,
+    KServeDataType.UINT8: np.uint8,
     KServeDataType.UINT16: np.uint16,
     KServeDataType.UINT32: np.uint32,
     KServeDataType.UINT64: np.uint64,
@@ -81,15 +101,27 @@ K_SERVE_NUMPY_DTYPES = {
     KServeDataType.FP64: np.float64,
 }
 
+
+class InferParameter(BaseModel):
+    """KServe V2 inference parameter supporting bool, int, or string values."""
+
+    bool_param: bool | None = None
+    int_param: int | None = None
+    string_param: str | None = None
+
+
 class KServeData(BaseModel):
-    
+    """KServe tensor data with shape, type, and validation."""
+
     model_config = ConfigDict(use_enum_values=True)
 
     name: str
-    shape: List[int]
+    shape: list[int]
     datatype: KServeDataType
-    parameters: Optional[Dict[str, str]] = None
-    data: List[Any]
+    # KServe V2 spec: parameters should be dict[str, InferParameter]
+    # Also accept dict[str, str] for backward compatibility
+    parameters: dict[str, InferParameter | str] | None = None
+    data: list[Any]
 
     @model_validator(mode="after")
     def _validate_shape(self) -> "KServeData":
@@ -97,60 +129,71 @@ class KServeData(BaseModel):
         actual = tuple(raw.shape)
         declared = tuple(self.shape)
         if declared != actual:
+            msg = f"Declared shape {declared} does not match data shape {actual}"
             raise ValueError(
-                f"Declared shape {declared} does not match data shape {actual}"
+                msg,
             )
         return self
 
     @model_validator(mode="after")
     def validate_data_matches_type(self) -> "KServeData":
+        """Validate data values match declared datatype."""
         flat = np.array(self.data, dtype=object).flatten()
 
         if self.datatype == KServeDataType.BYTES:
             for v in flat:
                 if not isinstance(v, str):
-                    raise ValueError(
-                        f"All values must be JSON strings for datatype {self.datatype}; "
-                        f"found {type(v).__name__}: {v}"
+                    msg = f"All values must be JSON strings for datatype {self.datatype}; found {type(v).__name__}: {v}"
+                    raise TypeError(
+                        msg,
                     )
             return self
 
         if self.datatype == KServeDataType.BOOL:
             for v in flat:
                 if not (isinstance(v, (bool, int)) and v in (0, 1, True, False)):
+                    msg = f"All values must be bool or 0/1 for datatype {self.datatype}; found {v}"
                     raise ValueError(
-                        f"All values must be bool or 0/1 for datatype {self.datatype}; found {v}"
+                        msg,
                     )
             return self
 
         np_dtype = K_SERVE_NUMPY_DTYPES.get(self.datatype)
         if np_dtype is None:
-            raise ValueError(f"Unsupported datatype: {self.datatype}")
+            msg = f"Unsupported datatype: {self.datatype}"
+            raise ValueError(msg)
 
         if np.dtype(np_dtype).kind == "u":
             for v in flat:
                 if isinstance(v, (int, float)) and v < 0:
+                    msg = f"Negative value {v} not allowed for unsigned type {self.datatype}"
                     raise ValueError(
-                        f"Negative value {v} not allowed for unsigned type {self.datatype}"
+                        msg,
                     )
 
         try:
             np.array(flat, dtype=np_dtype)
         except (ValueError, TypeError) as e:
-            raise ValueError(f"Data cannot be cast to {self.datatype}: {e}")
+            msg = f"Data cannot be cast to {self.datatype}: {e}"
+            raise ValueError(msg) from e
 
         return self
 
+
 class KServeInferenceRequest(BaseModel):
-    id: Optional[str] = None
-    parameters: Optional[Dict[str, str]] = None
-    inputs: List[KServeData]
-    outputs: Optional[List[KServeData]] = None
+    """KServe V2 inference request."""
+
+    id: str | None = None
+    parameters: dict[str, str] | None = None
+    inputs: list[KServeData]
+    outputs: list[KServeData] | None = None
 
 
 class KServeInferenceResponse(BaseModel):
-    model_name: str = None
-    model_version: Optional[str] = None
-    id: Optional[str] = None
-    parameters: Optional[Dict[str, str]] = None
-    outputs: List[KServeData]
+    """KServe V2 inference response."""
+
+    model_name: str | None = None
+    model_version: str | None = None
+    id: str | None = None
+    parameters: dict[str, str] | None = None
+    outputs: list[KServeData]

@@ -1,9 +1,9 @@
 ### Use this to run the mariadb tests locally: `podman compose -f compose-local-maria.yaml up
 
 x-common-variables: &global-variables
-  MARIADB_ROOT_PASSWORD: root
+  MARIADB_ROOT_PASSWORD: root  # pragma: allowlist secret
   MARIADB_USER: trustyai
-  MARIADB_PASSWORD: trustyai
+  MARIADB_PASSWORD: trustyai  # pragma: allowlist secret
   MARIADB_DATABASE: trustyai-database
 
 services:

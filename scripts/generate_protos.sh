@@ -17,6 +17,8 @@ fi
 
 for PROTO_FILE in $PROTO_FILES; do
     echo "Compiling ${PROTO_FILE}..."
+    # Generated files are excluded from pyrefly via project-excludes in pyproject.toml
+    # protoc automatically adds # type: ignore for other type checkers
     protoc --python_out=. --proto_path=. "$PROTO_FILE"
 done
 

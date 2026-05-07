@@ -1,6 +1,5 @@
-"""
-Tests for ModelMesh payload reconciliation with MariaDB storage.
-"""
+"""Tests for ModelMesh payload reconciliation with MariaDB storage."""
+
 import asyncio
 import unittest
 import uuid
@@ -14,16 +13,19 @@ from tests.service.data.test_payload_reconciliation_pvc import TestPayloadReconc
 from tests.service.data.test_utils import ModelMeshTestData
 
 
+@pytest.mark.xdist_group("mariadb")
 class TestMariaPayloadReconciliation(TestPayloadReconciliation):
-    """
-    Test class for ModelMesh payload reconciliation.
-    """
+    """Test class for ModelMesh payload reconciliation."""
 
-    def setUp(self):
+    def setUp(self) -> None:
         """Set up the test environment."""
-
-        self.storage = MariaDBStorage(
-            "trustyai", "trustyai", "127.0.0.1", 3306, "trustyai-database", attempt_migration=False
+        self.storage = MariaDBStorage(  # type: ignore[assignment]
+            "trustyai",
+            "trustyai",
+            "127.0.0.1",
+            3306,
+            "trustyai-database",
+            attempt_migration=False,
         )
 
         self.model_name = "test-model"
@@ -32,25 +34,29 @@ class TestMariaPayloadReconciliation(TestPayloadReconciliation):
         input_specs = [("input", 5, 10, "INT32", 0, None)]
         output_specs = [("output", 5, 1, "INT32", 0)]
 
-        self.input_payload_dict, self.output_payload_dict, _, _ = ModelMeshTestData.generate_test_payloads(
-            self.model_name, input_specs, output_specs
+        self.input_payload_dict, self.output_payload_dict, _, _ = (
+            ModelMeshTestData.generate_test_payloads(
+                self.model_name,
+                input_specs,
+                output_specs,
+            )
         )
 
         self.input_payload = PartialPayload(**self.input_payload_dict)
         self.output_payload = PartialPayload(**self.output_payload_dict)
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         """Clean up after tests."""
-        asyncio.run(self.storage.reset_database())
+        asyncio.run(self.storage.reset_database())  # type: ignore[attr-defined]
 
     # Override void type tests - these only apply to PVC storage
     @unittest.skip("MAX_VOID_TYPE_LENGTH only applies to PVC storage, not MariaDB")
-    def test_void_type_length_exceeds_limit(self):
-        pass
+    def test_void_type_length_exceeds_limit(self) -> None:
+        """Skip void type length test as it only applies to PVC storage."""
 
     @unittest.skip("MAX_VOID_TYPE_LENGTH only applies to PVC storage, not MariaDB")
-    def test_void_type_length_within_limit(self):
-        pass
+    def test_void_type_length_within_limit(self) -> None:
+        """Skip void type length test as it only applies to PVC storage."""
 
 
 if __name__ == "__main__":

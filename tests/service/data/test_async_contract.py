@@ -1,7 +1,10 @@
-import inspect
-import importlib
-import pytest
+"""Tests for async storage interface contract."""
 
+import importlib
+import inspect
+from collections.abc import Callable, Iterator
+
+import pytest
 
 CLASSES = [
     ("src.service.data.storage.maria.maria", "MariaDBStorage"),
@@ -9,10 +12,15 @@ CLASSES = [
 ]
 
 SYNC_ALLOWED = {
-    "PVCStorage": {"allocate_valid_dataset_name", "get_lock"}, # no resource usage, non blocking
+    "PVCStorage": {
+        "allocate_valid_dataset_name",
+        "get_lock",
+    },  # no resource usage, non blocking
 }
 
-def public_methods(cls):
+
+def public_methods(cls: type) -> Iterator[tuple[str, Callable]]:
+    """Yield public methods from a class, excluding private and special methods."""
     for name, fn in inspect.getmembers(cls, predicate=inspect.isfunction):
         if name.startswith("_"):
             continue
@@ -20,8 +28,13 @@ def public_methods(cls):
             continue
         yield name, fn
 
-@pytest.mark.parametrize("module_path,class_name", CLASSES)
-def test_storage_methods_are_async(module_path, class_name):
+
+@pytest.mark.parametrize(("module_path", "class_name"), CLASSES)
+def test_storage_methods_are_async(module_path: str, class_name: str) -> None:
+    """Verify all public storage methods are async.
+
+    Checks that only explicitly allowed sync methods are synchronous.
+    """
     mod = importlib.import_module(module_path)
     cls = getattr(mod, class_name)
     allowed = SYNC_ALLOWED.get(class_name, set())

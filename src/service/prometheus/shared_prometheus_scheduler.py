@@ -1,21 +1,36 @@
-"""
-Shared PrometheusScheduler singleton to ensure endpoints and background scheduler use the same instance.
-"""
+"""Shared PrometheusScheduler singleton for endpoints and background scheduler."""
 
 from src.service.prometheus.prometheus_scheduler import PrometheusScheduler
 
-# Global shared PrometheusScheduler instance
-_shared_prometheus_scheduler = None
+
+class SharedPrometheusScheduler:
+    """Singleton holder for shared PrometheusScheduler instance."""
+
+    _instance: PrometheusScheduler | None = None
+
+    @classmethod
+    def get(cls) -> PrometheusScheduler:
+        """Get the shared PrometheusScheduler instance used by both endpoints and background scheduler.
+
+        Returns:
+            The singleton PrometheusScheduler instance
+
+        """
+        if cls._instance is None:
+            cls._instance = PrometheusScheduler()
+        return cls._instance
+
+    @classmethod
+    def reset(cls) -> None:
+        """Reset singleton instance (useful for testing)."""
+        cls._instance = None
 
 
 def get_shared_prometheus_scheduler() -> PrometheusScheduler:
-    """
-    Get the shared PrometheusScheduler instance used by both endpoints and background scheduler.
+    """Get the shared PrometheusScheduler instance used by both endpoints and background scheduler.
 
     Returns:
         The singleton PrometheusScheduler instance
+
     """
-    global _shared_prometheus_scheduler
-    if _shared_prometheus_scheduler is None:
-        _shared_prometheus_scheduler = PrometheusScheduler()
-    return _shared_prometheus_scheduler
+    return SharedPrometheusScheduler.get()

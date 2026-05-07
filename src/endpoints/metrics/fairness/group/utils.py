@@ -1,18 +1,26 @@
+"""Utility functions and models for group fairness metric endpoints."""
+
 import logging
 from typing import Any
 
 import numpy as np
 import pandas as pd
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
+from src.service.data.datasources.data_source import DataSource
 from src.service.data.shared_data_source import get_shared_data_source
 from src.service.payloads.metrics.base_metric_request import BaseMetricRequest
-from src.service.prometheus.shared_prometheus_scheduler import get_shared_prometheus_scheduler
+from src.service.prometheus.prometheus_scheduler import PrometheusScheduler
+from src.service.prometheus.shared_prometheus_scheduler import (
+    get_shared_prometheus_scheduler,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class ReconcilableFeature(BaseModel):
+    """Reconcilable feature value representation for fairness metrics."""
+
     rawValueNodes: list[dict[str, Any]] | None = None
     rawValueNode: dict[str, Any] | None = None
     reconciledType: list[dict[str, Any]] | None = None
@@ -20,6 +28,8 @@ class ReconcilableFeature(BaseModel):
 
 
 class ReconcilableOutput(BaseModel):
+    """Reconcilable output value representation for fairness metrics."""
+
     rawValueNodes: list[dict[str, Any]] | None = None
     rawValueNode: dict[str, Any] | None = None
     reconciledType: list[dict[str, Any]] | None = None
@@ -27,18 +37,28 @@ class ReconcilableOutput(BaseModel):
 
 
 class GroupMetricRequest(BaseMetricRequest):
+    """Request parameters for group fairness metric computation."""
+
     # Use field aliases to accept camelCase from API while keeping snake_case internally
     model_id: str = Field(alias="modelId")
-    metric_name: str | None = Field(default=None, alias="metricName")  # Will be set by endpoint
+    metric_name: str | None = Field(
+        default=None, alias="metricName"
+    )  # Will be set by endpoint
     request_name: str | None = Field(default=None, alias="requestName")
     batch_size: int | None = Field(default=100, alias="batchSize")
 
     # SPD-specific fields
     protected_attribute: str = Field(alias="protectedAttribute")
     outcome_name: str = Field(alias="outcomeName")
-    privileged_attribute: ReconcilableFeature | int | float | str = Field(alias="privilegedAttribute")
-    unprivileged_attribute: ReconcilableFeature | int | float | str = Field(alias="unprivilegedAttribute")
-    favorable_outcome: ReconcilableOutput | int | float | str = Field(alias="favorableOutcome")
+    privileged_attribute: ReconcilableFeature | int | float | str = Field(
+        alias="privilegedAttribute"
+    )
+    unprivileged_attribute: ReconcilableFeature | int | float | str = Field(
+        alias="unprivilegedAttribute"
+    )
+    favorable_outcome: ReconcilableOutput | int | float | str = Field(
+        alias="favorableOutcome"
+    )
     threshold_delta: float | None = Field(default=None, alias="thresholdDelta")
 
     def retrieve_tags(self) -> dict[str, str]:
@@ -50,63 +70,96 @@ class GroupMetricRequest(BaseMetricRequest):
 
 
 class GroupDefinitionRequest(BaseModel):
-    modelId: str
-    requestName: str | None = None
-    metricName: str | None = None
-    batchSize: int | None = 100
-    protectedAttribute: str
-    outcomeName: str
-    privilegedAttribute: ReconcilableFeature | int | float | str
-    unprivilegedAttribute: ReconcilableFeature | int | float | str
-    favorableOutcome: ReconcilableOutput | int | float | str
-    thresholdDelta: float | None = None
-    metricValue: dict[str, Any]
+    """Request payload for defining fairness groups with camelCase fields."""
 
-    # Additional snake_case properties for metrics processing
-    @property
-    def protected_attribute(self) -> str:
-        return self.protectedAttribute
+    model_config = ConfigDict(populate_by_name=True)
 
-    @property
-    def outcome_name(self) -> str:
-        return self.outcomeName
-
-    @property
-    def privileged_attribute(self) -> ReconcilableFeature | int | float | str:
-        return self.privilegedAttribute
-
-    @property
-    def unprivileged_attribute(self) -> ReconcilableFeature | int | float | str:
-        return self.unprivilegedAttribute
-
-    @property
-    def favorable_outcome(self) -> ReconcilableOutput | int | float | str:
-        return self.favorableOutcome
-
-    @property
-    def threshold_delta(self) -> float | None:
-        return self.thresholdDelta
+    model_id: str = Field(alias="modelId")
+    request_name: str | None = Field(default=None, alias="requestName")
+    metric_name: str | None = Field(default=None, alias="metricName")
+    batch_size: int | None = Field(default=100, alias="batchSize")
+    protected_attribute: str = Field(alias="protectedAttribute")
+    outcome_name: str = Field(alias="outcomeName")
+    privileged_attribute: ReconcilableFeature | int | float | str = Field(
+        alias="privilegedAttribute"
+    )
+    unprivileged_attribute: ReconcilableFeature | int | float | str = Field(
+        alias="unprivilegedAttribute"
+    )
+    favorable_outcome: ReconcilableOutput | int | float | str = Field(
+        alias="favorableOutcome"
+    )
+    threshold_delta: float | None = Field(default=None, alias="thresholdDelta")
+    metric_value: dict[str, Any] = Field(alias="metricValue")
 
 
 class ScheduleId(BaseModel):
+    """Identifier for a scheduled metric computation request."""
+
     requestId: str
 
 
-def get_prometheus_scheduler():
+def get_prometheus_scheduler() -> PrometheusScheduler:
     """Get the shared prometheus scheduler instance."""
     return get_shared_prometheus_scheduler()
 
 
-def get_data_source():
+def get_data_source() -> DataSource:
     """Get the shared data source instance."""
     return get_shared_data_source()
+
+
+def _extract_values(
+    value: ReconcilableFeature | ReconcilableOutput | float | str | list[Any] | None,
+) -> list[Any]:
+    """Extract raw values from Reconcilable* objects or primitives.
+
+    Handles multiple value representations:
+    - reconciledType (list of dicts with "value" key)
+    - rawValueNodes (list of dicts with "value" key)
+    - rawValueNode (single dict with "value" key)
+    - Primitives (int, float, str)
+    - Lists of primitives
+
+    Args:
+        value: Value to extract from (Reconcilable object, primitive, or list)
+
+    Returns:
+        List of extracted primitive values
+
+    """
+    if value is None:
+        return []
+
+    # Handle reconciledType (already processed values)
+    if hasattr(value, "reconciledType") and value.reconciledType is not None:
+        return [item["value"] for item in value.reconciledType if "value" in item]
+
+    # Handle rawValueNodes (list of raw value nodes)
+    if hasattr(value, "rawValueNodes") and value.rawValueNodes is not None:
+        return [node["value"] for node in value.rawValueNodes if "value" in node]
+
+    # Handle rawValueNode (single raw value node)
+    if (
+        hasattr(value, "rawValueNode")
+        and value.rawValueNode is not None
+        and "value" in value.rawValueNode
+    ):
+        return [value.rawValueNode["value"]]
+
+    # Reject Reconcilable* objects that had no usable values
+    if isinstance(value, (ReconcilableFeature, ReconcilableOutput)):
+        # All known value-bearing attributes were None/empty
+        return []
+
+    # Handle primitives and lists
+    return value if isinstance(value, list) else [value]
 
 
 def prepare_fairness_data(
     dataframe: pd.DataFrame, request: GroupMetricRequest
 ) -> tuple[pd.DataFrame, pd.DataFrame, str, np.ndarray]:
-    """
-    Prepare data for fairness metric calculation by filtering into privileged and unprivileged groups.
+    """Prepare data for fairness metric calculation by filtering into privileged and unprivileged groups.
 
     This function separates the input dataframe into two demographic groups based on a protected attribute
     (e.g., gender, race, age) to measure fairness in terms of how often each group receives a favorable outcome.
@@ -136,36 +189,35 @@ def prepare_fairness_data(
 
         The fairness metrics (SPD/DIR) then compare:
             P(loan_decision in favorable_values | gender='female') vs P(loan_decision in favorable_values | gender='male')
+
     """
-    # Extract attribute names
-    protected_attr = (
-        request.protectedAttribute if hasattr(request, "protectedAttribute") else request.protected_attribute
-    )
-    outcome_name = request.outcomeName if hasattr(request, "outcomeName") else request.outcome_name
+    # Extract attribute names (both request types now expose snake_case attributes)
+    protected_attr = request.protected_attribute
+    outcome_name = request.outcome_name
 
     # Extract privileged/unprivileged group values from request
-    if hasattr(request, "privilegedAttribute") and hasattr(request.privilegedAttribute, "reconciledType"):
-        privileged_values = [
-            item.get("value") for item in request.privilegedAttribute.reconciledType if "value" in item
-        ]
-    else:
-        privileged_attr = getattr(request, "privilegedAttribute", getattr(request, "privileged_attribute", None))
-        privileged_values = [privileged_attr] if not isinstance(privileged_attr, list) else privileged_attr
-
-    if hasattr(request, "unprivilegedAttribute") and hasattr(request.unprivilegedAttribute, "reconciledType"):
-        unprivileged_values = [
-            item.get("value") for item in request.unprivilegedAttribute.reconciledType if "value" in item
-        ]
-    else:
-        unprivileged_attr = getattr(request, "unprivilegedAttribute", getattr(request, "unprivileged_attribute", None))
-        unprivileged_values = [unprivileged_attr] if not isinstance(unprivileged_attr, list) else unprivileged_attr
+    privileged_values = _extract_values(request.privileged_attribute)
+    unprivileged_values = _extract_values(request.unprivileged_attribute)
 
     # Extract favorable outcome values from request
-    if hasattr(request, "favorableOutcome") and hasattr(request.favorableOutcome, "reconciledType"):
-        favorable_values = [item.get("value") for item in request.favorableOutcome.reconciledType if "value" in item]
-    else:
-        favorable_attr = getattr(request, "favorableOutcome", getattr(request, "favorable_outcome", None))
-        favorable_values = [favorable_attr] if not isinstance(favorable_attr, list) else favorable_attr
+    favorable_values = _extract_values(request.favorable_outcome)
+
+    # Validate extracted values are non-empty and scalar-compatible
+    if not privileged_values or any(
+        isinstance(v, (BaseModel, dict, list)) for v in privileged_values
+    ):
+        msg = "privilegedAttribute must contain at least one scalar value"
+        raise ValueError(msg)
+    if not unprivileged_values or any(
+        isinstance(v, (BaseModel, dict, list)) for v in unprivileged_values
+    ):
+        msg = "unprivilegedAttribute must contain at least one scalar value"
+        raise ValueError(msg)
+    if not favorable_values or any(
+        isinstance(v, (BaseModel, dict, list)) for v in favorable_values
+    ):
+        msg = "favorableOutcome must contain at least one scalar value"
+        raise ValueError(msg)
 
     # Filter the dataframe into privileged and unprivileged groups
     privileged_mask = dataframe[protected_attr].isin(privileged_values)

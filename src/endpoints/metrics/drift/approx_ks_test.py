@@ -1,52 +1,59 @@
-from fastapi import APIRouter, HTTPException, BackgroundTasks
-from pydantic import BaseModel
-from typing import Dict, List, Optional, Any
+"""Approximate Kolmogorov-Smirnov test endpoint for drift detection."""
+
 import logging
-import uuid
+from http import HTTPStatus
+from typing import Any, Never
+
+from fastapi import APIRouter, BackgroundTasks, HTTPException
+from pydantic import BaseModel
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
 class ScheduleId(BaseModel):
+    """Identifier for a scheduled metric computation request."""
+
     requestId: str
 
 
 # ApproxKSTest
 class GKSketch(BaseModel):
+    """Greenwald-Khanna sketch parameters for approximate quantile estimation."""
+
     epsilon: float
-    summary: List[Dict[str, Any]] = []
+    summary: list[dict[str, Any]] = []
     xmin: float
     xmax: float
     numx: int
 
 
 class ApproxKSTestMetricRequest(BaseModel):
+    """Request parameters for approximate Kolmogorov-Smirnov test metric computation."""
+
     modelId: str
-    requestName: Optional[str] = None
-    metricName: Optional[str] = None
-    batchSize: Optional[int] = 100
-    thresholdDelta: Optional[float] = None
-    referenceTag: Optional[str] = None
-    fitColumns: List[str] = []
-    epsilon: Optional[float] = None
-    sketchFitting: Optional[Dict[str, GKSketch]] = None
+    requestName: str | None = None
+    metricName: str | None = None
+    batchSize: int | None = 100
+    thresholdDelta: float | None = None
+    referenceTag: str | None = None
+    fitColumns: list[str] = []
+    epsilon: float | None = None
+    sketchFitting: dict[str, GKSketch] | None = None
 
 
-@router.post("/metrics/drift/approxkstest")
-async def compute_approxkstest(request: ApproxKSTestMetricRequest):
+@router.post("/metrics/drift/approxkstest", response_model=None)
+async def compute_approxkstest(request: ApproxKSTestMetricRequest) -> Never:
     """Compute the current value of ApproxKSTest metric."""
-    try:
-        logger.info(f"Computing ApproxKSTest for model: {request.modelId}")
-        # TODO: Implement
-        return {"status": "success", "value": 0.5}
-    except Exception as e:
-        logger.error(f"Error computing ApproxKSTest: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error computing metric: {str(e)}")
+    logger.info("Computing ApproxKSTest for model: %s", request.modelId)
+    raise HTTPException(
+        status_code=HTTPStatus.NOT_IMPLEMENTED,
+        detail="ApproxKSTest metric computation is not yet implemented",
+    )
 
 
 @router.get("/metrics/drift/approxkstest/definition")
-async def get_approxkstest_definition():
+async def get_approxkstest_definition() -> dict[str, str]:
     """Provide a general definition of ApproxKSTest metric."""
     return {
         "name": "Approximate Kolmogorov-Smirnov Test",
@@ -54,25 +61,32 @@ async def get_approxkstest_definition():
     }
 
 
-@router.post("/metrics/drift/approxkstest/request")
-async def schedule_approxkstest(request: ApproxKSTestMetricRequest, background_tasks: BackgroundTasks):
+@router.post("/metrics/drift/approxkstest/request", response_model=None)
+async def schedule_approxkstest(
+    _request: ApproxKSTestMetricRequest, _background_tasks: BackgroundTasks
+) -> Never:
     """Schedule a recurring computation of ApproxKSTest metric."""
-    request_id = str(uuid.uuid4())
-    logger.info(f"Scheduling ApproxKSTest computation with ID: {request_id}")
-    # TODO: Implement
-    return {"requestId": request_id}
+    logger.info("Scheduling ApproxKSTest computation")
+    raise HTTPException(
+        status_code=HTTPStatus.NOT_IMPLEMENTED,
+        detail="ApproxKSTest metric scheduling is not yet implemented",
+    )
 
 
-@router.delete("/metrics/drift/approxkstest/request")
-async def delete_approxkstest_schedule(schedule: ScheduleId):
+@router.delete("/metrics/drift/approxkstest/request", response_model=None)
+async def delete_approxkstest_schedule(schedule: ScheduleId) -> Never:
     """Delete a recurring computation of ApproxKSTest metric."""
-    logger.info(f"Deleting ApproxKSTest schedule: {schedule.requestId}")
-    # TODO: Implement
-    return {"status": "success", "message": f"Schedule {schedule.requestId} deleted"}
+    logger.info("Deleting ApproxKSTest schedule: %s", schedule.requestId)
+    raise HTTPException(
+        status_code=HTTPStatus.NOT_IMPLEMENTED,
+        detail="ApproxKSTest metric schedule deletion is not yet implemented",
+    )
 
 
-@router.get("/metrics/drift/approxkstest/requests")
-async def list_approxkstest_requests():
+@router.get("/metrics/drift/approxkstest/requests", response_model=None)
+async def list_approxkstest_requests() -> Never:
     """List the currently scheduled computations of ApproxKSTest metric."""
-    # TODO: Implement
-    return {"requests": []}
+    raise HTTPException(
+        status_code=HTTPStatus.NOT_IMPLEMENTED,
+        detail="ApproxKSTest metric schedule listing is not yet implemented",
+    )

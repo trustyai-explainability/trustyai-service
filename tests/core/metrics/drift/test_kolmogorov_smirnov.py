@@ -1,3 +1,5 @@
+"""Tests for Kolmogorov-Smirnov drift detection metric."""
+
 import numpy as np
 import pytest
 from scipy.stats import ks_2samp
@@ -38,9 +40,8 @@ class TestKSTestUnified:
         params={"alpha": 0.05},
     )
 
-    def test_kstest_matches_scipy_for_fixed_example(self):
+    def test_kstest_matches_scipy_for_fixed_example(self) -> None:
         """Deterministic regression test comparing to scipy.stats.ks_2samp."""
-
         reference = np.array([0.1, 0.2, 0.2, 0.5, 0.9])
         current = np.array([0.05, 0.25, 0.3, 0.55, 0.95])
 

@@ -1,21 +1,33 @@
 # endpoints/consumer.py
+"""Consumer endpoint for handling KServe inference requests and cloud events."""
+
 import asyncio
+import logging
 import time
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime
+from http import HTTPStatus
+from typing import Annotated, Never
 
 import numpy as np
-from fastapi import APIRouter, HTTPException, Header
-from typing import Union, Callable, Annotated
-import logging
+from fastapi import APIRouter, Header, HTTPException
+from numpy import ndarray
 
-from src.endpoints.consumer import InferencePartialPayload, KServeData, KServeInferenceRequest, KServeInferenceResponse
+from src.endpoints.consumer import (
+    InferencePartialPayload,
+    KServeData,
+    KServeInferenceRequest,
+    KServeInferenceResponse,
+)
 from src.exceptions import ReconciliationError
+from src.service.data.datasources.data_source import DataSource
+
 # Import local dependencies
 from src.service.data.model_data import ModelData
-from src.service.data.storage import get_global_storage_interface
-from src.service.utils import list_utils
 from src.service.data.modelmesh_parser import ModelMeshPayloadParser, PartialPayload
 from src.service.data.shared_data_source import get_shared_data_source
+from src.service.data.storage import get_global_storage_interface
+from src.service.utils import list_utils
 
 # Define constants locally to avoid import issues
 INPUT_SUFFIX = "_inputs"
@@ -32,17 +44,30 @@ unreconciled_inputs = {}
 unreconciled_outputs = {}
 
 
-def get_data_source():
+def get_data_source() -> DataSource:
     """Get the shared data source instance."""
     return get_shared_data_source()
+
+
+def _validate_payload_type(payload: object, expected_type: type) -> None:
+    """Validate payload type from storage.
+
+    :param payload: The payload to validate
+    :param expected_type: Expected type class
+    :raises HTTPException: If payload type doesn't match expected
+    """
+    if not isinstance(payload, expected_type):
+        raise HTTPException(
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+            detail="Invalid payload type from storage",
+        )
 
 
 @router.post("/consumer/kserve/v2")
 async def consume_inference_payload(
     payload: InferencePartialPayload,
-):
-    """
-    Process a KServe v2 payload.
+) -> dict[str, str]:
+    """Process a KServe v2 payload.
 
     This endpoint accepts both input (request) and output (response) payloads from ModelMesh-served models
     and stores them for reconciliation. When both input and output payloads for the same ID are available,
@@ -53,42 +78,68 @@ async def consume_inference_payload(
 
     Returns:
         A JSON response indicating success or failure
+
     """
     storage_interface = get_global_storage_interface()
 
+    # Validate payload fields before entering try block
+    if not payload.modelid:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail="Payload requires 'modelid' field",
+        )
+
+    payload_id = payload.get_id()
+    payload_kind = payload.get_kind()
+    model_id = payload.get_model_id()
+
+    if not payload_id:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST, detail="Payload requires 'id' field"
+        )
+
+    if not model_id:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail="Payload requires 'modelid' field",
+        )
+
+    if not payload_kind:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail="Payload must specify 'kind' as either 'request' or 'response'",
+        )
+
+    if payload_kind not in ("request", "response"):
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail=f"Unsupported payload kind={payload_kind}",
+        )
+
+    if not payload.data:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail="Payload requires 'data' field containing base64-encoded data",
+        )
+
     try:
-        if not payload.modelid:
-            raise HTTPException(status_code=400, detail="Payload requires 'modelid' field")
-
-        payload_id = payload.get_id()
-        payload_kind = payload.get_kind()
-        model_id = payload.get_model_id()
-
-        if not payload_id:
-            raise HTTPException(status_code=400, detail="Payload requires 'id' field")
-
-        if not payload_kind:
-            raise HTTPException(
-                status_code=400,
-                detail="Payload must specify 'kind' as either 'request' or 'response'",
-            )
-
-        if not payload.data:
-            raise HTTPException(
-                status_code=400,
-                detail="Payload requires 'data' field containing base64-encoded data",
-            )
-
         partial_payload = PartialPayload(data=payload.data)
         if payload_kind == "request":
-            logger.info(f"Received partial input payload from model={model_id}, id={payload_id}")
+            logger.info(
+                "Received partial input payload from model=%s, id=%s",
+                model_id,
+                payload_id,
+            )
 
             try:
                 ModelMeshPayloadParser.parse_input_payload(partial_payload)
                 is_input = True
-            except Exception as e:
-                logger.error(f"Invalid input payload: {str(e)}")
-                raise HTTPException(status_code=400, detail=f"Invalid input payload: {str(e)}") from e
+            except ValueError as e:
+                logger.exception("Invalid input payload")
+                raise HTTPException(
+                    status_code=HTTPStatus.BAD_REQUEST,
+                    detail=f"Invalid input payload: {e!s}",
+                ) from e
 
             # Store the input payload
             await storage_interface.persist_partial_payload(
@@ -100,17 +151,27 @@ async def consume_inference_payload(
             )
 
             if output_payload:
-                await reconcile_modelmesh_payloads(partial_payload, output_payload, payload_id, model_id)
+                _validate_payload_type(output_payload, PartialPayload)
+                await reconcile_modelmesh_payloads(
+                    partial_payload, output_payload, payload_id, model_id
+                )
 
         elif payload_kind == "response":
-            logger.info(f"Received partial output payload from model={model_id}, id={payload_id}")
+            logger.info(
+                "Received partial output payload from model=%s, id=%s",
+                model_id,
+                payload_id,
+            )
 
             try:
                 ModelMeshPayloadParser.parse_output_payload(partial_payload)
                 is_input = False
-            except Exception as e:
-                logger.error(f"Invalid output payload: {str(e)}")
-                raise HTTPException(status_code=400, detail=f"Invalid output payload: {str(e)}") from e
+            except ValueError as e:
+                logger.exception("Invalid output payload")
+                raise HTTPException(
+                    status_code=HTTPStatus.BAD_REQUEST,
+                    detail=f"Invalid output payload: {e!s}",
+                ) from e
 
             # Store the output payload
             await storage_interface.persist_partial_payload(
@@ -123,30 +184,50 @@ async def consume_inference_payload(
 
             if input_payload:
                 # We have both input and output. Reconcile them
-                await reconcile_modelmesh_payloads(input_payload, partial_payload, payload_id, model_id)
-        else:
-            raise HTTPException(status_code=400, detail=f"Unsupported payload kind={payload_kind}")
-
+                _validate_payload_type(input_payload, PartialPayload)
+                await reconcile_modelmesh_payloads(
+                    input_payload, partial_payload, payload_id, model_id
+                )
+    except HTTPException:
+        # HTTPException always goes through
+        raise
+    except (
+        Exception
+    ) as e:  # Broad catch intentional: endpoint catch-all for unknown processing errors
+        logger.exception("Error processing payload")
+        raise HTTPException(
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+            detail="An internal error occurred while processing the payload",
+        ) from e
+    else:
         return {
             "status": "success",
             "message": f"Payload for {payload_id} processed successfully",
         }
 
-    except HTTPException:
-        # HTTPException always goes through
-        raise
-    except Exception as e:
-        logger.error(f"Error processing payload: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error processing payload: {str(e)}") from e
-
 
 async def write_reconciled_data(
-        input_array, input_names,
-        output_array, output_names,
-        model_id, tags, id_):
+    input_array: ndarray[tuple[int, int]] | ndarray,
+    input_names: list[str],
+    output_array: ndarray[tuple[int, int]] | ndarray,
+    output_names: list[str],
+    model_id: str,
+    tags: list[str],
+    id_: str,
+) -> None:
+    """Write reconciled input/output data and metadata to storage.
+
+    :param input_array: NumPy array of input data
+    :param input_names: List of input column names
+    :param output_array: NumPy array of output data
+    :param output_names: List of output column names
+    :param model_id: Model identifier
+    :param tags: List of tags to associate with the data
+    :param id_: Request ID for this inference
+    """
     storage_interface = get_global_storage_interface()
 
-    iso_time = datetime.now(timezone.utc).isoformat()
+    iso_time = datetime.now(UTC).isoformat()
     unix_timestamp = time.time()
     metadata = np.array(
         [[None, iso_time, unix_timestamp, tags]] * len(input_array), dtype="O"
@@ -166,34 +247,46 @@ async def write_reconciled_data(
 
     shapes = await ModelData(model_id).shapes()
     logger.info(
-        f"Successfully reconciled inference {id_}, "
-        f"consisting of {len(input_array):,} rows from {model_id}."
+        "Successfully reconciled inference %s, consisting of %s rows from %s.",
+        id_,
+        f"{len(input_array):,}",
+        model_id,
     )
     logger.debug(
-        f"Current storage shapes for {model_id}: "
-        f"Inputs={shapes[0]}, "
-        f"Outputs={shapes[1]}, "
-        f"Metadata={shapes[2]}"
+        "Current storage shapes for %s: Inputs=%s, Outputs=%s, Metadata=%s",
+        model_id,
+        shapes[0],
+        shapes[1],
+        shapes[2],
     )
 
     # Add model to known models set so it can be discovered by the scheduler
     data_source = get_data_source()
     await data_source.add_model_to_known(model_id)
     known_models = await data_source.get_known_models()
-    logger.info(f"Added model {model_id} to known models set. Current known models: {list(known_models)}")
-    logger.debug(f"DataSource instance id: {id(data_source)}")
+    logger.info(
+        "Added model %s to known models set. Current known models: %s",
+        model_id,
+        list(known_models),
+    )
+    logger.debug("DataSource instance id: %s", id(data_source))
 
     # Mark that inference data has been recorded for this model
     try:
         metadata = await data_source.get_metadata(model_id)
-        metadata.set_recorded_inferences(True)
-        logger.info(f"Marked model {model_id} as having recorded inferences")
-    except Exception as e:
-        logger.warning(f"Could not update recorded_inferences flag for model {model_id}: {e}")
+        metadata.set_recorded_inferences(recorded_inferences=True)
+    except (
+        Exception
+    ) as e:  # Intentional: metadata update is non-critical; continue on failure
+        logger.warning(
+            "Could not update recorded_inferences flag for model %s: %s", model_id, e
+        )
+    else:
+        logger.info("Marked model %s as having recorded inferences", model_id)
 
     # Clean up
-    await storage_interface.delete_partial_payload(id_, True)
-    await storage_interface.delete_partial_payload(id_, False)
+    await storage_interface.delete_partial_payload(id_, is_input=True)
+    await storage_interface.delete_partial_payload(id_, is_input=False)
 
 
 async def reconcile_modelmesh_payloads(
@@ -201,12 +294,16 @@ async def reconcile_modelmesh_payloads(
     output_payload: PartialPayload,
     request_id: str,
     model_id: str,
-):
+) -> None:
     """Reconcile the input and output ModelMesh payloads into dataset entries."""
-    df = ModelMeshPayloadParser.payloads_to_dataframe(input_payload, output_payload, request_id, model_id)
+    df = ModelMeshPayloadParser.payloads_to_dataframe(
+        input_payload, output_payload, request_id, model_id
+    )
 
     input_cols = [
-        col for col in df.columns if not col.startswith("output_") and col not in ["id", "model_id", "synthetic"]
+        col
+        for col in df.columns
+        if not col.startswith("output_") and col not in ["id", "model_id", "synthetic"]
     ]
     output_cols = [col for col in df.columns if col.startswith("output_")]
 
@@ -214,14 +311,27 @@ async def reconcile_modelmesh_payloads(
     tags = [SYNTHETIC_TAG] if any(df["synthetic"]) else [UNLABELED_TAG]
 
     await write_reconciled_data(
-        df[input_cols].values, input_cols,
-        df[output_cols].values, output_cols,
-        model_id=model_id, tags=tags, id_=request_id
+        df[input_cols].values,
+        input_cols,
+        df[output_cols].values,
+        output_cols,
+        model_id=model_id,
+        tags=tags,
+        id_=request_id,
     )
 
 
 async def reconcile_kserve(
-        input_payload: KServeInferenceRequest, output_payload: KServeInferenceResponse, tag: str):
+    input_payload: KServeInferenceRequest,
+    output_payload: KServeInferenceResponse,
+    tag: str | None,
+) -> None:
+    """Reconcile KServe v2 request and response payloads into storage.
+
+    :param input_payload: KServe inference request containing inputs
+    :param output_payload: KServe inference response containing outputs
+    :param tag: Optional tag to associate with the data
+    """
     input_array, input_names = process_payload(input_payload, lambda p: p.inputs)
     output_array, output_names = process_payload(
         output_payload, lambda p: p.outputs, input_array.shape[0]
@@ -229,20 +339,35 @@ async def reconcile_kserve(
 
     if tag is not None:
         tags = [tag]
-    elif (input_payload.parameters is not None and
-          input_payload.parameters.get(BIAS_IGNORE_PARAM, "false") == "true"):
+    elif (
+        input_payload.parameters is not None
+        and input_payload.parameters.get(BIAS_IGNORE_PARAM, "false") == "true"
+    ):
         tags = [SYNTHETIC_TAG]
     else:
         tags = [UNLABELED_TAG]
 
     await write_reconciled_data(
-        input_array, input_names,
-        output_array, output_names,
-        model_id=output_payload.model_name, tags=tags, id_=input_payload.id
+        input_array,
+        input_names,
+        output_array,
+        output_names,
+        model_id=output_payload.model_name,
+        tags=tags,
+        id_=input_payload.id,
     )
 
 
-def reconcile_mismatching_shape_error(shape_tuples, payload_type, payload_id):
+def reconcile_mismatching_shape_error(
+    shape_tuples: list[tuple[str, list[int]]], payload_type: str, payload_id: str
+) -> Never:
+    """Raise ReconciliationError for mismatched tensor shapes.
+
+    :param shape_tuples: List of (name, shape) tuples for tensors
+    :param payload_type: Type of payload ('input' or 'output')
+    :param payload_id: ID of the payload being reconciled
+    :raises ReconciliationError: Always raises with detailed shape information
+    """
     msg = (
         f"Could not reconcile KServe Inference {payload_id}, because {payload_type} shapes were mismatched. "
         f"When using multiple {payload_type}s to describe data columns, all shapes must match. "
@@ -250,22 +375,43 @@ def reconcile_mismatching_shape_error(shape_tuples, payload_type, payload_id):
     )
     for i, (name, shape) in enumerate(shape_tuples):
         msg += f"\n{i}:\t{name}:\t{shape}"
-    logger.error(msg)
     raise ReconciliationError(msg, payload_id=payload_id)
 
 
-def reconcile_mismatching_row_count_error(payload_id, input_shape, output_shape):
+def reconcile_mismatching_row_count_error(
+    payload_id: str, input_shape: int, output_shape: int
+) -> Never:
+    """Raise ReconciliationError for mismatched input/output row counts.
+
+    :param payload_id: ID of the payload being reconciled
+    :param input_shape: Number of input rows
+    :param output_shape: Number of output rows
+    :raises ReconciliationError: Always raises with row count details
+    """
     msg = (
         f"Could not reconcile KServe Inference {payload_id}, because the number of "
         f"output rows ({output_shape}) did not match the number of input rows "
         f"({input_shape})."
     )
-    logger.error(msg)
     raise ReconciliationError(msg, payload_id=payload_id)
 
 
-def process_payload(payload, get_data: Callable, enforced_first_shape: int = None):
-    if len(get_data(payload)) > 1:  # multi tensor case: we have ncols of data of shape [nrows]
+def process_payload(
+    payload: KServeInferenceRequest | KServeInferenceResponse,
+    get_data: Callable,
+    enforced_first_shape: int | None = None,
+) -> tuple[np.ndarray, list[str]]:
+    """Process a KServe payload and extract data array and column names.
+
+    :param payload: KServe request or response payload
+    :param get_data: Function to extract inputs or outputs from payload
+    :param enforced_first_shape: Expected number of rows (for validation)
+    :return: Tuple of (data array, column names list)
+    :raises ReconciliationError: If shapes don't match expectations
+    """
+    if (
+        len(get_data(payload)) > 1
+    ):  # multi tensor case: we have ncols of data of shape [nrows]
         data = []
         shapes = set()
         shape_tuples = []
@@ -276,42 +422,65 @@ def process_payload(payload, get_data: Callable, enforced_first_shape: int = Non
             column_names.append(kserve_data.name)
             shape_tuples.append((kserve_data.name, kserve_data.shape))
         if len(shapes) == 1:
-            row_count = list(shapes)[0][0]
+            row_count = next(iter(shapes))[0]
             if enforced_first_shape is not None and row_count != enforced_first_shape:
-                reconcile_mismatching_row_count_error(payload.id, enforced_first_shape, row_count)
+                reconcile_mismatching_row_count_error(
+                    payload.id, enforced_first_shape, row_count
+                )
             if list_utils.contains_non_numeric(data):
                 return np.array(data, dtype="O").T, column_names
-            else:
-                return np.array(data).T, column_names
-        else:
-            reconcile_mismatching_shape_error(
-                shape_tuples,
-                "input" if enforced_first_shape is None else "output",
-                payload.id,
-            )
+            return np.array(data).T, column_names
+        reconcile_mismatching_shape_error(
+            shape_tuples,
+            "input" if enforced_first_shape is None else "output",
+            payload.id,
+        )
     else:  # single tensor case: we have one tensor of shape [nrows, d1, d2, ...., dN]
         kserve_data: KServeData = get_data(payload)[0]
-        if enforced_first_shape is not None and kserve_data.shape[0] != enforced_first_shape:
-            reconcile_mismatching_row_count_error(payload.id, enforced_first_shape, kserve_data.shape[0])
+        if (
+            enforced_first_shape is not None
+            and kserve_data.shape[0] != enforced_first_shape
+        ):
+            reconcile_mismatching_row_count_error(
+                payload.id, enforced_first_shape, kserve_data.shape[0]
+            )
 
         if len(kserve_data.shape) > 1:
-            column_names = ["{}-{}".format(kserve_data.name, i) for i in range(kserve_data.shape[1])]
+            column_names = [
+                f"{kserve_data.name}-{i}" for i in range(kserve_data.shape[1])
+            ]
         else:
             column_names = [kserve_data.name]
         if list_utils.contains_non_numeric(kserve_data.data):
             return np.array(kserve_data.data, dtype="O"), column_names
-        else:
-            return np.array(kserve_data.data), column_names
+        return np.array(kserve_data.data), column_names
 
 
 @router.post("/")
 async def consume_cloud_event(
-    payload: Union[KServeInferenceRequest, KServeInferenceResponse],
+    payload: KServeInferenceRequest | KServeInferenceResponse,
     ce_id: Annotated[str | None, Header()] = None,
-    tag: str = None
-):
-    # set payload if from cloud event header
-    payload.id = ce_id
+    tag: str | None = None,
+) -> dict[str, str]:
+    """Consume KServe v2 payloads from cloud events.
+
+    This endpoint accepts both input (request) and output (response) payloads
+    from ModelMesh-served models and stores them for reconciliation.
+
+    :param payload: KServe inference request or response
+    :param ce_id: Cloud event ID from header
+    :param tag: Optional tag to associate with the data
+    :raises HTTPException: If payload processing fails
+    """
+    # set payload id from cloud event header if present
+    if ce_id is not None:
+        payload.id = ce_id
+
+    if payload.id is None:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail="Payload requires 'id' field or 'ce-id' header",
+        )
 
     # get global storage interface
     storage_interface = get_global_storage_interface()
@@ -323,52 +492,69 @@ async def consume_cloud_event(
                     f"KServe Inference Input {payload.id} received, but data field was empty. "
                     f"Payload will not be saved."
                 )
-                logger.error(msg)
-                raise HTTPException(status_code=400, detail=msg)
-            else:
-                logger.info(f"KServe Inference Input {payload.id} received.")
-                # if a match is found, the payload is auto-deleted from data
-                partial_output = await storage_interface.get_partial_payload(
-                    payload.id, is_input=False, is_modelmesh=False
-                )
-                if partial_output is not None:
-                    await reconcile_kserve(payload, partial_output, tag)
-                else:
-                    await storage_interface.persist_partial_payload(
-                        payload, payload_id=payload.id, is_input=True
+                raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=msg)
+            logger.info("KServe Inference Input %s received.", payload.id)
+            # if a match is found, the payload is auto-deleted from data
+            partial_output = await storage_interface.get_partial_payload(
+                payload.id, is_input=False, is_modelmesh=False
+            )
+            if partial_output is not None:
+                if not isinstance(partial_output, KServeInferenceResponse):
+                    # This should never happen - indicates storage interface error
+                    raise HTTPException(
+                        status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+                        detail="Invalid payload type from storage",
                     )
-                return {
-                    "status": "success",
-                    "message": f"Input payload {payload.id} processed successfully",
-                }
+                await reconcile_kserve(payload, partial_output, tag)
+            else:
+                await storage_interface.persist_partial_payload(
+                    payload, payload_id=payload.id, is_input=True
+                )
+            return {
+                "status": "success",
+                "message": f"Input payload {payload.id} processed successfully",
+            }
 
-        elif isinstance(payload, KServeInferenceResponse):
+        if isinstance(payload, KServeInferenceResponse):
             if len(payload.outputs) == 0:
                 msg = (
                     f"KServe Inference Output {payload.id} received from model={payload.model_name}, "
                     f"but data field was empty. Payload will not be saved."
                 )
-                logger.error(msg)
-                raise HTTPException(status_code=400, detail=msg)
-            else:
-                logger.info(
-                    f"KServe Inference Output {payload.id} received from model={payload.model_name}."
-                )
-                partial_input = await storage_interface.get_partial_payload(
-                    payload.id, is_input=True, is_modelmesh=False
-                )
-                if partial_input is not None:
-                    await reconcile_kserve(partial_input, payload, tag)
-                else:
-                    await storage_interface.persist_partial_payload(
-                        payload, payload_id=payload.id, is_input=False
+                raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=msg)
+            logger.info(
+                "KServe Inference Output %s received from model=%s.",
+                payload.id,
+                payload.model_name,
+            )
+            partial_input = await storage_interface.get_partial_payload(
+                payload.id, is_input=True, is_modelmesh=False
+            )
+            if partial_input is not None:
+                if not isinstance(partial_input, KServeInferenceRequest):
+                    # This should never happen - indicates storage interface error
+                    raise HTTPException(
+                        status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+                        detail="Invalid payload type from storage",
                     )
+                await reconcile_kserve(partial_input, payload, tag)
+            else:
+                await storage_interface.persist_partial_payload(
+                    payload, payload_id=payload.id, is_input=False
+                )
 
             return {
                 "status": "success",
                 "message": f"Output payload {payload.id} processed successfully",
             }
 
+        # Defensive programming: this should never happen due to type annotation
+        # but adding explicit fallback for type safety
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail="Payload must be either KServeInferenceRequest or KServeInferenceResponse",
+        )
+
     except ReconciliationError as e:
-        logger.error(f"Reconciliation failed for payload {payload.id}: {e}")
-        raise HTTPException(status_code=400, detail=str(e)) from e
+        logger.exception("Reconciliation failed for payload %s", payload.id)
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=str(e)) from e

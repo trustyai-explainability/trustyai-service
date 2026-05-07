@@ -1,40 +1,49 @@
+"""Global explainer endpoint for model-wide explanation requests."""
+
+import logging
+from http import HTTPStatus
+from typing import Never
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Optional
-import logging
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
 class ModelConfig(BaseModel):
+    """Configuration for model identification and targeting."""
+
     target: str
     name: str
-    version: Optional[str] = None
+    version: str | None = None
 
 
 class GlobalExplanationRequest(BaseModel):
+    """Request payload for global model explanation."""
+
     modelConfig: ModelConfig
 
 
 @router.post("/explainers/global/lime")
-async def global_lime_explanation(request: GlobalExplanationRequest):
+async def global_lime_explanation(request: GlobalExplanationRequest) -> None:
     """Compute a global LIME explanation."""
-    try:
-        logger.info(f"Computing global LIME explanation for model: {request.modelConfig.name}")
-        # TODO: Implement
-    except Exception as e:
-        logger.error(f"Error computing global LIME explanation: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error computing explanation: {str(e)}")
+    logger.info(
+        "Computing global LIME explanation for model: %s", request.modelConfig.name
+    )
+    raise HTTPException(
+        status_code=HTTPStatus.NOT_IMPLEMENTED,
+        detail="Global LIME explanation is not yet implemented",
+    )
 
 
-@router.post("/explainers/global/pdp")
-async def global_pdp_explanation(request: GlobalExplanationRequest):
+@router.post("/explainers/global/pdp", response_model=None)
+async def global_pdp_explanation(request: GlobalExplanationRequest) -> Never:
     """Compute a global PDP explanation."""
-    try:
-        logger.info(f"Computing global PDP explanation for model: {request.modelConfig.name}")
-        # TODO: Implement
-        return {"status": "success", "explanation": {}}
-    except Exception as e:
-        logger.error(f"Error computing global PDP explanation: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error computing explanation: {str(e)}")
+    logger.info(
+        "Computing global PDP explanation for model: %s", request.modelConfig.name
+    )
+    raise HTTPException(
+        status_code=HTTPStatus.NOT_IMPLEMENTED,
+        detail="Global PDP explanation is not yet implemented",
+    )

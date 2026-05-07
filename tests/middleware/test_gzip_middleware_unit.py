@@ -1,22 +1,32 @@
-"""
-Unit tests for GzipRequestMiddleware.
+"""Unit tests for GzipRequestMiddleware.
 
-These tests directly mock ASGI components to test middleware logic in isolation,
-complementing the integration tests in test_upload_endpoint_pvc.py.
+These tests directly mock ASGI components to test middleware logic in
+isolation, complementing the integration tests in
+test_upload_endpoint_pvc.py.
 """
 
 import gzip
+from collections.abc import Awaitable, Callable
+from http import HTTPStatus
+from typing import Any, Never
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from src.middleware.gzip_middleware import GzipRequestMiddleware
 
+# Test constants for call counts
+EXPECTED_SEND_CALLS_ERROR = 2  # Start + body for error responses
+
 
 class TestGzipMiddlewareUnit:
     """Direct unit tests for GzipRequestMiddleware (non-integration)."""
 
-    def make_scope(self, path="/data/upload", headers=None):
+    def make_scope(
+        self,
+        path: str = "/data/upload",
+        headers: list[tuple[bytes, bytes]] | None = None,
+    ) -> dict[str, Any]:
         """Create mock ASGI scope."""
         return {
             "type": "http",
@@ -24,13 +34,17 @@ class TestGzipMiddlewareUnit:
             "headers": headers or [],
         }
 
-    def make_receive_with_body(self, body: bytes, chunks: int = 1):
+    def make_receive_with_body(
+        self,
+        body: bytes,
+        chunks: int = 1,
+    ) -> Callable[[], Awaitable[dict[str, Any]]]:
         """Create ASGI-compliant mock receive callable that returns body in chunks."""
         chunk_size = max(1, len(body) // chunks) if body else 0
         sent = [0]  # Use list to avoid closure issues
         complete = [False]
 
-        async def receive():
+        async def receive() -> dict[str, Any]:
             # After body is complete, return disconnect (ASGI-compliant)
             if complete[0]:
                 return {"type": "http.disconnect"}
@@ -54,7 +68,7 @@ class TestGzipMiddlewareUnit:
     # === fail_on_error=False Tests ===
 
     @pytest.mark.asyncio
-    async def test_bad_gzip_passthrough_when_fail_on_error_false(self):
+    async def test_bad_gzip_passthrough_when_fail_on_error_false(self) -> None:
         """Bad gzip with fail_on_error=False passes through original body."""
         app = AsyncMock()
         middleware = GzipRequestMiddleware(app, fail_on_error=False)
@@ -65,7 +79,7 @@ class TestGzipMiddlewareUnit:
             headers=[
                 (b"content-encoding", b"gzip"),
                 (b"content-type", b"application/json"),
-            ]
+            ],
         )
         receive = self.make_receive_with_body(bad_gzip)
         send = AsyncMock()
@@ -84,7 +98,7 @@ class TestGzipMiddlewareUnit:
         assert msg["more_body"] is False
 
     @pytest.mark.asyncio
-    async def test_size_limit_passthrough_when_fail_on_error_false(self):
+    async def test_size_limit_passthrough_when_fail_on_error_false(self) -> None:
         """Size limit exceeded with fail_on_error=False passes through."""
         app = AsyncMock()
         # Set very small limit
@@ -98,7 +112,7 @@ class TestGzipMiddlewareUnit:
             headers=[
                 (b"content-encoding", b"gzip"),
                 (b"content-type", b"application/json"),
-            ]
+            ],
         )
         receive = self.make_receive_with_body(compressed)
         send = AsyncMock()
@@ -115,7 +129,7 @@ class TestGzipMiddlewareUnit:
         assert msg["body"] == compressed
 
     @pytest.mark.asyncio
-    async def test_empty_body_passthrough_when_fail_on_error_false(self):
+    async def test_empty_body_passthrough_when_fail_on_error_false(self) -> None:
         """Empty body with fail_on_error=False passes through."""
         app = AsyncMock()
         middleware = GzipRequestMiddleware(app, fail_on_error=False)
@@ -124,7 +138,7 @@ class TestGzipMiddlewareUnit:
             headers=[
                 (b"content-encoding", b"gzip"),
                 (b"content-type", b"application/json"),
-            ]
+            ],
         )
         receive = self.make_receive_with_body(b"")
         send = AsyncMock()
@@ -136,7 +150,7 @@ class TestGzipMiddlewareUnit:
         assert send.call_count == 0
 
     @pytest.mark.asyncio
-    async def test_disconnect_during_body_read(self):
+    async def test_disconnect_during_body_read(self) -> None:
         """Client disconnect during body read sends 400 Bad Request."""
         app = AsyncMock()
         middleware = GzipRequestMiddleware(app)
@@ -145,11 +159,11 @@ class TestGzipMiddlewareUnit:
             headers=[
                 (b"content-encoding", b"gzip"),
                 (b"content-type", b"application/json"),
-            ]
+            ],
         )
 
         # Create receive that simulates disconnect
-        async def receive_with_disconnect():
+        async def receive_with_disconnect() -> dict[str, str]:
             return {"type": "http.disconnect"}
 
         send = AsyncMock()
@@ -157,12 +171,12 @@ class TestGzipMiddlewareUnit:
         await middleware(scope, receive_with_disconnect, send)
 
         # Should send 400 error response for disconnect
-        assert send.call_count == 2  # start + body
+        assert send.call_count == EXPECTED_SEND_CALLS_ERROR
         start_call = send.call_args_list[0][0][0]
-        assert start_call["status"] == 400
+        assert start_call["status"] == HTTPStatus.BAD_REQUEST
 
     @pytest.mark.asyncio
-    async def test_unexpected_error_during_body_read(self):
+    async def test_unexpected_error_during_body_read(self) -> None:
         """Unexpected errors during body read send 500 error."""
         app = AsyncMock()
         middleware = GzipRequestMiddleware(app)
@@ -171,33 +185,35 @@ class TestGzipMiddlewareUnit:
             headers=[
                 (b"content-encoding", b"gzip"),
                 (b"content-type", b"application/json"),
-            ]
+            ],
         )
 
         # Create receive that raises an unexpected error during body read
-        async def receive_with_error():
-            raise OSError("Simulated I/O error")
+        async def receive_with_error() -> Never:
+            msg = "Simulated I/O error"
+            raise OSError(msg)
 
         send = AsyncMock()
 
         await middleware(scope, receive_with_error, send)
 
         # Should send error response
-        assert send.call_count == 2  # start + body
+        assert send.call_count == EXPECTED_SEND_CALLS_ERROR
         start_call = send.call_args_list[0][0][0]
-        assert start_call["status"] == 500
+        assert start_call["status"] == HTTPStatus.INTERNAL_SERVER_ERROR
 
     @pytest.mark.asyncio
-    async def test_unexpected_error_passthrough_when_fail_on_error_false(self):
+    async def test_unexpected_error_passthrough_when_fail_on_error_false(self) -> None:
         """Unexpected errors during decompression with fail_on_error=False pass through."""
         app = AsyncMock()
         middleware = GzipRequestMiddleware(app, fail_on_error=False)
 
         # Mock _decompress_body to raise OSError (unexpected error during decompression)
-        def failing_decompress(body_parts, max_size):
-            raise OSError("Simulated decompression I/O error")
+        def failing_decompress(_body_parts: list[bytes], _max_size: int) -> Never:
+            msg = "Simulated decompression I/O error"
+            raise OSError(msg)
 
-        middleware._decompress_body = failing_decompress
+        middleware._decompress_body = failing_decompress  # type: ignore[assignment,method-assign]
 
         data = b'{"test": "data"}'
         compressed = gzip.compress(data)
@@ -206,7 +222,7 @@ class TestGzipMiddlewareUnit:
             headers=[
                 (b"content-encoding", b"gzip"),
                 (b"content-type", b"application/json"),
-            ]
+            ],
         )
         receive = self.make_receive_with_body(compressed)
         send = AsyncMock()
@@ -218,17 +234,18 @@ class TestGzipMiddlewareUnit:
         assert send.call_count == 0
 
     @pytest.mark.asyncio
-    async def test_unexpected_error_response_when_fail_on_error_true(self):
+    async def test_unexpected_error_response_when_fail_on_error_true(self) -> None:
         """Unexpected errors during decompression with fail_on_error=True send error response."""
         app = AsyncMock()
         middleware = GzipRequestMiddleware(app, fail_on_error=True)
 
         # Create data that will cause RuntimeError during decompression
         # Mock _decompress_body to raise RuntimeError
-        def failing_decompress(body_parts, max_size):
-            raise RuntimeError("Simulated unexpected decompression error")
+        def failing_decompress(_body_parts: list[bytes], _max_size: int) -> Never:
+            msg = "Simulated unexpected decompression error"
+            raise RuntimeError(msg)
 
-        middleware._decompress_body = failing_decompress
+        middleware._decompress_body = failing_decompress  # type: ignore[assignment,method-assign]
 
         data = b'{"test": "data"}'
         compressed = gzip.compress(data)
@@ -237,7 +254,7 @@ class TestGzipMiddlewareUnit:
             headers=[
                 (b"content-encoding", b"gzip"),
                 (b"content-type", b"application/json"),
-            ]
+            ],
         )
         receive = self.make_receive_with_body(compressed)
         send = AsyncMock()
@@ -245,70 +262,77 @@ class TestGzipMiddlewareUnit:
         await middleware(scope, receive, send)
 
         # Should send 500 error response
-        assert send.call_count == 2  # start + body
+        assert send.call_count == EXPECTED_SEND_CALLS_ERROR
         start_call = send.call_args_list[0][0][0]
-        assert start_call["status"] == 500
+        assert start_call["status"] == HTTPStatus.INTERNAL_SERVER_ERROR
 
     # === Path Matching Tests ===
 
-    def test_should_process_path(self):
+    def test_should_process_path(self) -> None:
         """Path matching with exact, wildcard, and multiple patterns."""
         # Exact match
-        m1 = GzipRequestMiddleware(None, paths=["/data/upload"])
-        assert m1._should_process_path("/data/upload")
-        assert not m1._should_process_path("/data/upload/sub")
-        assert not m1._should_process_path("/other")
+        m1 = GzipRequestMiddleware(None, paths=["/data/upload"])  # type: ignore[arg-type]
+        assert m1.should_process_path("/data/upload")
+        assert not m1.should_process_path("/data/upload/sub")
+        assert not m1.should_process_path("/other")
 
         # Wildcards
-        m2 = GzipRequestMiddleware(None, paths=["/data/*", "/api/v*/upload"])
-        assert m2._should_process_path("/data/upload")
-        assert m2._should_process_path("/data/upload/subpath")
-        assert m2._should_process_path("/api/v1/upload")
-        assert not m2._should_process_path("/other/path")
+        m2 = GzipRequestMiddleware(None, paths=["/data/*", "/api/v*/upload"])  # type: ignore[arg-type]
+        assert m2.should_process_path("/data/upload")
+        assert m2.should_process_path("/data/upload/subpath")
+        assert m2.should_process_path("/api/v1/upload")
+        assert not m2.should_process_path("/other/path")
 
         # Multiple patterns
-        m3 = GzipRequestMiddleware(None, paths=["/data/upload", "/consumer/data"])
-        assert m3._should_process_path("/data/upload")
-        assert m3._should_process_path("/consumer/data")
-        assert not m3._should_process_path("/other")
+        m3 = GzipRequestMiddleware(None, paths=["/data/upload", "/consumer/data"])  # type: ignore[arg-type]
+        assert m3.should_process_path("/data/upload")
+        assert m3.should_process_path("/consumer/data")
+        assert not m3.should_process_path("/other")
 
     # === Content-Type Matching Tests ===
 
-    def test_should_process_content_type_exact_and_parameters(self):
+    def test_should_process_content_type_exact_and_parameters(self) -> None:
         """Content type matching with exact matches and parameters."""
-        middleware = GzipRequestMiddleware(None)
+        middleware = GzipRequestMiddleware(None)  # type: ignore[arg-type]
         # Exact matches
-        assert middleware._should_process_content_type("application/json")
-        assert middleware._should_process_content_type("application/cloudevents+json")
-        assert not middleware._should_process_content_type("text/plain")
+        assert middleware.should_process_content_type("application/json")
+        assert middleware.should_process_content_type("application/cloudevents+json")
+        assert not middleware.should_process_content_type("text/plain")
         # With parameters (charset, etc.)
-        assert middleware._should_process_content_type("application/json; charset=utf-8")
-        assert middleware._should_process_content_type("application/cloudevents+json; version=1.0")
+        assert middleware.should_process_content_type(
+            "application/json; charset=utf-8",
+        )
+        assert middleware.should_process_content_type(
+            "application/cloudevents+json; version=1.0",
+        )
 
-    def test_should_process_content_type_patterns(self):
+    def test_should_process_content_type_patterns(self) -> None:
         """Content type wildcard and pattern matching."""
         # Wildcard allows everything
-        m1 = GzipRequestMiddleware(None, allowed_content_types=["*/*"])
-        assert m1._should_process_content_type("application/json")
-        assert m1._should_process_content_type("text/plain")
-        assert m1._should_process_content_type("image/png")
+        m1 = GzipRequestMiddleware(None, allowed_content_types=["*/*"])  # type: ignore[arg-type]
+        assert m1.should_process_content_type("application/json")
+        assert m1.should_process_content_type("text/plain")
+        assert m1.should_process_content_type("image/png")
 
         # Pattern matching
-        m2 = GzipRequestMiddleware(None, allowed_content_types=["application/*"])
-        assert m2._should_process_content_type("application/json")
-        assert m2._should_process_content_type("application/xml")
-        assert not m2._should_process_content_type("text/plain")
+        m2 = GzipRequestMiddleware(None, allowed_content_types=["application/*"])  # type: ignore[arg-type]
+        assert m2.should_process_content_type("application/json")
+        assert m2.should_process_content_type("application/xml")
+        assert not m2.should_process_content_type("text/plain")
 
     # === Decompression Tests ===
 
-    def test_decompress_body_success(self):
+    def test_decompress_body_success(self) -> None:
         """Decompression with single chunk or multiple chunks."""
-        middleware = GzipRequestMiddleware(None)
+        middleware = GzipRequestMiddleware(None)  # type: ignore[arg-type]
 
         # Single chunk
         data1 = b'{"test": "data"}'
         compressed1 = gzip.compress(data1)
-        decompressed1, original1 = middleware._decompress_body([compressed1], max_size=1024)
+        decompressed1, original1 = middleware._decompress_body(
+            [compressed1],
+            max_size=1024,
+        )
         assert decompressed1 == data1
         assert original1 == compressed1
 
@@ -320,25 +344,25 @@ class TestGzipMiddlewareUnit:
         assert decompressed2 == data2
         assert original2 == compressed2
 
-    def test_decompress_body_empty_raises(self):
+    def test_decompress_body_empty_raises(self) -> None:
         """Empty body raises ValueError."""
-        middleware = GzipRequestMiddleware(None)
+        middleware = GzipRequestMiddleware(None)  # type: ignore[arg-type]
 
         with pytest.raises(ValueError, match="empty"):
             middleware._decompress_body([], max_size=1024)
 
-    def test_decompress_body_size_limit_raises(self):
+    def test_decompress_body_size_limit_raises(self) -> None:
         """Exceeding size limit raises ValueError."""
-        middleware = GzipRequestMiddleware(None)
+        middleware = GzipRequestMiddleware(None)  # type: ignore[arg-type]
         large_data = b"x" * 1000
         compressed = gzip.compress(large_data)
 
         with pytest.raises(ValueError, match="exceeds limit"):
             middleware._decompress_body([compressed], max_size=100)
 
-    def test_decompress_body_invalid_gzip_raises(self):
+    def test_decompress_body_invalid_gzip_raises(self) -> None:
         """Invalid gzip data raises BadGzipFile."""
-        middleware = GzipRequestMiddleware(None)
+        middleware = GzipRequestMiddleware(None)  # type: ignore[arg-type]
         invalid = b"not gzip data"
 
         with pytest.raises(gzip.BadGzipFile):
@@ -347,13 +371,17 @@ class TestGzipMiddlewareUnit:
     # === Metrics Tests ===
 
     @pytest.mark.asyncio
-    async def test_metrics_disabled(self):
+    async def test_metrics_disabled(self) -> None:
         """No metric calls when enable_metrics=False."""
         app = AsyncMock()
 
-        with patch.object(GzipRequestMiddleware, 'REQUESTS_DECOMPRESSED') as mock_counter, \
-             patch.object(GzipRequestMiddleware, 'COMPRESSION_RATIO') as mock_histogram:
-
+        with (
+            patch.object(
+                GzipRequestMiddleware,
+                "REQUESTS_DECOMPRESSED",
+            ) as mock_counter,
+            patch.object(GzipRequestMiddleware, "COMPRESSION_RATIO") as mock_histogram,
+        ):
             middleware = GzipRequestMiddleware(app, enable_metrics=False)
 
             data = b'{"test": "data"}'
@@ -363,7 +391,7 @@ class TestGzipMiddlewareUnit:
                 headers=[
                     (b"content-encoding", b"gzip"),
                     (b"content-type", b"application/json"),
-                ]
+                ],
             )
             receive = self.make_receive_with_body(compressed)
             send = AsyncMock()
@@ -377,13 +405,19 @@ class TestGzipMiddlewareUnit:
             mock_histogram.labels.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_metrics_error_disabled(self):
+    async def test_metrics_error_disabled(self) -> None:
         """No error metric calls when enable_metrics=False."""
         app = AsyncMock()
 
-        with patch.object(GzipRequestMiddleware, 'DECOMPRESSION_ERRORS') as mock_error_counter:
-
-            middleware = GzipRequestMiddleware(app, enable_metrics=False, fail_on_error=True)
+        with patch.object(
+            GzipRequestMiddleware,
+            "DECOMPRESSION_ERRORS",
+        ) as mock_error_counter:
+            middleware = GzipRequestMiddleware(
+                app,
+                enable_metrics=False,
+                fail_on_error=True,
+            )
 
             # Invalid gzip data
             bad_gzip = b"not gzip data"
@@ -392,7 +426,7 @@ class TestGzipMiddlewareUnit:
                 headers=[
                     (b"content-encoding", b"gzip"),
                     (b"content-type", b"application/json"),
-                ]
+                ],
             )
             receive = self.make_receive_with_body(bad_gzip)
             send = AsyncMock()
@@ -400,7 +434,7 @@ class TestGzipMiddlewareUnit:
             await middleware(scope, receive, send)
 
             # Should send error response
-            assert send.call_count == 2  # start + body
+            assert send.call_count == EXPECTED_SEND_CALLS_ERROR
 
             # Explicitly assert that no error metric methods were invoked
             mock_error_counter.labels.assert_not_called()
@@ -408,7 +442,7 @@ class TestGzipMiddlewareUnit:
     # === ASGI Edge Cases ===
 
     @pytest.mark.asyncio
-    async def test_non_http_request_passthrough(self):
+    async def test_non_http_request_passthrough(self) -> None:
         """Non-HTTP requests (e.g., websocket) pass through unchanged."""
         app = AsyncMock()
         middleware = GzipRequestMiddleware(app)
@@ -423,7 +457,7 @@ class TestGzipMiddlewareUnit:
         send.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_receive_decompressed_multiple_calls(self):
+    async def test_receive_decompressed_multiple_calls(self) -> None:
         """Subsequent calls to receive_decompressed return disconnect (ASGI-compliant)."""
         app = AsyncMock()
         middleware = GzipRequestMiddleware(app)
@@ -435,7 +469,7 @@ class TestGzipMiddlewareUnit:
             headers=[
                 (b"content-encoding", b"gzip"),
                 (b"content-type", b"application/json"),
-            ]
+            ],
         )
         receive = self.make_receive_with_body(compressed)
         send = AsyncMock()
@@ -459,7 +493,7 @@ class TestGzipMiddlewareUnit:
         assert msg3["type"] == "http.disconnect"
 
     @pytest.mark.asyncio
-    async def test_passthrough_receive_multiple_calls(self):
+    async def test_passthrough_receive_multiple_calls(self) -> None:
         """Multiple calls to passthrough receive return disconnect (ASGI-compliant)."""
         app = AsyncMock()
         middleware = GzipRequestMiddleware(app, fail_on_error=False)
@@ -470,7 +504,7 @@ class TestGzipMiddlewareUnit:
             headers=[
                 (b"content-encoding", b"gzip"),
                 (b"content-type", b"application/json"),
-            ]
+            ],
         )
         receive = self.make_receive_with_body(bad_gzip)
         send = AsyncMock()
@@ -493,7 +527,7 @@ class TestGzipMiddlewareUnit:
     # === Header Handling Tests ===
 
     @pytest.mark.asyncio
-    async def test_content_encoding_preserved_when_other_encodings_remain(self):
+    async def test_content_encoding_preserved_when_other_encodings_remain(self) -> None:
         """Content-Encoding header preserves remaining encodings after removing gzip."""
         app = AsyncMock()
         middleware = GzipRequestMiddleware(app)
@@ -506,7 +540,7 @@ class TestGzipMiddlewareUnit:
             headers=[
                 (b"content-encoding", b"br, gzip"),
                 (b"content-type", b"application/json"),
-            ]
+            ],
         )
         receive = self.make_receive_with_body(compressed)
         send = AsyncMock()
@@ -521,7 +555,7 @@ class TestGzipMiddlewareUnit:
         assert headers_dict[b"content-encoding"] == b"br"
 
     @pytest.mark.asyncio
-    async def test_content_length_added_if_missing(self):
+    async def test_content_length_added_if_missing(self) -> None:
         """Content-Length header is added if not present."""
         app = AsyncMock()
         middleware = GzipRequestMiddleware(app)
@@ -534,7 +568,7 @@ class TestGzipMiddlewareUnit:
                 (b"content-encoding", b"gzip"),
                 (b"content-type", b"application/json"),
                 # No Content-Length header
-            ]
+            ],
         )
         receive = self.make_receive_with_body(compressed)
         send = AsyncMock()
@@ -549,7 +583,7 @@ class TestGzipMiddlewareUnit:
         assert headers[b"content-length"] == str(len(data)).encode("utf-8")
 
     @pytest.mark.asyncio
-    async def test_content_length_updated_if_present(self):
+    async def test_content_length_updated_if_present(self) -> None:
         """Content-Length header is updated if already present."""
         app = AsyncMock()
         middleware = GzipRequestMiddleware(app)
@@ -562,7 +596,7 @@ class TestGzipMiddlewareUnit:
                 (b"content-encoding", b"gzip"),
                 (b"content-type", b"application/json"),
                 (b"content-length", str(len(compressed)).encode("utf-8")),
-            ]
+            ],
         )
         receive = self.make_receive_with_body(compressed)
         send = AsyncMock()
@@ -576,7 +610,7 @@ class TestGzipMiddlewareUnit:
         assert headers[b"content-length"] == str(len(data)).encode("utf-8")
 
     @pytest.mark.asyncio
-    async def test_content_encoding_removed(self):
+    async def test_content_encoding_removed(self) -> None:
         """Content-Encoding header is removed after decompression."""
         app = AsyncMock()
         middleware = GzipRequestMiddleware(app)
@@ -588,7 +622,7 @@ class TestGzipMiddlewareUnit:
             headers=[
                 (b"content-encoding", b"gzip"),
                 (b"content-type", b"application/json"),
-            ]
+            ],
         )
         receive = self.make_receive_with_body(compressed)
         send = AsyncMock()
@@ -602,7 +636,7 @@ class TestGzipMiddlewareUnit:
         assert b"content-encoding" not in headers
 
     @pytest.mark.asyncio
-    async def test_other_headers_preserved(self):
+    async def test_other_headers_preserved(self) -> None:
         """Other headers are preserved during decompression."""
         app = AsyncMock()
         middleware = GzipRequestMiddleware(app)
@@ -616,7 +650,7 @@ class TestGzipMiddlewareUnit:
                 (b"content-type", b"application/json"),
                 (b"authorization", b"Bearer token123"),
                 (b"x-custom-header", b"custom-value"),
-            ]
+            ],
         )
         receive = self.make_receive_with_body(compressed)
         send = AsyncMock()
@@ -633,18 +667,18 @@ class TestGzipMiddlewareUnit:
 
     # === Initialization Tests ===
 
-    def test_init_validates_max_size(self):
+    def test_init_validates_max_size(self) -> None:
         """Initialization validates max_size is positive."""
         with pytest.raises(ValueError, match="max_size must be positive"):
-            GzipRequestMiddleware(None, max_size=0)
+            GzipRequestMiddleware(None, max_size=0)  # type: ignore[arg-type]
 
         with pytest.raises(ValueError, match="max_size must be positive"):
-            GzipRequestMiddleware(None, max_size=-1)
+            GzipRequestMiddleware(None, max_size=-1)  # type: ignore[arg-type]
 
-    def test_init_defaults_and_immutability(self):
+    def test_init_defaults_and_immutability(self) -> None:
         """Initialization defaults and list-to-tuple conversion."""
         # Default values
-        m1 = GzipRequestMiddleware(None)
+        m1 = GzipRequestMiddleware(None)  # type: ignore[arg-type]
         assert m1.paths == ("/data/upload",)
         assert m1.max_size == 16 * 1024 * 1024
         assert m1.fail_on_error is True
@@ -653,6 +687,10 @@ class TestGzipMiddlewareUnit:
         assert "application/cloudevents+json" in m1.allowed_content_types
 
         # Lists converted to tuples for immutability
-        m2 = GzipRequestMiddleware(None, paths=["/data/upload"], allowed_content_types=["application/json"])
+        m2 = GzipRequestMiddleware(
+            None,  # type: ignore[arg-type]
+            paths=["/data/upload"],
+            allowed_content_types=["application/json"],
+        )
         assert isinstance(m2.paths, tuple)
         assert isinstance(m2.allowed_content_types, tuple)

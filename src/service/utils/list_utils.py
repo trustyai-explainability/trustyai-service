@@ -1,25 +1,24 @@
+"""Utility functions for list and array manipulation operations."""
+
 import pickle  # nosec B403 - Used for internal data serialization only
-from typing import Any
 
 import numpy as np
 
 
 def get_list_shape(lst: list) -> list[int]:
-    """Get the shape of a nested list, assuming the sublists are not jagged"""
-    return [len(lst)] + get_list_shape(lst[0]) if isinstance(lst, list) else []
+    """Get the shape of a nested list, assuming the sublists are not jagged."""
+    return [len(lst), *get_list_shape(lst[0])] if isinstance(lst, list) else []
 
 
-def contains_non_numeric(lst: list | np.ndarray | Any) -> bool:
-    """Check if an arbitrarily deep nested list contains any non-numeric elements"""
+def contains_non_numeric(lst: object) -> bool:
+    """Check if an arbitrarily deep nested list contains any non-numeric elements."""
     if isinstance(lst, (list, np.ndarray)):
         return any(contains_non_numeric(item) for item in lst)
-    else:
-        return isinstance(lst, (bool, str))
+    return isinstance(lst, (bool, str))
 
 
 def serialize_rows(lst: list | np.ndarray, max_void_type_length: int) -> np.ndarray:
-    """
-    Convert a nested list to a 1D numpy array with dynamic void type sizing.
+    """Convert a nested list to a 1D numpy array with dynamic void type sizing.
 
     Each element contains a bytes serialization of the corresponding row.
     The void type size is computed to fit the largest serialized row,
@@ -34,6 +33,7 @@ def serialize_rows(lst: list | np.ndarray, max_void_type_length: int) -> np.ndar
 
     Raises:
         ValueError: If any serialized row exceeds max_void_type_length
+
     """
     # Serialize all rows first to compute required size
     serialized = [pickle.dumps(row) for row in lst]
@@ -43,10 +43,13 @@ def serialize_rows(lst: list | np.ndarray, max_void_type_length: int) -> np.ndar
 
     # Validate against maximum allowed size
     if max_size > max_void_type_length:
-        raise ValueError(
+        msg = (
             f"Serialized row size {max_size} bytes exceeds maximum allowed size "
             f"{max_void_type_length} bytes. Consider reducing payload size, using compression, "
             f"or increasing MAX_VOID_TYPE_LENGTH configuration."
+        )
+        raise ValueError(
+            msg,
         )
 
     # Use dynamic void type based on actual data size (prevents truncation and saves space)
@@ -55,12 +58,11 @@ def serialize_rows(lst: list | np.ndarray, max_void_type_length: int) -> np.ndar
 
 
 def deserialize_rows(serialized: np.ndarray) -> np.ndarray:
-    """
-    Convert a 1D numpy array from `serialize_rows` to a numpy object array.
+    """Convert a 1D numpy array from `serialize_rows` to a numpy object array.
 
     SECURITY NOTE: This function deserializes pickled data.
     Only use with data serialized by serialize_rows() from trusted internal sources.
     Do not use with user-supplied or external data.
     """
-    deserialized = [pickle.loads(row) for row in serialized]  # nosec B301 - Internal serialized data
+    deserialized = [pickle.loads(row) for row in serialized]  # noqa: S301  # nosec B301
     return np.array(deserialized, dtype="O")

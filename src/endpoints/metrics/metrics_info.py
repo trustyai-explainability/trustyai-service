@@ -1,4 +1,8 @@
+"""Metrics information endpoint for retrieving scheduled metric computations."""
+
 import logging
+from http import HTTPStatus
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
@@ -7,12 +11,10 @@ logger = logging.getLogger(__name__)
 
 
 @router.get("/metrics/all/requests")
-async def get_all_metric_requests(type: str | None = None):
+async def get_all_metric_requests(type_: str | None = None) -> dict[str, list[Any]]:
     """Retrieve a list of all currently scheduled metric computations."""
-    try:
-        logger.info(f"Retrieving all metric requests, type filter: {type}")
-        # TODO: Implement
-        return {"requests": []}
-    except Exception as e:
-        logger.error(f"Error retrieving metric requests: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error retrieving metric requests: {str(e)}")
+    logger.info("Retrieving all metric requests, type filter: %s", type_)
+    raise HTTPException(
+        status_code=HTTPStatus.NOT_IMPLEMENTED,
+        detail="Metric request listing is not yet implemented",
+    )

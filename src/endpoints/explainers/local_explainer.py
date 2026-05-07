@@ -1,20 +1,28 @@
+"""Local explainer endpoint for instance-level explanation requests."""
+
+import logging
+from enum import StrEnum
+from http import HTTPStatus
+from typing import Any
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Dict, List, Optional
-from enum import Enum
-import logging
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
 class ModelConfig(BaseModel):
+    """Model configuration for explainer requests."""
+
     target: str
     name: str
-    version: Optional[str] = None
+    version: str | None = None
 
 
 class LimeExplainerConfig(BaseModel):
+    """LIME explainer configuration parameters."""
+
     n_samples: int = 300
     timeout: int = 10
     separable_dataset_ratio: float = 0.9
@@ -36,33 +44,42 @@ class LimeExplainerConfig(BaseModel):
 
 
 class LimeExplanationConfig(BaseModel):
+    """LIME explanation configuration."""
+
     model: ModelConfig
-    explainer: Optional[LimeExplainerConfig] = None
+    explainer: LimeExplainerConfig | None = None
 
 
 class LimeExplanationRequest(BaseModel):
+    """LIME explanation request."""
+
     predictionId: str
     config: LimeExplanationConfig
 
 
 @router.post("/explainers/local/lime")
-async def local_lime_explanation(request: LimeExplanationRequest):
+async def local_lime_explanation(request: LimeExplanationRequest) -> dict[str, Any]:
     """Compute a LIME explanation."""
-    try:
-        logger.info(f"Computing LIME explanation for prediction: {request.predictionId}")
-        # TODO: Implement
-        return {"status": "success", "explanation": {}}
-    except Exception as e:
-        logger.error(f"Error computing LIME explanation: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error computing explanation: {str(e)}")
+    logger.info(
+        "Computing LIME explanation for prediction: %s",
+        request.predictionId,
+    )
+    raise HTTPException(
+        status_code=HTTPStatus.NOT_IMPLEMENTED,
+        detail="Local LIME explanation is not yet implemented",
+    )
 
 
-class LinkType(str, Enum):
+class LinkType(StrEnum):
+    """SHAP link function types."""
+
     LOGIT = "LOGIT"
     IDENTITY = "IDENTITY"
 
 
-class RegularizerType(str, Enum):
+class RegularizerType(StrEnum):
+    """SHAP regularizer types."""
+
     AUTO = "AUTO"
     AIC = "AIC"
     BIC = "BIC"
@@ -71,6 +88,8 @@ class RegularizerType(str, Enum):
 
 
 class SHAPExplainerConfig(BaseModel):
+    """SHAP explainer configuration parameters."""
+
     n_samples: int = 300
     timeout: int = 10
     link: LinkType = LinkType.IDENTITY
@@ -80,81 +99,104 @@ class SHAPExplainerConfig(BaseModel):
 
 
 class SHAPExplanationConfig(BaseModel):
+    """SHAP explanation configuration."""
+
     model: ModelConfig
-    explainer: Optional[SHAPExplainerConfig] = None
+    explainer: SHAPExplainerConfig | None = None
 
 
 class SHAPExplanationRequest(BaseModel):
+    """SHAP explanation request."""
+
     predictionId: str
     config: SHAPExplanationConfig
 
 
 @router.post("/explainers/local/shap")
-async def local_shap_explanation(request: SHAPExplanationRequest):
+async def local_shap_explanation(request: SHAPExplanationRequest) -> dict[str, Any]:
     """Compute a SHAP explanation."""
-    try:
-        logger.info(f"Computing SHAP explanation for prediction: {request.predictionId}")
-        # TODO: Implement
-        return {"status": "success", "explanation": {}}
-    except Exception as e:
-        logger.error(f"Error computing SHAP explanation: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error computing explanation: {str(e)}")
+    logger.info(
+        "Computing SHAP explanation for prediction: %s",
+        request.predictionId,
+    )
+    raise HTTPException(
+        status_code=HTTPStatus.NOT_IMPLEMENTED,
+        detail="Local SHAP explanation is not yet implemented",
+    )
 
 
 class CounterfactualExplainerConfig(BaseModel):
+    """Counterfactual explainer configuration parameters."""
+
     n_samples: int = 100
 
 
 class CounterfactualExplanationConfig(BaseModel):
+    """Counterfactual explanation configuration."""
+
     model: ModelConfig
-    explainer: Optional[CounterfactualExplainerConfig] = None
+    explainer: CounterfactualExplainerConfig | None = None
 
 
 class CounterfactualExplanationRequest(BaseModel):
+    """Counterfactual explanation request."""
+
     predictionId: str
     config: CounterfactualExplanationConfig
-    goals: Optional[Dict[str, str]] = None
-    explanationConfig: Optional[CounterfactualExplanationConfig] = None
+    goals: dict[str, str] | None = None
+    explanationConfig: CounterfactualExplanationConfig | None = None
 
 
 @router.post("/explainers/local/cf")
-async def local_counterfactual_explanation(request: CounterfactualExplanationRequest):
+async def local_counterfactual_explanation(
+    request: CounterfactualExplanationRequest,
+) -> dict[str, Any]:
     """Compute a Counterfactual explanation."""
-    try:
-        logger.info(f"Computing Counterfactual explanation for prediction: {request.predictionId}")
-        # TODO: Implement
-        return {"status": "success", "explanation": {}}
-    except Exception as e:
-        logger.error(f"Error computing Counterfactual explanation: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error computing explanation: {str(e)}")
+    logger.info(
+        "Computing Counterfactual explanation for prediction: %s",
+        request.predictionId,
+    )
+    raise HTTPException(
+        status_code=HTTPStatus.NOT_IMPLEMENTED,
+        detail="Local Counterfactual explanation is not yet implemented",
+    )
 
 
 class TSSaliencyExplainerConfig(BaseModel):
+    """Time series saliency explainer configuration parameters."""
+
     timeout: int = 10
     mu: float = 0.01
     n_samples: int = 50
     n_alpha: int = 50
     sigma: float = 50
-    base_values: Optional[List[float]] = None
+    base_values: list[float] | None = None
 
 
 class TSSaliencyExplanationConfig(BaseModel):
+    """Time series saliency explanation configuration."""
+
     model: ModelConfig
-    explainer: Optional[TSSaliencyExplainerConfig] = None
+    explainer: TSSaliencyExplainerConfig | None = None
 
 
 class TSSaliencyExplanationRequest(BaseModel):
-    predictionIds: List[str]
+    """Time series saliency explanation request."""
+
+    predictionIds: list[str]
     config: TSSaliencyExplanationConfig
 
 
 @router.post("/explainers/local/tssaliency")
-async def local_tssaliency_explanation(request: TSSaliencyExplanationRequest):
+async def local_tssaliency_explanation(
+    request: TSSaliencyExplanationRequest,
+) -> dict[str, Any]:
     """Compute a TSSaliency explanation."""
-    try:
-        logger.info(f"Computing TSSaliency explanation for predictions: {request.predictionIds}")
-        # TODO: Implement
-        return {"status": "success", "explanation": {}}
-    except Exception as e:
-        logger.error(f"Error computing TSSaliency explanation: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error computing explanation: {str(e)}")
+    logger.info(
+        "Computing TSSaliency explanation for predictions: %s",
+        request.predictionIds,
+    )
+    raise HTTPException(
+        status_code=HTTPStatus.NOT_IMPLEMENTED,
+        detail="Local TSSaliency explanation is not yet implemented",
+    )

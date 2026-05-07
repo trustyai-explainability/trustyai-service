@@ -1,9 +1,8 @@
-"""
-Gzip decompression middleware for KServe agent uploads.
+"""Gzip decompression middleware for KServe agent uploads.
 
-KServe agent's Go HTTP client automatically compresses requests, but FastAPI
-doesn't decompress them by default. This middleware handles gzip-encoded
-request bodies with decompression bomb protection.
+KServe agent's Go HTTP client automatically compresses requests, but
+FastAPI doesn't decompress them by default. This middleware handles
+gzip-encoded request bodies with decompression bomb protection.
 """
 
 import gzip
@@ -23,12 +22,15 @@ _DECOMPRESSION_CHUNK_SIZE = 64 * 1024
 # HTTP status code 413 - use modern name (Python 3.13+) with fallback to legacy name
 # Python 3.13+ uses CONTENT_TOO_LARGE (RFC 9110)
 # Python 3.11-3.12 only has REQUEST_ENTITY_TOO_LARGE (deprecated but available)
-_HTTP_413 = getattr(HTTPStatus, "CONTENT_TOO_LARGE", HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
+_HTTP_413 = getattr(
+    HTTPStatus,
+    "CONTENT_TOO_LARGE",
+    HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+)
 
 
 class GzipRequestMiddleware:
-    """
-    ASGI middleware to decompress gzip-encoded request bodies.
+    """ASGI middleware to decompress gzip-encoded request bodies.
 
     Processes requests with 'Content-Encoding: gzip' by decompressing the body,
     removing the Content-Encoding header, and updating Content-Length.
@@ -65,20 +67,22 @@ class GzipRequestMiddleware:
         buckets=[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.5, 2.0, 5.0, 10.0],
     )
 
-    DECOMPRESSION_ERROR_MESSAGE = "Request body could not be decompressed as gzip: invalid or corrupted content."
+    DECOMPRESSION_ERROR_MESSAGE = (
+        "Request body could not be decompressed as gzip: invalid or corrupted content."
+    )
 
     def __init__(
         self,
         app: ASGIApp,
         paths: tuple[str, ...] | list[str] = DEFAULT_PATHS,
         max_size: int = DEFAULT_MAX_SIZE,
-        fail_on_error: bool = True,
         *,
-        allowed_content_types: tuple[str, ...] | list[str] = DEFAULT_ALLOWED_CONTENT_TYPES,
+        fail_on_error: bool = True,
+        allowed_content_types: tuple[str, ...]
+        | list[str] = DEFAULT_ALLOWED_CONTENT_TYPES,
         enable_metrics: bool = True,
     ) -> None:
-        """
-        Initialize gzip decompression middleware.
+        """Initialize gzip decompression middleware.
 
         Args:
             app: ASGI application
@@ -87,9 +91,11 @@ class GzipRequestMiddleware:
             fail_on_error: Return error on failure vs pass through (default: True)
             allowed_content_types: Eligible content types
             enable_metrics: Enable Prometheus metrics (default: True)
+
         """
         if max_size <= 0:
-            raise ValueError(f"max_size must be positive, got {max_size}")
+            msg = f"max_size must be positive, got {max_size}"
+            raise ValueError(msg)
 
         self.app = app
         self.paths = tuple(paths)
@@ -98,25 +104,26 @@ class GzipRequestMiddleware:
         self.allowed_content_types = tuple(allowed_content_types)
         self.enable_metrics = enable_metrics
 
-    def _should_process_path(self, path: str) -> bool:
+    def should_process_path(self, path: str) -> bool:
         """Check if path matches any configured pattern."""
         return any(fnmatch(path, pattern) for pattern in self.paths)
 
-    def _should_process_content_type(self, content_type: str) -> bool:
+    def should_process_content_type(self, content_type: str) -> bool:
         """Check if content type is eligible for decompression."""
         if "*/*" in self.allowed_content_types:
             return True
 
-        base_type = content_type.split(";")[0].strip()
-        return any(fnmatch(base_type, allowed) for allowed in self.allowed_content_types)
+        base_type = content_type.split(";", maxsplit=1)[0].strip()
+        return any(
+            fnmatch(base_type, allowed) for allowed in self.allowed_content_types
+        )
 
     def _decompress_body(
         self,
         body_parts: list[bytes],
         max_size: int,
     ) -> tuple[bytes, bytes]:
-        """
-        Decompress gzip body with size limit protection.
+        """Decompress gzip body with size limit protection.
 
         Returns: (decompressed_body, compressed_body)
         Raises: gzip.BadGzipFile or ValueError
@@ -124,7 +131,8 @@ class GzipRequestMiddleware:
         compressed = b"".join(body_parts)
 
         if not compressed:
-            raise ValueError("Request body is empty")
+            msg = "Request body is empty"
+            raise ValueError(msg)
 
         decompressed = bytearray()
 
@@ -135,8 +143,9 @@ class GzipRequestMiddleware:
                     break
 
                 if len(decompressed) + len(chunk) > max_size:
+                    msg = f"Decompressed size exceeds limit of {max_size} bytes (potential decompression bomb)"
                     raise ValueError(
-                        f"Decompressed size exceeds limit of {max_size} bytes (potential decompression bomb)"
+                        msg,
                     )
 
                 decompressed.extend(chunk)
@@ -151,14 +160,18 @@ class GzipRequestMiddleware:
 
         path = scope["path"]
 
-        if not self._should_process_path(path):
+        if not self.should_process_path(path):
             await self.app(scope, receive, send)
             return
 
         headers_list = scope["headers"]
 
         # Collect all Content-Encoding headers and concatenate (RFC 7230 allows multiple)
-        encoding_values = [v.decode("latin1") for k, v in headers_list if k.lower() == b"content-encoding"]
+        encoding_values = [
+            v.decode("latin1")
+            for k, v in headers_list
+            if k.lower() == b"content-encoding"
+        ]
 
         if not encoding_values:
             await self.app(scope, receive, send)
@@ -168,7 +181,9 @@ class GzipRequestMiddleware:
         content_encoding = ", ".join(encoding_values)
 
         # Split into ordered list of codings (applied left-to-right, decode right-to-left)
-        encodings = [e.strip().lower() for e in content_encoding.split(",") if e.strip()]
+        encodings = [
+            e.strip().lower() for e in content_encoding.split(",") if e.strip()
+        ]
 
         # Only decompress if gzip is the outermost (last) encoding
         if not encodings or encodings[-1] != "gzip":
@@ -176,19 +191,33 @@ class GzipRequestMiddleware:
             return
 
         # RFC 7230/9110: HTTP headers are Latin-1 encoded
-        content_type = next((v.decode("latin1") for k, v in headers_list if k.lower() == b"content-type"), None)
+        content_type = next(
+            (
+                v.decode("latin1")
+                for k, v in headers_list
+                if k.lower() == b"content-type"
+            ),
+            None,
+        )
 
         if not content_type:
-            logger.debug(f"Skipping gzip decompression for {path}: no content-type header")
+            logger.debug(
+                "Skipping gzip decompression for %s: no content-type header",
+                path,
+            )
             await self.app(scope, receive, send)
             return
 
-        if not self._should_process_content_type(content_type):
-            logger.debug(f"Skipping gzip decompression for {path}: content-type {content_type} not in allowed list")
+        if not self.should_process_content_type(content_type):
+            logger.debug(
+                "Skipping gzip decompression for %s: content-type %s not in allowed list",
+                path,
+                content_type,
+            )
             await self.app(scope, receive, send)
             return
 
-        logger.debug(f"Processing gzip-compressed request to {path}")
+        logger.debug("Processing gzip-compressed request to %s", path)
 
         body_parts = []
         try:
@@ -199,18 +228,32 @@ class GzipRequestMiddleware:
                     if not message.get("more_body", False):
                         break
                 elif message["type"] == "http.disconnect":
-                    logger.warning(f"Client disconnected while reading request body for {path}")
-                    await self._send_error_response(send, HTTPStatus.BAD_REQUEST, "Request interrupted")
+                    logger.warning(
+                        "Client disconnected while reading request body for %s",
+                        path,
+                    )
+                    await self._send_error_response(
+                        send,
+                        HTTPStatus.BAD_REQUEST,
+                        "Request interrupted",
+                    )
                     return
         except (OSError, EOFError, RuntimeError):
-            logger.exception(f"Failed to read request body for {path}")
-            await self._send_error_response(send, HTTPStatus.INTERNAL_SERVER_ERROR, "Failed to read request body")
+            logger.exception("Failed to read request body for %s", path)
+            await self._send_error_response(
+                send,
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                "Failed to read request body",
+            )
             return
 
         compressed_body = None
 
         try:
-            decompressed_body, compressed_body = self._decompress_body(body_parts, self.max_size)
+            decompressed_body, compressed_body = self._decompress_body(
+                body_parts,
+                self.max_size,
+            )
 
             compressed_size = len(compressed_body)
             decompressed_size = len(decompressed_body)
@@ -220,7 +263,13 @@ class GzipRequestMiddleware:
                 self.REQUESTS_DECOMPRESSED.labels(endpoint=path).inc()
                 self.COMPRESSION_RATIO.labels(endpoint=path).observe(ratio)
 
-            logger.debug(f"Decompressed {path}: {compressed_size} → {decompressed_size} bytes (ratio: {ratio:.2%})")
+            logger.debug(
+                "Decompressed %s: %s → %s bytes (ratio: %s)",
+                path,
+                compressed_size,
+                decompressed_size,
+                ratio,
+            )
 
             # Remove gzip from encodings (it was the outermost/last)
             remaining_encodings = encodings[:-1]  # Remove last element (gzip)
@@ -239,14 +288,21 @@ class GzipRequestMiddleware:
                         content_encoding_written = True
                     # Skip this header (either rewritten or removed)
                     continue
-                elif name_lower == b"content-length":
+                if name_lower == b"content-length":
                     has_content_length = True
-                    new_headers.append((b"content-length", str(len(decompressed_body)).encode("utf-8")))
+                    new_headers.append(
+                        (
+                            b"content-length",
+                            str(len(decompressed_body)).encode("utf-8"),
+                        ),
+                    )
                 else:
                     new_headers.append((name, value))
 
             if not has_content_length:
-                new_headers.append((b"content-length", str(len(decompressed_body)).encode("utf-8")))
+                new_headers.append(
+                    (b"content-length", str(len(decompressed_body)).encode("utf-8")),
+                )
 
             scope["headers"] = new_headers
 
@@ -272,66 +328,126 @@ class GzipRequestMiddleware:
 
             if is_empty_body:
                 if self.enable_metrics:
-                    self.DECOMPRESSION_ERRORS.labels(endpoint=path, error_type="empty_body").inc()
-                logger.error(f"Empty request body for {path}")
+                    self.DECOMPRESSION_ERRORS.labels(
+                        endpoint=path,
+                        error_type="empty_body",
+                    ).inc()
+                logger.exception("Empty request body for %s", path)
 
                 if self.fail_on_error:
-                    await self._send_error_response(send, HTTPStatus.BAD_REQUEST, error_message)
+                    await self._send_error_response(
+                        send,
+                        HTTPStatus.BAD_REQUEST,
+                        error_message,
+                    )
                 else:
-                    raw_body = compressed_body if compressed_body is not None else b"".join(body_parts)
+                    raw_body = (
+                        compressed_body
+                        if compressed_body is not None
+                        else b"".join(body_parts)
+                    )
                     await self._passthrough_with_body(scope, raw_body, send, receive)
             else:
                 if self.enable_metrics:
-                    self.DECOMPRESSION_ERRORS.labels(endpoint=path, error_type="size_limit").inc()
-                logger.error(f"Decompression size limit exceeded for {path}: {e}")
+                    self.DECOMPRESSION_ERRORS.labels(
+                        endpoint=path,
+                        error_type="size_limit",
+                    ).inc()
+                logger.exception(
+                    "Decompression size limit exceeded for %s",
+                    path,
+                )
 
                 if self.fail_on_error:
                     await self._send_error_response(send, _HTTP_413, error_message)
                 else:
-                    raw_body = compressed_body if compressed_body is not None else b"".join(body_parts)
+                    raw_body = (
+                        compressed_body
+                        if compressed_body is not None
+                        else b"".join(body_parts)
+                    )
                     await self._passthrough_with_body(scope, raw_body, send, receive)
 
         except (gzip.BadGzipFile, EOFError):
             if self.enable_metrics:
-                self.DECOMPRESSION_ERRORS.labels(endpoint=path, error_type="bad_gzip").inc()
-            logger.exception(f"Invalid gzip data for {path}")
+                self.DECOMPRESSION_ERRORS.labels(
+                    endpoint=path,
+                    error_type="bad_gzip",
+                ).inc()
+            logger.exception("Invalid gzip data for %s", path)
 
             if self.fail_on_error:
-                await self._send_error_response(send, HTTPStatus.BAD_REQUEST, self.DECOMPRESSION_ERROR_MESSAGE)
+                await self._send_error_response(
+                    send,
+                    HTTPStatus.BAD_REQUEST,
+                    self.DECOMPRESSION_ERROR_MESSAGE,
+                )
             else:
-                raw_body = compressed_body if compressed_body is not None else b"".join(body_parts)
+                raw_body = (
+                    compressed_body
+                    if compressed_body is not None
+                    else b"".join(body_parts)
+                )
                 await self._passthrough_with_body(scope, raw_body, send, receive)
 
         except (OSError, RuntimeError):
             if self.enable_metrics:
-                self.DECOMPRESSION_ERRORS.labels(endpoint=path, error_type="unknown").inc()
-            logger.exception(f"Unexpected error decompressing {path}")
+                self.DECOMPRESSION_ERRORS.labels(
+                    endpoint=path,
+                    error_type="unknown",
+                ).inc()
+            logger.exception("Unexpected error decompressing %s", path)
 
             if self.fail_on_error:
-                await self._send_error_response(send, HTTPStatus.INTERNAL_SERVER_ERROR, "Internal Server Error")
+                await self._send_error_response(
+                    send,
+                    HTTPStatus.INTERNAL_SERVER_ERROR,
+                    "Internal Server Error",
+                )
             else:
-                raw_body = compressed_body if compressed_body is not None else b"".join(body_parts)
+                raw_body = (
+                    compressed_body
+                    if compressed_body is not None
+                    else b"".join(body_parts)
+                )
                 await self._passthrough_with_body(scope, raw_body, send, receive)
 
-    async def _send_error_response(self, send: Send, status_code: HTTPStatus | int, message: str) -> None:
+    async def _send_error_response(
+        self,
+        send: Send,
+        status_code: HTTPStatus | int,
+        message: str,
+    ) -> None:
         """Send HTTP error response."""
         body = message.encode("utf-8")
-        status = status_code.value if isinstance(status_code, HTTPStatus) else status_code
+        status = (
+            status_code.value if isinstance(status_code, HTTPStatus) else status_code
+        )
 
-        await send({
-            "type": "http.response.start",
-            "status": status,
-            "headers": [
-                (b"content-type", b"text/plain"),
-                (b"content-length", str(len(body)).encode("utf-8")),
-            ],
-        })
-        await send({
-            "type": "http.response.body",
-            "body": body,
-        })
+        await send(
+            {
+                "type": "http.response.start",
+                "status": status,
+                "headers": [
+                    (b"content-type", b"text/plain"),
+                    (b"content-length", str(len(body)).encode("utf-8")),
+                ],
+            },
+        )
+        await send(
+            {
+                "type": "http.response.body",
+                "body": body,
+            },
+        )
 
-    async def _passthrough_with_body(self, scope: Scope, body: bytes, send: Send, receive: Receive) -> None:
+    async def _passthrough_with_body(
+        self,
+        scope: Scope,
+        body: bytes,
+        send: Send,
+        receive: Receive,
+    ) -> None:
         """Pass request through with original body when fail_on_error=False."""
         body_sent = False
 

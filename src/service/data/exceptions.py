@@ -1,8 +1,11 @@
-class DataframeCreateException(Exception):
+"""Custom exceptions for data storage and manipulation operations."""
+
+
+class DataframeCreateError(Exception):
     """Exception raised when a dataframe cannot be created."""
 
 
-class StorageReadException(Exception):
+class StorageReadError(Exception):
     """Exception raised when storage cannot be read."""
 
 

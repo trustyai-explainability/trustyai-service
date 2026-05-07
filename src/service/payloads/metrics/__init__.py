@@ -1,0 +1,1 @@
+"""Metric request payload models."""

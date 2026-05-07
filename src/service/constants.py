@@ -1,3 +1,5 @@
+"""Constants used throughout the TrustyAI service."""
+
 # data constants
 INPUT_SUFFIX = "_inputs"
 OUTPUT_SUFFIX = "_outputs"

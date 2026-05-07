@@ -1,3 +1,5 @@
+"""Tests for CompareMeans drift detection metric."""
+
 import numpy as np
 import pytest
 from scipy.stats import ttest_ind
@@ -88,17 +90,27 @@ class TestTTestUnified:
     # ==========================================================================
     # Tests for specific parameter behaviors that require direct implementation.
 
-    def test_equal_var_parameter(self):
+    def test_equal_var_parameter(self) -> None:
         """Test that equal_var parameter is correctly passed through."""
-        np.random.seed(456)
-        reference = np.random.normal(loc=0.0, scale=1.0, size=50)
-        current = np.random.normal(loc=0.5, scale=1.0, size=50)
+        rng = np.random.default_rng(456)
+        reference = rng.normal(loc=0.0, scale=1.0, size=50)
+        current = rng.normal(loc=0.5, scale=1.0, size=50)
 
         # Test with equal_var=False (Welch's t-test, default)
-        result_welch = CompareMeans.ttest_ind(reference, current, alpha=0.05, equal_var=False)
+        result_welch = CompareMeans.ttest_ind(
+            reference,
+            current,
+            alpha=0.05,
+            equal_var=False,
+        )
 
         # Test with equal_var=True (Student's t-test)
-        result_student = CompareMeans.ttest_ind(reference, current, alpha=0.05, equal_var=True)
+        result_student = CompareMeans.ttest_ind(
+            reference,
+            current,
+            alpha=0.05,
+            equal_var=True,
+        )
 
         # Both should return valid results
         assert "statistic" in result_welch
@@ -106,21 +118,30 @@ class TestTTestUnified:
 
         # Compare with scipy
         scipy_welch_stat, scipy_welch_p = ttest_ind(reference, current, equal_var=False)
-        scipy_student_stat, scipy_student_p = ttest_ind(reference, current, equal_var=True)
+        scipy_student_stat, scipy_student_p = ttest_ind(
+            reference,
+            current,
+            equal_var=True,
+        )
 
         assert pytest.approx(result_welch["statistic"]) == scipy_welch_stat
         assert pytest.approx(result_welch["p_value"]) == scipy_welch_p
         assert pytest.approx(result_student["statistic"]) == scipy_student_stat
         assert pytest.approx(result_student["p_value"]) == scipy_student_p
 
-    def test_nan_policy_omit(self):
+    def test_nan_policy_omit(self) -> None:
         """Test that NaN values are handled correctly with nan_policy='omit'."""
         reference = np.array([1.0, 2.0, np.nan, 4.0, 5.0])
         current = np.array([1.5, 2.5, 3.5, np.nan, 5.5])
 
         alpha = 0.05
 
-        result = CompareMeans.ttest_ind(reference, current, alpha=alpha, nan_policy="omit")
+        result = CompareMeans.ttest_ind(
+            reference,
+            current,
+            alpha=alpha,
+            nan_policy="omit",
+        )
 
         # Should produce valid results by omitting NaN values
         assert "statistic" in result
@@ -133,7 +154,7 @@ class TestTTestUnified:
     # ==========================================================================
     # Deterministic tests comparing with reference implementations.
 
-    def test_matches_scipy_for_fixed_example(self):
+    def test_matches_scipy_for_fixed_example(self) -> None:
         """Deterministic regression test comparing to scipy.stats.ttest_ind."""
         reference = np.array([0.1, 0.2, 0.2, 0.5, 0.9])
         current = np.array([0.05, 0.25, 0.3, 0.55, 0.95])

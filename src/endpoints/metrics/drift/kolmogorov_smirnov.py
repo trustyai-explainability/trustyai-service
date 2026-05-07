@@ -1,14 +1,21 @@
+"""Kolmogorov-Smirnov test endpoint for drift detection."""
+
 import logging
 import uuid
-from typing import Any, Dict, List, Optional
+from http import HTTPStatus
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.metrics.drift.kolmogorov_smirnov import KolmogorovSmirnov
+from src.service.data.datasources.data_source import DataSource
 from src.service.data.shared_data_source import get_shared_data_source
 from src.service.payloads.metrics.base_metric_request import BaseMetricRequest
-from src.service.prometheus.shared_prometheus_scheduler import get_shared_prometheus_scheduler
+from src.service.prometheus.prometheus_scheduler import PrometheusScheduler
+from src.service.prometheus.shared_prometheus_scheduler import (
+    get_shared_prometheus_scheduler,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -17,35 +24,43 @@ logger = logging.getLogger(__name__)
 METRIC_NAME = "KSTest"
 
 
-def get_prometheus_scheduler():
+def get_prometheus_scheduler() -> PrometheusScheduler:
     """Get the shared prometheus scheduler instance."""
     return get_shared_prometheus_scheduler()
 
 
-def get_data_source():
+def get_data_source() -> DataSource:
     """Get the shared data source instance."""
     return get_shared_data_source()
 
 
 class ScheduleId(BaseModel):
+    """Identifier for a scheduled metric computation request."""
+
     requestId: str
 
 
 class KSTestMetricRequest(BaseMetricRequest):
+    """Request parameters for Kolmogorov-Smirnov test drift detection metric."""
+
     # Use field aliases to accept camelCase from API while keeping snake_case internally
     model_config = ConfigDict(populate_by_name=True)
 
     model_id: str = Field(alias="modelId")
-    metric_name: Optional[str] = Field(default=None, alias="metricName")  # Will be set by endpoint
-    request_name: Optional[str] = Field(default=None, alias="requestName")
+    metric_name: str | None = Field(
+        default=None, alias="metricName"
+    )  # Will be set by endpoint
+    request_name: str | None = Field(default=None, alias="requestName")
     batch_size: int = Field(default=100, alias="batchSize")
 
     # KSTest-specific fields
-    threshold_delta: float = Field(default=0.05, alias="thresholdDelta")  # Default alpha value
-    reference_tag: Optional[str] = Field(default=None, alias="referenceTag")
-    fit_columns: List[str] = Field(default_factory=list, alias="fitColumns")
+    threshold_delta: float = Field(
+        default=0.05, alias="thresholdDelta"
+    )  # Default alpha value
+    reference_tag: str | None = Field(default=None, alias="referenceTag")
+    fit_columns: list[str] = Field(default_factory=list, alias="fitColumns")
 
-    def retrieve_tags(self) -> Dict[str, str]:
+    def retrieve_tags(self) -> dict[str, str]:
         """Retrieve tags for this KSTest metric request."""
         tags = self.retrieve_default_tags()
         if self.reference_tag:
@@ -56,79 +71,105 @@ class KSTestMetricRequest(BaseMetricRequest):
 
 
 @router.post("/metrics/drift/kstest")
-async def compute_kstest(request: KSTestMetricRequest) -> Dict[str, float | bool | str | Dict[str, Dict[str, float]]]:
+async def compute_kstest(
+    request: KSTestMetricRequest,
+) -> dict[str, float | bool | str | dict[str, dict[str, float]]]:
     """Compute the current value of KSTest metric."""
+    # Validate inputs before try block
+    if not request.reference_tag:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail="referenceTag is required for drift detection",
+        )
+
+    if not request.fit_columns:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail="fitColumns is required - specify which features to test for drift",
+        )
+
     try:
-        logger.info(f"Computing {METRIC_NAME} for model: {request.model_id}")
+        logger.info("Computing %s for model: %s", METRIC_NAME, request.model_id)
 
         # Get data source
         data_source = get_data_source()
         batch_size = request.batch_size
 
         # Get reference dataframe (tagged with referenceTag)
-        if request.reference_tag:
-            reference_df = await data_source.get_dataframe_by_tag(request.model_id, request.reference_tag)
-        else:
-            raise HTTPException(status_code=400, detail="referenceTag is required for drift detection")
+        reference_df = await data_source.get_dataframe_by_tag(
+            request.model_id, request.reference_tag
+        )
 
         # Get current dataframe (most recent organic data)
-        current_df = await data_source.get_organic_dataframe(request.model_id, batch_size)
-
-        if len(reference_df) == 0:
-            raise HTTPException(
-                status_code=404,
-                detail=f"No reference data found for model: {request.model_id} with tag: {request.reference_tag}",
-            )
-
-        if len(current_df) == 0:
-            raise HTTPException(status_code=404, detail=f"No current data found for model: {request.model_id}")
-
-        # Calculate KS test for each feature
-        alpha = request.threshold_delta
-
-        if request.fit_columns:
-            # Multi-feature case: iterate over features
-            results = {}
-            for feature_name in request.fit_columns:
-                if feature_name not in reference_df.columns or feature_name not in current_df.columns:
-                    raise HTTPException(status_code=400, detail=f"Feature {feature_name} not found in data")
-
-                reference_data = reference_df[feature_name].to_numpy()
-                current_data = current_df[feature_name].to_numpy()
-
-                results[feature_name] = KolmogorovSmirnov.kstest(
-                    reference_data=reference_data, current_data=current_data, alpha=alpha
-                )
-
-            # Aggregate: drift detected if any feature shows drift
-            drift_detected = any(r["drift_detected"] for r in results.values())
-            max_statistic = max(r["statistic"] for r in results.values())
-            min_p_value = min(r["p_value"] for r in results.values())
-
-            return {
-                "status": "success",
-                "value": max_statistic,
-                "drift_detected": drift_detected,
-                "p_value": min_p_value,
-                "alpha": alpha,
-                "feature_results": results,
-            }
-        else:
-            raise HTTPException(
-                status_code=400, detail="fitColumns is required - specify which features to test for drift"
-            )
+        current_df = await data_source.get_organic_dataframe(
+            request.model_id, batch_size
+        )
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Error computing {METRIC_NAME}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error computing metric: {str(e)}")
+    except Exception as e:  # Broad catch intentional: endpoint catch-all for unknown computation errors
+        logger.exception("Error computing %s", METRIC_NAME)
+        raise HTTPException(
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+            detail=f"Error computing metric: {e!s}",
+        ) from e
+
+    # Validate data availability (after try block to avoid TRY301)
+    if len(reference_df) == 0:
+        raise HTTPException(
+            status_code=HTTPStatus.NOT_FOUND,
+            detail=f"No reference data found for model: {request.model_id} with tag: {request.reference_tag}",
+        )
+
+    if len(current_df) == 0:
+        raise HTTPException(
+            status_code=HTTPStatus.NOT_FOUND,
+            detail=f"No current data found for model: {request.model_id}",
+        )
+
+    # Calculate KS test for each feature
+    alpha = request.threshold_delta
+
+    # Multi-feature case: iterate over features
+    results = {}
+    for feature_name in request.fit_columns:
+        if (
+            feature_name not in reference_df.columns
+            or feature_name not in current_df.columns
+        ):
+            raise HTTPException(
+                status_code=HTTPStatus.BAD_REQUEST,
+                detail=f"Feature {feature_name} not found in data",
+            )
+
+        reference_data = reference_df[feature_name].to_numpy()
+        current_data = current_df[feature_name].to_numpy()
+
+        results[feature_name] = KolmogorovSmirnov.kstest(
+            reference_data=reference_data,
+            current_data=current_data,
+            alpha=alpha,
+        )
+
+    # Aggregate: drift detected if any feature shows drift
+    drift_detected = any(r["drift_detected"] for r in results.values())
+    max_statistic = max(r["statistic"] for r in results.values())
+    min_p_value = min(r["p_value"] for r in results.values())
+
+    return {
+        "status": "success",
+        "value": max_statistic,
+        "drift_detected": drift_detected,
+        "p_value": min_p_value,
+        "alpha": alpha,
+        "feature_results": results,
+    }
 
 
 @router.get("/metrics/drift/kstest/definition")
-async def get_kstest_definition() -> Dict[str, str]:
+async def get_kstest_definition() -> dict[str, str]:
     """Provide a general definition of KSTest metric."""
-    description = """The two-sampled Kolmogorov–Smirnov test is a nonparametric statistical test.
+    description = """The two-sampled Kolmogorov-Smirnov test is a nonparametric statistical test.
     It can be used to determine whether two underlying one-dimensional probability distributions differ.
 
     For more information, see the following:
@@ -143,69 +184,97 @@ async def get_kstest_definition() -> Dict[str, str]:
 
 
 @router.post("/metrics/drift/kstest/request")
-async def schedule_kstest(request: KSTestMetricRequest) -> Dict[str, str]:
+async def schedule_kstest(request: KSTestMetricRequest) -> dict[str, str]:
     """Schedule a recurring computation of KSTest metric."""
+    # Get the scheduler and validate availability
+    scheduler = get_prometheus_scheduler()
+    if not scheduler:
+        raise HTTPException(
+            status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+            detail="Prometheus scheduler not available",
+        )
+
     try:
         # Generate UUID for this request
         request_id = uuid.uuid4()
-        logger.info(f"Scheduling {METRIC_NAME} computation with ID: {request_id}.")
+        logger.info("Scheduling %s computation with ID: %s.", METRIC_NAME, request_id)
 
         # Set metric name automatically
         request.metric_name = METRIC_NAME
 
-        # Get the scheduler and register the request
-        scheduler = get_prometheus_scheduler()
-        if not scheduler:
-            raise HTTPException(status_code=500, detail="Prometheus scheduler not available")
-
         # Register with the scheduler (this will reconcile the request and store it)
         await scheduler.register(request.metric_name, request_id, request)
 
-        logger.info(f"Successfully scheduled {METRIC_NAME} computation with ID: {request_id}")
+    except Exception as e:  # Broad catch intentional: scheduler registration errors should not crash endpoint
+        logger.exception("Error scheduling %s computation", METRIC_NAME)
+        raise HTTPException(
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+            detail=f"Error scheduling metric: {e!s}",
+        ) from e
+    else:
+        logger.info(
+            "Successfully scheduled %s computation with ID: %s", METRIC_NAME, request_id
+        )
         return {"requestId": str(request_id)}
-
-    except Exception as e:
-        logger.error(f"Error scheduling {METRIC_NAME} computation: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error scheduling metric: {str(e)}") from e
 
 
 @router.delete("/metrics/drift/kstest/request")
-async def delete_kstest_schedule(schedule: ScheduleId) -> Dict[str, str]:
+async def delete_kstest_schedule(schedule: ScheduleId) -> dict[str, str]:
     """Delete a recurring computation of KSTest metric."""
+    # Get the scheduler and validate availability
+    scheduler = get_prometheus_scheduler()
+    if not scheduler:
+        raise HTTPException(
+            status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+            detail="Prometheus scheduler not available",
+        )
+
+    # Convert string ID to UUID
     try:
-        logger.info(f"Deleting {METRIC_NAME} schedule: {schedule.requestId}")
+        request_uuid = uuid.UUID(schedule.requestId)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST, detail="Invalid request ID format"
+        ) from e
 
-        # Get the scheduler and delete the request
-        scheduler = get_prometheus_scheduler()
-        if not scheduler:
-            raise HTTPException(status_code=500, detail="Prometheus scheduler not available")
-
-        # Convert string ID to UUID
-        try:
-            request_uuid = uuid.UUID(schedule.requestId)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid request ID format")
+    try:
+        logger.info("Deleting %s schedule: %s", METRIC_NAME, schedule.requestId)
 
         # Delete from scheduler
         await scheduler.delete(METRIC_NAME, request_uuid)
 
-        logger.info(f"Successfully deleted {METRIC_NAME} schedule: {schedule.requestId}")
-        return {"status": "success", "message": f"Schedule {schedule.requestId} deleted"}
-
-    except Exception as e:
-        logger.error(f"Error deleting {METRIC_NAME} schedule: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error deleting schedule: {str(e)}")
+    except HTTPException:
+        raise
+    except (
+        Exception
+    ) as e:  # Broad catch intentional: endpoint catch-all for unknown deletion errors
+        logger.exception("Error deleting %s schedule", METRIC_NAME)
+        raise HTTPException(
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting schedule: {e!s}",
+        ) from e
+    else:
+        logger.info(
+            "Successfully deleted %s schedule: %s", METRIC_NAME, schedule.requestId
+        )
+        return {
+            "status": "success",
+            "message": f"Schedule {schedule.requestId} deleted",
+        }
 
 
 @router.get("/metrics/drift/kstest/requests")
-async def list_kstest_requests() -> Dict[str, List[Dict[str, Any]]]:
+async def list_kstest_requests() -> dict[str, list[dict[str, Any]]]:
     """List the currently scheduled computations of KSTest metric."""
-    try:
-        # Get the scheduler and list KSTest requests
-        scheduler = get_prometheus_scheduler()
-        if not scheduler:
-            raise HTTPException(status_code=500, detail="Prometheus scheduler not available")
+    # Get the scheduler and validate availability
+    scheduler = get_prometheus_scheduler()
+    if not scheduler:
+        raise HTTPException(
+            status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+            detail="Prometheus scheduler not available",
+        )
 
+    try:
         # Get all requests for KSTest
         requests = scheduler.get_requests(METRIC_NAME)
 
@@ -219,21 +288,34 @@ async def list_kstest_requests() -> Dict[str, List[Dict[str, Any]]]:
                 and hasattr(request, "reference_tag")
                 and hasattr(request, "fit_columns")
             ):
-                requests_list.append({
-                    "requestId": str(request_id),
-                    "modelId": request.model_id,
-                    "metricName": METRIC_NAME,
-                    "batchSize": request.batch_size,
-                    "referenceTag": request.reference_tag,
-                    "fitColumns": request.fit_columns,
-                })
+                requests_list.append(
+                    {
+                        "requestId": str(request_id),
+                        "modelId": request.model_id,
+                        "metricName": METRIC_NAME,
+                        "batchSize": request.batch_size,
+                        "referenceTag": request.reference_tag,
+                        "fitColumns": request.fit_columns,
+                    }
+                )
             else:
                 # Log warning for malformed request objects and skip them
-                logger.warning(f"Skipping malformed {METRIC_NAME} request {request_id}: missing required attributes")
+                logger.warning(
+                    "Skipping malformed %s request %s: missing required attributes",
+                    METRIC_NAME,
+                    request_id,
+                )
                 continue
 
+    except HTTPException:
+        raise
+    except (
+        Exception
+    ) as e:  # Broad catch intentional: endpoint catch-all for unknown listing errors
+        logger.exception("Error listing %s requests", METRIC_NAME)
+        raise HTTPException(
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+            detail=f"Error listing requests: {e!s}",
+        ) from e
+    else:
         return {"requests": requests_list}
-
-    except Exception as e:
-        logger.error(f"Error listing {METRIC_NAME} requests: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error listing requests: {str(e)}")
