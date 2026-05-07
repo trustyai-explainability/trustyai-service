@@ -174,7 +174,7 @@ register_if_enabled_with_group(
     "Drift Metrics: JensenShannon",
 )
 
-# Explainers (feature-flagged)
+# Explainer endpoints (gated by "explainer" group + individual flags)
 register_if_enabled_with_group(
     app,
     explainers_local_router,
