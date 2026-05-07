@@ -58,6 +58,19 @@ class TestMariaPayloadReconciliation(TestPayloadReconciliation):
     def test_void_type_length_within_limit(self) -> None:
         """Skip void type length test as it only applies to PVC storage."""
 
+    # Override HDF5-specific deserialization tests - MariaDB uses different storage
+    @unittest.skip(
+        "Direct file manipulation only applies to PVC/HDF5 storage, not MariaDB"
+    )
+    def test_deserialize_corrupted_payload(self) -> None:
+        """Skip corrupted payload test for MariaDB."""
+
+    @unittest.skip(
+        "Direct file manipulation only applies to PVC/HDF5 storage, not MariaDB"
+    )
+    def test_deserialize_invalid_format(self) -> None:
+        """Skip invalid format test for MariaDB."""
+
 
 if __name__ == "__main__":
     unittest.main()

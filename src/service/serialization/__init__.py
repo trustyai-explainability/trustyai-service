@@ -1,5 +1,4 @@
-"""
-Secure serialization utilities with JSON + gzip compression.
+"""Secure serialization utilities with JSON + gzip compression.
 
 Public API:
     - serialize_model(obj) -> bytes
@@ -26,6 +25,7 @@ Examples:
     >>> rows = [[1, 2, 3], [4, 5, 6]]
     >>> serialized = serialize_rows(rows, max_void_type_length=1024)
     >>> deserialized = deserialize_rows(serialized)
+
 """
 
 from .models import deserialize_model, serialize_model

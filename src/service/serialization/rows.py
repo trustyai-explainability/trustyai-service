@@ -1,5 +1,4 @@
-"""
-Row-level serialization for inference data.
+"""Row-level serialization for inference data.
 
 Serializes nested lists/dicts into numpy void arrays with dynamic sizing
 using JSON with gzip compression for security and compatibility.
@@ -8,18 +7,23 @@ using JSON with gzip compression for security and compatibility.
 import gzip
 import json
 import logging
+import zlib
 
 import numpy as np
 
-from .detection import is_gzip
+from .detection import is_gzip, safe_gzip_decompress
 from .encoders import json_encoder
 
 logger = logging.getLogger(__name__)
 
 
-def serialize_rows(lst: list | np.ndarray, max_void_type_length: int) -> np.ndarray:
-    """
-    Convert a nested list to a 1D numpy array with dynamic void type sizing.
+def serialize_rows(
+    lst: list | np.ndarray,
+    max_void_type_length: int,
+    *,
+    compresslevel: int = 1,
+) -> np.ndarray:
+    """Convert a nested list to a 1D numpy array with dynamic void type sizing.
 
     Uses JSON with gzip compression for security and compatibility. Each element
     contains a bytes serialization of the corresponding row. The void type size
@@ -29,6 +33,9 @@ def serialize_rows(lst: list | np.ndarray, max_void_type_length: int) -> np.ndar
     Args:
         lst: List of rows to serialize
         max_void_type_length: Maximum allowed void type size (raises error if exceeded)
+        compresslevel: Gzip compression level (1-9). Lower values are faster
+            but produce larger output. Default is 1 (fastest) since rows are
+            typically small and throughput matters more than ratio.
 
     Returns:
         np.ndarray with dtype V{size} where size is the maximum serialized row size
@@ -41,12 +48,15 @@ def serialize_rows(lst: list | np.ndarray, max_void_type_length: int) -> np.ndar
         >>> serialized = serialize_rows(rows, max_void_type_length=1024)
         >>> serialized.dtype.kind
         'V'
+
     """
     # Serialize all rows first to compute required size (using JSON + gzip)
     serialized = []
     for row in lst:
         json_str = json.dumps(row, default=json_encoder)
-        compressed = gzip.compress(json_str.encode("utf-8"))
+        compressed = gzip.compress(
+            json_str.encode("utf-8"), compresslevel=compresslevel
+        )
         serialized.append(compressed)
 
     # Compute required void type size (maximum of all serialized rows)
@@ -54,11 +64,12 @@ def serialize_rows(lst: list | np.ndarray, max_void_type_length: int) -> np.ndar
 
     # Validate against maximum allowed size
     if max_size > max_void_type_length:
-        raise ValueError(
+        msg = (
             f"Serialized row size {max_size} bytes exceeds maximum allowed size "
             f"{max_void_type_length} bytes. Consider reducing payload size, using compression, "
             f"or increasing MAX_VOID_TYPE_LENGTH configuration."
         )
+        raise ValueError(msg)
 
     # Use dynamic void type based on actual data size (prevents truncation and saves space)
     void_dtype = f"V{max_size}" if max_size > 0 else f"V{max_void_type_length}"
@@ -66,8 +77,7 @@ def serialize_rows(lst: list | np.ndarray, max_void_type_length: int) -> np.ndar
 
 
 def deserialize_rows(serialized: np.ndarray) -> np.ndarray:
-    """
-    Convert a 1D numpy array from `serialize_rows` to a numpy object array.
+    """Convert a 1D numpy array from `serialize_rows` to a numpy object array.
 
     Deserializes gzip-compressed JSON data.
 
@@ -86,6 +96,7 @@ def deserialize_rows(serialized: np.ndarray) -> np.ndarray:
         >>> deserialized = deserialize_rows(serialized)
         >>> list(deserialized[0])
         [1, 2, 3]
+
     """
     deserialized = []
 
@@ -97,13 +108,20 @@ def deserialize_rows(serialized: np.ndarray) -> np.ndarray:
             # Gzip-compressed JSON (production format)
             # Gzip decompressor handles the data correctly without manual null-byte stripping
             try:
-                json_str = gzip.decompress(row_bytes).decode("utf-8")
+                json_str = safe_gzip_decompress(row_bytes).decode("utf-8")
                 deserialized.append(json.loads(json_str))
-            except (OSError, gzip.BadGzipFile, json.JSONDecodeError, UnicodeDecodeError) as e:
-                raise ValueError(f"Failed to deserialize row as gzip-compressed JSON: {e}") from e
+            except (
+                OSError,
+                gzip.BadGzipFile,
+                zlib.error,
+                EOFError,
+                json.JSONDecodeError,
+                UnicodeDecodeError,
+            ) as e:
+                msg = f"Failed to deserialize row as gzip-compressed JSON: {e}"
+                raise ValueError(msg) from e
         else:
-            raise ValueError(
-                f"Unsupported serialization format. Expected gzip-compressed JSON. First bytes: {row_bytes[:10]!r}"
-            )
+            msg = f"Unsupported serialization format. Expected gzip-compressed JSON. First bytes: {row_bytes[:10]!r}"
+            raise ValueError(msg)
 
     return np.array(deserialized, dtype="O")

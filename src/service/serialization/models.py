@@ -1,5 +1,4 @@
-"""
-Pydantic model serialization with JSON + gzip compression.
+"""Pydantic model serialization with JSON + gzip compression.
 
 Provides secure serialization for Pydantic models using JSON for data
 representation and gzip for compression.
@@ -8,18 +7,18 @@ representation and gzip for compression.
 import gzip
 import json
 import logging
+import zlib
 
 from pydantic import BaseModel
 
-from .detection import detect_format
+from .detection import detect_format, safe_gzip_decompress
 from .encoders import json_decoder_hook, json_encoder
 
 logger = logging.getLogger(__name__)
 
 
 def serialize_model(obj: BaseModel | dict) -> bytes:
-    """
-    Serialize a Pydantic model or dictionary using JSON + gzip.
+    r"""Serialize a Pydantic model or dictionary using JSON + gzip.
 
     Args:
         obj: Pydantic model instance or dictionary to serialize
@@ -39,13 +38,15 @@ def serialize_model(obj: BaseModel | dict) -> bytes:
         >>> data = serialize_model(user)
         >>> data.startswith(b'\\x1f\\x8b')  # gzip magic bytes
         True
+
     """
     if isinstance(obj, dict):
         data = obj
     elif hasattr(obj, "model_dump"):
         data = obj.model_dump()
     else:
-        raise ValueError(f"Cannot serialize type: {type(obj).__name__}")
+        msg = f"Cannot serialize type: {type(obj).__name__}"
+        raise ValueError(msg)
 
     # Serialize to JSON then compress with gzip
     json_str = json.dumps(data, default=json_encoder)
@@ -53,8 +54,7 @@ def serialize_model(obj: BaseModel | dict) -> bytes:
 
 
 def deserialize_model[T: BaseModel](data: bytes, target_class: type[T]) -> T:
-    """
-    Deserialize and validate data against expected Pydantic schema.
+    """Deserialize and validate data against expected Pydantic schema.
 
     Supports both gzip-compressed and uncompressed JSON formats.
 
@@ -77,6 +77,7 @@ def deserialize_model[T: BaseModel](data: bytes, target_class: type[T]) -> T:
         >>> user = deserialize_model(serialized, User)
         >>> user.name
         'Bob'
+
     """
     try:
         format_type = detect_format(data)
@@ -87,12 +88,22 @@ def deserialize_model[T: BaseModel](data: bytes, target_class: type[T]) -> T:
     # Try gzip-compressed JSON first (production format)
     if format_type == "gzip" or format_type is None:
         try:
-            json_str = gzip.decompress(data).decode("utf-8")
+            json_str = safe_gzip_decompress(data).decode("utf-8")
             obj_dict = json.loads(json_str, object_hook=json_decoder_hook)
             return target_class(**obj_dict)
-        except (OSError, gzip.BadGzipFile, json.JSONDecodeError, UnicodeDecodeError, ValueError):
+        except (
+            OSError,
+            gzip.BadGzipFile,
+            zlib.error,
+            EOFError,
+            json.JSONDecodeError,
+            UnicodeDecodeError,
+            ValueError,
+        ) as e:
             if format_type == "gzip":
-                raise  # If we detected gzip but it failed, don't try other formats
+                # If we detected gzip but it failed, convert to ValueError for consistent error handling
+                msg = f"Failed to deserialize gzip data: {e}"
+                raise ValueError(msg) from e
 
     # Try uncompressed JSON
     if format_type == "json" or format_type is None:
@@ -101,9 +112,12 @@ def deserialize_model[T: BaseModel](data: bytes, target_class: type[T]) -> T:
             return target_class(**obj_dict)
         except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as e:
             if format_type == "json":
-                raise ValueError(f"Failed to deserialize JSON data: {e}") from e
+                msg = f"Failed to deserialize JSON data: {e}"
+                raise ValueError(msg) from e
 
-    raise ValueError(
+    # Pickle is intentionally unsupported (CWE-502: deserialization of untrusted data).
+    msg = (
         f"Unsupported serialization format. Expected JSON or gzip-compressed JSON, "
-        f"got format: {format_type if format_type else 'unknown'}"
+        f"got format: {format_type or 'unknown'}"
     )
+    raise ValueError(msg)

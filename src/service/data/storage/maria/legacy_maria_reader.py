@@ -143,7 +143,7 @@ class LegacyMariaDBStorageReader:
             sep = f",-{uuid.uuid4()}-,"
 
             cursor.execute(
-                f"SELECT timestamp, modelId, rowId, tag, GROUP_CONCAT(serializableObject SEPARATOR '{sep}')"  # noqa: S608  # sep is an internal UUID, not user input
+                f"SELECT timestamp, modelId, rowId, tag, GROUP_CONCAT(serializableObject SEPARATOR '{sep}')"  # noqa: S608 -- sep is an internal UUID, not user input
                 " FROM DataframeRow"
                 " LEFT JOIN (DataframeRow_Values) ON (DataframeRow.dbId = DataframeRow_Values.DataframeRow_dbId)"
                 " WHERE modelId=?"
