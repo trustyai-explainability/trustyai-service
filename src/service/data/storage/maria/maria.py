@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import io
+import gzip
 import json
 import logging
 
@@ -23,6 +23,8 @@ from src.service.data.storage.maria.utils import (
 )
 from src.service.data.storage.storage_interface import StorageInterface
 from src.service.serialization import deserialize_model, serialize_model
+from src.service.serialization.detection import safe_gzip_decompress
+from src.service.serialization.encoders import json_decoder_hook, json_encoder
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.StreamHandler())
@@ -129,12 +131,18 @@ class MariaDBStorage(StorageInterface):
             try:
                 loop = asyncio.get_running_loop()
                 self._migration_task = loop.create_task(self._migrate_from_legacy_db())
-                self._migration_task.add_done_callback(
-                    lambda t: t.exception() if not t.cancelled() else None
-                )
+                self._migration_task.add_done_callback(self._on_migration_done)
             except RuntimeError:
                 # No event loop running - run migration synchronously
                 asyncio.run(self._migrate_from_legacy_db())
+
+    @staticmethod
+    def _on_migration_done(task: asyncio.Task[None]) -> None:
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            logger.exception("Legacy TrustyAI v1 migration failed.", exc_info=exc)
 
     # === MIGRATORS ================================================================================
     async def _migrate_from_legacy_db(self) -> None:
@@ -327,14 +335,13 @@ class MariaDBStorage(StorageInterface):
 
         value_formatter = ",".join(["?" for _ in range(ncols)])
         with self.connection_manager as (conn, cursor):
-            # write each new_rows[i, j] to bytes
+            # write each new_rows[i, j] to bytes (JSON + gzip)
             byte_matrix = []
             for new_row in new_rows:
                 col_values = []
                 for col in new_row:
-                    with io.BytesIO() as bio:
-                        np.save(bio, col, allow_pickle=True)
-                        col_values.append(bio.getvalue())
+                    json_bytes = json.dumps(col, default=json_encoder).encode("utf-8")
+                    col_values.append(gzip.compress(json_bytes))
                 byte_matrix.append(tuple(col_values))
 
             # place the byte_matrix into the DB
@@ -382,15 +389,17 @@ class MariaDBStorage(StorageInterface):
                 (n_rows, start_row),
             )
 
-            # parse saved data back to Numpy array
+            # parse saved data back to Numpy array (JSON + gzip)
             arr = []
             dtypes = set()
             for row in cursor.fetchall():
                 # first value in row is the index, so we can skip that
                 row_values = []
                 for cell in row[1:]:
-                    value = np.load(io.BytesIO(cell), allow_pickle=True)
-
+                    json_str = safe_gzip_decompress(cell).decode("utf-8")
+                    value = np.asarray(
+                        json.loads(json_str, object_hook=json_decoder_hook)
+                    )
                     dtypes.add(value.dtype)
                     row_values.append(value)
                 arr.append(row_values)
