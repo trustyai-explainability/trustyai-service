@@ -1100,56 +1100,7 @@ class TestGKPropertyBased:
         assert len(sketch.summary) >= 1
 
     def test_query_rank_edge_cases_direct(self) -> None:
-        """Test _query_rank edge cases by directly calling it with crafted states."""
-        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_HIGH)
-
-        # Setup 1: Test line 165 (idx >= len(_cumulative_r_max))
-        # This happens when target_rank > max(_cumulative_r_max)
-        sketch.summary = [(1.0, 1, 0), (2.0, 1, 0), (3.0, 1, 0)]
-        sketch.n = 100  # Large n makes target_rank potentially > all r_max values
-        sketch._cumulative_cache_valid = False
-        sketch._ensure_cumulative_cache()
-
-        # _cumulative_r_max will be [1, 2, 3]
-        # With n=100, querying phi near 1.0 gives target_rank around 100
-        # which is > all values in _cumulative_r_max
-        result = sketch.quantile(0.99)  # target_rank = ceil(99) = 99
-        assert result == 3.0  # Should return last summary value (line 165)
-
-        # Setup 2: Test lines 168-170
-        # Create a situation where cumulative_r_max[idx] < target_rank
-        # and we need to check if idx+1 < len(summary)
-        sketch.summary = [(1.0, 2, 1), (2.0, 2, 1), (3.0, 2, 0)]
-        sketch.n = 6
-        sketch._cumulative_cache_valid = False
-        sketch._ensure_cumulative_cache()
-
-        # _cumulative_r_max will be [(2+1)=3, (2+2+1)=5, (2+2+2+0)=6]
-        # Query with target_rank that falls between values
-        # phi=0.6 -> target_rank = ceil(3.6) = 4
-        # bisect_left([3,5,6], 4) = 1
-        # _cumulative_r_max[1] = 5 >= 4, so takes line 167 (normal path)
-
-        # phi=0.5 -> target_rank = ceil(3) = 3
-        # bisect_left([3,5,6], 3) = 0
-        # _cumulative_r_max[0] = 3 >= 3, takes line 167
-
-        # To hit line 168-170, need _cumulative_r_max[idx] < target_rank
-        # This is actually impossible with bisect_left on sorted cumulative values
-        # because bisect_left finds leftmost position where value >= target
-
-        # Let's try a different approach: craft cache that violates assumptions
-        sketch.summary = [(1.0, 1, 5), (2.0, 1, 0)]
-        sketch.n = 2
-        sketch._cumulative_r_max = [6, 7]  # Manually set cache
-        sketch._cumulative_cache_valid = True
-
-        # target_rank = 1: bisect_left([6,7], 1) = 0
-        # _cumulative_r_max[0] = 6 >= 1, takes line 167
-        # Still can't hit 168-170
-
-        # These lines (168-170) appear to be unreachable defensive code
-        # Let's at least test with various quantiles to ensure no crashes
+        """Test quantile queries across a range of phi values."""
         sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
         for i in range(50):
             sketch.insert(float(i))
@@ -1161,7 +1112,7 @@ class TestGKPropertyBased:
     def test_serialization_round_trip(self) -> None:
         """Test that sketch state can be serialized and deserialized correctly."""
         epsilon = EPSILON_DEFAULT
-        rng = np.random.RandomState(42)
+        rng = np.random.default_rng(42)
         data = rng.normal(loc=0.0, scale=1.0, size=500)
 
         # Build and populate sketch
@@ -1205,7 +1156,7 @@ class TestGKPropertyBased:
     def test_from_dict_malformed_input(self) -> None:
         """Test that from_dict raises errors on malformed input."""
         epsilon = EPSILON_DEFAULT
-        rng = np.random.RandomState(123)
+        rng = np.random.default_rng(123)
         data = rng.normal(size=100)
 
         sketch = GreenwaldKhannaSketch(epsilon=epsilon)

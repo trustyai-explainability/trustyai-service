@@ -122,7 +122,7 @@ class TestKSTestStreamingEndpoints:
             # Missing referenceTag
             "fitColumns": ["feature1"],
         },
-        expected_status_code=400,
+        expected_status_code=HTTPStatus.BAD_REQUEST,
         expected_error_substring="referenceTag is required",
     )
 
@@ -136,7 +136,7 @@ class TestKSTestStreamingEndpoints:
             "referenceTag": "baseline",
             # Missing fitColumns
         },
-        expected_status_code=400,
+        expected_status_code=HTTPStatus.BAD_REQUEST,
         expected_error_substring="fitColumns is required",
     )
 
@@ -150,7 +150,7 @@ class TestKSTestStreamingEndpoints:
             "referenceTag": "baseline",
             "fitColumns": ["nonexistent_feature"],
         },
-        expected_status_code=400,
+        expected_status_code=HTTPStatus.BAD_REQUEST,
         expected_error_substring="not found in data",
     )
 
@@ -161,7 +161,7 @@ class TestKSTestStreamingEndpoints:
         endpoint_path="/metrics/drift/ksteststreaming/request",
         client=client,
         request_id="not-a-valid-uuid",
-        expected_status_code=400,  # Now properly returns 400 for invalid UUID
+        expected_status_code=HTTPStatus.BAD_REQUEST,  # Now properly returns 400 for invalid UUID
         expected_error_substring="Invalid request ID",
     )
 
