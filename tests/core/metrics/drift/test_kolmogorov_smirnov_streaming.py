@@ -1,6 +1,4 @@
-# pylint: disable=line-too-long
-"""
-Tests for the streaming Kolmogorov-Smirnov test implementation.
+"""Tests for the streaming Kolmogorov-Smirnov test implementation.
 
 These tests verify the KolmogorovSmirnovStreaming class which implements
 the Lall (2015) streaming 2-sample KS algorithm using GK sketches.
@@ -13,14 +11,28 @@ from hypothesis import strategies as st
 from scipy import stats
 from scipy.stats import ks_2samp
 
-from src.core.metrics.drift.kolmogorov_smirnov_streaming import KolmogorovSmirnovStreaming
+from src.core.metrics.drift.greenwald_khanna_quantile_sketch import EPSILON_DEFAULT
+from src.core.metrics.drift.kolmogorov_smirnov_streaming import (
+    KolmogorovSmirnovStreaming,
+)
 
 from . import factory
 
+# ---------------------------------------------------------------------------
+# Constants for magic-value elimination (PLR2004)
+# ---------------------------------------------------------------------------
+EPSILON_FINE = 0.001
+BATCH_SIZE = 100
+SKETCH_APPROX_TOLERANCE = 0.2
+EXACT_APPROX_TOLERANCE = 0.05
+GK_ERROR_SLACK = 0.1
+APPROX_STAT_ERROR_MULTIPLIER = 4
 
-def _streaming_ks_wrapper(reference_data: np.ndarray, current_data: np.ndarray, **kwargs) -> dict:
-    """
-    Wrapper function to adapt KolmogorovSmirnovStreaming to the factory interface.
+
+def _streaming_ks_wrapper(
+    reference_data: np.ndarray, current_data: np.ndarray, **kwargs: float
+) -> dict:
+    """Adapt KolmogorovSmirnovStreaming to the factory interface.
 
     The factory expects a function signature: metric_fn(reference_data, current_data, **params)
     """
@@ -46,7 +58,15 @@ class TestStreamingKSTestUnified:
         metric_fn=_streaming_ks_wrapper,
         params={"epsilon": 0.01, "alpha": 0.05},
         statistic_key="statistic",
-        required_keys=["drift_detected", "statistic", "p_value", "alpha", "n_reference", "n_current", "epsilon"],
+        required_keys=[
+            "drift_detected",
+            "statistic",
+            "p_value",
+            "alpha",
+            "n_reference",
+            "n_current",
+            "epsilon",
+        ],
     )
 
     test_detects_large_shift = factory.make_detects_large_shift_test(
@@ -74,14 +94,14 @@ class TestStreamingKSTestUnified:
 class TestKolmogorovSmirnovStreamingBasic:
     """Basic functionality tests for KolmogorovSmirnovStreaming."""
 
-    def test_initialization(self):
+    def test_initialization(self) -> None:
         """Test basic initialization."""
-        ks = KolmogorovSmirnovStreaming(epsilon=0.01)
-        assert ks.epsilon == 0.01
+        ks = KolmogorovSmirnovStreaming(epsilon=EPSILON_DEFAULT)
+        assert ks.epsilon == EPSILON_DEFAULT
         assert ks.n_reference == 0
         assert ks.n_current == 0
 
-    def test_initialization_invalid_epsilon(self):
+    def test_initialization_invalid_epsilon(self) -> None:
         """Test that invalid epsilon values raise ValueError."""
         with pytest.raises(ValueError, match="epsilon must be in the range"):
             KolmogorovSmirnovStreaming(epsilon=0.0)
@@ -92,69 +112,69 @@ class TestKolmogorovSmirnovStreamingBasic:
         with pytest.raises(ValueError, match="epsilon must be in the range"):
             KolmogorovSmirnovStreaming(epsilon=-0.1)
 
-    def test_insert_reference(self):
+    def test_insert_reference(self) -> None:
         """Test inserting values into reference sketch."""
-        ks = KolmogorovSmirnovStreaming(epsilon=0.01)
+        ks = KolmogorovSmirnovStreaming(epsilon=EPSILON_DEFAULT)
 
-        for i in range(100):
+        for i in range(BATCH_SIZE):
             ks.insert_reference(float(i))
 
-        assert ks.n_reference == 100
+        assert ks.n_reference == BATCH_SIZE
         assert ks.n_current == 0
 
-    def test_insert_current(self):
+    def test_insert_current(self) -> None:
         """Test inserting values into current sketch."""
-        ks = KolmogorovSmirnovStreaming(epsilon=0.01)
+        ks = KolmogorovSmirnovStreaming(epsilon=EPSILON_DEFAULT)
 
-        for i in range(100):
+        for i in range(BATCH_SIZE):
             ks.insert_current(float(i))
 
         assert ks.n_reference == 0
-        assert ks.n_current == 100
+        assert ks.n_current == BATCH_SIZE
 
-    def test_insert_batch_reference(self):
+    def test_insert_batch_reference(self) -> None:
         """Test batch insertion into reference sketch."""
-        ks = KolmogorovSmirnovStreaming(epsilon=0.01)
-        values = np.arange(100, dtype=float)
+        ks = KolmogorovSmirnovStreaming(epsilon=EPSILON_DEFAULT)
+        values = np.arange(BATCH_SIZE, dtype=float)
 
         ks.insert_reference_batch(values)
 
-        assert ks.n_reference == 100
+        assert ks.n_reference == BATCH_SIZE
         assert ks.n_current == 0
 
-    def test_insert_batch_current(self):
+    def test_insert_batch_current(self) -> None:
         """Test batch insertion into current sketch."""
-        ks = KolmogorovSmirnovStreaming(epsilon=0.01)
-        values = np.arange(100, dtype=float)
+        ks = KolmogorovSmirnovStreaming(epsilon=EPSILON_DEFAULT)
+        values = np.arange(BATCH_SIZE, dtype=float)
 
         ks.insert_current_batch(values)
 
         assert ks.n_reference == 0
-        assert ks.n_current == 100
+        assert ks.n_current == BATCH_SIZE
 
-    def test_reset_reference(self):
+    def test_reset_reference(self) -> None:
         """Test resetting reference sketch."""
-        ks = KolmogorovSmirnovStreaming(epsilon=0.01)
-        ks.insert_reference_batch(np.arange(100, dtype=float))
-        assert ks.n_reference == 100
+        ks = KolmogorovSmirnovStreaming(epsilon=EPSILON_DEFAULT)
+        ks.insert_reference_batch(np.arange(BATCH_SIZE, dtype=float))
+        assert ks.n_reference == BATCH_SIZE
 
         ks.reset_reference()
         assert ks.n_reference == 0
 
-    def test_reset_current(self):
+    def test_reset_current(self) -> None:
         """Test resetting current sketch."""
-        ks = KolmogorovSmirnovStreaming(epsilon=0.01)
-        ks.insert_current_batch(np.arange(100, dtype=float))
-        assert ks.n_current == 100
+        ks = KolmogorovSmirnovStreaming(epsilon=EPSILON_DEFAULT)
+        ks.insert_current_batch(np.arange(BATCH_SIZE, dtype=float))
+        assert ks.n_current == BATCH_SIZE
 
         ks.reset_current()
         assert ks.n_current == 0
 
-    def test_reset_both(self):
+    def test_reset_both(self) -> None:
         """Test resetting both sketches."""
-        ks = KolmogorovSmirnovStreaming(epsilon=0.01)
-        ks.insert_reference_batch(np.arange(100, dtype=float))
-        ks.insert_current_batch(np.arange(100, dtype=float))
+        ks = KolmogorovSmirnovStreaming(epsilon=EPSILON_DEFAULT)
+        ks.insert_reference_batch(np.arange(BATCH_SIZE, dtype=float))
+        ks.insert_current_batch(np.arange(BATCH_SIZE, dtype=float))
 
         ks.reset()
 
@@ -165,9 +185,9 @@ class TestKolmogorovSmirnovStreamingBasic:
 class TestKolmogorovSmirnovStreamingStatistic:
     """Tests for KS statistic computation."""
 
-    def test_statistic_bounded_zero_one(self):
+    def test_statistic_bounded_zero_one(self) -> None:
         """Test that statistic is always in [0, 1]."""
-        ks = KolmogorovSmirnovStreaming(epsilon=0.01)
+        ks = KolmogorovSmirnovStreaming(epsilon=EPSILON_DEFAULT)
 
         rng = np.random.default_rng(42)
         ref_data = rng.uniform(-100, 100, 500)
@@ -189,8 +209,10 @@ class TestKolmogorovSmirnovStreamingPropertyBased:
         seed=st.integers(min_value=0, max_value=10000),
     )
     @settings(max_examples=20, deadline=None)
-    def test_approximate_statistic_bounded_error(self, epsilon: float, n_samples: int, seed: int):
-        """Property: Approximate statistic is within bounded error of exact."""
+    def test_approximate_statistic_bounded_error(
+        self, epsilon: float, n_samples: int, seed: int
+    ) -> None:
+        """Verify approximate statistic is within bounded error of exact."""
         ks = KolmogorovSmirnovStreaming(epsilon=epsilon)
 
         rng = np.random.RandomState(seed)
@@ -205,18 +227,23 @@ class TestKolmogorovSmirnovStreamingPropertyBased:
 
         # Error should be bounded by 4*epsilon (2*epsilon per CDF)
         # Add small slack for finite sample effects
-        assert abs(approx_stat - exact_stat) < 4 * epsilon + 0.1
+        assert (
+            abs(approx_stat - exact_stat)
+            < APPROX_STAT_ERROR_MULTIPLIER * epsilon + GK_ERROR_SLACK
+        )
 
 
 class TestKolmogorovSmirnovStreamingRegression:
     """Regression tests with fixed data."""
 
-    def test_fixed_example_matches_scipy(self):
+    def test_fixed_example_matches_scipy(self) -> None:
         """Deterministic test comparing to scipy.stats.ks_2samp."""
-        ks = KolmogorovSmirnovStreaming(epsilon=0.001)
+        ks = KolmogorovSmirnovStreaming(epsilon=EPSILON_FINE)
 
         ref_data = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
-        cur_data = np.array([0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95, 1.05])
+        cur_data = np.array(
+            [0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95, 1.05]
+        )
 
         ks.insert_reference_batch(ref_data)
         ks.insert_current_batch(cur_data)
@@ -225,11 +252,11 @@ class TestKolmogorovSmirnovStreamingRegression:
         exact_stat, _ = ks_2samp(ref_data, cur_data)
 
         # With very small epsilon, should be very close
-        assert abs(approx_stat - exact_stat) < 0.05
+        assert abs(approx_stat - exact_stat) < EXACT_APPROX_TOLERANCE
 
-    def test_uniform_vs_normal_detects_drift(self):
+    def test_uniform_vs_normal_detects_drift(self) -> None:
         """Test that uniform vs normal distribution is detected."""
-        ks = KolmogorovSmirnovStreaming(epsilon=0.01)
+        ks = KolmogorovSmirnovStreaming(epsilon=EPSILON_DEFAULT)
 
         rng = np.random.default_rng(42)
         ref_data = rng.uniform(0, 1, 500)
@@ -242,9 +269,9 @@ class TestKolmogorovSmirnovStreamingRegression:
 
         assert result["drift_detected"] is True
 
-    def test_bimodal_vs_unimodal_detects_drift(self):
+    def test_bimodal_vs_unimodal_detects_drift(self) -> None:
         """Test that bimodal vs unimodal distribution is detected."""
-        ks = KolmogorovSmirnovStreaming(epsilon=0.01)
+        ks = KolmogorovSmirnovStreaming(epsilon=EPSILON_DEFAULT)
 
         rng = np.random.default_rng(42)
         ref_data = rng.normal(0, 1, 500)
@@ -257,9 +284,9 @@ class TestKolmogorovSmirnovStreamingRegression:
 
         assert result["drift_detected"] is True
 
-    def test_statistic_with_equal_values(self):
+    def test_statistic_with_equal_values(self) -> None:
         """Test statistic computation when reference and current have equal values."""
-        ks = KolmogorovSmirnovStreaming(epsilon=0.01)
+        ks = KolmogorovSmirnovStreaming(epsilon=EPSILON_DEFAULT)
 
         # Add some common values to both distributions
         for i in [1.0, 2.0, 3.0, 4.0, 5.0]:
@@ -268,11 +295,13 @@ class TestKolmogorovSmirnovStreamingRegression:
 
         # Statistic should be very small (close to 0) since distributions are identical
         stat = ks.statistic()
-        assert 0.0 <= stat <= 0.2  # Allow small error due to sketch approximation
+        assert (
+            0.0 <= stat <= SKETCH_APPROX_TOLERANCE
+        )  # Allow small error due to sketch approximation
 
-    def test_kstest_empty_sketches(self):
+    def test_kstest_empty_sketches(self) -> None:
         """Test that kstest raises ValueError when sketches are empty."""
-        ks = KolmogorovSmirnovStreaming(epsilon=0.01)
+        ks = KolmogorovSmirnovStreaming(epsilon=EPSILON_DEFAULT)
 
         # No data inserted - both sketches empty
         with pytest.raises(ValueError, match="Reference sketch is empty"):
@@ -283,9 +312,9 @@ class TestKolmogorovSmirnovStreamingRegression:
         with pytest.raises(ValueError, match="Current sketch is empty"):
             ks.kstest()
 
-    def test_p_value_empty_sketches(self):
+    def test_p_value_empty_sketches(self) -> None:
         """Test that p_value raises ValueError when sketches are empty (line 186 coverage)."""
-        ks = KolmogorovSmirnovStreaming(epsilon=0.01)
+        ks = KolmogorovSmirnovStreaming(epsilon=EPSILON_DEFAULT)
 
         # Test with both sketches empty
         with pytest.raises(ValueError, match="Both sketches must be non-empty"):
@@ -297,14 +326,14 @@ class TestKolmogorovSmirnovStreamingRegression:
             ks.p_value()
 
         # Test with only current having data
-        ks2 = KolmogorovSmirnovStreaming(epsilon=0.01)
+        ks2 = KolmogorovSmirnovStreaming(epsilon=EPSILON_DEFAULT)
         ks2.insert_current(1.0)
         with pytest.raises(ValueError, match="Both sketches must be non-empty"):
             ks2.p_value()
 
-    def test_property_accessors(self):
+    def test_property_accessors(self) -> None:
         """Test that property accessors return the correct sketch objects."""
-        ks = KolmogorovSmirnovStreaming(epsilon=0.01)
+        ks = KolmogorovSmirnovStreaming(epsilon=EPSILON_DEFAULT)
 
         ks.insert_reference(1.0)
         ks.insert_current(2.0)
@@ -320,9 +349,9 @@ class TestKolmogorovSmirnovStreamingRegression:
         assert len(ref_sketch) == 1
         assert len(cur_sketch) == 1
 
-    def test_serialization_round_trip(self):
+    def test_serialization_round_trip(self) -> None:
         """Test that streaming KS state can be serialized and deserialized correctly."""
-        epsilon = 0.01
+        epsilon = EPSILON_DEFAULT
         rng = np.random.RandomState(42)
 
         # Fixed reference and current data for regression
@@ -353,9 +382,9 @@ class TestKolmogorovSmirnovStreamingRegression:
         assert np.isclose(restored_ks.statistic(), orig_stat, rtol=1e-12, atol=1e-12)
         assert np.isclose(restored_ks.p_value(), orig_p_value, rtol=1e-12, atol=1e-12)
 
-    def test_from_dict_malformed_input(self):
+    def test_from_dict_malformed_input(self) -> None:
         """Test that from_dict fails cleanly on malformed input."""
-        epsilon = 0.01
+        epsilon = EPSILON_DEFAULT
         rng = np.random.RandomState(123)
 
         ref_data = rng.normal(size=100)
@@ -381,7 +410,7 @@ class TestKolmogorovSmirnovStreamingRegression:
         with pytest.raises((KeyError, ValueError)):
             KolmogorovSmirnovStreaming.from_dict(malformed_state_missing_current)
 
-    def test_alpha_parameter_affects_drift_decision(self):
+    def test_alpha_parameter_affects_drift_decision(self) -> None:
         """Test that alpha parameter controls drift_detected thresholding."""
         rng = np.random.default_rng(123)
 
@@ -392,7 +421,7 @@ class TestKolmogorovSmirnovStreamingRegression:
             ref_data = rng.normal(0.0, 1.0, 400)
             cur_data = rng.normal(0.15, 1.0, 400)
 
-            ks = KolmogorovSmirnovStreaming(epsilon=0.01)
+            ks = KolmogorovSmirnovStreaming(epsilon=EPSILON_DEFAULT)
             ks.insert_reference_batch(ref_data)
             ks.insert_current_batch(cur_data)
 

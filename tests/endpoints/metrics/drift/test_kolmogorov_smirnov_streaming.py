@@ -1,7 +1,18 @@
+"""Tests for streaming Kolmogorov-Smirnov test endpoint."""
+
+from http import HTTPStatus
+from unittest.mock import AsyncMock, MagicMock
+
+import pandas as pd
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.endpoints.metrics.drift.kolmogorov_smirnov_streaming import ApproxKSTestMetricRequest, router
+import src.endpoints.metrics.drift.kolmogorov_smirnov_streaming as ks_module
+from src.endpoints.metrics.drift.kolmogorov_smirnov_streaming import (
+    ApproxKSTestMetricRequest,
+    router,
+)
 
 from . import factory
 
@@ -27,7 +38,14 @@ class TestKSTestStreamingEndpoints:
             "batchSize": 100,
             "epsilon": 0.01,
         },
-        expected_response_keys=["status", "value", "drift_detected", "p_value", "alpha", "epsilon"],
+        expected_response_keys=[
+            "status",
+            "value",
+            "drift_detected",
+            "p_value",
+            "alpha",
+            "epsilon",
+        ],
         df_type="Pandas",
     )
 
@@ -44,7 +62,14 @@ class TestKSTestStreamingEndpoints:
             "batchSize": 100,
             "epsilon": 0.01,
         },
-        expected_response_keys=["status", "value", "drift_detected", "p_value", "alpha", "epsilon"],
+        expected_response_keys=[
+            "status",
+            "value",
+            "drift_detected",
+            "p_value",
+            "alpha",
+            "epsilon",
+        ],
         df_type="Polars",
     )
 
@@ -150,13 +175,15 @@ class TestKSTestStreamingEndpoints:
     )
 
     # List endpoint with malformed requests (defensive logic test)
-    test_list_requests_filters_malformed = factory.make_list_requests_with_malformed_data_test(
-        metric_name="KSTestStreaming",
-        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov_streaming",
-        endpoint_path="/metrics/drift/ksteststreaming/requests",
-        client=client,
-        num_valid_requests=2,
-        num_malformed_requests=3,
+    test_list_requests_filters_malformed = (
+        factory.make_list_requests_with_malformed_data_test(
+            metric_name="KSTestStreaming",
+            module_path="src.endpoints.metrics.drift.kolmogorov_smirnov_streaming",
+            endpoint_path="/metrics/drift/ksteststreaming/requests",
+            client=client,
+            num_valid_requests=2,
+            num_malformed_requests=3,
+        )
     )
 
     # Empty data tests
@@ -185,11 +212,13 @@ class TestKSTestStreamingEndpoints:
     )
 
     # List endpoint error tests
-    test_list_scheduler_unavailable = factory.make_list_endpoint_scheduler_unavailable_test(
-        metric_name="KSTestStreaming",
-        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov_streaming",
-        endpoint_path="/metrics/drift/ksteststreaming/requests",
-        client=client,
+    test_list_scheduler_unavailable = (
+        factory.make_list_endpoint_scheduler_unavailable_test(
+            metric_name="KSTestStreaming",
+            module_path="src.endpoints.metrics.drift.kolmogorov_smirnov_streaming",
+            endpoint_path="/metrics/drift/ksteststreaming/requests",
+            client=client,
+        )
     )
 
     test_list_exception = factory.make_list_endpoint_exception_test(
@@ -227,8 +256,8 @@ class TestKSTestStreamingEndpoints:
             "referenceTag": "baseline",
             "fitColumns": ["feature1"],
         },
-        expected_status_code=500,
-        expected_error_substring="connect",  # Match "Failed to connect"
+        expected_status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+        expected_error_substring="Error scheduling metric",
         mock_scheduler_none=False,
         register_side_effect=ConnectionError("Failed to connect to scheduler database"),
     )
@@ -243,8 +272,8 @@ class TestKSTestStreamingEndpoints:
             "referenceTag": "baseline",
             "fitColumns": ["feature1"],
         },
-        expected_status_code=500,
-        expected_error_substring="timeout",
+        expected_status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+        expected_error_substring="Error scheduling metric",
         mock_scheduler_none=False,
         register_side_effect=TimeoutError("Scheduler registration timeout after 30s"),
     )
@@ -259,8 +288,8 @@ class TestKSTestStreamingEndpoints:
             "referenceTag": "baseline",
             "fitColumns": ["feature1"],
         },
-        expected_status_code=500,
-        expected_error_substring="error",
+        expected_status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+        expected_error_substring="Error scheduling metric",
         mock_scheduler_none=False,
         register_side_effect=RuntimeError("Internal scheduler error occurred"),
     )
@@ -272,8 +301,8 @@ class TestKSTestStreamingEndpoints:
         endpoint_path="/metrics/drift/ksteststreaming/request",
         client=client,
         request_id="123e4567-e89b-12d3-a456-426614174000",
-        expected_status_code=500,
-        expected_error_substring="connect",  # Match "Failed to connect"
+        expected_status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+        expected_error_substring="Error deleting schedule",
         mock_scheduler_none=False,
         delete_side_effect=ConnectionError("Failed to connect to scheduler database"),
     )
@@ -284,8 +313,8 @@ class TestKSTestStreamingEndpoints:
         endpoint_path="/metrics/drift/ksteststreaming/request",
         client=client,
         request_id="123e4567-e89b-12d3-a456-426614174000",
-        expected_status_code=500,
-        expected_error_substring="failed",
+        expected_status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+        expected_error_substring="Error deleting schedule",
         mock_scheduler_none=False,
         delete_side_effect=RuntimeError("Scheduler deletion failed"),
     )
@@ -301,8 +330,8 @@ class TestKSTestStreamingEndpoints:
             "referenceTag": "baseline",
             "fitColumns": ["feature1"],
         },
-        expected_status_code=500,
-        expected_error_substring="not available",  # Matches "Prometheus scheduler not available"
+        expected_status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+        expected_error_substring="not available",
         mock_scheduler_none=True,
     )
 
@@ -312,8 +341,8 @@ class TestKSTestStreamingEndpoints:
         endpoint_path="/metrics/drift/ksteststreaming/request",
         client=client,
         request_id="123e4567-e89b-12d3-a456-426614174000",
-        expected_status_code=500,
-        expected_error_substring="not available",  # Matches "Prometheus scheduler not available"
+        expected_status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+        expected_error_substring="not available",
         mock_scheduler_none=True,
     )
 
@@ -335,7 +364,14 @@ class TestKSTestStreamingEndpoints:
             "epsilon": 0.005,  # Custom epsilon value
             "batchSize": 50,  # Also test custom batch size
         },
-        expected_response_keys=["status", "value", "drift_detected", "p_value", "alpha", "epsilon"],
+        expected_response_keys=[
+            "status",
+            "value",
+            "drift_detected",
+            "p_value",
+            "alpha",
+            "epsilon",
+        ],
         df_type="Polars",
     )
 
@@ -343,7 +379,7 @@ class TestKSTestStreamingEndpoints:
     # ApproxKSTestMetricRequest.retrieve_tags() Tests
     # ========================================================================
 
-    def test_retrieve_tags_with_all_fields(self):
+    def test_retrieve_tags_with_all_fields(self) -> None:
         """Test retrieve_tags method with all fields populated."""
         request = ApproxKSTestMetricRequest(
             modelId="test-model",
@@ -364,7 +400,7 @@ class TestKSTestStreamingEndpoints:
         assert "epsilon" in tags
         assert tags["epsilon"] == "0.01"
 
-    def test_retrieve_tags_without_reference_tag(self):
+    def test_retrieve_tags_without_reference_tag(self) -> None:
         """Test retrieve_tags method without referenceTag."""
         request = ApproxKSTestMetricRequest(
             modelId="test-model",
@@ -381,7 +417,7 @@ class TestKSTestStreamingEndpoints:
         assert "fitColumns" in tags
         assert "epsilon" in tags
 
-    def test_retrieve_tags_without_fit_columns(self):
+    def test_retrieve_tags_without_fit_columns(self) -> None:
         """Test retrieve_tags method without fitColumns."""
         request = ApproxKSTestMetricRequest(
             modelId="test-model",
@@ -397,7 +433,7 @@ class TestKSTestStreamingEndpoints:
         assert "fitColumns" not in tags
         assert "epsilon" in tags
 
-    def test_retrieve_tags_with_default_epsilon(self):
+    def test_retrieve_tags_with_default_epsilon(self) -> None:
         """Test retrieve_tags method with default epsilon value."""
         request = ApproxKSTestMetricRequest(
             modelId="test-model",
@@ -432,7 +468,14 @@ class TestApproxKSTestDeprecatedEndpoints:
             "fitColumns": ["feature1"],
             "epsilon": 0.01,
         },
-        expected_response_keys=["status", "value", "drift_detected", "p_value", "alpha", "epsilon"],
+        expected_response_keys=[
+            "status",
+            "value",
+            "drift_detected",
+            "p_value",
+            "alpha",
+            "epsilon",
+        ],
         df_type="Pandas",
     )
 
@@ -480,28 +523,28 @@ class TestApproxKSTestDeprecatedEndpoints:
 # ============================================================================
 
 
-def test_ksteststreaming_multi_feature_aggregation(monkeypatch):
+def test_ksteststreaming_multi_feature_aggregation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Ensure multi-feature responses include per-feature results and correct aggregation."""
-    from unittest.mock import AsyncMock, MagicMock
-
-    import pandas as pd
-
     # Mock data source to return test dataframes
     mock_data_source = MagicMock()
 
     # Create test dataframes with multiple features
-    ref_df = pd.DataFrame({"feature1": [1.0, 2.0, 3.0, 4.0], "feature2": [10.0, 20.0, 30.0, 40.0]})
+    ref_df = pd.DataFrame(
+        {"feature1": [1.0, 2.0, 3.0, 4.0], "feature2": [10.0, 20.0, 30.0, 40.0]}
+    )
 
-    cur_df = pd.DataFrame({"feature1": [1.5, 2.5, 3.5, 4.5], "feature2": [15.0, 25.0, 35.0, 45.0]})
+    cur_df = pd.DataFrame(
+        {"feature1": [1.5, 2.5, 3.5, 4.5], "feature2": [15.0, 25.0, 35.0, 45.0]}
+    )
 
     mock_data_source.get_dataframe_by_tag = AsyncMock(return_value=ref_df)
     mock_data_source.get_organic_dataframe = AsyncMock(return_value=cur_df)
 
     # Patch the get_data_source function
-    def mock_get_data_source():
+    def mock_get_data_source() -> MagicMock:
         return mock_data_source
-
-    import src.endpoints.metrics.drift.kolmogorov_smirnov_streaming as ks_module
 
     monkeypatch.setattr(ks_module, "get_data_source", mock_get_data_source)
 
@@ -514,7 +557,7 @@ def test_ksteststreaming_multi_feature_aggregation(monkeypatch):
     }
 
     response = client.post("/metrics/drift/ksteststreaming", json=payload)
-    assert response.status_code == 200
+    assert response.status_code == HTTPStatus.OK
 
     body = response.json()
 
@@ -525,7 +568,15 @@ def test_ksteststreaming_multi_feature_aggregation(monkeypatch):
     assert len(feature_results) == len(payload["fitColumns"])
 
     # each entry has expected keys
-    expected_feature_keys = {"statistic", "p_value", "drift_detected", "n_reference", "n_current", "epsilon", "alpha"}
+    expected_feature_keys = {
+        "statistic",
+        "p_value",
+        "drift_detected",
+        "n_reference",
+        "n_current",
+        "epsilon",
+        "alpha",
+    }
     for feature_name in payload["fitColumns"]:
         assert feature_name in feature_results
         result = feature_results[feature_name]
