@@ -129,6 +129,9 @@ class MariaDBStorage(StorageInterface):
             try:
                 loop = asyncio.get_running_loop()
                 self._migration_task = loop.create_task(self._migrate_from_legacy_db())
+                self._migration_task.add_done_callback(
+                    lambda t: t.exception() if not t.cancelled() else None
+                )
             except RuntimeError:
                 # No event loop running - run migration synchronously
                 asyncio.run(self._migrate_from_legacy_db())

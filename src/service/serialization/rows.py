@@ -12,7 +12,7 @@ import zlib
 import numpy as np
 
 from .detection import is_gzip, safe_gzip_decompress
-from .encoders import json_encoder
+from .encoders import json_decoder_hook, json_encoder
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +109,7 @@ def deserialize_rows(serialized: np.ndarray) -> np.ndarray:
             # Gzip decompressor handles the data correctly without manual null-byte stripping
             try:
                 json_str = safe_gzip_decompress(row_bytes).decode("utf-8")
-                deserialized.append(json.loads(json_str))
+                deserialized.append(json.loads(json_str, object_hook=json_decoder_hook))
             except (
                 OSError,
                 gzip.BadGzipFile,

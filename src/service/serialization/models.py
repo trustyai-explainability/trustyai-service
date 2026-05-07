@@ -9,7 +9,7 @@ import json
 import logging
 import zlib
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from .detection import detect_format, safe_gzip_decompress
 from .encoders import json_decoder_hook, json_encoder
@@ -91,6 +91,8 @@ def deserialize_model[T: BaseModel](data: bytes, target_class: type[T]) -> T:
             json_str = safe_gzip_decompress(data).decode("utf-8")
             obj_dict = json.loads(json_str, object_hook=json_decoder_hook)
             return target_class(**obj_dict)
+        except ValidationError:
+            raise
         except (
             OSError,
             gzip.BadGzipFile,
@@ -101,7 +103,6 @@ def deserialize_model[T: BaseModel](data: bytes, target_class: type[T]) -> T:
             ValueError,
         ) as e:
             if format_type == "gzip":
-                # If we detected gzip but it failed, convert to ValueError for consistent error handling
                 msg = f"Failed to deserialize gzip data: {e}"
                 raise ValueError(msg) from e
 
@@ -110,6 +111,8 @@ def deserialize_model[T: BaseModel](data: bytes, target_class: type[T]) -> T:
         try:
             obj_dict = json.loads(data.decode("utf-8"), object_hook=json_decoder_hook)
             return target_class(**obj_dict)
+        except ValidationError:
+            raise
         except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as e:
             if format_type == "json":
                 msg = f"Failed to deserialize JSON data: {e}"

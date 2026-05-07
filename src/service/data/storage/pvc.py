@@ -103,11 +103,15 @@ class PVCStorage(StorageInterface):
         # one_file_per_dataset=True minimizes the ramifications of file corruption
         # one_file_per_dataset=True also allows read/write concurrence between different datasets
         self.one_file_per_dataset = True
-        self.locks = {
-            entry.name: asyncio.Lock()
-            for entry in Path(self.data_directory).iterdir()
-            if self.data_file in entry.name
-        }
+        data_dir = Path(self.data_directory)
+        if data_dir.exists():
+            self.locks = {
+                entry.name: asyncio.Lock()
+                for entry in data_dir.iterdir()
+                if self.data_file in entry.name
+            }
+        else:
+            self.locks = {}
         self.global_lock = asyncio.Lock()
 
     def _get_filename(self, dataset_name: str) -> str:
@@ -345,8 +349,13 @@ class PVCStorage(StorageInterface):
         """Delete dataset data, ignoring non-existent datasets."""
         allocated_dataset_name = self.allocate_valid_dataset_name(dataset_name)
         async with self.get_lock(allocated_dataset_name):
+            # Check if HDF5 file exists before opening to prevent phantom file creation
+            # Opening in "a" mode creates the file if it doesn't exist
+            filename = Path(self._get_filename(allocated_dataset_name))
+            if not filename.exists():
+                return
             try:
-                with H5PYContext(self, dataset_name, "a") as db:
+                with H5PYContext(self, allocated_dataset_name, "a") as db:
                     if allocated_dataset_name in db:
                         del db[allocated_dataset_name]
                     if allocated_dataset_name in self.locks:
