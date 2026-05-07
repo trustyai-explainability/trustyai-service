@@ -37,6 +37,8 @@ def json_encoder(obj: object) -> object:
     """
     if isinstance(obj, np.ndarray):
         return obj.tolist()
+    if isinstance(obj, np.bool_):
+        return bool(obj)
     if isinstance(obj, (np.integer, np.floating)):
         return obj.item()
     if isinstance(obj, bytes):

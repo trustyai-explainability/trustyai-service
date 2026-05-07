@@ -455,7 +455,10 @@ class PVCStorage(StorageInterface):
         return list(model_ids)
 
     async def get_metadata(self, model_id: str) -> StorageMetadata:
-        """Get metadata for a specific model including shapes, column names, etc."""
+        """Get metadata for a specific model including shapes, column names, etc.
+
+        Always returns a StorageMetadata object (returns minimal defaults on error).
+        """
         input_dataset = model_id + INPUT_SUFFIX
         output_dataset = model_id + OUTPUT_SUFFIX
         metadata_dataset = model_id + METADATA_SUFFIX
@@ -758,11 +761,11 @@ class PVCStorage(StorageInterface):
             )
             raise
 
-    async def delete_partial_payload(self, request_id: str, *, is_input: bool) -> None:
+    async def delete_partial_payload(self, payload_id: str, *, is_input: bool) -> None:
         """Delete a stored partial payload.
 
         Args:
-            request_id: The unique identifier for the inference request
+            payload_id: The unique identifier for the inference request
             is_input: Whether to delete an input payload (True) or output payload (False)
 
         """
@@ -776,10 +779,10 @@ class PVCStorage(StorageInterface):
 
                     dataset = db[dataset_name]
 
-                    if request_id not in dataset.attrs:
+                    if payload_id not in dataset.attrs:
                         return
 
-                    del dataset.attrs[request_id]
+                    del dataset.attrs[payload_id]
 
                     if not dataset.attrs:
                         del db[dataset_name]
@@ -787,7 +790,7 @@ class PVCStorage(StorageInterface):
             logger.debug(
                 "Deleted %s payload for request ID: %s",
                 "input" if is_input else "output",
-                request_id,
+                payload_id,
             )
         except MissingH5PYDataError:
             return
