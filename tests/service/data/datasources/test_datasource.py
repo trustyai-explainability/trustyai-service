@@ -77,7 +77,6 @@ class TestDataSource:
         assert data_source.storage_interface is not None
         assert isinstance(data_source.metadata_cache, dict)
         assert len(data_source.metadata_cache) == 0
-        assert data_source.executor is not None
 
     @pytest.mark.asyncio
     async def test_add_model_to_known(self, data_source: DataSource) -> None:

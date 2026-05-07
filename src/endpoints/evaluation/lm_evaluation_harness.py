@@ -417,7 +417,7 @@ def list_running_lm_eval_jobs(*, include_finished: bool = True) -> AllLMEvalJobs
 
         if not include_finished and job_information.status not in {
             JobStatus.RUNNING,
-            JobStatus.FAILED,
+            JobStatus.QUEUED,
         }:
             continue
         jobs.append(

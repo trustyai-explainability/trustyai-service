@@ -51,8 +51,9 @@ class IndividualConsistency:
             neighbors_outputs = model.predict(neighbors)
             for output in prediction_outputs:
                 for neighbor_output in neighbors_outputs:
-                    # Use array-safe comparison (NumPy 2.0+ requires this for arrays)
-                    if not np.array_equal(neighbor_output, output):
-                        mismatches += 1
+                    # Element-level mismatch count for multi-output consistency
+                    mismatches += int(
+                        np.sum(np.asarray(neighbor_output) != np.asarray(output))
+                    )
             total_comparisons += len(neighbors) * output_width * len(prediction_outputs)
         return 1.0 - (mismatches / total_comparisons) if total_comparisons > 0 else 1.0

@@ -2,7 +2,6 @@
 
 import logging
 import os
-from concurrent.futures import ThreadPoolExecutor
 
 import pandas as pd
 
@@ -41,7 +40,6 @@ class DataSource:
         self.known_models: set[str] = set()
         self.storage_interface = get_storage_interface()
         self.metadata_cache: dict[str, StorageMetadata] = {}
-        self.executor = ThreadPoolExecutor(max_workers=10)
 
     # MODEL TRACKING OPERATIONS
 
@@ -278,10 +276,10 @@ class DataSource:
             A list of verified model IDs
 
         """
-        # Check all known models for metadata using async list comprehension
+        # Snapshot: iteration awaits, so the set could change at yield points
         verified_models = [
             model_id
-            for model_id in self.known_models
+            for model_id in list(self.known_models)
             if await self.has_metadata(model_id)
         ]
 
