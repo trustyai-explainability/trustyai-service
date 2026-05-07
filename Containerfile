@@ -32,7 +32,7 @@ RUN if [[ "$EXTRAS" == *"mariadb"* ]]; then \
 
 COPY pyproject.toml README.md ./
 
-RUN pip install --no-cache-dir --upgrade pip==26.1 uv==0.11.1 && \
+RUN pip install --no-cache-dir --upgrade pip==26.1.1 uv==0.11.1 && \
     uv pip install --no-cache ".[$EXTRAS]" && \
     pip uninstall -y uv && \
     rm -rf /root/.cache /tmp/*
@@ -62,6 +62,8 @@ RUN if [ "$ENABLE_FIPS_POLICY" = "true" ]; then \
 # Install MariaDB shared libraries if needed
 RUN if echo "$EXTRAS" | grep -q "mariadb"; then \
         curl --fail -LsSO https://r.mariadb.com/downloads/mariadb_repo_setup && \
+        grep -q "mariadb_repo_setup" mariadb_repo_setup || { echo "ERROR: Downloaded script appears invalid"; exit 1; } && \
+        [ -s mariadb_repo_setup ] || { echo "ERROR: Downloaded script is empty"; exit 1; } && \
         chmod +x mariadb_repo_setup && \
         ./mariadb_repo_setup --mariadb-server-version="mariadb-11.4" --skip-check-installed && \
         microdnf install -y MariaDB-shared-11.4* && \
@@ -70,7 +72,7 @@ RUN if echo "$EXTRAS" | grep -q "mariadb"; then \
     fi
 
 # Upgrade system pip to eliminate base image CVEs
-RUN pip3 install --no-cache-dir --upgrade pip==26.1 && rm -rf /root/.cache
+RUN pip install --no-cache-dir --upgrade pip==26.1.1 && rm -rf /root/.cache
 
 WORKDIR /opt/app-root
 
