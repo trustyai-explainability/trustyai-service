@@ -50,10 +50,15 @@ class IndividualConsistency:
 
             neighbors_outputs = model.predict(neighbors)
             for output in prediction_outputs:
+                output_arr = np.asarray(output)
                 for neighbor_output in neighbors_outputs:
-                    # Element-level mismatch count for multi-output consistency
-                    mismatches += int(
-                        np.sum(np.asarray(neighbor_output) != np.asarray(output))
-                    )
+                    neighbor_arr = np.asarray(neighbor_output)
+                    if neighbor_arr.shape != output_arr.shape:
+                        msg = (
+                            "Prediction outputs have inconsistent shapes - "
+                            "cannot compute consistency."
+                        )
+                        raise ValueError(msg)
+                    mismatches += int(np.sum(neighbor_arr != output_arr))
             total_comparisons += len(neighbors) * output_width * len(prediction_outputs)
         return 1.0 - (mismatches / total_comparisons) if total_comparisons > 0 else 1.0
