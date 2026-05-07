@@ -1,6 +1,4 @@
-# pylint: disable=line-too-long
-"""
-Greenwald–Khanna quantile sketch for streaming quantile estimation.
+"""Greenwald–Khanna quantile sketch for streaming quantile estimation.
 
 Implementation of the space-efficient streaming quantile summary algorithm from:
 M. Greenwald and S. Khanna. Space-efficient online computation of quantile summaries.
@@ -13,12 +11,20 @@ Note that ranks are 1-based indexed, consistent with the GK paper.
 """
 
 import bisect
+import logging
 from math import ceil, floor
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+EPSILON_DEFAULT = 0.01
+EPSILON_MAX = 0.5
+EPSILON_WARN_THRESHOLD = 0.4
+MIN_SUMMARY_SIZE_FOR_COMPRESS = 2
 
 
 class GreenwaldKhannaSketch:
-    """
-    Greenwald–Khanna quantile sketch for streaming quantile estimation.
+    """Greenwald–Khanna quantile sketch for streaming quantile estimation.
 
     This data structure maintains a compact summary of observed values from a stream,
     supporting approximate quantile queries with rank error bounded by 2εn.
@@ -31,9 +37,8 @@ class GreenwaldKhannaSketch:
     Invariant: For every tuple, g_i + Δ_i ≤ ⌊2εn⌋
     """
 
-    def __init__(self, epsilon: float = 0.01):
-        """
-        Initialize a Greenwald–Khanna quantile sketch.
+    def __init__(self, epsilon: float = EPSILON_DEFAULT) -> None:
+        """Initialize a Greenwald–Khanna quantile sketch.
 
         :param epsilon: Error parameter ε ∈ (0, 0.5].
                         The sketch guarantees that quantile estimates
@@ -43,20 +48,20 @@ class GreenwaldKhannaSketch:
                         (constant compression) and provide very loose error bounds.
         :raises ValueError: If epsilon is not in the range (0, 0.5]
         """
-        if not 0 < epsilon <= 0.5:
-            raise ValueError("epsilon must be in the range (0, 0.5]")
+        if not 0 < epsilon <= EPSILON_MAX:
+            msg = "epsilon must be in the range (0, 0.5]"
+            raise ValueError(msg)
 
-        import warnings
-
-        if epsilon > 0.4:
+        if epsilon > EPSILON_WARN_THRESHOLD:
             compress_freq = floor(1 / (2 * epsilon))
             error_factor = 2 * epsilon
-            warnings.warn(
-                f"epsilon={epsilon} is close to 0.5. This will cause frequent compression "
-                f"(every ~{compress_freq} insertions) and loose error bounds (rank error ≤ {error_factor}n). "
+            logger.warning(
+                "epsilon=%s is close to 0.5. This will cause frequent compression "
+                "(every ~%s insertions) and loose error bounds (rank error ≤ %sn). "
                 "Consider using a smaller epsilon (e.g., 0.01-0.1) for better performance.",
-                UserWarning,
-                stacklevel=2,
+                epsilon,
+                compress_freq,
+                error_factor,
             )
 
         self.epsilon = epsilon
@@ -66,8 +71,7 @@ class GreenwaldKhannaSketch:
         self._cumulative_cache_valid = False
 
     def insert(self, value: float) -> None:
-        """
-        Insert a new value into the sketch.
+        """Insert a new value into the sketch.
 
         :param value: The value to insert into the sketch
         """
@@ -98,14 +102,17 @@ class GreenwaldKhannaSketch:
             self._compress()
 
     def delete(self, value: float) -> None:
-        """
-        Delete a value from the sketch. No action if value not found.
+        """Delete a value from the sketch. No action if value not found.
+
+        If the value appears in multiple summary tuples, only the first
+        (leftmost) tuple is removed.
 
         :param value: The value to delete from the sketch
         :raises ValueError: If sketch is empty
         """
         if not self.summary or self.n == 0:
-            raise ValueError("Cannot delete from empty sketch")
+            msg = "Cannot delete from empty sketch"
+            raise ValueError(msg)
 
         pos = bisect.bisect_left(self.summary, value, key=lambda x: x[0])
 
@@ -120,7 +127,7 @@ class GreenwaldKhannaSketch:
             self.summary = []
             return
 
-        v_pos, g_pos, delta_pos = self.summary[pos]
+        _, g_pos, _ = self.summary[pos]
 
         if pos == 0:
             if len(self.summary) > 1:
@@ -129,21 +136,19 @@ class GreenwaldKhannaSketch:
             self.summary.pop(0)
         elif pos == len(self.summary) - 1:
             self.summary.pop()
-        else:
-            # Transfer g-1 to next tuple (removing one element from the rank count)
-            if pos < len(self.summary) - 1:
-                v_next, g_next, delta_next = self.summary[pos + 1]
-                self.summary.pop(pos)
-                if pos < len(self.summary):
-                    self.summary[pos] = (v_next, g_next + g_pos - 1, delta_next)
+        # Transfer g-1 to next tuple (removing one element from the rank count)
+        elif pos < len(self.summary) - 1:
+            v_next, g_next, delta_next = self.summary[pos + 1]
+            self.summary.pop(pos)
+            if pos < len(self.summary):
+                self.summary[pos] = (v_next, g_next + g_pos - 1, delta_next)
 
         compress_period = floor(1 / (2 * self.epsilon))
         if self.n > 0 and self.n % compress_period == 0:
             self._compress()
 
     def _ensure_cumulative_cache(self) -> None:
-        """
-        Build cumulative r_max cache if not already valid.
+        """Build cumulative r_max cache if not already valid.
 
         The cache stores cumulative r_max values for each tuple, enabling
         O(log n) quantile and rank queries via binary search.
@@ -157,18 +162,19 @@ class GreenwaldKhannaSketch:
             self._cumulative_cache_valid = True
 
     def quantile(self, phi: float) -> float:
-        """
-        Query for the φ-quantile (approximate).
+        """Query for the φ-quantile (approximate).
 
         :param phi: Quantile to query, must be in [0, 1]
         :return: Approximate φ-quantile value with rank error bounded by 2εn
         :raises ValueError: If phi is not in [0, 1] or sketch is empty
         """
         if not 0 <= phi <= 1:
-            raise ValueError("phi must be in the range [0, 1]")
+            msg = "phi must be in the range [0, 1]"
+            raise ValueError(msg)
 
         if not self.summary or self.n == 0:
-            raise ValueError("Cannot query quantile from empty sketch")
+            msg = "Cannot query quantile from empty sketch"
+            raise ValueError(msg)
 
         target_rank = ceil(phi * self.n)
         self._ensure_cumulative_cache()
@@ -184,15 +190,14 @@ class GreenwaldKhannaSketch:
         return self.summary[idx][0]
 
     def _compress(self) -> None:
-        """
-        Compress the summary by merging adjacent tuples where possible.
+        """Compress the summary by merging adjacent tuples where possible.
 
         This is the COMPRESS operation from the GK paper (Section 3.2).
         A tuple t_i can be deleted if BOTH conditions hold:
         1. Band condition: BAND(Δ_i, 2εn) ≤ BAND(Δ_{i+1}, 2εn)
         2. Invariant condition: g_i + g_{i+1} + Δ_{i+1} ≤ ⌊2εn⌋
         """
-        if len(self.summary) <= 2:
+        if len(self.summary) <= MIN_SUMMARY_SIZE_FOR_COMPRESS:
             return
 
         threshold = floor(2 * self.epsilon * self.n)
@@ -213,7 +218,12 @@ class GreenwaldKhannaSketch:
                 invariant_condition = g_i + g_next + delta_next <= threshold
 
                 # Never merge first tuple (exact min) or if next is last (exact max)
-                can_merge = i > 0 and i < len(self.summary) - 2 and band_condition and invariant_condition
+                can_merge = (
+                    i > 0
+                    and i < len(self.summary) - 2
+                    and band_condition
+                    and invariant_condition
+                )
 
                 if can_merge:
                     self.summary[i + 1] = (v_next, g_i + g_next, delta_next)
@@ -227,8 +237,7 @@ class GreenwaldKhannaSketch:
         self._cumulative_cache_valid = False
 
     def rank(self, value: float) -> float:
-        """
-        Estimate the rank of a value in the stream.
+        """Estimate the rank of a value in the stream.
 
         Uses the same cumulative r_max cache as quantile() for efficiency.
         For the streaming KS test per Lall (2015).
@@ -238,7 +247,8 @@ class GreenwaldKhannaSketch:
         :raises ValueError: If sketch is empty
         """
         if not self.summary or self.n == 0:
-            raise ValueError("Cannot estimate rank from empty sketch")
+            msg = "Cannot estimate rank from empty sketch"
+            raise ValueError(msg)
 
         if value < self.summary[0][0]:
             return 0.0
@@ -252,26 +262,28 @@ class GreenwaldKhannaSketch:
         return float(self._cumulative_r_max[pos]) if pos >= 0 else 0.0
 
     def cdf(self, value: float) -> float:
-        """
-        Estimate the CDF at a given value: F(x) = P(X <= x).
+        """Estimate the CDF at a given value: F(x) = P(X <= x).
 
         :param value: The value to estimate the CDF at
         :return: Estimated CDF value in [0, 1]
         """
         if self.n == 0:
-            raise ValueError("Cannot estimate CDF from empty sketch")
+            msg = "Cannot estimate CDF from empty sketch"
+            raise ValueError(msg)
         return self.rank(value) / self.n
 
     def min(self) -> float:
         """Return the minimum value observed."""
         if not self.summary:
-            raise ValueError("Cannot get min from empty sketch")
+            msg = "Cannot get min from empty sketch"
+            raise ValueError(msg)
         return self.summary[0][0]
 
     def max(self) -> float:
         """Return the maximum value observed."""
         if not self.summary:
-            raise ValueError("Cannot get max from empty sketch")
+            msg = "Cannot get max from empty sketch"
+            raise ValueError(msg)
         return self.summary[-1][0]
 
     def __len__(self) -> int:
@@ -282,9 +294,8 @@ class GreenwaldKhannaSketch:
         """Return the number of tuples in the summary. Space is O(1/ε × log(εn))."""
         return len(self.summary)
 
-    def merge(self, other: "GreenwaldKhannaSketch") -> "GreenwaldKhannaSketch":
-        """
-        Merge two sketches into a new sketch.
+    def merge(self, other: "GreenwaldKhannaSketch") -> "GreenwaldKhannaSketch":  # noqa: C901, PLR0915
+        """Merge two sketches into a new sketch.
 
         This implementation properly recalculates rank bounds (g, Δ) for the
         merged stream to preserve GK error guarantees.
@@ -294,7 +305,8 @@ class GreenwaldKhannaSketch:
         :raises ValueError: If the sketches have different epsilon values
         """
         if self.epsilon != other.epsilon:
-            raise ValueError("Cannot merge sketches with different epsilon values")
+            msg = "Cannot merge sketches with different epsilon values"
+            raise ValueError(msg)
 
         merged = GreenwaldKhannaSketch(self.epsilon)
         merged.n = self.n + other.n
@@ -310,18 +322,19 @@ class GreenwaldKhannaSketch:
 
         # Ensure cumulative caches are built for rank calculations
         self._ensure_cumulative_cache()
-        other._ensure_cumulative_cache()
+        other._ensure_cumulative_cache()  # noqa: SLF001
 
         # Helper to get rank bounds from a sketch at position
-        def get_rank_bounds(sketch, idx):
+        def get_rank_bounds(
+            sketch: "GreenwaldKhannaSketch", idx: int
+        ) -> tuple[int, int]:
             if idx < 0:
                 return 0, 0
             if idx >= len(sketch.summary):
                 return sketch.n, sketch.n
 
-            # r_min = sum of g values up to and including idx
+            # r_min is the sum of g values up to and including idx
             r_min = sum(g for _, g, _ in sketch.summary[: idx + 1])
-            # r_max = r_min + delta
             r_max = r_min + sketch.summary[idx][2]
             return r_min, r_max
 
@@ -379,8 +392,7 @@ class GreenwaldKhannaSketch:
         return merged
 
     def to_dict(self) -> dict[str, float | int | list[tuple[float, int, int]]]:
-        """
-        Serialize the sketch to a dictionary.
+        """Serialize the sketch to a dictionary.
 
         :return: Dictionary containing all sketch state for serialization
         """
@@ -391,23 +403,25 @@ class GreenwaldKhannaSketch:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, float | int | list[tuple[float, int, int]]]) -> "GreenwaldKhannaSketch":
-        """
-        Deserialize a sketch from a dictionary.
+    def from_dict(cls, data: dict[str, Any]) -> "GreenwaldKhannaSketch":
+        """Deserialize a sketch from a dictionary.
 
         :param data: Dictionary containing sketch state (from to_dict())
         :return: Reconstructed GK sketch
         :raises ValueError: If the data format is invalid
         """
         if not isinstance(data, dict):
-            raise TypeError(f"Data must be a dictionary, got {type(data).__name__}")
+            msg = f"Data must be a dictionary, got {type(data).__name__}"
+            raise TypeError(msg)
 
         required_keys = {"epsilon", "n", "summary"}
         if not required_keys.issubset(data.keys()):
-            raise ValueError(f"Missing required keys: {required_keys - data.keys()}")
+            msg = f"Missing required keys: {required_keys - data.keys()}"
+            raise ValueError(msg)
 
         if not isinstance(data["summary"], list):
-            raise TypeError(f"summary must be a list, got {type(data['summary']).__name__}")
+            msg = f"summary must be a list, got {type(data['summary']).__name__}"
+            raise TypeError(msg)
 
         sketch = cls(epsilon=float(data["epsilon"]))
         sketch.n = int(data["n"])

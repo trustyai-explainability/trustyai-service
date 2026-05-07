@@ -1,8 +1,6 @@
-# pylint: disable=line-too-long
-"""
-Tests for the Greenwald-Khanna quantile sketch implementation.
-"""
+"""Tests for the Greenwald-Khanna quantile sketch implementation."""
 
+import logging
 from math import floor, log
 
 import numpy as np
@@ -10,68 +8,70 @@ import pytest
 from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
-from src.core.metrics.drift.greenwald_khanna_quantile_sketch import GreenwaldKhannaSketch
+from src.core.metrics.drift.greenwald_khanna_quantile_sketch import (
+    EPSILON_DEFAULT,
+    GreenwaldKhannaSketch,
+)
+
+# Epsilon presets used across tests
+EPSILON_SMALL = 0.001
+EPSILON_LOW = 0.05
+EPSILON_HIGH = 0.1
+EPSILON_NEAR_BOUNDARY = 0.49
+EPSILON_BOUNDARY = 0.5
+EPSILON_TRIGGERS_WARNING = 0.45
+EPSILON_NO_WARNING = 0.3
 
 
 class TestGreenwaldKhannaSketch:
     """Test suite for GreenwaldKhannaSketch class."""
 
-    def test_initialization(self):
+    def test_initialization(self) -> None:
         """Test sketch initialization with valid epsilon."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
-        assert sketch.epsilon == 0.01
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
+        assert sketch.epsilon == EPSILON_DEFAULT
         assert sketch.n == 0
         assert len(sketch.summary) == 0
 
-    def test_initialization_boundary_epsilon(self):
+    def test_initialization_boundary_epsilon(self) -> None:
         """Test sketch initialization with epsilon near the boundary."""
         # Just below 0.5 should work
-        sketch = GreenwaldKhannaSketch(epsilon=0.49)
-        assert sketch.epsilon == 0.49
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_NEAR_BOUNDARY)
+        assert sketch.epsilon == EPSILON_NEAR_BOUNDARY
         assert sketch.n == 0
 
         # Very small epsilon should work
-        sketch_small = GreenwaldKhannaSketch(epsilon=0.001)
-        assert sketch_small.epsilon == 0.001
+        sketch_small = GreenwaldKhannaSketch(epsilon=EPSILON_SMALL)
+        assert sketch_small.epsilon == EPSILON_SMALL
 
-    def test_initialization_epsilon_at_boundary(self):
-        """Test that epsilon=0.5 is allowed but triggers a warning."""
-        import warnings
-
-        # epsilon=0.5 should work but trigger a warning
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            sketch = GreenwaldKhannaSketch(epsilon=0.5)
-            assert sketch.epsilon == 0.5
+    def test_initialization_epsilon_at_boundary(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test that epsilon=0.5 is allowed but logs a warning."""
+        with caplog.at_level(logging.WARNING):
+            sketch = GreenwaldKhannaSketch(epsilon=EPSILON_BOUNDARY)
+            assert sketch.epsilon == EPSILON_BOUNDARY
             assert sketch.n == 0
-            # Verify warning was issued
-            assert len(w) == 1
-            assert issubclass(w[0].category, UserWarning)
-            assert "close to 0.5" in str(w[0].message)
+        assert "close to 0.5" in caplog.text
 
-    def test_initialization_epsilon_triggers_warning(self):
-        """Test that epsilon > 0.4 triggers a warning."""
-        import warnings
+    def test_initialization_epsilon_triggers_warning(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test that epsilon > 0.4 logs a warning."""
+        with caplog.at_level(logging.WARNING):
+            sketch = GreenwaldKhannaSketch(epsilon=EPSILON_TRIGGERS_WARNING)
+            assert sketch.epsilon == EPSILON_TRIGGERS_WARNING
+        assert "close to 0.5" in caplog.text
 
-        # epsilon=0.45 should trigger warning
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            sketch = GreenwaldKhannaSketch(epsilon=0.45)
-            assert sketch.epsilon == 0.45
-            # Verify warning was issued
-            assert len(w) == 1
-            assert issubclass(w[0].category, UserWarning)
-            assert "close to 0.5" in str(w[0].message)
+        caplog.clear()
 
         # epsilon=0.3 should NOT trigger warning
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            sketch_no_warn = GreenwaldKhannaSketch(epsilon=0.3)
-            assert sketch_no_warn.epsilon == 0.3
-            # No warning should be issued
-            assert len(w) == 0
+        with caplog.at_level(logging.WARNING):
+            sketch_no_warn = GreenwaldKhannaSketch(epsilon=EPSILON_NO_WARNING)
+            assert sketch_no_warn.epsilon == EPSILON_NO_WARNING
+        assert caplog.text == ""
 
-    def test_initialization_invalid_epsilon(self):
+    def test_initialization_invalid_epsilon(self) -> None:
         """Test that invalid epsilon values raise ValueError."""
         with pytest.raises(ValueError, match="epsilon must be in the range"):
             GreenwaldKhannaSketch(epsilon=0.0)
@@ -88,18 +88,18 @@ class TestGreenwaldKhannaSketch:
         with pytest.raises(ValueError, match="epsilon must be in the range"):
             GreenwaldKhannaSketch(epsilon=1.5)
 
-    def test_single_insert(self):
+    def test_single_insert(self) -> None:
         """Test inserting a single value."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
         sketch.insert(5.0)
 
         assert sketch.n == 1
         assert len(sketch.summary) == 1
         assert sketch.summary[0] == (5.0, 1, 0)
 
-    def test_multiple_inserts_sorted(self):
+    def test_multiple_inserts_sorted(self) -> None:
         """Test inserting multiple values in sorted order."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
         values = [1.0, 2.0, 3.0, 4.0, 5.0]
 
         for v in values:
@@ -111,9 +111,9 @@ class TestGreenwaldKhannaSketch:
         summary_values = [v for v, _, _ in sketch.summary]
         assert summary_values == values
 
-    def test_multiple_inserts_unsorted(self):
+    def test_multiple_inserts_unsorted(self) -> None:
         """Test inserting multiple values in unsorted order."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
         values = [3.0, 1.0, 4.0, 2.0, 5.0]
 
         for v in values:
@@ -124,9 +124,9 @@ class TestGreenwaldKhannaSketch:
         summary_values = [v for v, _, _ in sketch.summary]
         assert summary_values == sorted(values)
 
-    def test_min_max(self):
+    def test_min_max(self) -> None:
         """Test min and max operations."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
 
         # Empty sketch should raise error
         with pytest.raises(ValueError, match="Cannot get min from empty sketch"):
@@ -143,9 +143,9 @@ class TestGreenwaldKhannaSketch:
         assert sketch.min() == 1.0
         assert sketch.max() == 5.0
 
-    def test_median_exact(self):
+    def test_median_exact(self) -> None:
         """Test median query on small dataset (should be exact)."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
 
         # Odd number of elements
         values = [1.0, 2.0, 3.0, 4.0, 5.0]
@@ -156,9 +156,9 @@ class TestGreenwaldKhannaSketch:
         # Should be close to true median (3.0)
         assert abs(median - 3.0) <= 1.0  # Within epsilon bound
 
-    def test_quantiles_uniform_distribution(self):
+    def test_quantiles_uniform_distribution(self) -> None:
         """Test quantile queries on uniform distribution."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.05)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_LOW)
         n = 1000
 
         # Generate uniform data [0, 1000)
@@ -183,9 +183,9 @@ class TestGreenwaldKhannaSketch:
         # Quantiles should be ordered
         assert q25 < q50 < q75
 
-    def test_quantiles_normal_distribution(self):
+    def test_quantiles_normal_distribution(self) -> None:
         """Test quantile queries on normal distribution."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.05)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_LOW)
         n = 1000
 
         # Generate normal data N(0, 1)
@@ -206,9 +206,9 @@ class TestGreenwaldKhannaSketch:
 
         assert q10 < q50 < q90
 
-    def test_quantile_edge_cases(self):
+    def test_quantile_edge_cases(self) -> None:
         """Test quantile queries at edges (0.0 and 1.0)."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
         values = [1.0, 2.0, 3.0, 4.0, 5.0]
 
         for v in values:
@@ -222,9 +222,9 @@ class TestGreenwaldKhannaSketch:
         q1 = sketch.quantile(1.0)
         assert q1 == sketch.max()
 
-    def test_quantile_invalid_phi(self):
+    def test_quantile_invalid_phi(self) -> None:
         """Test that invalid phi values raise ValueError."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
         sketch.insert(1.0)
 
         with pytest.raises(ValueError, match="phi must be in the range"):
@@ -233,16 +233,16 @@ class TestGreenwaldKhannaSketch:
         with pytest.raises(ValueError, match="phi must be in the range"):
             sketch.quantile(1.1)
 
-    def test_quantile_empty_sketch(self):
+    def test_quantile_empty_sketch(self) -> None:
         """Test that querying empty sketch raises ValueError."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
 
         with pytest.raises(ValueError, match="Cannot query quantile from empty sketch"):
             sketch.quantile(0.5)
 
-    def test_compression(self):
+    def test_compression(self) -> None:
         """Test that compression maintains space bounds."""
-        epsilon = 0.01
+        epsilon = EPSILON_DEFAULT
         sketch = GreenwaldKhannaSketch(epsilon=epsilon)
         n = 10000
 
@@ -259,9 +259,9 @@ class TestGreenwaldKhannaSketch:
         assert sketch.size() < n
         assert sketch.size() < 1000  # Practical bound
 
-    def test_size_method(self):
+    def test_size_method(self) -> None:
         """Test the size() method."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
 
         assert sketch.size() == 0
 
@@ -274,9 +274,9 @@ class TestGreenwaldKhannaSketch:
         # Size should be less than number of elements due to compression
         assert sketch.size() <= sketch.n
 
-    def test_len_method(self):
+    def test_len_method(self) -> None:
         """Test the __len__ method."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
 
         assert len(sketch) == 0
 
@@ -284,10 +284,10 @@ class TestGreenwaldKhannaSketch:
             sketch.insert(float(i))
             assert len(sketch) == i + 1
 
-    def test_merge_same_epsilon(self):
+    def test_merge_same_epsilon(self) -> None:
         """Test merging two sketches with same epsilon."""
-        sketch1 = GreenwaldKhannaSketch(epsilon=0.01)
-        sketch2 = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch1 = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
+        sketch2 = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
 
         # Insert values into first sketch
         for i in range(50):
@@ -301,7 +301,7 @@ class TestGreenwaldKhannaSketch:
         merged = sketch1.merge(sketch2)
 
         assert merged.n == 100
-        assert merged.epsilon == 0.01
+        assert merged.epsilon == EPSILON_DEFAULT
 
         # Check that merged sketch contains values from both ranges
         # Note: Due to compression, the exact min/max may not be preserved
@@ -313,26 +313,28 @@ class TestGreenwaldKhannaSketch:
         median = merged.quantile(0.5)
         assert abs(median - 49.5) <= 10.0
 
-    def test_merge_different_epsilon(self):
+    def test_merge_different_epsilon(self) -> None:
         """Test that merging sketches with different epsilon raises ValueError."""
-        sketch1 = GreenwaldKhannaSketch(epsilon=0.01)
-        sketch2 = GreenwaldKhannaSketch(epsilon=0.05)
+        sketch1 = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
+        sketch2 = GreenwaldKhannaSketch(epsilon=EPSILON_LOW)
 
         sketch1.insert(1.0)
         sketch2.insert(2.0)
 
-        with pytest.raises(ValueError, match="Cannot merge sketches with different epsilon"):
+        with pytest.raises(
+            ValueError, match="Cannot merge sketches with different epsilon"
+        ):
             sketch1.merge(sketch2)
 
-    def test_deterministic_behavior(self):
+    def test_deterministic_behavior(self) -> None:
         """Test that sketch produces deterministic results for same input."""
         values = [3.14, 2.71, 1.41, 0.58, 9.81]
 
-        sketch1 = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch1 = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
         for v in values:
             sketch1.insert(v)
 
-        sketch2 = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch2 = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
         for v in values:
             sketch2.insert(v)
 
@@ -341,9 +343,9 @@ class TestGreenwaldKhannaSketch:
         assert sketch1.summary == sketch2.summary
         assert sketch1.quantile(0.5) == sketch2.quantile(0.5)
 
-    def test_large_dataset_performance(self):
+    def test_large_dataset_performance(self) -> None:
         """Test sketch performance on large dataset."""
-        epsilon = 0.01
+        epsilon = EPSILON_DEFAULT
         sketch = GreenwaldKhannaSketch(epsilon=epsilon)
         n = 100000
 
@@ -364,9 +366,9 @@ class TestGreenwaldKhannaSketch:
         median = sketch.quantile(0.5)
         assert abs(median) <= 0.5
 
-    def test_duplicate_values(self):
+    def test_duplicate_values(self) -> None:
         """Test sketch behavior with duplicate values."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
         values = [1.0, 1.0, 2.0, 2.0, 3.0, 3.0]
 
         for v in values:
@@ -380,9 +382,9 @@ class TestGreenwaldKhannaSketch:
         median = sketch.quantile(0.5)
         assert 1.0 <= median <= 3.0
 
-    def test_negative_values(self):
+    def test_negative_values(self) -> None:
         """Test sketch with negative values."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
         values = [-5.0, -3.0, -1.0, 0.0, 1.0, 3.0, 5.0]
 
         for v in values:
@@ -394,9 +396,9 @@ class TestGreenwaldKhannaSketch:
         median = sketch.quantile(0.5)
         assert abs(median - 0.0) <= 1.0
 
-    def test_delete_single_element(self):
+    def test_delete_single_element(self) -> None:
         """Test deleting from a single-element sketch."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
         sketch.insert(5.0)
 
         assert len(sketch) == 1
@@ -404,16 +406,16 @@ class TestGreenwaldKhannaSketch:
         assert len(sketch) == 0
         assert sketch.size() == 0
 
-    def test_delete_from_empty_sketch(self):
+    def test_delete_from_empty_sketch(self) -> None:
         """Test that deleting from empty sketch raises ValueError."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
 
         with pytest.raises(ValueError, match="Cannot delete from empty sketch"):
             sketch.delete(1.0)
 
-    def test_delete_minimum(self):
+    def test_delete_minimum(self) -> None:
         """Test deleting the minimum value."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
         values = [1.0, 2.0, 3.0, 4.0, 5.0]
 
         for v in values:
@@ -425,9 +427,9 @@ class TestGreenwaldKhannaSketch:
         assert len(sketch) == original_size - 1
         assert sketch.min() >= 2.0  # New minimum should be around 2.0
 
-    def test_delete_maximum(self):
+    def test_delete_maximum(self) -> None:
         """Test deleting the maximum value."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
         values = [1.0, 2.0, 3.0, 4.0, 5.0]
 
         for v in values:
@@ -439,9 +441,9 @@ class TestGreenwaldKhannaSketch:
         assert len(sketch) == original_size - 1
         assert sketch.max() <= 4.0  # New maximum should be around 4.0
 
-    def test_delete_middle_value(self):
+    def test_delete_middle_value(self) -> None:
         """Test deleting a value from the middle."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
         values = [1.0, 2.0, 3.0, 4.0, 5.0]
 
         for v in values:
@@ -456,9 +458,9 @@ class TestGreenwaldKhannaSketch:
         median = sketch.quantile(0.5)
         assert 2.0 <= median <= 4.0
 
-    def test_delete_multiple_values(self):
+    def test_delete_multiple_values(self) -> None:
         """Test deleting multiple values."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
         values = list(range(1, 11))  # 1 to 10
 
         for v in values:
@@ -475,9 +477,9 @@ class TestGreenwaldKhannaSketch:
         median = sketch.quantile(0.5)
         assert 3.0 <= median <= 7.0
 
-    def test_delete_and_insert(self):
+    def test_delete_and_insert(self) -> None:
         """Test interleaving delete and insert operations."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
 
         # Insert some values
         for i in range(1, 6):
@@ -501,9 +503,9 @@ class TestGreenwaldKhannaSketch:
         median = sketch.quantile(0.5)
         assert 3.0 <= median <= 7.0
 
-    def test_delete_maintains_quantile_accuracy(self):
+    def test_delete_maintains_quantile_accuracy(self) -> None:
         """Test that delete maintains reasonable quantile accuracy."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
 
         # Use a small dataset to avoid compression
         # This ensures all inserted values remain in the summary
@@ -530,9 +532,9 @@ class TestGreenwaldKhannaSketch:
         # Should be close to exact median
         assert abs(sketch_median - exact_median) <= 2.0
 
-    def test_delete_updates_count(self):
+    def test_delete_updates_count(self) -> None:
         """Test that delete properly updates the count."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
 
         for i in range(10):
             sketch.insert(float(i))
@@ -544,9 +546,9 @@ class TestGreenwaldKhannaSketch:
 
         assert len(sketch) == 5
 
-    def test_delete_nonexistent_value(self):
+    def test_delete_nonexistent_value(self) -> None:
         """Test that deleting a nonexistent value takes no action."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
         values = [1.0, 2.0, 3.0, 4.0, 5.0]
 
         for v in values:
@@ -583,8 +585,7 @@ class TestGreenwaldKhannaSketch:
 
 
 def check_gk_invariants(sketch: GreenwaldKhannaSketch) -> None:
-    """
-    Verify all GK sketch invariants hold.
+    """Verify all GK sketch invariants hold.
 
     This function checks the core invariants from the GK paper:
     1. Summary is sorted by value
@@ -605,16 +606,16 @@ def check_gk_invariants(sketch: GreenwaldKhannaSketch) -> None:
     assert values == sorted(values), "Summary is not sorted by value"
 
     # Check all g values are positive
-    for i, (v, g, delta) in enumerate(sketch.summary):
+    for i, (_v, g, _delta) in enumerate(sketch.summary):
         assert g >= 1, f"Tuple {i} has g={g} < 1"
 
-    # Check first tuple has Δ = 0
+    # Check first tuple has delta = 0
     _, _, delta_first = sketch.summary[0]
-    assert delta_first == 0, f"First tuple has Δ={delta_first}, expected 0"
+    assert delta_first == 0, f"First tuple has delta={delta_first}, expected 0"
 
-    # Check last tuple has Δ = 0
+    # Check last tuple has delta = 0
     _, _, delta_last = sketch.summary[-1]
-    assert delta_last == 0, f"Last tuple has Δ={delta_last}, expected 0"
+    assert delta_last == 0, f"Last tuple has delta={delta_last}, expected 0"
 
     # Check main invariant: g_i + Δ_i ≤ ⌊2εn⌋
     # Only check when threshold >= 1, otherwise the invariant is not meaningful
@@ -622,12 +623,12 @@ def check_gk_invariants(sketch: GreenwaldKhannaSketch) -> None:
     # Skip tuples with Δ=0 (exact values like min/max) - these can have g > ⌊2εn⌋
     # when there are many duplicates, but error is still zero since Δ=0
     if threshold >= 1:
-        for i, (v, g, delta) in enumerate(sketch.summary):
+        for i, (_v, g, delta) in enumerate(sketch.summary):
             if delta == 0:
-                continue  # Skip exact values (min/max with Δ=0)
+                continue  # Skip exact values (min/max with delta=0)
             invariant_value = g + delta
             assert invariant_value <= threshold, (
-                f"Tuple {i} violates invariant: g + Δ = {g} + {delta} = {invariant_value} > {threshold}"
+                f"Tuple {i} violates invariant: g + delta = {g} + {delta} = {invariant_value} > {threshold}"
             )
 
 
@@ -641,24 +642,24 @@ class TestGKInvariants:
     4. For all tuples: g_i + Δ_i ≤ ⌊2εn⌋
     """
 
-    def test_invariants_after_single_insert(self):
+    def test_invariants_after_single_insert(self) -> None:
         """Test invariants hold after a single insert."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
         sketch.insert(5.0)
         check_gk_invariants(sketch)
 
-    def test_invariants_after_multiple_inserts(self):
+    def test_invariants_after_multiple_inserts(self) -> None:
         """Test invariants hold after multiple sorted inserts."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
 
         for i in range(100):
             sketch.insert(float(i))
 
         check_gk_invariants(sketch)
 
-    def test_invariants_after_unsorted_inserts(self):
+    def test_invariants_after_unsorted_inserts(self) -> None:
         """Test invariants hold when inserting in random order."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
         rng = np.random.default_rng(42)
         values = rng.uniform(0, 1000, 500)
 
@@ -667,9 +668,9 @@ class TestGKInvariants:
 
         check_gk_invariants(sketch)
 
-    def test_invariants_after_compression(self):
+    def test_invariants_after_compression(self) -> None:
         """Test invariants hold after compression kicks in."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
         rng = np.random.default_rng(42)
 
         # Insert enough to trigger multiple compressions
@@ -678,9 +679,9 @@ class TestGKInvariants:
 
         check_gk_invariants(sketch)
 
-    def test_invariants_after_delete(self):
+    def test_invariants_after_delete(self) -> None:
         """Test invariants hold after delete operations."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
 
         # Insert values
         for i in range(20):
@@ -693,10 +694,10 @@ class TestGKInvariants:
             sketch.delete(float(i))
             check_gk_invariants(sketch)
 
-    def test_invariants_after_merge(self):
+    def test_invariants_after_merge(self) -> None:
         """Test invariants hold after merging two sketches."""
-        sketch1 = GreenwaldKhannaSketch(epsilon=0.01)
-        sketch2 = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch1 = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
+        sketch2 = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
 
         for i in range(50):
             sketch1.insert(float(i))
@@ -706,18 +707,18 @@ class TestGKInvariants:
         merged = sketch1.merge(sketch2)
         check_gk_invariants(merged)
 
-    def test_invariants_with_duplicates(self):
+    def test_invariants_with_duplicates(self) -> None:
         """Test invariants hold with duplicate values."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
 
         for _ in range(100):
             sketch.insert(5.0)  # All same value
 
         check_gk_invariants(sketch)
 
-    def test_invariants_with_different_epsilons(self):
+    def test_invariants_with_different_epsilons(self) -> None:
         """Test invariants hold for various epsilon values."""
-        for epsilon in [0.01, 0.05, 0.1]:
+        for epsilon in [EPSILON_DEFAULT, EPSILON_LOW, EPSILON_HIGH]:
             sketch = GreenwaldKhannaSketch(epsilon=epsilon)
             rng = np.random.default_rng(42)
 
@@ -741,7 +742,9 @@ class TestGKPropertyBased:
 
     @given(
         values=st.lists(
-            st.floats(min_value=-1e6, max_value=1e6, allow_nan=False, allow_infinity=False),
+            st.floats(
+                min_value=-1e6, max_value=1e6, allow_nan=False, allow_infinity=False
+            ),
             min_size=100,  # Need larger dataset to trigger compression
             max_size=1000,
             unique=True,  # Use unique values to avoid tie-related ambiguity
@@ -749,15 +752,14 @@ class TestGKPropertyBased:
         epsilon=st.sampled_from([0.01, 0.05, 0.1]),
     )
     @settings(max_examples=50, deadline=None)
-    def test_quantile_error_bound(self, values, epsilon):
-        """
-        Property: For any φ-quantile query, the returned value v satisfies:
-        |rank(v) - φn| ≤ εn
+    def test_quantile_error_bound(self, values: list[float], epsilon: float) -> None:
+        """Test the fundamental GK quantile error bound.
 
-        This is the fundamental guarantee of the GK algorithm.
+        For any phi-quantile query, the returned value v satisfies:
+        |rank(v) - phi*n| <= epsilon*n.
+
         Note: We use unique values to avoid tie-related ambiguity in rank calculation.
         """
-
         sketch = GreenwaldKhannaSketch(epsilon=epsilon)
         for v in values:
             sketch.insert(v)
@@ -787,15 +789,17 @@ class TestGKPropertyBased:
 
     @given(
         values=st.lists(
-            st.floats(min_value=-1e6, max_value=1e6, allow_nan=False, allow_infinity=False),
+            st.floats(
+                min_value=-1e6, max_value=1e6, allow_nan=False, allow_infinity=False
+            ),
             min_size=100,
             max_size=1000,
         ),
         epsilon=st.sampled_from([0.01, 0.05, 0.1]),
     )
     @settings(max_examples=50, deadline=None)
-    def test_invariants_maintained(self, values, epsilon):
-        """Property: GK structural invariants are maintained after all insertions."""
+    def test_invariants_maintained(self, values: list[float], epsilon: float) -> None:
+        """Test that GK structural invariants are maintained after all insertions."""
         assume(len(values) >= 50)
 
         sketch = GreenwaldKhannaSketch(epsilon=epsilon)
@@ -806,16 +810,18 @@ class TestGKPropertyBased:
 
     @given(
         values=st.lists(
-            st.floats(min_value=0, max_value=1e6, allow_nan=False, allow_infinity=False),
+            st.floats(
+                min_value=0, max_value=1e6, allow_nan=False, allow_infinity=False
+            ),
             min_size=10,
             max_size=500,
         ),
         epsilon=st.sampled_from([0.01, 0.05, 0.1]),
     )
     @settings(max_examples=30, deadline=None)
-    def test_min_max_exact(self, values, epsilon):
-        """Property: min() and max() return exact minimum and maximum values."""
-        assume(len(values) >= 5)
+    def test_min_max_exact(self, values: list[float], epsilon: float) -> None:
+        """Test that min() and max() return exact minimum and maximum values."""
+        assume(len(values) >= 3)
         assume(len(set(values)) >= 3)  # Need some distinct values
 
         sketch = GreenwaldKhannaSketch(epsilon=epsilon)
@@ -823,20 +829,26 @@ class TestGKPropertyBased:
             sketch.insert(v)
 
         # Min and max should be exact (GK guarantees this)
-        assert sketch.min() == min(values), f"min() = {sketch.min()}, expected {min(values)}"
-        assert sketch.max() == max(values), f"max() = {sketch.max()}, expected {max(values)}"
+        assert sketch.min() == min(values), (
+            f"min() = {sketch.min()}, expected {min(values)}"
+        )
+        assert sketch.max() == max(values), (
+            f"max() = {sketch.max()}, expected {max(values)}"
+        )
 
     @given(
         values=st.lists(
-            st.floats(min_value=-1e6, max_value=1e6, allow_nan=False, allow_infinity=False),
+            st.floats(
+                min_value=-1e6, max_value=1e6, allow_nan=False, allow_infinity=False
+            ),
             min_size=10,
             max_size=500,
         ),
         epsilon=st.sampled_from([0.01, 0.05, 0.1]),
     )
     @settings(max_examples=30, deadline=None)
-    def test_quantiles_ordered(self, values, epsilon):
-        """Property: Quantile queries return monotonically increasing values."""
+    def test_quantiles_ordered(self, values: list[float], epsilon: float) -> None:
+        """Test that quantile queries return monotonically increasing values."""
         assume(len(set(values)) >= 5)
 
         sketch = GreenwaldKhannaSketch(epsilon=epsilon)
@@ -853,15 +865,19 @@ class TestGKPropertyBased:
 
     @given(
         values=st.lists(
-            st.floats(min_value=0, max_value=1000, allow_nan=False, allow_infinity=False),
+            st.floats(
+                min_value=0, max_value=1000, allow_nan=False, allow_infinity=False
+            ),
             min_size=50,
             max_size=200,
         ),
         epsilon=st.sampled_from([0.01, 0.05]),
     )
     @settings(max_examples=20, deadline=None)
-    def test_merge_preserves_structure(self, values, epsilon):
-        """Property: Merging two sketches produces a valid sketch."""
+    def test_merge_preserves_structure(
+        self, values: list[float], epsilon: float
+    ) -> None:
+        """Test that merging two sketches produces a valid sketch."""
         assume(len(set(values)) >= 10)
 
         mid = len(values) // 2
@@ -899,11 +915,11 @@ class TestGKPropertyBased:
         ),
     )
     @settings(max_examples=30, deadline=None)
-    def test_delete_maintains_invariants(self, values):
-        """Property: Delete operations maintain GK invariants."""
+    def test_delete_maintains_invariants(self, values: list[int]) -> None:
+        """Test that delete operations maintain GK invariants."""
         assume(len(values) >= 10)
 
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
         for v in values:
             sketch.insert(float(v))
 
@@ -917,15 +933,15 @@ class TestGKPropertyBased:
         epsilon=st.sampled_from([0.01, 0.05, 0.1]),
     )
     @settings(max_examples=20, deadline=None)
-    def test_space_bound(self, n, epsilon):
-        """Property: Summary size is O(1/ε × log(εn))."""
+    def test_space_bound(self, n: int, epsilon: float) -> None:
+        """Test that summary size is O(1/ε × log(εn))."""
         sketch = GreenwaldKhannaSketch(epsilon=epsilon)
         rng = np.random.default_rng(42)
 
         for _ in range(n):
             sketch.insert(float(rng.uniform(0, 1000)))
 
-        # Theoretical bound: O(1/ε × log(εn))
+        # Theoretical bound: O(1/epsilon x log(epsilon*n))
         # Use a generous constant factor
         theoretical_bound = (1 / epsilon) * log(max(1, epsilon * n) + 1) * 10
 
@@ -933,16 +949,16 @@ class TestGKPropertyBased:
             f"Summary size {sketch.size()} exceeds theoretical bound {theoretical_bound}"
         )
 
-    def test_rank_empty_sketch(self):
+    def test_rank_empty_sketch(self) -> None:
         """Test that rank() raises ValueError on empty sketch."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
 
         with pytest.raises(ValueError, match="Cannot estimate rank from empty sketch"):
             sketch.rank(5.0)
 
-    def test_rank_edge_cases(self):
+    def test_rank_edge_cases(self) -> None:
         """Test rank() with values below min and above max."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
         for i in range(10, 21):  # Values 10-20
             sketch.insert(float(i))
 
@@ -956,16 +972,16 @@ class TestGKPropertyBased:
         assert sketch.rank(10.0) >= 0.0
         assert sketch.rank(20.0) <= float(sketch.n)
 
-    def test_cdf_empty_sketch(self):
+    def test_cdf_empty_sketch(self) -> None:
         """Test that cdf() raises ValueError on empty sketch."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
 
         with pytest.raises(ValueError, match="Cannot estimate CDF from empty sketch"):
             sketch.cdf(5.0)
 
-    def test_cdf_values(self):
+    def test_cdf_values(self) -> None:
         """Test cdf() returns correct values in [0, 1]."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
         for i in range(100):
             sketch.insert(float(i))
 
@@ -981,10 +997,10 @@ class TestGKPropertyBased:
         cdf_median = sketch.cdf(50.0)
         assert 0.3 <= cdf_median <= 0.7
 
-    def test_merge_empty_sketches(self):
+    def test_merge_empty_sketches(self) -> None:
         """Test merging when one or both sketches are empty."""
-        sketch1 = GreenwaldKhannaSketch(epsilon=0.01)
-        sketch2 = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch1 = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
+        sketch2 = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
 
         # Both empty
         merged = sketch1.merge(sketch2)
@@ -992,8 +1008,8 @@ class TestGKPropertyBased:
         assert len(merged.summary) == 0
 
         # First empty, second has data
-        sketch3 = GreenwaldKhannaSketch(epsilon=0.01)
-        sketch4 = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch3 = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
+        sketch4 = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
         sketch4.insert(1.0)
         sketch4.insert(2.0)
 
@@ -1002,8 +1018,8 @@ class TestGKPropertyBased:
         assert len(merged2.summary) > 0
 
         # First has data, second empty
-        sketch5 = GreenwaldKhannaSketch(epsilon=0.01)
-        sketch6 = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch5 = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
+        sketch6 = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
         sketch5.insert(1.0)
         sketch5.insert(2.0)
 
@@ -1011,9 +1027,9 @@ class TestGKPropertyBased:
         assert merged3.n == 2
         assert len(merged3.summary) > 0
 
-    def test_query_rank_boundary_conditions(self):
+    def test_query_rank_boundary_conditions(self) -> None:
         """Test _query_rank edge cases for better coverage."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
 
         # Add values to create specific boundary conditions
         for i in [1, 5, 10, 15, 20]:
@@ -1032,9 +1048,9 @@ class TestGKPropertyBased:
         assert q1 >= 1.0
         assert q5 <= 20.0
 
-    def test_query_rank_beyond_range(self):
+    def test_query_rank_beyond_range(self) -> None:
         """Test quantile when phi rounds to rank beyond all cumulative r_max values."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
 
         # Insert a few values to create a summary
         for i in range(5):
@@ -1048,9 +1064,9 @@ class TestGKPropertyBased:
         assert result == sketch.summary[-1][0]
         assert result == 4.0
 
-    def test_compression_with_small_summary(self):
-        """Test that compression early-returns when summary has ≤2 elements."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
+    def test_compression_with_small_summary(self) -> None:
+        """Test that compression early-returns when summary has <=2 elements."""
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
 
         # Insert just 2 values (summary will have exactly 2 tuples)
         sketch.insert(1.0)
@@ -1063,9 +1079,9 @@ class TestGKPropertyBased:
         # Should not compress (early return at line 182)
         assert len(sketch.summary) == initial_len
 
-    def test_compression_with_zero_threshold(self):
+    def test_compression_with_zero_threshold(self) -> None:
         """Test compression band condition when threshold is 0 (very small n)."""
-        sketch = GreenwaldKhannaSketch(epsilon=0.1)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_HIGH)
 
         # Insert just 1 value (n=1)
         # With n=1, floor(2 * epsilon * n) = floor(0.2) = 0, triggering line 197
@@ -1083,11 +1099,9 @@ class TestGKPropertyBased:
         # Should complete without error (line 197: band_condition = True)
         assert len(sketch.summary) >= 1
 
-    def test_query_rank_edge_cases_direct(self):
+    def test_query_rank_edge_cases_direct(self) -> None:
         """Test _query_rank edge cases by directly calling it with crafted states."""
-        from math import ceil
-
-        sketch = GreenwaldKhannaSketch(epsilon=0.1)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_HIGH)
 
         # Setup 1: Test line 165 (idx >= len(_cumulative_r_max))
         # This happens when target_rank > max(_cumulative_r_max)
@@ -1136,7 +1150,7 @@ class TestGKPropertyBased:
 
         # These lines (168-170) appear to be unreachable defensive code
         # Let's at least test with various quantiles to ensure no crashes
-        sketch = GreenwaldKhannaSketch(epsilon=0.01)
+        sketch = GreenwaldKhannaSketch(epsilon=EPSILON_DEFAULT)
         for i in range(50):
             sketch.insert(float(i))
 
@@ -1144,9 +1158,9 @@ class TestGKPropertyBased:
             result = sketch.quantile(phi)
             assert 0.0 <= result <= 49.0
 
-    def test_serialization_round_trip(self):
+    def test_serialization_round_trip(self) -> None:
         """Test that sketch state can be serialized and deserialized correctly."""
-        epsilon = 0.01
+        epsilon = EPSILON_DEFAULT
         rng = np.random.RandomState(42)
         data = rng.normal(loc=0.0, scale=1.0, size=500)
 
@@ -1188,9 +1202,9 @@ class TestGKPropertyBased:
             restored_rank = restored_sketch.rank(v)
             assert orig_rank == restored_rank
 
-    def test_from_dict_malformed_input(self):
+    def test_from_dict_malformed_input(self) -> None:
         """Test that from_dict raises errors on malformed input."""
-        epsilon = 0.01
+        epsilon = EPSILON_DEFAULT
         rng = np.random.RandomState(123)
         data = rng.normal(size=100)
 

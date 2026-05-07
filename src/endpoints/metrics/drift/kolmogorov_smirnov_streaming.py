@@ -1,62 +1,77 @@
+"""Streaming KS test endpoint for detecting drift via approximate Kolmogorov–Smirnov test."""
+
 import logging
 import uuid
-from typing import Any, Dict, List, Optional
+from http import HTTPStatus
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.core.metrics.drift.kolmogorov_smirnov_streaming import KolmogorovSmirnovStreaming
+from src.core.metrics.drift.greenwald_khanna_quantile_sketch import EPSILON_DEFAULT
+from src.core.metrics.drift.kolmogorov_smirnov_streaming import (
+    KolmogorovSmirnovStreaming,
+)
+from src.service.data.datasources.data_source import DataSource
 from src.service.data.shared_data_source import get_shared_data_source
 from src.service.payloads.metrics.base_metric_request import BaseMetricRequest
-from src.service.prometheus.shared_prometheus_scheduler import get_shared_prometheus_scheduler
+from src.service.prometheus.prometheus_scheduler import PrometheusScheduler
+from src.service.prometheus.shared_prometheus_scheduler import (
+    get_shared_prometheus_scheduler,
+)
+from src.service.utils.logging_utils import log_deprecated_endpoint
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# Metric name constant
+# Metric name constants
 METRIC_NAME = "KSTestStreaming"
 DEPRECATED_METRIC_NAME = "ApproxKSTest"  # Legacy name for backwards compatibility
 
 
-def get_prometheus_scheduler():
+def get_prometheus_scheduler() -> PrometheusScheduler:
     """Get the shared prometheus scheduler instance."""
     return get_shared_prometheus_scheduler()
 
 
-def get_data_source():
+def get_data_source() -> DataSource:
     """Get the shared data source instance."""
     return get_shared_data_source()
 
 
 class ScheduleId(BaseModel):
+    """Identifier for a scheduled metric computation request."""
+
     requestId: str
 
 
 class ApproxKSTestMetricRequest(BaseMetricRequest):
+    """Request parameters for streaming KS test drift detection metric."""
+
     # Use field aliases to accept camelCase from API while keeping snake_case internally
     model_config = ConfigDict(populate_by_name=True)
 
     model_id: str = Field(alias="modelId")
-    metric_name: Optional[str] = Field(default=None, alias="metricName")  # Will be set by endpoint
-    request_name: Optional[str] = Field(default=None, alias="requestName")
+    metric_name: str = Field(default=METRIC_NAME, alias="metricName")
+    request_name: str | None = Field(default=None, alias="requestName")
     batch_size: int = Field(default=100, alias="batchSize")
 
     # ApproxKSTest-specific fields
     threshold_delta: float = Field(default=0.05, alias="thresholdDelta")
-    reference_tag: Optional[str] = Field(default=None, alias="referenceTag")
-    fit_columns: List[str] = Field(default_factory=list, alias="fitColumns")
+    reference_tag: str | None = Field(default=None, alias="referenceTag")
+    fit_columns: list[str] = Field(default_factory=list, alias="fitColumns")
 
     # Streaming-specific field: epsilon for GK sketch accuracy
     # Must be in the interval (0, 0.5] to satisfy GK sketch requirements.
     # Values close to 0.5 cause algorithm degeneration (constant compression).
     epsilon: float = Field(
-        default=0.01,
+        default=EPSILON_DEFAULT,
         gt=0.0,
         le=0.5,
         description="Error parameter for GK sketch; must be in (0, 0.5]. Default: 0.01",
     )
 
-    def retrieve_tags(self) -> Dict[str, str]:
+    def retrieve_tags(self) -> dict[str, str]:
         """Retrieve tags for this ApproxKSTest metric request."""
         tags = self.retrieve_default_tags()
         if self.reference_tag:
@@ -72,32 +87,49 @@ class ApproxKSTestMetricRequest(BaseMetricRequest):
 @router.post("/metrics/drift/ksteststreaming")
 async def compute_ksteststreaming(
     request: ApproxKSTestMetricRequest,
-) -> Dict[str, float | bool | str | Dict[str, Dict[str, float]]]:
+) -> dict[str, float | bool | str | dict[str, dict[str, float]]]:
     """Compute the current value of KS Test Streaming metric."""
+    # Validate inputs before try block
+    if not request.reference_tag:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail="referenceTag is required for drift detection",
+        )
+
+    if not request.fit_columns:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail="fitColumns is required - specify which features to test for drift",
+        )
+
     try:
-        logger.info(f"Computing {METRIC_NAME} for model: {request.model_id}")
+        logger.info("Computing %s for model: %s", METRIC_NAME, request.model_id)
 
         # Get data source
         data_source = get_data_source()
         batch_size = request.batch_size
 
         # Get reference dataframe (tagged with referenceTag)
-        if request.reference_tag:
-            reference_df = await data_source.get_dataframe_by_tag(request.model_id, request.reference_tag)
-        else:
-            raise HTTPException(status_code=400, detail="referenceTag is required for drift detection")
+        reference_df = await data_source.get_dataframe_by_tag(
+            request.model_id, request.reference_tag
+        )
 
         # Get current dataframe (most recent organic data)
-        current_df = await data_source.get_organic_dataframe(request.model_id, batch_size)
+        current_df = await data_source.get_organic_dataframe(
+            request.model_id, batch_size
+        )
 
         if len(reference_df) == 0:
             raise HTTPException(
-                status_code=404,
+                status_code=HTTPStatus.NOT_FOUND,
                 detail=f"No reference data found for model: {request.model_id} with tag: {request.reference_tag}",
             )
 
         if len(current_df) == 0:
-            raise HTTPException(status_code=404, detail=f"No current data found for model: {request.model_id}")
+            raise HTTPException(
+                status_code=HTTPStatus.NOT_FOUND,
+                detail=f"No current data found for model: {request.model_id}",
+            )
 
         # Get epsilon parameter
         epsilon = request.epsilon
@@ -105,51 +137,55 @@ async def compute_ksteststreaming(
         # Calculate approximate KS test for each feature
         alpha = request.threshold_delta
 
-        if request.fit_columns:
-            # Multi-feature case: iterate over features
-            results = {}
-            for feature_name in request.fit_columns:
-                if feature_name not in reference_df.columns or feature_name not in current_df.columns:
-                    raise HTTPException(status_code=400, detail=f"Feature {feature_name} not found in data")
+        # Multi-feature case: iterate over features
+        results = {}
+        for feature_name in request.fit_columns:
+            if (
+                feature_name not in reference_df.columns
+                or feature_name not in current_df.columns
+            ):
+                raise HTTPException(
+                    status_code=HTTPStatus.BAD_REQUEST,
+                    detail=f"Feature {feature_name} not found in data",
+                )
 
-                reference_data = reference_df[feature_name].to_numpy()
-                current_data = current_df[feature_name].to_numpy()
+            reference_data = reference_df[feature_name].to_numpy()
+            current_data = current_df[feature_name].to_numpy()
 
-                # Use streaming KS test
-                ks = KolmogorovSmirnovStreaming(epsilon=epsilon)
-                ks.insert_reference_batch(reference_data)
-                ks.insert_current_batch(current_data)
+            # Use streaming KS test
+            ks = KolmogorovSmirnovStreaming(epsilon=epsilon)
+            ks.insert_reference_batch(reference_data)
+            ks.insert_current_batch(current_data)
 
-                results[feature_name] = ks.kstest(alpha=alpha)
-
-            # Aggregate: drift detected if any feature shows drift
-            drift_detected = any(r["drift_detected"] for r in results.values())
-            max_statistic = max(r["statistic"] for r in results.values())
-            min_p_value = min(r["p_value"] for r in results.values())
-
-            return {
-                "status": "success",
-                "value": max_statistic,
-                "drift_detected": drift_detected,
-                "p_value": min_p_value,
-                "alpha": alpha,
-                "epsilon": epsilon,
-                "feature_results": results,
-            }
-        else:
-            raise HTTPException(
-                status_code=400, detail="fitColumns is required - specify which features to test for drift"
-            )
+            results[feature_name] = ks.kstest(alpha=alpha)
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Error computing {METRIC_NAME}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error computing metric: {str(e)}")
+    except Exception as e:  # Broad catch intentional: endpoint catch-all for unknown computation errors
+        logger.exception("Error computing %s", METRIC_NAME)
+        raise HTTPException(
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+            detail="Error computing metric. Check server logs for details.",
+        ) from e
+
+    # Aggregate: drift detected if any feature shows drift
+    drift_detected = any(r["drift_detected"] for r in results.values())
+    max_statistic = max(r["statistic"] for r in results.values())
+    min_p_value = min(r["p_value"] for r in results.values())
+
+    return {
+        "status": "success",
+        "value": max_statistic,
+        "drift_detected": drift_detected,
+        "p_value": min_p_value,
+        "alpha": alpha,
+        "epsilon": epsilon,
+        "feature_results": results,
+    }
 
 
 @router.get("/metrics/drift/ksteststreaming/definition")
-async def get_ksteststreaming_definition() -> Dict[str, str]:
+async def get_ksteststreaming_definition() -> dict[str, str]:
     """Provide a general definition of KS Test Streaming metric."""
     description = """The streaming two-sample Kolmogorov–Smirnov test is a space-efficient
     approximation of the classic KS test for detecting distribution drift.
@@ -175,72 +211,104 @@ async def get_ksteststreaming_definition() -> Dict[str, str]:
 
 
 @router.post("/metrics/drift/ksteststreaming/request")
-async def schedule_ksteststreaming(request: ApproxKSTestMetricRequest) -> Dict[str, str]:
+async def schedule_ksteststreaming(
+    request: ApproxKSTestMetricRequest,
+) -> dict[str, str]:
     """Schedule a recurring computation of KS Test Streaming metric."""
+    # Get the scheduler and validate availability
+    scheduler = get_prometheus_scheduler()
+    if not scheduler:
+        raise HTTPException(
+            status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+            detail="Prometheus scheduler not available",
+        )
+
     try:
         # Generate UUID for this request
         request_id = uuid.uuid4()
-        logger.info(f"Scheduling {METRIC_NAME} computation with ID: {request_id}.")
+        logger.info("Scheduling %s computation with ID: %s.", METRIC_NAME, request_id)
 
         # Set metric name automatically
         request.metric_name = METRIC_NAME
 
-        # Get the scheduler and register the request
-        scheduler = get_prometheus_scheduler()
-        if not scheduler:
-            raise HTTPException(status_code=500, detail="Prometheus scheduler not available")
-
         # Register with the scheduler (this will reconcile the request and store it)
         await scheduler.register(request.metric_name, request_id, request)
 
-        logger.info(f"Successfully scheduled {METRIC_NAME} computation with ID: {request_id}")
+    except HTTPException:
+        raise
+    except Exception as e:  # Broad catch intentional: scheduler registration errors should not crash endpoint
+        logger.exception("Error scheduling %s computation", METRIC_NAME)
+        raise HTTPException(
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+            detail="Error scheduling metric. Check server logs for details.",
+        ) from e
+    else:
+        logger.info(
+            "Successfully scheduled %s computation with ID: %s",
+            METRIC_NAME,
+            request_id,
+        )
         return {"requestId": str(request_id)}
-
-    except Exception as e:
-        logger.error(f"Error scheduling {METRIC_NAME} computation: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error scheduling metric: {str(e)}") from e
 
 
 @router.delete("/metrics/drift/ksteststreaming/request")
-async def delete_ksteststreaming_schedule(schedule: ScheduleId) -> Dict[str, str]:
+async def delete_ksteststreaming_schedule(schedule: ScheduleId) -> dict[str, str]:
     """Delete a recurring computation of KS Test Streaming metric."""
+    # Get the scheduler and validate availability
+    scheduler = get_prometheus_scheduler()
+    if not scheduler:
+        raise HTTPException(
+            status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+            detail="Prometheus scheduler not available",
+        )
+
+    # Convert string ID to UUID
     try:
-        logger.info(f"Deleting {METRIC_NAME} schedule: {schedule.requestId}")
+        request_uuid = uuid.UUID(schedule.requestId)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST, detail="Invalid request ID format"
+        ) from e
 
-        # Get the scheduler and delete the request
-        scheduler = get_prometheus_scheduler()
-        if not scheduler:
-            raise HTTPException(status_code=500, detail="Prometheus scheduler not available")
-
-        # Convert string ID to UUID
-        try:
-            request_uuid = uuid.UUID(schedule.requestId)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid request ID format")
+    try:
+        logger.info("Deleting %s schedule: %s", METRIC_NAME, schedule.requestId)
 
         # Delete from scheduler
         await scheduler.delete(METRIC_NAME, request_uuid)
 
-        logger.info(f"Successfully deleted {METRIC_NAME} schedule: {schedule.requestId}")
-        return {"status": "success", "message": f"Schedule {schedule.requestId} deleted"}
-
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Error deleting {METRIC_NAME} schedule: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error deleting schedule: {str(e)}")
+    except (
+        Exception
+    ) as e:  # Broad catch intentional: endpoint catch-all for unknown deletion errors
+        logger.exception("Error deleting %s schedule", METRIC_NAME)
+        raise HTTPException(
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+            detail="Error deleting schedule. Check server logs for details.",
+        ) from e
+    else:
+        logger.info(
+            "Successfully deleted %s schedule: %s", METRIC_NAME, schedule.requestId
+        )
+        return {
+            "status": "success",
+            "message": f"Schedule {schedule.requestId} deleted",
+        }
 
 
 @router.get("/metrics/drift/ksteststreaming/requests")
-async def list_ksteststreaming_requests() -> Dict[str, List[Dict[str, Any]]]:
+async def list_ksteststreaming_requests() -> dict[str, list[dict[str, Any]]]:
     """List the currently scheduled computations of KS Test Streaming metric."""
-    try:
-        # Get the scheduler and list ApproxKSTest requests
-        scheduler = get_prometheus_scheduler()
-        if not scheduler:
-            raise HTTPException(status_code=500, detail="Prometheus scheduler not available")
+    # Get the scheduler and validate availability
+    scheduler = get_prometheus_scheduler()
+    if not scheduler:
+        raise HTTPException(
+            status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+            detail="Prometheus scheduler not available",
+        )
 
-        # Get all requests for ApproxKSTest
+    try:
+        # Get all requests for KSTestStreaming
         requests = scheduler.get_requests(METRIC_NAME)
 
         # Convert to list format expected by client
@@ -267,14 +335,25 @@ async def list_ksteststreaming_requests() -> Dict[str, List[Dict[str, Any]]]:
                 requests_list.append(request_dict)
             else:
                 # Log warning for malformed request objects and skip them
-                logger.warning(f"Skipping malformed {METRIC_NAME} request {request_id}: missing required attributes")
+                logger.warning(
+                    "Skipping malformed %s request %s: missing required attributes",
+                    METRIC_NAME,
+                    request_id,
+                )
                 continue
 
+    except HTTPException:
+        raise
+    except (
+        Exception
+    ) as e:  # Broad catch intentional: endpoint catch-all for unknown listing errors
+        logger.exception("Error listing %s requests", METRIC_NAME)
+        raise HTTPException(
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+            detail="Error listing requests. Check server logs for details.",
+        ) from e
+    else:
         return {"requests": requests_list}
-
-    except Exception as e:
-        logger.error(f"Error listing {METRIC_NAME} requests: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error listing requests: {str(e)}")
 
 
 # ============================================================================
@@ -285,51 +364,54 @@ async def list_ksteststreaming_requests() -> Dict[str, List[Dict[str, Any]]]:
 @router.post("/metrics/drift/approxkstest", deprecated=True)
 async def compute_approxkstest_deprecated(
     request: ApproxKSTestMetricRequest,
-) -> Dict[str, float | bool | str | Dict[str, Dict[str, float]]]:
+) -> dict[str, float | bool | str | dict[str, dict[str, float]]]:
     """Compute the current value of ApproxKSTest metric (deprecated).
 
     This endpoint is deprecated. Please use /metrics/drift/ksteststreaming instead.
     """
-    logger.warning(
-        "Deprecated endpoint /metrics/drift/approxkstest called. Use /metrics/drift/ksteststreaming instead."
-    )
+    log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
     return await compute_ksteststreaming(request)
 
 
 @router.get("/metrics/drift/approxkstest/definition", deprecated=True)
-async def get_approxkstest_definition_deprecated() -> Dict[str, str]:
+async def get_approxkstest_definition_deprecated() -> dict[str, str]:
     """Provide a general definition of ApproxKSTest metric (deprecated).
 
     This endpoint is deprecated. Please use /metrics/drift/ksteststreaming/definition instead.
     """
+    log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
     return await get_ksteststreaming_definition()
 
 
 @router.post("/metrics/drift/approxkstest/request", deprecated=True)
-async def schedule_approxkstest_deprecated(request: ApproxKSTestMetricRequest) -> Dict[str, str]:
+async def schedule_approxkstest_deprecated(
+    request: ApproxKSTestMetricRequest,
+) -> dict[str, str]:
     """Schedule a recurring computation of ApproxKSTest metric (deprecated).
 
     This endpoint is deprecated. Please use /metrics/drift/ksteststreaming/request instead.
     """
-    logger.warning(
-        "Deprecated endpoint /metrics/drift/approxkstest/request called. Use /metrics/drift/ksteststreaming/request instead."
-    )
+    log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
     return await schedule_ksteststreaming(request)
 
 
 @router.delete("/metrics/drift/approxkstest/request", deprecated=True)
-async def delete_approxkstest_schedule_deprecated(schedule: ScheduleId) -> Dict[str, str]:
+async def delete_approxkstest_schedule_deprecated(
+    schedule: ScheduleId,
+) -> dict[str, str]:
     """Delete a recurring computation of ApproxKSTest metric (deprecated).
 
     This endpoint is deprecated. Please use /metrics/drift/ksteststreaming/request instead.
     """
+    log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
     return await delete_ksteststreaming_schedule(schedule)
 
 
 @router.get("/metrics/drift/approxkstest/requests", deprecated=True)
-async def list_approxkstest_requests_deprecated() -> Dict[str, List[Dict[str, Any]]]:
+async def list_approxkstest_requests_deprecated() -> dict[str, list[dict[str, Any]]]:
     """List the currently scheduled computations of ApproxKSTest metric (deprecated).
 
     This endpoint is deprecated. Please use /metrics/drift/ksteststreaming/requests instead.
     """
+    log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
     return await list_ksteststreaming_requests()

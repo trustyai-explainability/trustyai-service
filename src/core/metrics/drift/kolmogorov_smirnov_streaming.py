@@ -1,6 +1,4 @@
-# pylint: disable=line-too-long
-"""
-Streaming two-sample Kolmogorov–Smirnov test for detecting distribution drift.
+"""Streaming two-sample Kolmogorov–Smirnov test for detecting distribution drift.
 
 This module implements the streaming 2-sample KS algorithm from:
 Lall, A., 2015. Data streaming algorithms for the Kolmogorov–Smirnov test.
@@ -12,15 +10,16 @@ CDFs for both samples, enabling computation of an approximate KS statistic
 with bounded error using sublinear space.
 """
 
+from typing import Any
+
 import numpy as np
 from scipy.stats import kstwo
 
-from .greenwald_khanna_quantile_sketch import GreenwaldKhannaSketch
+from .greenwald_khanna_quantile_sketch import EPSILON_DEFAULT, GreenwaldKhannaSketch
 
 
 class KolmogorovSmirnovStreaming:
-    """
-    Streaming two-sample Kolmogorov–Smirnov test using Greenwald–Khanna sketches.
+    """Streaming two-sample Kolmogorov–Smirnov test using Greenwald–Khanna sketches.
 
     This class maintains two GK sketches (reference and current) and computes
     an approximate KS statistic by evaluating the CDF difference at all
@@ -41,9 +40,8 @@ class KolmogorovSmirnovStreaming:
         >>> result = ks.kstest(alpha=0.05)
     """
 
-    def __init__(self, epsilon: float = 0.01):
-        """
-        Initialize a streaming KS test with two GK sketches.
+    def __init__(self, epsilon: float = EPSILON_DEFAULT) -> None:
+        """Initialize a streaming KS test with two GK sketches.
 
         :param epsilon: Error parameter for the GK sketches.
                         The KS statistic approximation error is bounded by 4*epsilon.
@@ -51,31 +49,29 @@ class KolmogorovSmirnovStreaming:
         :raises ValueError: If epsilon is not in (0, 1)
         """
         if not 0 < epsilon < 1:
-            raise ValueError("epsilon must be in the range (0, 1)")
+            msg = "epsilon must be in the range (0, 1)"
+            raise ValueError(msg)
 
         self.epsilon = epsilon
         self._reference_sketch = GreenwaldKhannaSketch(epsilon=epsilon)
         self._current_sketch = GreenwaldKhannaSketch(epsilon=epsilon)
 
     def insert_reference(self, value: float) -> None:
-        """
-        Insert a value into the reference distribution sketch.
+        """Insert a value into the reference distribution sketch.
 
         :param value: The value to insert
         """
         self._reference_sketch.insert(value)
 
     def insert_current(self, value: float) -> None:
-        """
-        Insert a value into the current distribution sketch.
+        """Insert a value into the current distribution sketch.
 
         :param value: The value to insert
         """
         self._current_sketch.insert(value)
 
     def insert_reference_batch(self, values: list[float] | np.ndarray) -> None:
-        """
-        Insert multiple values into the reference distribution sketch.
+        """Insert multiple values into the reference distribution sketch.
 
         :param values: Array-like of values to insert
         """
@@ -83,8 +79,7 @@ class KolmogorovSmirnovStreaming:
             self._reference_sketch.insert(float(v))
 
     def insert_current_batch(self, values: list[float] | np.ndarray) -> None:
-        """
-        Insert multiple values into the current distribution sketch.
+        """Insert multiple values into the current distribution sketch.
 
         :param values: Array-like of values to insert
         """
@@ -92,8 +87,7 @@ class KolmogorovSmirnovStreaming:
             self._current_sketch.insert(float(v))
 
     def statistic(self) -> float:
-        """
-        Compute the approximate KS statistic.
+        """Compute the approximate KS statistic.
 
         The statistic is D = max_x |F_ref(x) - F_cur(x)|, evaluated at all
         "important points" (values stored in both sketch summaries).
@@ -105,9 +99,11 @@ class KolmogorovSmirnovStreaming:
         :raises ValueError: If either sketch is empty
         """
         if len(self._reference_sketch) == 0:
-            raise ValueError("Reference sketch is empty")
+            msg = "Reference sketch is empty"
+            raise ValueError(msg)
         if len(self._current_sketch) == 0:
-            raise ValueError("Current sketch is empty")
+            msg = "Current sketch is empty"
+            raise ValueError(msg)
 
         ref_summary = self._reference_sketch.summary
         cur_summary = self._current_sketch.summary
@@ -162,14 +158,12 @@ class KolmogorovSmirnovStreaming:
             f_ref = ref_r_max / n_ref
             f_cur = cur_r_max / n_cur
             diff = abs(f_ref - f_cur)
-            if diff > max_diff:
-                max_diff = diff
+            max_diff = max(max_diff, diff)
 
         return max_diff
 
     def p_value(self, d_stat: float | None = None) -> float:
-        """
-        Compute the approximate p-value for the two-sample KS test.
+        """Compute the approximate p-value for the two-sample KS test.
 
         Uses SciPy's one-sample KS distribution (scipy.stats.kstwo) evaluated
         at an effective sample size (n1 * n2) / (n1 + n2) as an asymptotic
@@ -183,7 +177,8 @@ class KolmogorovSmirnovStreaming:
         n2 = len(self._current_sketch)
 
         if n1 == 0 or n2 == 0:
-            raise ValueError("Both sketches must be non-empty")
+            msg = "Both sketches must be non-empty"
+            raise ValueError(msg)
 
         if d_stat is None:
             d_stat = self.statistic()
@@ -199,8 +194,7 @@ class KolmogorovSmirnovStreaming:
         return float(p_val)
 
     def kstest(self, alpha: float = 0.05) -> dict[str, float | bool]:
-        """
-        Perform the streaming two-sample KS test.
+        """Perform the streaming two-sample KS test.
 
         :param alpha: Significance level for hypothesis testing (default: 0.05)
         :return: Dictionary containing:
@@ -260,8 +254,7 @@ class KolmogorovSmirnovStreaming:
         return self._current_sketch
 
     def to_dict(self) -> dict[str, float | dict]:
-        """
-        Serialize the streaming KS test to a dictionary.
+        """Serialize the streaming KS test to a dictionary.
 
         :return: Dictionary containing all state for serialization
         """
@@ -272,20 +265,22 @@ class KolmogorovSmirnovStreaming:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, float | dict]) -> "KolmogorovSmirnovStreaming":
-        """
-        Deserialize a streaming KS test from a dictionary.
+    def from_dict(cls, data: dict[str, Any]) -> "KolmogorovSmirnovStreaming":
+        """Deserialize a streaming KS test from a dictionary.
 
         :param data: Dictionary containing state (from to_dict())
         :return: Reconstructed KolmogorovSmirnovStreaming instance
-        :raises ValueError: If the data format is invalid
+        :raises TypeError: If data is not a dictionary
+        :raises ValueError: If required keys are missing
         """
         if not isinstance(data, dict):
-            raise ValueError("Data must be a dictionary")
+            msg = "Data must be a dictionary"
+            raise TypeError(msg)
 
         required_keys = {"epsilon", "reference_sketch", "current_sketch"}
         if not required_keys.issubset(data.keys()):
-            raise ValueError(f"Missing required keys: {required_keys - data.keys()}")
+            msg = f"Missing required keys: {required_keys - data.keys()}"
+            raise ValueError(msg)
 
         ks = cls(epsilon=float(data["epsilon"]))
         ks._reference_sketch = GreenwaldKhannaSketch.from_dict(data["reference_sketch"])
