@@ -24,14 +24,13 @@ class GroupAveragePredictiveValueDifference:
     ) -> float:
         """Calculate group average predictive value difference for model outputs.
 
-        :param samples a Numpy array of inputs to be used for testing
-        fairness
-        :param model the model to be tested for fairness : param
-            privilege_columns a list of integers specifying the indices
-            of the privileged columns :param privilege_values a list of
-            integers specifying the privileged values :param
-            positive_class the favorable / desirable outputs :param
-            output_column the column index where the output is located
+        :param samples: NumPy array of inputs for testing fairness.
+        :param model: Model to be tested for fairness.
+        :param privilege_columns: Indices of the privileged columns.
+        :param privilege_values: Privileged values.
+        :param positive_class: Favorable/desirable outputs.
+        :param output_column: Column index where the output is located.
+        :return: Group average predictive value difference score.
         """
         outputs = model.predict(samples)
         truth = np.append(samples, outputs, axis=1)
@@ -55,14 +54,13 @@ class GroupAveragePredictiveValueDifference:
     ) -> float:
         """Calculate group average predictive value difference when the labels are pre-calculated.
 
-        :param test a NumPy array representing the test data : param
-            truth a NumPy array representing the truth data :param
-            privilege_columns a list of integers specifying the indices
-            of the privileged columns :param privilege_values a list of
-            intergers specifying the privileged values :param
-            positive_class the favorable / desirable outputs :param
-            output_column the column where the output is located return
-            group average predictive value difference, between -1 and 1
+        :param test: NumPy array representing the test data.
+        :param truth: NumPy array representing the truth data.
+        :param privilege_columns: Indices of the privileged columns.
+        :param privilege_values: Privileged values.
+        :param positive_class: Favorable/desirable outputs.
+        :param output_column: Column where the output is located.
+        :return: Group average predictive value difference, between -1 and 1.
         """
 
         def privilege_filter(row: np.ndarray) -> bool:

@@ -622,7 +622,7 @@ def make_list_requests_with_malformed_data_test(
     num_valid_requests: int = 2,
     num_malformed_requests: int = 2,
 ) -> Callable[[], None]:
-    """Create a test for list endpoint with mix of valid and. malformed requests.
+    """Create a test for list endpoint with mix of valid and malformed requests.
 
     This tests the defensive logic that skips malformed requests and
     only returns valid ones. Malformed requests are those missing

@@ -1,7 +1,4 @@
-"""Legacy MariaDB storage reader for backward compatibility with Java-.
-
-serialized data.
-"""
+"""Legacy MariaDB storage reader for backward compatibility with Java-serialized data."""
 
 import logging
 import uuid

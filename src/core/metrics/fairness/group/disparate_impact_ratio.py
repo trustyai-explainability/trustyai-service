@@ -23,14 +23,12 @@ class DisparateImpactRatio:
     ) -> float:
         """Calculate disparate impact ratio (DIR) for model outputs.
 
-        :param samples a NumPy array of inputs to be used for testing
-        fairness
-        :param model the model to be tested for fairness : param
-            privilege_columns a list of integers specifying the indices
-            of the privileged columns :param privilege_values a list
-            integers specifying the privileged values :param
-            favorable_outputs the outputs that are considered favorable
-            / desirable return DIR score
+        :param samples: NumPy array of inputs for testing fairness.
+        :param model: Model to be tested for fairness.
+        :param privilege_columns: Indices of the privileged columns.
+        :param privilege_values: Privileged values.
+        :param favorable_outputs: Outputs considered favorable/desirable.
+        :return: DIR score.
         """
         privileged, unprivileged = split_by_privilege(
             samples,
@@ -52,10 +50,10 @@ class DisparateImpactRatio:
     ) -> float:
         """Calculate disparate impact ratio (DIR) when the labels are pre-calculated.
 
-        :param privileged a NumPy array with the privileged groups
-        :param unprivileged a NumPy array with the unprivileged groups
-        :param favorable_outputs the outputs that are considered
-        favorable / desirable return DIR, between 0 and 1
+        :param privileged: NumPy array with the privileged groups.
+        :param unprivileged: NumPy array with the unprivileged groups.
+        :param favorable_outputs: Outputs considered favorable/desirable.
+        :return: DIR, between 0 and 1.
         """
         validate_fairness_groups(privileged=privileged, unprivileged=unprivileged)
 

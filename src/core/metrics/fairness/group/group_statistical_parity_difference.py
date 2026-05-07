@@ -24,14 +24,12 @@ class GroupStatisticalParityDifference:
     ) -> float:
         """Calculate group statistical parity difference (SPD) for model outputs.
 
-        :param samples a NumPy array of inputs to be used for testing
-        fairness
-        :param model the model to be tested for fairness : param
-            privilege_columns a list of integers specifying the indices
-            of the privileged columns :param privilege_values a list
-            integers specifying the privileged values :param
-            favorable_outputs the outputs that are considered favorable
-            / desirable return SPD score
+        :param samples: NumPy array of inputs for testing fairness.
+        :param model: Model to be tested for fairness.
+        :param privilege_columns: Indices of the privileged columns.
+        :param privilege_values: Privileged values.
+        :param favorable_outputs: Outputs considered favorable/desirable.
+        :return: SPD score.
         """
         privileged, unprivileged = split_by_privilege(
             samples,
@@ -53,10 +51,10 @@ class GroupStatisticalParityDifference:
     ) -> float:
         """Calculate statistical/demographic parity difference (SPD) when labels are pre-calculated.
 
-        :param privileged numPy array with the privileged groups : param
-            unprivileged numPy array with the unprivileged groups :param
-            favorable_outputs an output that is considered favorable /
-            desirable return SPD, between -1 and 1
+        :param privileged: NumPy array with the privileged groups.
+        :param unprivileged: NumPy array with the unprivileged groups.
+        :param favorable_outputs: Output considered favorable/desirable.
+        :return: SPD, between -1 and 1.
         """
         validate_fairness_groups(privileged=privileged, unprivileged=unprivileged)
 

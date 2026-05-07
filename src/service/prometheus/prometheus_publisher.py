@@ -175,8 +175,11 @@ class PrometheusPublisher:
                     self._create_or_update_gauge(
                         name=full_metric_name, tags=tags, request_id=new_id
                     )
-                # Track derived IDs for cleanup when root request is removed
+                # Clean up old derived values from previous calculation cycle
+                # before tracking the new ones (prevents leak when key count changes)
                 with self._values_lock:
+                    for old_id in self._derived_ids.pop(config.request_id, []):
+                        self.values.pop(old_id, None)
                     self._derived_ids[config.request_id] = derived_ids
                 logger.debug(
                     "Scheduled request for %s id=%s, value=%s",

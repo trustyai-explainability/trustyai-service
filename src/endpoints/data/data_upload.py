@@ -1,7 +1,4 @@
-"""Data upload endpoint for submitting inference data to the TrustyAI.
-
-service.
-"""
+"""Data upload endpoint for submitting inference data to the TrustyAI service."""
 
 import logging
 import uuid

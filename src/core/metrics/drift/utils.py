@@ -83,6 +83,7 @@ def prob_dist_kde(
     x: np.ndarray,
     y: np.ndarray,
     grid_points: int = DEFAULT_GRID_POINTS,
+    *,
     bw_method: BwMethod = None,
 ) -> np.ndarray:
     """Generate probability distributions from two datasets using kernel density estimation.

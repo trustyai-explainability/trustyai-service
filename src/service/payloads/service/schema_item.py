@@ -18,25 +18,9 @@ class SchemaItem:
         """Get the data type of this schema item."""
         return self.type
 
-    def set_type(
-        self,
-        data_type: DataType | None = None,
-        *,
-        type: DataType | None = None,  # noqa: A002  # Backward compatibility with old parameter name
-    ) -> None:
-        """Set the data type of this schema item.
-
-        Args:
-            data_type: New data type (preferred parameter name)
-            type: Old parameter name for backward compatibility
-
-        """
-        # Support both parameter names for backward compatibility
-        final_type = data_type if data_type is not None else type
-        if final_type is None:
-            msg = "Must provide either 'data_type' or 'type' parameter"
-            raise TypeError(msg)
-        self.type = final_type
+    def set_type(self, data_type: DataType) -> None:
+        """Set the data type of this schema item."""
+        self.type = data_type
 
     def get_name(self) -> str:
         """Get the name of this schema item."""

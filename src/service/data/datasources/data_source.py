@@ -169,7 +169,7 @@ class DataSource:
 
         # Filter out any rows with the unlabeled tag (synthetic data)
         if UNLABELED_TAG in df.columns:
-            df = df[~df[UNLABELED_TAG]]
+            df = df[~df[UNLABELED_TAG].fillna(value=False)]
 
         return df
 

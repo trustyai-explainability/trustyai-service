@@ -268,7 +268,7 @@ class TestGzipMiddlewareUnit:
 
     # === Path Matching Tests ===
 
-    def testshould_process_path(self) -> None:
+    def test_should_process_path(self) -> None:
         """Path matching with exact, wildcard, and multiple patterns."""
         # Exact match
         m1 = GzipRequestMiddleware(None, paths=["/data/upload"])  # type: ignore[arg-type]
@@ -291,7 +291,7 @@ class TestGzipMiddlewareUnit:
 
     # === Content-Type Matching Tests ===
 
-    def testshould_process_content_type_exact_and_parameters(self) -> None:
+    def test_should_process_content_type_exact_and_parameters(self) -> None:
         """Content type matching with exact matches and parameters."""
         middleware = GzipRequestMiddleware(None)  # type: ignore[arg-type]
         # Exact matches
@@ -306,7 +306,7 @@ class TestGzipMiddlewareUnit:
             "application/cloudevents+json; version=1.0",
         )
 
-    def testshould_process_content_type_patterns(self) -> None:
+    def test_should_process_content_type_patterns(self) -> None:
         """Content type wildcard and pattern matching."""
         # Wildcard allows everything
         m1 = GzipRequestMiddleware(None, allowed_content_types=["*/*"])  # type: ignore[arg-type]

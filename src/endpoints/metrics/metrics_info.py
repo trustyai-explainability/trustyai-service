@@ -1,7 +1,4 @@
-"""Metrics information endpoint for retrieving scheduled metric.
-
-computations.
-"""
+"""Metrics information endpoint for retrieving scheduled metric computations."""
 
 import logging
 from http import HTTPStatus

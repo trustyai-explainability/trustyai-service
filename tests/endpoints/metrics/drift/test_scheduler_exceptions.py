@@ -1,6 +1,4 @@
-"""Test that scheduler exceptions during register/delete are properly surfaced.
-
-by endpoints.
+"""Test that scheduler exceptions during register/delete are properly surfaced by endpoints.
 
 This test file verifies that the factory functions properly support setting side_effect
 on scheduler.register() and scheduler.delete() to simulate exceptions like:

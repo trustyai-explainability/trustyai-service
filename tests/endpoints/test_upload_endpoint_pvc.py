@@ -303,8 +303,7 @@ class TestUploadEndpointPVC(unittest.TestCase):
                 n_output_cols=n_output_cols,
                 datatype=datatype,
             ):
-                """Test uploading data with various dimensions and. datatypes.
-                """
+                """Test uploading data with various dimensions and datatypes."""
                 data_tag = "TRAINING"
                 payload = generate_payload(
                     n_input_rows,

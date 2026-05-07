@@ -369,7 +369,7 @@ class TestGroupStatisticalParityDifference:
     @given(bank_data_strategy())
     @settings(max_examples=20, verbosity=Verbosity.normal)
     def test_spd_range(self, df: pd.DataFrame) -> None:
-        """Property-based test to verify the result of DIR calculation is always positive."""
+        """Property-based test to verify the result of SPD calculation is within expected range."""
         privileged, unprivileged = get_privileged_unprivileged_split(df=df)
 
         # Filter out cases with no favorable outcomes to prevent division by zero
