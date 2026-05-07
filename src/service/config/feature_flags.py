@@ -15,8 +15,7 @@ _TRUTHY = frozenset({"1", "true", "yes", "on", "enabled"})
 _FALSY = frozenset({"0", "false", "no", "off", "disabled"})
 
 
-def _flag(name: str, default: bool) -> bool:
-    """Read a feature flag, allowing env-var override."""
+def _flag(name: str, *, default: bool) -> bool:
     env = os.getenv(f"TRUSTYAI_ENABLE_{name.upper()}")
     if env is not None:
         normalized = env.strip().lower()
@@ -34,15 +33,15 @@ def _flag(name: str, default: bool) -> bool:
 
 
 ENDPOINTS: dict[str, bool] = {
-    "fairness": _flag("fairness", True),
-    "fairness_spd": _flag("fairness_spd", True),
-    "fairness_dir": _flag("fairness_dir", True),
-    "drift": _flag("drift", True),
-    "drift_ks_test": _flag("drift_ks_test", True),
-    "drift_jensen_shannon": _flag("drift_jensen_shannon", True),
-    "drift_compare_means": _flag("drift_compare_means", True),
-    "data_download": _flag("data_download", False),
-    "explainer": _flag("explainer", False),
-    "explainer_local": _flag("explainer_local", False),
-    "explainer_global": _flag("explainer_global", False),
+    "fairness": _flag("fairness", default=True),
+    "fairness_spd": _flag("fairness_spd", default=True),
+    "fairness_dir": _flag("fairness_dir", default=True),
+    "drift": _flag("drift", default=True),
+    "drift_ks_test": _flag("drift_ks_test", default=True),
+    "drift_jensen_shannon": _flag("drift_jensen_shannon", default=True),
+    "drift_compare_means": _flag("drift_compare_means", default=True),
+    "data_download": _flag("data_download", default=False),
+    "explainer": _flag("explainer", default=False),
+    "explainer_local": _flag("explainer_local", default=False),
+    "explainer_global": _flag("explainer_global", default=False),
 }
