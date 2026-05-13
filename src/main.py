@@ -29,6 +29,7 @@ from src.endpoints.metrics.drift.compare_means import (
     router as drift_comparemeans_router,
 )
 from src.endpoints.metrics.drift.kolmogorov_smirnov import router as drift_kstest_router
+from src.endpoints.metrics.drift.mmd import router as drift_mmd_router
 from src.endpoints.metrics.fairness.group.dir import router as dir_router
 from src.endpoints.metrics.fairness.group.spd import router as spd_router
 from src.endpoints.metrics.identity.identity_endpoint import router as identity_router
@@ -140,6 +141,12 @@ app.include_router(
     drift_comparemeans_router,
     tags=[
         "Drift Metrics: CompareMeans",
+    ],
+)
+app.include_router(
+    drift_mmd_router,
+    tags=[
+        "Drift Metrics: MMD",
     ],
 )
 app.include_router(
