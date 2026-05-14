@@ -151,6 +151,8 @@ ignore-missing-imports = [
     "pytest.*",
     "hypothesis.*",
     "matplotlib.*",
+    # Optional dependencies
+    "goodpoints.*",
     # Generated protobuf - excluded from analysis but imported optionally in tests
     "src.proto.grpc_predict_v2_pb2.*",
 ]
