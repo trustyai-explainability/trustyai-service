@@ -110,7 +110,6 @@ LABEL org.opencontainers.image.title="TrustyAI Service" \
       io.trustyai.fips.policy="${ENABLE_FIPS_POLICY}" \
       io.trustyai.fips.mode="host-dependent" \
       io.trustyai.fips.compatible="true" \
-      org.opencontainers.image.base.name="registry.access.redhat.com/ubi9/python-312-minimal" \
-      io.trustyai.fips.documentation="https://github.com/trustyai-explainability/trustyai-service/blob/main/docs/FIPS_compliance.md"
+      org.opencontainers.image.base.name="registry.access.redhat.com/ubi9/python-312-minimal"
 
 CMD ["python", "-m", "src.main"]
