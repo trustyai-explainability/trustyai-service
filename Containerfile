@@ -1,5 +1,5 @@
-# UBI9 Python 3.12 Minimal — reduced Trivy surface with FIPS support.
-# Uses the full UBI9 Python image as builder, minimal as runtime.
+# Multi-stage build: full UBI9 Python builder, minimal UBI9 Python runtime.
+# FIPS crypto policy support included.
 
 ARG EXTRAS=""
 ARG VERSION="1.0.0rc0"
@@ -14,21 +14,18 @@ FROM registry.access.redhat.com/ubi9/python-312:latest AS builder
 
 ARG EXTRAS
 
+USER root
+
 # Install MariaDB dev libraries if needed
-RUN if [[ "$EXTRAS" == *"mariadb"* ]]; then \
-        curl --fail -LsSO https://r.mariadb.com/downloads/mariadb_repo_setup && \
-        grep -q "mariadb_repo_setup" mariadb_repo_setup || { echo "ERROR: Downloaded script appears invalid"; exit 1; } && \
-        [ -s mariadb_repo_setup ] || { echo "ERROR: Downloaded script is empty"; exit 1; } && \
-        chmod +x mariadb_repo_setup && \
-        ./mariadb_repo_setup --mariadb-server-version="mariadb-11.4" --skip-check-installed && \
-        dnf install -y --disablerepo=rhel-9-for-aarch64-appstream-rpms \
-                       --disablerepo=rhel-9-for-aarch64-baseos-rpms \
-                       --disablerepo=rhel-9-for-x86_64-appstream-rpms \
-                       --disablerepo=rhel-9-for-x86_64-baseos-rpms \
-                       MariaDB-shared-11.4* MariaDB-devel-11.4* && \
-        dnf clean all && \
-        rm -rf /var/cache/dnf /var/cache/yum /root/.cache mariadb_repo_setup; \
+RUN if echo "$EXTRAS" | grep -q "mariadb"; then \
+        dnf install -y mariadb-connector-c-devel && \
+        dnf clean all; \
+    else \
+        echo "MariaDB extra not requested, creating stub" && \
+        touch /usr/lib64/libmariadb.so.stub; \
     fi
+
+USER 1001
 
 COPY pyproject.toml README.md ./
 
@@ -50,26 +47,35 @@ ARG ENABLE_FIPS_POLICY
 
 USER root
 
-# FIPS crypto policy
+# ---------------------------------------------------------------------------
+# FIPS COMPLIANCE CONFIGURATION
+# ---------------------------------------------------------------------------
+# Sets the system crypto policy to FIPS for maximum compatibility with FIPS
+# environments.
+#
+# IMPORTANT: This enables FIPS crypto policy but NOT full FIPS mode
+# (requires kernel fips=1).
+#   - On NON-FIPS hosts: Uses FIPS-approved algorithms where possible
+#   - On FIPS-enabled hosts: Container inherits full FIPS mode from kernel
+#
+# To enable full FIPS mode, deploy on FIPS-enabled infrastructure:
+#   https://docs.openshift.com/container-platform/latest/installing/installing-fips.html
+# ---------------------------------------------------------------------------
 RUN if [ "$ENABLE_FIPS_POLICY" = "true" ]; then \
-        microdnf --disablerepo='rhel-*' install -y crypto-policies-scripts && \
+        microdnf install -y crypto-policies-scripts && \
         update-crypto-policies --set FIPS && \
         microdnf clean all && \
         rm -rf /var/cache/yum && \
-        echo "FIPS crypto policy enabled (full FIPS mode requires FIPS-enabled host)"; \
+        echo "FIPS crypto policy enabled (full FIPS mode requires FIPS-enabled host)" && \
+        echo "Crypto Policy: $(update-crypto-policies --show)"; \
+    else \
+        echo "FIPS crypto policy not enabled (set ENABLE_FIPS_POLICY=true to enable)"; \
     fi
 
-# Install MariaDB shared libraries if needed
-RUN if echo "$EXTRAS" | grep -q "mariadb"; then \
-        curl --fail -LsSO https://r.mariadb.com/downloads/mariadb_repo_setup && \
-        grep -q "mariadb_repo_setup" mariadb_repo_setup || { echo "ERROR: Downloaded script appears invalid"; exit 1; } && \
-        [ -s mariadb_repo_setup ] || { echo "ERROR: Downloaded script is empty"; exit 1; } && \
-        chmod +x mariadb_repo_setup && \
-        ./mariadb_repo_setup --mariadb-server-version="mariadb-11.4" --skip-check-installed && \
-        microdnf install -y MariaDB-shared-11.4* && \
-        microdnf clean all && \
-        rm -rf /var/cache/yum mariadb_repo_setup; \
-    fi
+# Copy MariaDB shared libraries from builder if needed
+# Note: We copy instead of installing to avoid needing yum in the minimal image
+COPY --from=builder /usr/lib64/libmariadb.so* /usr/lib64/
+RUN rm -f /usr/lib64/libmariadb.so.stub
 
 # Upgrade system pip to eliminate base image CVEs
 RUN pip install --no-cache-dir --upgrade pip==26.1.1 && rm -rf /root/.cache
