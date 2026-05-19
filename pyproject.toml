@@ -119,7 +119,7 @@ ignore = [
 [tool.pytest.ini_options]
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
-addopts = "--dist=loadgroup"
+addopts = "--dist=loadgroup -n 4"
 
 [tool.bandit]
 exclude_dirs = ["tests/"]
