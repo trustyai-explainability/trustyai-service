@@ -538,8 +538,10 @@ class PVCStorage(StorageInterface):
                     if aliased_input_names is not None
                     else [],
                 }
-            except Exception:
+            except Exception as e:
                 logger.exception("Error getting input metadata for %s", model_id)
+                msg = f"Failed to retrieve input metadata for model {model_id}"
+                raise StorageReadError(msg) from e
 
         # Get output data metadata
         if output_exists:
@@ -559,8 +561,10 @@ class PVCStorage(StorageInterface):
                     if aliased_output_names is not None
                     else [],
                 }
-            except Exception:
+            except Exception as e:
                 logger.exception("Error getting output metadata for %s", model_id)
+                msg = f"Failed to retrieve output metadata for model {model_id}"
+                raise StorageReadError(msg) from e
 
         # Get metadata data info
         if metadata_exists:
@@ -574,8 +578,10 @@ class PVCStorage(StorageInterface):
                     if metadata_names is not None
                     else [],
                 }
-            except Exception:
+            except Exception as e:
                 logger.exception("Error getting metadata info for %s", model_id)
+                msg = f"Failed to retrieve metadata info for model {model_id}"
+                raise StorageReadError(msg) from e
 
         # Create schemas for input and output data
         input_schema = None

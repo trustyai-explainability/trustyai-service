@@ -3337,7 +3337,7 @@ types = [
 [package.metadata]
 requires-dist = [
     { name = "cryptography", specifier = ">=46,<49" },
-    { name = "fastapi", specifier = ">=0.116,<0.129" },
+    { name = "fastapi", specifier = ">=0.116,<0.137" },
     { name = "fastapi-utils", specifier = ">=0.8,<0.9" },
     { name = "h5py", specifier = ">=3.13,<4" },
     { name = "hypercorn", specifier = ">=0.17,<0.19" },

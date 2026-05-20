@@ -65,16 +65,23 @@ def is_json(data: bytes) -> bool:
     - Numbers: digits or -
     - Booleans: t (true) or f (false)
     - Null: n (null)
+
+    Leading whitespace is skipped as per JSON specification.
     """
     if not data:
         return False
 
-    first_char = data[0:1]
+    # Skip leading ASCII whitespace (space, tab, newline, carriage return)
+    stripped = data.lstrip(b" \t\n\r")
+    if not stripped:
+        return False
+
+    first_char = stripped[0:1]
     return (
         first_char in (b"{", b"[", b'"')
         or first_char.isdigit()
         or first_char == b"-"
-        or data.startswith((b"true", b"false", b"null"))
+        or stripped.startswith((b"true", b"false", b"null"))
     )
 
 

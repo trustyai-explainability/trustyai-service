@@ -52,7 +52,7 @@ def json_encoder(obj: object) -> object:
     raise TypeError(msg)
 
 
-def json_decoder_hook(obj: object) -> object:
+def json_decoder_hook(obj: object) -> object:  # noqa: C901 -- validation requires checking multiple __type__ cases
     r"""Decode objects that were encoded with special markers by json_encoder.
 
     Args:
@@ -74,9 +74,27 @@ def json_decoder_hook(obj: object) -> object:
             if "data" not in obj:
                 msg = "Bytes object missing 'data' field"
                 raise ValueError(msg)
-            return base64.b64decode(obj["data"])
+            try:
+                return base64.b64decode(obj["data"], validate=True)
+            except Exception as e:
+                msg = f"Invalid base64 data in bytes object: {e}"
+                raise ValueError(msg) from e
         if type_tag == "datetime":
-            return datetime.datetime.fromisoformat(obj["data"])
+            if "data" not in obj:
+                msg = "Datetime object missing 'data' field"
+                raise ValueError(msg)
+            try:
+                return datetime.datetime.fromisoformat(obj["data"])
+            except ValueError as e:
+                msg = f"Invalid ISO datetime format: {e}"
+                raise ValueError(msg) from e
         if type_tag == "date":
-            return datetime.date.fromisoformat(obj["data"])
+            if "data" not in obj:
+                msg = "Date object missing 'data' field"
+                raise ValueError(msg)
+            try:
+                return datetime.date.fromisoformat(obj["data"])
+            except ValueError as e:
+                msg = f"Invalid ISO date format: {e}"
+                raise ValueError(msg) from e
     return obj

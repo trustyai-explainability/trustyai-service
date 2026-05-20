@@ -57,7 +57,7 @@ def serialize_model(obj: BaseModel | dict) -> bytes:
     return gzip.compress(json_str.encode("utf-8"))
 
 
-def deserialize_model[T: BaseModel](data: bytes, target_class: type[T]) -> T:
+def deserialize_model[T: BaseModel](data: bytes, target_class: type[T]) -> T:  # noqa: C901 -- multi-format deserialization requires complexity
     """Deserialize and validate data against expected Pydantic schema.
 
     Supports both gzip-compressed and uncompressed JSON formats.
@@ -94,6 +94,9 @@ def deserialize_model[T: BaseModel](data: bytes, target_class: type[T]) -> T:
         try:
             json_str = safe_gzip_decompress(data).decode("utf-8")
             obj_dict = json.loads(json_str, object_hook=json_decoder_hook)
+            if not isinstance(obj_dict, dict):
+                msg = f"Expected JSON object (dict), got {type(obj_dict).__name__}"
+                raise TypeError(msg)
             return target_class(**obj_dict)
         except ValidationError:
             raise
@@ -114,6 +117,9 @@ def deserialize_model[T: BaseModel](data: bytes, target_class: type[T]) -> T:
     if format_type == "json" or format_type is None:
         try:
             obj_dict = json.loads(data.decode("utf-8"), object_hook=json_decoder_hook)
+            if not isinstance(obj_dict, dict):
+                msg = f"Expected JSON object (dict), got {type(obj_dict).__name__}"
+                raise TypeError(msg)
             return target_class(**obj_dict)
         except ValidationError:
             raise

@@ -161,6 +161,48 @@ class TestJsonDecoderHook:
 
         assert result["data"] == b"\x00\x01\x02\xff"
 
+    def test_decode_bytes_missing_data_raises(self) -> None:
+        """Test that bytes dict missing data field raises ValueError."""
+        encoded = {"__type__": "bytes"}
+
+        with pytest.raises(ValueError, match="missing 'data' field"):
+            json_decoder_hook(encoded)
+
+    def test_decode_datetime_missing_data_raises(self) -> None:
+        """Test that datetime dict missing data field raises ValueError."""
+        encoded = {"__type__": "datetime"}
+
+        with pytest.raises(ValueError, match="missing 'data' field"):
+            json_decoder_hook(encoded)
+
+    def test_decode_date_missing_data_raises(self) -> None:
+        """Test that date dict missing data field raises ValueError."""
+        encoded = {"__type__": "date"}
+
+        with pytest.raises(ValueError, match="missing 'data' field"):
+            json_decoder_hook(encoded)
+
+    def test_decode_bytes_invalid_base64_raises(self) -> None:
+        """Test that invalid base64 in bytes raises ValueError."""
+        encoded = {"__type__": "bytes", "data": "!!invalid!!"}
+
+        with pytest.raises(ValueError, match="Invalid base64"):
+            json_decoder_hook(encoded)
+
+    def test_decode_datetime_invalid_format_raises(self) -> None:
+        """Test that invalid datetime format raises ValueError."""
+        encoded = {"__type__": "datetime", "data": "not-a-datetime"}
+
+        with pytest.raises(ValueError, match="Invalid ISO datetime"):
+            json_decoder_hook(encoded)
+
+    def test_decode_date_invalid_format_raises(self) -> None:
+        """Test that invalid date format raises ValueError."""
+        encoded = {"__type__": "date", "data": "not-a-date"}
+
+        with pytest.raises(ValueError, match="Invalid ISO date"):
+            json_decoder_hook(encoded)
+
 
 class TestEncoderDecoderRoundtrip:
     """Test encoding and decoding work together."""

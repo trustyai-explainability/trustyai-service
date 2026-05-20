@@ -172,14 +172,11 @@ class TestDecompressionSafety:
     def test_serialize_rejects_oversized_row(self) -> None:
         """Test that serialization rejects rows that would exceed the limit."""
         # Create random data that won't compress well
-        random.seed(42)
+        rng = random.Random(42)  # noqa: S311 -- test data generation only
         max_size = 512
         # Create data that will exceed limit even after compression
         # Random data doesn't compress well, so we need 2-3x the limit
-        oversized_data = "".join(
-            chr(random.randint(32, 126))  # noqa: S311 -- random used for test data generation, not security
-            for _ in range(max_size * 3)
-        )
+        oversized_data = "".join(chr(rng.randint(32, 126)) for _ in range(max_size * 3))
         rows = [[oversized_data]]
 
         with pytest.raises(ValueError, match="exceeds maximum allowed size"):

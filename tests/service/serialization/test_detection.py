@@ -123,6 +123,15 @@ class TestIsJson:
         data = b"null"
         assert is_json(data) is True
 
+    def test_json_with_leading_whitespace(self) -> None:
+        """Test JSON with leading whitespace is correctly detected."""
+        # JSON spec allows leading whitespace
+        assert is_json(b' {"k": 1}') is True
+        assert is_json(b'\n\t{"k": 1}') is True
+        assert is_json(b"  \n  [1, 2, 3]") is True
+        assert is_json(b'\r\n  "hello"') is True
+        assert is_json(b"  \t\n  true") is True
+
     def test_not_json(self) -> None:
         """Test non-JSON data."""
         data = b"hello world"

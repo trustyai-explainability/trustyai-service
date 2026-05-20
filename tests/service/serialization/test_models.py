@@ -143,10 +143,25 @@ class TestModelSerialization:
         data = sample_model.model_dump()
         uncompressed_data = json.dumps(data).encode("utf-8")
 
-        # Compressed should be smaller or equal (for small data, gzip might be larger)
-        # This test mainly documents the compression behavior
+        # Verify types
         assert isinstance(compressed_data, bytes)
         assert isinstance(uncompressed_data, bytes)
+
+        # Verify compression is effective (allow overhead for small payloads)
+        # For small data, gzip header (~18 bytes) can make it larger
+        # Allow up to 1.5x for very small payloads (test data is ~48 bytes)
+        compressed_size = len(compressed_data)
+        uncompressed_size = len(uncompressed_data)
+        # For payloads < SMALL_PAYLOAD_THRESHOLD bytes, allow 50% overhead; for larger, expect compression
+        SMALL_PAYLOAD_THRESHOLD = 100  # noqa: N806 -- test constant
+        max_allowed = uncompressed_size * (
+            1.5 if uncompressed_size < SMALL_PAYLOAD_THRESHOLD else 1.0
+        )
+        assert compressed_size <= max_allowed, (
+            f"Compression overhead too large: "
+            f"compressed={compressed_size}, uncompressed={uncompressed_size}, "
+            f"ratio={compressed_size / uncompressed_size:.2f}"
+        )
 
 
 class TestPublicAPI:
