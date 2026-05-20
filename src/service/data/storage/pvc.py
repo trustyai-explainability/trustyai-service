@@ -21,6 +21,7 @@ from src.service.constants import (
     PARTIAL_PAYLOAD_DATASET_NAME,
     PROTECTED_DATASET_SUFFIX,
 )
+from src.service.data.exceptions import StorageReadError
 from src.service.data.metadata.storage_metadata import StorageMetadata
 from src.service.data.modelmesh_parser import PartialPayload
 from src.service.data.storage.exceptions import DeserializationError
@@ -231,7 +232,25 @@ class PVCStorage(StorageInterface):
                         # add new lines to dataset and write new data
                         dataset.resize(existing_shape[0] + inbound_shape[0], axis=0)
 
-                        # Ensure new_rows dtype matches existing dataset dtype for HDF5 compatibility
+                        # === VOID TYPE COMPATIBILITY HANDLING ===
+                        # HDF5 requires all rows in a dataset to have the same dtype. For serialized
+                        # data (void types), this creates a compatibility challenge:
+                        #
+                        # - NEW DATASETS: Created with V{MAX_VOID_TYPE_LENGTH} to accommodate future
+                        #   rows of varying serialized sizes (see line 276 below)
+                        #
+                        # - LEGACY DATASETS: May have smaller void types (e.g., V47) if created before
+                        #   this upgrade. When appending to these datasets:
+                        #   * If new_rows.dtype.itemsize ≤ existing: downcast new data to fit (safe)
+                        #   * If new_rows.dtype.itemsize > existing: REJECT with error (would corrupt data)
+                        #
+                        # MIGRATION PATH for datasets with small void types:
+                        # 1. Read existing data: `data = await storage.read_data(dataset_name)`
+                        # 2. Delete old dataset: `await storage.delete_dataset(dataset_name)`
+                        # 3. Recreate with new data: `await storage.write_data(dataset_name, data, column_names)`
+                        #    (New dataset will automatically use V{MAX_VOID_TYPE_LENGTH})
+                        #
+                        # This preserves backward compatibility while allowing optimal storage for new datasets.
                         if (
                             new_rows.dtype != dataset.dtype
                             and isinstance(new_rows.dtype, np.dtypes.VoidDType)
@@ -242,7 +261,7 @@ class PVCStorage(StorageInterface):
                                 msg = (
                                     f"Cannot append rows: serialized data ({new_rows.dtype.itemsize} bytes) "
                                     f"exceeds existing dataset capacity ({dataset.dtype.itemsize} bytes). "
-                                    "Recreate or migrate the dataset before appending."
+                                    "To fix: migrate dataset using read → delete → write pattern (see comment above)."
                                 )
                                 raise ValueError(msg)
                             # Both are void types with compatible sizes, cast new data to match existing dataset
@@ -457,7 +476,16 @@ class PVCStorage(StorageInterface):
     async def get_metadata(self, model_id: str) -> StorageMetadata:
         """Get metadata for a specific model including shapes, column names, etc.
 
-        Always returns a StorageMetadata object (returns minimal defaults on error).
+        Returns:
+            StorageMetadata object with schemas and observation counts
+
+        Raises:
+            StorageReadError: If metadata cannot be retrieved or is corrupted
+
+        Note:
+            This matches the Java API contract (throws StorageReadException).
+            TODO: MariaDB backend returns dict instead of StorageMetadata (Issue #153)
+
         """
         input_dataset = model_id + INPUT_SUFFIX
         output_dataset = model_id + OUTPUT_SUFFIX
@@ -641,18 +669,12 @@ class PVCStorage(StorageInterface):
                 observations > 0,
             )
 
-        except Exception:
+        except Exception as e:
             logger.exception("Error creating StorageMetadata for %s", model_id)
-            # Return minimal metadata object on error
-            return StorageMetadata(
-                model_id=model_id,
-                input_schema=Schema(name_mapping={}, items={}),
-                output_schema=Schema(name_mapping={}, items={}),
-                input_tensor_name="input",
-                output_tensor_name="output",
-                observations=0,
-                recorded_inferences=False,
-            )
+            # Raise exception to match Java API contract (throws StorageReadException)
+            # Callers (like endpoints) handle this gracefully with try/except
+            msg = f"Failed to retrieve metadata for model {model_id}"
+            raise StorageReadError(msg) from e
         else:
             return storage_metadata
 

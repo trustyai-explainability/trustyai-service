@@ -37,3 +37,15 @@ class DeserializationError(StorageError):
             message += f" (caused by: {type(original_exception).__name__}: {original_exception})"
 
         super().__init__(message)
+
+    def __repr__(self) -> str:
+        """Return detailed representation for debugging."""
+        caused_by = (
+            f", caused_by={type(self.original_exception).__name__}"
+            if self.original_exception
+            else ""
+        )
+        return (
+            f"DeserializationError(payload_id={self.payload_id!r}, "
+            f"reason={self.reason!r}{caused_by})"
+        )

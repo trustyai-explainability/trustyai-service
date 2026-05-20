@@ -2,6 +2,10 @@
 
 Provides secure serialization for Pydantic models using JSON for data
 representation and gzip for compression.
+
+This replaces pickle serialization to eliminate CWE-502 vulnerabilities.
+Part of: RHOAIENG-56132 (Replace pickle with JSON+gzip)
+Epic: RHOAIENG-55574 (Security Remediation Program)
 """
 
 import gzip

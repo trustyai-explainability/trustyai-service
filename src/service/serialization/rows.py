@@ -16,12 +16,17 @@ from .encoders import json_decoder_hook, json_encoder
 
 logger = logging.getLogger(__name__)
 
+# Compression level for row serialization (1-9)
+# Level 1 prioritizes throughput over compression ratio for row data,
+# since rows are typically small and speed matters more than size.
+DEFAULT_COMPRESSION_LEVEL = 1
+
 
 def serialize_rows(
     lst: list | np.ndarray,
     max_void_type_length: int,
     *,
-    compresslevel: int = 1,
+    compresslevel: int = DEFAULT_COMPRESSION_LEVEL,
 ) -> np.ndarray:
     """Convert a nested list to a 1D numpy array with dynamic void type sizing.
 

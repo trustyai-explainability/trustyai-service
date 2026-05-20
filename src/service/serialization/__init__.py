@@ -1,5 +1,11 @@
 """Secure serialization utilities with JSON + gzip compression.
 
+This module provides secure serialization for TrustyAI data storage,
+replacing pickle to eliminate CWE-502 arbitrary code execution vulnerabilities.
+
+Part of: RHOAIENG-56132 (Replace pickle with JSON+gzip)
+Epic: RHOAIENG-55574 (Security Remediation Program)
+
 Public API:
     - serialize_model(obj) -> bytes
     - deserialize_model(data, target_class) -> Model
