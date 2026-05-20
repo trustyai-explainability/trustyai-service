@@ -1,21 +1,17 @@
-"""Persistent Volume Claim (PVC) storage backend implementation using HDF5."""
+"""PVC (Persistent Volume Claim) storage backend using HDF5 files."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import os
-import pickle as pkl  # nosec B403 - Used for internal data serialization only
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 import h5py
 import numpy as np
 
 if TYPE_CHECKING:
     from types import TracebackType
-
-    from h5py._hl.files import File
 
 from src.endpoints.consumer import KServeInferenceRequest, KServeInferenceResponse
 from src.service.constants import (
@@ -25,14 +21,19 @@ from src.service.constants import (
     PARTIAL_PAYLOAD_DATASET_NAME,
     PROTECTED_DATASET_SUFFIX,
 )
-from src.service.data.metadata.storage_metadata import (
-    StorageMetadata,
-    StorageMetadataConfig,
-)
+from src.service.data.exceptions import StorageReadError
+from src.service.data.metadata.storage_metadata import StorageMetadata
 from src.service.data.modelmesh_parser import PartialPayload
+from src.service.data.storage.exceptions import DeserializationError
 from src.service.payloads.service.schema import Schema
 from src.service.payloads.service.schema_item import SchemaItem
 from src.service.payloads.values.data_type import DataType
+from src.service.serialization import (
+    deserialize_model,
+    deserialize_rows,
+    serialize_model,
+    serialize_rows,
+)
 from src.service.utils import list_utils
 
 from .storage_interface import StorageInterface
@@ -52,23 +53,15 @@ MAX_VOID_TYPE_LENGTH = 1024
 class H5PYContext:
     """Open the corresponding H5PY file for a dataset and manage its context."""
 
-    def __init__(
-        self, parent_class: PVCStorage, dataset_name: str, mode: Literal["r", "w", "a"]
-    ) -> None:
-        """Initialize HDF5 file context manager.
-
-        :param parent_class: Parent PVCStorage instance
-        :param dataset_name: Name of the dataset
-        :param mode: File access mode ('r', 'w', 'a')
-        """
+    def __init__(self, parent_class: PVCStorage, dataset_name: str, mode: str) -> None:
+        """Initialize context with parent storage, dataset name, and file mode."""
         self.parent_class = parent_class
         self.mode = mode
         self.dataset_name = dataset_name
-        # Access private method from parent class (internal helper)
         self.filename = parent_class._get_filename(self.dataset_name)
 
-    def __enter__(self) -> File:
-        """Enter context manager and open HDF5 file."""
+    def __enter__(self) -> h5py.File:
+        """Open the HDF5 file and return the file handle."""
         if self.mode == "r" and not Path(self.filename).exists():
             raise MissingH5PYDataError(self.dataset_name)
         self.db = h5py.File(self.filename, mode=self.mode)
@@ -80,7 +73,7 @@ class H5PYContext:
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        """Exit context manager and close HDF5 file."""
+        """Close the HDF5 file handle."""
         self.db.close()
 
 
@@ -88,28 +81,21 @@ class MissingH5PYDataError(Exception):
     """Raised when a dataset that does not exist is accessed."""
 
     def __init__(self, dataset_name: str) -> None:
-        """Initialize the exception with dataset name.
-
-        :param dataset_name: Name of the missing dataset
-        """
+        """Initialize with the missing dataset name."""
         self.dataset_name = dataset_name
 
     def __str__(self) -> str:
-        """Return string representation of the exception."""
+        """Return a description of the missing dataset."""
         return f"No inference data for dataset={self.dataset_name} found."
 
 
 class PVCStorage(StorageInterface):
-    """HDF5-based storage backend for persistent volume claims."""
+    """HDF5-based storage backend using persistent volume claims."""
 
     def __init__(
         self, data_directory: str, data_file: str = "trustyai_inference_data.hdf5"
     ) -> None:
-        """Initialize PVC storage backend.
-
-        :param data_directory: Directory path for data storage
-        :param data_file: Name of the HDF5 data file
-        """
+        """Initialize PVC storage with directory and file configuration."""
         self.data_path = str(Path(data_directory) / data_file)
         self.data_directory = data_directory
         self.data_file = data_file
@@ -118,13 +104,12 @@ class PVCStorage(StorageInterface):
         # one_file_per_dataset=True minimizes the ramifications of file corruption
         # one_file_per_dataset=True also allows read/write concurrence between different datasets
         self.one_file_per_dataset = True
-        # Initialize locks for existing datasets (create directory if it doesn't exist)
         data_dir = Path(self.data_directory)
         if data_dir.exists():
             self.locks = {
-                file_path.name: asyncio.Lock()
-                for file_path in data_dir.iterdir()
-                if self.data_file in file_path.name
+                entry.name: asyncio.Lock()
+                for entry in data_dir.iterdir()
+                if self.data_file in entry.name
             }
         else:
             self.locks = {}
@@ -145,13 +130,13 @@ class PVCStorage(StorageInterface):
 
     @staticmethod
     def allocate_valid_dataset_name(dataset_name: str) -> str:
-        """Given an arbitrary model name inbound from the model server, ensure that it does not conflict with any internal TrustyAI dataset names."""
+        """Allocate a valid dataset name that does not conflict with internal names."""
         if dataset_name.startswith(PROTECTED_DATASET_SUFFIX):
             return dataset_name.replace(PROTECTED_DATASET_SUFFIX, "inference_")
         return dataset_name
 
     async def dataset_exists(self, dataset_name: str) -> bool:
-        """Check if a file exists in the data directory for this dataset."""
+        """Check whether a file exists in the data directory for this dataset."""
         async with self.get_lock(dataset_name):
             try:
                 with H5PYContext(self, dataset_name, "r") as db:
@@ -161,9 +146,9 @@ class PVCStorage(StorageInterface):
 
     def _list_all_datasets_sync(self) -> list[str]:
         return [
-            file_path.name.replace(f"_{self.data_file}", "")
-            for file_path in Path(self.data_directory).iterdir()
-            if self.data_file in file_path.name
+            entry.name.replace(f"_{self.data_file}", "")
+            for entry in Path(self.data_directory).iterdir()
+            if self.data_file in entry.name
         ]
 
     async def list_all_datasets(self) -> list[str]:
@@ -171,10 +156,7 @@ class PVCStorage(StorageInterface):
         return await asyncio.to_thread(self._list_all_datasets_sync)
 
     async def dataset_rows(self, dataset_name: str) -> int:
-        """Return the number of data rows in dataset.
-
-        Raises FileNotFoundError if the dataset does not exist.
-        """
+        """Return the number of data rows in a dataset."""
         allocated_dataset_name = self.allocate_valid_dataset_name(dataset_name)
         async with self.get_lock(allocated_dataset_name):
             with H5PYContext(self, dataset_name, "r") as db:
@@ -183,7 +165,7 @@ class PVCStorage(StorageInterface):
                 raise MissingH5PYDataError(allocated_dataset_name)
 
     async def dataset_shape(self, dataset_name: str) -> tuple[int]:
-        """Shape of the dataset, returns a FileNotFoundError if the dataset does not exist."""
+        """Return the shape of the dataset."""
         allocated_dataset_name = self.allocate_valid_dataset_name(dataset_name)
         async with self.get_lock(allocated_dataset_name):
             with H5PYContext(self, dataset_name, "r") as db:
@@ -199,11 +181,7 @@ class PVCStorage(StorageInterface):
         *,
         is_bytes: bool = False,
     ) -> None:
-        """Write new data to file.
-
-        Axis 0 of the data is the row dimension, and data shape must
-        align on all subsequent axes.
-        """
+        """Write new data to file."""
         allocated_dataset_name = self.allocate_valid_dataset_name(dataset_name)
         inbound_shape = list(new_rows.shape)
 
@@ -248,28 +226,31 @@ class PVCStorage(StorageInterface):
                                     "Dataset was previously saved as numeric data, but has now received "
                                     "a serialized tabular payload."
                                 )
+                            logger.error(msg)
                             raise ValueError(msg)
 
                         # add new lines to dataset and write new data
                         dataset.resize(existing_shape[0] + inbound_shape[0], axis=0)
 
-                        # Ensure new_rows dtype matches existing dataset dtype for HDF5 compatibility
-                        # This is necessary when using dynamic void types - we may need to upcast
+                        # === VOID TYPE COMPATIBILITY HANDLING ===
+                        # HDF5 requires all rows in a dataset to have the same dtype. For serialized
+                        # data (void types), this creates a compatibility challenge:
                         #
-                        # NOTE ON VOID TYPE UPGRADE PATH:
-                        # New datasets are created with V{MAX_VOID_TYPE_LENGTH} (line 228) to allow
-                        # future appends with variable void sizes. However, datasets created before
-                        # this change may have smaller void types (e.g., V47).
+                        # - NEW DATASETS: Created with V{MAX_VOID_TYPE_LENGTH} to accommodate future
+                        #   rows of varying serialized sizes (see line 276 below)
                         #
-                        # Upgrade behavior:
-                        # - If new_rows.dtype > existing dataset.dtype: new_rows is downcast (may
-                        #   lose data if serialized size exceeds existing dtype size). This is a
-                        #   limitation of HDF5's fixed-dtype requirement.
-                        # - To upgrade an existing dataset with small void type: manually recreate
-                        #   the dataset with V{MAX_VOID_TYPE_LENGTH} using migration scripts.
+                        # - LEGACY DATASETS: May have smaller void types (e.g., V47) if created before
+                        #   this upgrade. When appending to these datasets:
+                        #   * If new_rows.dtype.itemsize ≤ existing: downcast new data to fit (safe)
+                        #   * If new_rows.dtype.itemsize > existing: REJECT with error (would corrupt data)
                         #
-                        # This preserves backward compatibility while allowing optimal storage for
-                        # new datasets.
+                        # MIGRATION PATH for datasets with small void types:
+                        # 1. Read existing data: `data = await storage.read_data(dataset_name)`
+                        # 2. Delete old dataset: `await storage.delete_dataset(dataset_name)`
+                        # 3. Recreate with new data: `await storage.write_data(dataset_name, data, column_names)`
+                        #    (New dataset will automatically use V{MAX_VOID_TYPE_LENGTH})
+                        #
+                        # This preserves backward compatibility while allowing optimal storage for new datasets.
                         if (
                             new_rows.dtype != dataset.dtype
                             and isinstance(new_rows.dtype, np.dtypes.VoidDType)
@@ -280,7 +261,7 @@ class PVCStorage(StorageInterface):
                                 msg = (
                                     f"Cannot append rows: serialized data ({new_rows.dtype.itemsize} bytes) "
                                     f"exceeds existing dataset capacity ({dataset.dtype.itemsize} bytes). "
-                                    "Recreate or migrate the dataset before appending."
+                                    "To fix: migrate dataset using read → delete → write pattern (see comment above)."
                                 )
                                 raise ValueError(msg)
                             # Both are void types with compatible sizes, cast new data to match existing dataset
@@ -305,10 +286,7 @@ class PVCStorage(StorageInterface):
             async with self.get_lock(allocated_dataset_name):
                 with H5PYContext(self, allocated_dataset_name, "a") as db:
                     # create new dataset
-                    max_shape = [
-                        None,
-                        *list(new_rows.shape)[1:],
-                    ]  # to-do: tune this value?
+                    max_shape = [None, *list(new_rows.shape)[1:]]
 
                     # For void types, use MAX_VOID_TYPE_LENGTH to ensure future appends
                     # with different sizes can be accommodated
@@ -329,7 +307,7 @@ class PVCStorage(StorageInterface):
                     dataset.attrs[BYTES_ATTRIBUTE] = is_bytes
 
     async def write_data(
-        self, dataset_name: str, new_rows: np.ndarray, column_names: list[str]
+        self, dataset_name: str, new_rows: np.ndarray | list, column_names: list[str]
     ) -> None:
         """Write new data to a dataset, automatically serializing any non-numeric data."""
         if isinstance(new_rows, np.ndarray) and not list_utils.contains_non_numeric(
@@ -343,7 +321,7 @@ class PVCStorage(StorageInterface):
             not isinstance(new_rows, np.ndarray)
             and list_utils.contains_non_numeric(new_rows)
         ):
-            serialized = list_utils.serialize_rows(new_rows, MAX_VOID_TYPE_LENGTH)
+            serialized = serialize_rows(new_rows, MAX_VOID_TYPE_LENGTH)
             arr = np.array(serialized)
             if arr.ndim == 1:
                 arr = arr.reshape(-1, 1)
@@ -359,7 +337,7 @@ class PVCStorage(StorageInterface):
     async def _read_raw_data(
         self, dataset_name: str, start_row: int | None = None, n_rows: int | None = None
     ) -> np.ndarray:
-        """Read raw data from a dataset -- does not deserialize any bytes data."""
+        """Read raw data from a dataset without deserializing bytes data."""
         allocated_dataset_name = self.allocate_valid_dataset_name(dataset_name)
         async with self.get_lock(allocated_dataset_name):
             with H5PYContext(self, dataset_name, "r") as db:
@@ -370,12 +348,12 @@ class PVCStorage(StorageInterface):
                 dataset = db[allocated_dataset_name]
                 if start_row > dataset.shape[0]:
                     logger.warning(
-                        "Requested a data read from start_row=%s, but dataset "
-                        "only has %s rows. An empty array will be returned.",
+                        "Requested a data read from start_row=%d, but dataset "
+                        "only has %d rows. An empty array will be returned.",
                         start_row,
                         dataset.shape[0],
                     )
-                return dataset[start_row:end_row]  # type: ignore[bad-index]
+                return dataset[start_row:end_row]
 
     async def read_data(
         self, dataset_name: str, start_row: int = 0, n_rows: int | None = None
@@ -383,7 +361,7 @@ class PVCStorage(StorageInterface):
         """Read data from a dataset, automatically deserializing any byte data."""
         read = await self._read_raw_data(dataset_name, start_row, n_rows)
         if len(read) and read[0].dtype.type in {np.bytes_, np.void}:
-            return list_utils.deserialize_rows(read)
+            return deserialize_rows(read)
         return read
 
     async def delete_dataset(self, dataset_name: str) -> None:
@@ -392,8 +370,8 @@ class PVCStorage(StorageInterface):
         async with self.get_lock(allocated_dataset_name):
             # Check if HDF5 file exists before opening to prevent phantom file creation
             # Opening in "a" mode creates the file if it doesn't exist
-            filename = self._get_filename(allocated_dataset_name)
-            if not os.path.exists(filename):
+            filename = Path(self._get_filename(allocated_dataset_name))
+            if not filename.exists():
                 return
             try:
                 with H5PYContext(self, allocated_dataset_name, "a") as db:
@@ -432,7 +410,7 @@ class PVCStorage(StorageInterface):
         async with self.get_lock(allocated_dataset_name):
             with H5PYContext(self, dataset_name, "a") as db:
                 curr_names = db[allocated_dataset_name].attrs[COLUMN_NAMES_ATTRIBUTE]
-                aliased_names = [name_mapping.get(name, name) for name in curr_names]  # type: ignore[not-iterable]
+                aliased_names = [name_mapping.get(name, name) for name in curr_names]
                 db[allocated_dataset_name].attrs[COLUMN_ALIAS_ATTRIBUTE] = aliased_names
 
     async def clear_name_mapping(self, dataset_name: str) -> None:
@@ -495,8 +473,20 @@ class PVCStorage(StorageInterface):
         logger.info("Extracted model IDs: %s", list(model_ids))
         return list(model_ids)
 
-    async def get_metadata(self, model_id: str) -> StorageMetadata | None:
-        """Get metadata for a specific model including shapes, column names, etc."""
+    async def get_metadata(self, model_id: str) -> StorageMetadata:
+        """Get metadata for a specific model including shapes, column names, etc.
+
+        Returns:
+            StorageMetadata object with schemas and observation counts
+
+        Raises:
+            StorageReadError: If metadata cannot be retrieved or is corrupted
+
+        Note:
+            This matches the Java API contract (throws StorageReadException).
+            TODO: MariaDB backend returns dict instead of StorageMetadata (Issue #153)
+
+        """
         input_dataset = model_id + INPUT_SUFFIX
         output_dataset = model_id + OUTPUT_SUFFIX
         metadata_dataset = model_id + METADATA_SUFFIX
@@ -543,13 +533,15 @@ class PVCStorage(StorageInterface):
                 )
                 metadata["inputData"] = {
                     "shape": list(input_shape) if input_shape is not None else [],
-                    "columnNames": list(input_names) if input_names is not None else [],  # type: ignore[bad-argument-type]
-                    "aliasedNames": list(aliased_input_names)  # type: ignore[bad-argument-type]
+                    "columnNames": list(input_names) if input_names is not None else [],
+                    "aliasedNames": list(aliased_input_names)
                     if aliased_input_names is not None
                     else [],
                 }
-            except Exception:  # Broad catch intentional: input metadata errors should not break entire metadata retrieval
+            except Exception as e:
                 logger.exception("Error getting input metadata for %s", model_id)
+                msg = f"Failed to retrieve input metadata for model {model_id}"
+                raise StorageReadError(msg) from e
 
         # Get output data metadata
         if output_exists:
@@ -569,8 +561,10 @@ class PVCStorage(StorageInterface):
                     if aliased_output_names is not None
                     else [],
                 }
-            except Exception:  # Broad catch intentional: output metadata errors should not break entire metadata retrieval
+            except Exception as e:
                 logger.exception("Error getting output metadata for %s", model_id)
+                msg = f"Failed to retrieve output metadata for model {model_id}"
+                raise StorageReadError(msg) from e
 
         # Get metadata data info
         if metadata_exists:
@@ -584,8 +578,10 @@ class PVCStorage(StorageInterface):
                     if metadata_names is not None
                     else [],
                 }
-            except Exception:  # Broad catch intentional: metadata info errors should not break entire metadata retrieval
+            except Exception as e:
                 logger.exception("Error getting metadata info for %s", model_id)
+                msg = f"Failed to retrieve metadata info for model {model_id}"
+                raise StorageReadError(msg) from e
 
         # Create schemas for input and output data
         input_schema = None
@@ -615,11 +611,11 @@ class PVCStorage(StorageInterface):
                 for idx, col_name in enumerate(column_names):
                     schema_items[col_name] = SchemaItem(
                         type=DataType.UNKNOWN,  # We don't have type info in PVC storage
-                        name=col_name,  # type: ignore[bad-argument-type]
+                        name=col_name,
                         column_index=idx,
                     )
 
-                input_schema = Schema(items=schema_items, name_mapping=name_mapping)  # type: ignore[bad-argument-type]
+                input_schema = Schema(items=schema_items, name_mapping=name_mapping)
 
                 # Get observation count from input dataset
                 if input_data.get("shape"):
@@ -663,25 +659,28 @@ class PVCStorage(StorageInterface):
 
             # Create and return StorageMetadata object
             storage_metadata = StorageMetadata(
-                StorageMetadataConfig(
-                    model_id=model_id,
-                    input_schema=input_schema,
-                    output_schema=output_schema,
-                    observations=observations,
-                    recorded_inferences=observations > 0,
-                )
+                model_id=model_id,
+                input_schema=input_schema,
+                output_schema=output_schema,
+                input_tensor_name="input",  # Default tensor name
+                output_tensor_name="output",  # Default tensor name
+                observations=observations,
+                recorded_inferences=observations > 0,  # True if we have data
             )
 
             logger.info(
-                "Created StorageMetadata for %s: observations=%s, recorded_inferences=%s",
+                "Created StorageMetadata for %s: observations=%d, recorded_inferences=%s",
                 model_id,
                 observations,
                 observations > 0,
             )
 
-        except Exception:  # Broad catch intentional: StorageMetadata creation errors should return None, not crash
+        except Exception as e:
             logger.exception("Error creating StorageMetadata for %s", model_id)
-            return None
+            # Raise exception to match Java API contract (throws StorageReadException)
+            # Callers (like endpoints) handle this gracefully with try/except
+            msg = f"Failed to retrieve metadata for model {model_id}"
+            raise StorageReadError(msg) from e
         else:
             return storage_metadata
 
@@ -692,9 +691,9 @@ class PVCStorage(StorageInterface):
         *,
         is_input: bool,
     ) -> None:
-        """Save a KServe or ModelMesh payload to disk."""
+        """Save a KServe or ModelMesh payload to disk using secure JSON + gzip serialization."""
         dataset_name = PARTIAL_INPUT_NAME if is_input else PARTIAL_OUTPUT_NAME
-        serialized_data = pkl.dumps(payload.model_dump())
+        serialized_data = serialize_model(payload)
         is_modelmesh = isinstance(payload, PartialPayload)
 
         async with self.get_lock(dataset_name):
@@ -714,9 +713,7 @@ class PVCStorage(StorageInterface):
                     "input" if is_input else "output",
                     payload_id,
                 )
-            except (
-                Exception
-            ):  # Broad catch intentional: log context before re-raising storage error
+            except Exception:
                 logger.exception(
                     "Error storing %s payload",
                     "ModelMesh" if is_modelmesh else "KServe",
@@ -728,39 +725,69 @@ class PVCStorage(StorageInterface):
     ) -> PartialPayload | KServeInferenceRequest | KServeInferenceResponse | None:
         """Retrieve a partial payload from HDF5 storage.
 
-        SECURITY NOTE: This function deserializes pickled data from HDF5 storage.
-        Data must originate from trusted internal sources only (stored via save_partial_payload).
-        Do not use with user-supplied or external data.
+        Uses JSON + gzip deserialization.
         """
         dataset_name = PARTIAL_INPUT_NAME if is_input else PARTIAL_OUTPUT_NAME
 
         try:
             async with self.get_lock(dataset_name):
                 with H5PYContext(self, dataset_name, "r") as db:
-                    # Check dataset and payload existence
-                    if (
-                        dataset_name not in db
-                        or payload_id not in db[dataset_name].attrs
-                    ):
+                    if dataset_name not in db:
                         return None
 
-                    serialized_data = db[dataset_name].attrs[payload_id]
-                    payload_dict = pkl.loads(serialized_data)  # noqa: S301  # type: ignore[arg-type]  # nosec B301
-                    if is_modelmesh:
-                        return PartialPayload(**payload_dict)
-                    if is_input:  # kserve input
-                        return KServeInferenceRequest(**payload_dict)
-                    # kserve output
-                    return KServeInferenceResponse(**payload_dict)
-        except (
-            MissingH5PYDataError,
-            Exception,
-        ):  # Broad catch intentional: retrieval errors should return None, not crash
-            logger.exception(
-                "Error retrieving %s payload",
-                "ModelMesh" if is_modelmesh else "KServe",
-            )
+                    dataset = db[dataset_name]
+                    if payload_id not in dataset.attrs:
+                        return None
+
+                    serialized_data = dataset.attrs[payload_id]
+
+                    try:
+                        # Convert to bytes if needed (HDF5 attributes may return numpy arrays)
+                        if isinstance(serialized_data, np.ndarray) or not isinstance(
+                            serialized_data, bytes
+                        ):
+                            serialized_data = bytes(serialized_data)
+
+                        # Determine target class based on payload type
+                        if is_modelmesh:
+                            target_class = PartialPayload
+                        elif is_input:  # kserve input
+                            target_class = KServeInferenceRequest
+                        else:  # kserve output
+                            target_class = KServeInferenceResponse
+
+                        return deserialize_model(serialized_data, target_class)
+                    except Exception as e:
+                        # Deserialization failure indicates data corruption or format issue
+                        # This is distinct from "not found" and should be raised to caller
+                        logger.exception(
+                            "Deserialization failed for payload '%s' (%s, %s)",
+                            payload_id,
+                            "ModelMesh" if is_modelmesh else "KServe",
+                            "input" if is_input else "output",
+                        )
+                        payload_type = "ModelMesh" if is_modelmesh else "KServe"
+                        direction = "input" if is_input else "output"
+                        raise DeserializationError(
+                            payload_id=payload_id,
+                            reason=f"Failed to deserialize {payload_type} "
+                            f"{direction} payload from HDF5 storage",
+                            original_exception=e,
+                        ) from e
+        except MissingH5PYDataError:
+            # Dataset doesn't exist - this is expected for new payloads
             return None
+        except DeserializationError:
+            # Re-raise deserialization errors (don't catch our own exception)
+            raise
+        except Exception:
+            # Unexpected storage errors (file system, permissions, etc.)
+            logger.exception(
+                "Unexpected error retrieving %s payload '%s'",
+                "ModelMesh" if is_modelmesh else "KServe",
+                payload_id,
+            )
+            raise
 
     async def delete_partial_payload(self, payload_id: str, *, is_input: bool) -> None:
         """Delete a stored partial payload.
@@ -783,8 +810,7 @@ class PVCStorage(StorageInterface):
                     if payload_id not in dataset.attrs:
                         return
 
-                    if payload_id in dataset.attrs:
-                        del dataset.attrs[payload_id]
+                    del dataset.attrs[payload_id]
 
                     if not dataset.attrs:
                         del db[dataset_name]
@@ -796,19 +822,19 @@ class PVCStorage(StorageInterface):
             )
         except MissingH5PYDataError:
             return
-        except Exception:  # Broad catch intentional: deletion errors should not crash
+        except Exception:
             logger.exception("Error deleting payload")
 
     async def persist_modelmesh_payload(
         self, payload: PartialPayload, request_id: str, *, is_input: bool
     ) -> None:
-        """Persist a ModelMesh partial payload to storage."""
+        """Persist a ModelMesh payload to storage."""
         await self.persist_partial_payload(payload, request_id, is_input=is_input)
 
     async def get_modelmesh_payload(
         self, request_id: str, *, is_input: bool
     ) -> PartialPayload | None:
-        """Retrieve a ModelMesh partial payload from storage."""
+        """Retrieve a ModelMesh payload from storage."""
         return await self.get_partial_payload(
             request_id, is_input=is_input, is_modelmesh=True
         )
@@ -816,5 +842,5 @@ class PVCStorage(StorageInterface):
     async def delete_modelmesh_payload(
         self, request_id: str, *, is_input: bool
     ) -> None:
-        """Delete a ModelMesh partial payload from storage."""
+        """Delete a ModelMesh payload from storage."""
         await self.delete_partial_payload(request_id, is_input=is_input)

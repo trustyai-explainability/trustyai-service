@@ -1,16 +1,18 @@
-"""MariaDB storage backend implementation for inference data persistence."""
+"""MariaDB storage backend for TrustyAI inference data."""
+
+from __future__ import annotations
 
 import asyncio
-import io
+import gzip
 import json
 import logging
-import pickle as pkl  # nosec B403 - Used for internal data serialization only
 
 import mariadb
 import numpy as np
 
 from src.endpoints.consumer import KServeInferenceRequest, KServeInferenceResponse
 from src.service.data.modelmesh_parser import PartialPayload
+from src.service.data.storage.exceptions import DeserializationError
 from src.service.data.storage.maria.legacy_maria_reader import (
     LegacyMariaDBStorageReader,
 )
@@ -20,17 +22,19 @@ from src.service.data.storage.maria.utils import (
     require_existing_dataset,
 )
 from src.service.data.storage.storage_interface import StorageInterface
+from src.service.serialization import deserialize_model, serialize_model
+from src.service.serialization.detection import safe_gzip_decompress
+from src.service.serialization.encoders import json_decoder_hook, json_encoder
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.StreamHandler())
 logger.setLevel(logging.INFO)
 
-# Array dimensionality constants for NumPy shape checks
-ARRAY_DIM_2D = 2
+_MIN_MATRIX_NDIM = 2  # Minimum number of dimensions for a 2-D matrix
 
 
 class MariaDBStorage(StorageInterface):
-    """v2 database schema for MariaDB storage backend.
+    """=== v2 DATABASE SCHEMA =========================================================================.
 
     === Metadata Tables ===
     `trustyai_v2_table_reference`: Reference information about the inference data tables-
@@ -51,7 +55,7 @@ class MariaDBStorage(StorageInterface):
     `trustyai_v2_partial_payloads`: Store partial payloads prior to reconciliation
         - `payload_id`, varchar(255): The id of the partial payload
         - `is_input`, BOOLEAN: Whether the partial payload is an input or output payload
-        - `payload_data`, LONGBLOB: The pickled partial payload
+        - `payload_data`, LONGBLOB: The serialized partial payload (JSON + gzip)
 
     === Inference Data Tables ===
     Each dataset is stored in its own table named `trustyai_v2_dataset_X`, where `X` is
@@ -60,10 +64,10 @@ class MariaDBStorage(StorageInterface):
     `trustyai_v2_dataset_X`: stores the data for dataset_X. Information about dataset_X
                             can be found in `trustyai_v2_table_reference` in the row
                             where `table_idx`==`X`
-     - `column_0`, LONGBLOB: the pickled data for the 0th column of this row, e.g., arr[$row][0]
-     - `column_1`, LONGBLOB: the pickled data for the 1st column of this row, e.g., arr[$row][1]
+     - `column_0`, LONGBLOB: the serialized data for the 0th column of this row, e.g., arr[$row][0]
+     - `column_1`, LONGBLOB: the serialized data for the 1st column of this row, e.g., arr[$row][1]
      - ...
-     - `column_n`, LONGBLOB: the pickled data for the final column of this row, e.g., arr[$row][n]
+     - `column_n`, LONGBLOB: the serialized data for the final column of this row, e.g., arr[$row][n]
 
     === SQL INJECTION SAFETY ======================================================================
     NOTE: Static analysis tools may flag f-strings in SQL queries as potential SQL injection risks.
@@ -87,30 +91,22 @@ class MariaDBStorage(StorageInterface):
 
     def __init__(
         self,
-        user: str | None = None,
-        password: str | None = None,
-        host: str | None = None,
-        port: int = 3306,
-        database: str | None = None,
+        user: str,
+        password: str,
+        host: str,
+        port: int,
+        database: str,
         *,
         attempt_migration: bool = True,
     ) -> None:
-        """Initialize MariaDB storage backend.
-
-        :param user: Database user, defaults to 'root'
-        :param password: Database password, defaults to empty string
-        :param host: Database host, defaults to 'localhost'
-        :param port: Database port, defaults to 3306
-        :param database: Database name, defaults to 'trustyai'
-        :param attempt_migration: Whether to attempt migration from legacy schema
-        """
-        self.user = user or "root"
-        self.password = password or ""
-        self.host = host or "localhost"
+        """Initialize MariaDB storage and create schema tables."""
+        self.user = user
+        self.password = password
+        self.host = host
         self.port = port
-        self.database = database or "trustyai"
+        self.database = database
         self.connection_manager = MariaConnectionManager(
-            self.user, self.password, self.host, self.port, self.database
+            user, password, host, port, database
         )
 
         self.schema_prefix = "trustyai_v2"
@@ -129,20 +125,24 @@ class MariaDBStorage(StorageInterface):
                 "(payload_id varchar(255), is_input BOOLEAN, payload_data LONGBLOB)"
             )
 
+        self._migration_task: asyncio.Task | None = None
         if attempt_migration:
             # Attempt to schedule migration to run asynchronously if event loop is available
             try:
                 loop = asyncio.get_running_loop()
-                # Fire-and-forget migration task (errors logged within migration)
-                # Store task reference on instance to prevent garbage collection
                 self._migration_task = loop.create_task(self._migrate_from_legacy_db())
-                # Suppress task exception warnings - errors are logged within the migration
-                self._migration_task.add_done_callback(
-                    lambda t: t.exception() if not t.cancelled() else None
-                )
+                self._migration_task.add_done_callback(self._on_migration_done)
             except RuntimeError:
                 # No event loop running - run migration synchronously
                 asyncio.run(self._migrate_from_legacy_db())
+
+    @staticmethod
+    def _on_migration_done(task: asyncio.Task[None]) -> None:
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            logger.exception("Legacy TrustyAI v1 migration failed.", exc_info=exc)
 
     # === MIGRATORS ================================================================================
     async def _migrate_from_legacy_db(self) -> None:
@@ -165,10 +165,13 @@ class MariaDBStorage(StorageInterface):
 
     @require_existing_dataset
     async def _get_clean_table_name(self, dataset_name: str) -> str:
-        """Get a generated table name corresponding to a particular dataset, avoiding possible SQL injection from model names."""
+        """Get a generated table name corresponding to a particular dataset.
+
+        This avoids possible SQL injection from within the model names.
+        """
         with self.connection_manager as (_conn, cursor):
             cursor.execute(
-                f"SELECT table_idx FROM `{self.dataset_reference_table}` WHERE dataset_name=?",  # noqa: S608  # table name is internal, not user input
+                f"SELECT table_idx FROM `{self.dataset_reference_table}` WHERE dataset_name=?",  # noqa: S608 -- table name from internal constant
                 (dataset_name,),
             )
             return self._build_table_name(cursor.fetchone()[0])
@@ -178,7 +181,7 @@ class MariaDBStorage(StorageInterface):
         """Return the metadata field from a particular dataset within the dataset_reference_table."""
         with self.connection_manager as (_conn, cursor):
             cursor.execute(
-                f"SELECT metadata FROM `{self.dataset_reference_table}` WHERE dataset_name=?",  # noqa: S608  # table name is internal, not user input
+                f"SELECT metadata FROM `{self.dataset_reference_table}` WHERE dataset_name=?",  # noqa: S608 -- table name from internal constant
                 (dataset_name,),
             )
             metadata = cursor.fetchone()[0]
@@ -191,7 +194,7 @@ class MariaDBStorage(StorageInterface):
         try:
             with self.connection_manager as (_conn, cursor):
                 cursor.execute(
-                    f"SELECT dataset_name FROM `{self.dataset_reference_table}` WHERE dataset_name=?",  # noqa: S608  # table name is internal, not user input
+                    f"SELECT dataset_name FROM `{self.dataset_reference_table}` WHERE dataset_name=?",  # noqa: S608 -- table name from internal constant
                     (dataset_name,),
                 )
                 return cursor.fetchone() is not None
@@ -200,7 +203,7 @@ class MariaDBStorage(StorageInterface):
 
     def _list_all_datasets_sync(self) -> list[str]:
         with self.connection_manager as (_conn, cursor):
-            cursor.execute(f"SELECT dataset_name FROM `{self.dataset_reference_table}`")  # noqa: S608  # nosec S608  # table name is internal, not user input
+            cursor.execute(f"SELECT dataset_name FROM `{self.dataset_reference_table}`")  # noqa: S608 -- table name from internal constant
             return [x[0] for x in cursor.fetchall()]
 
     async def list_all_datasets(self) -> list[str]:
@@ -212,7 +215,7 @@ class MariaDBStorage(StorageInterface):
         """Get the number of rows in a stored dataset (equivalent to data.shape[0])."""
         with self.connection_manager as (_conn, cursor):
             cursor.execute(
-                f"SELECT n_rows FROM `{self.dataset_reference_table}` WHERE dataset_name=?",  # noqa: S608  # table name is internal, not user input
+                f"SELECT n_rows FROM `{self.dataset_reference_table}` WHERE dataset_name=?",  # noqa: S608 -- table name from internal constant
                 (dataset_name,),
             )
             return cursor.fetchone()[0]
@@ -222,7 +225,7 @@ class MariaDBStorage(StorageInterface):
         """Get the number of columns in a stored dataset (equivalent to data.shape[1])."""
         table_name = await self._get_clean_table_name(dataset_name)
         with self.connection_manager as (_conn, cursor):
-            cursor.execute(f"SHOW COLUMNS FROM {table_name}")  # nosec S608
+            cursor.execute(f"SHOW COLUMNS FROM {table_name}")
             return len(cursor.fetchall()) - 1
 
     @require_existing_dataset
@@ -252,7 +255,7 @@ class MariaDBStorage(StorageInterface):
             raise ValueError(msg)
 
         # if received a single row, reshape into a single-column matrix
-        if new_rows.ndim < ARRAY_DIM_2D:
+        if new_rows.ndim < _MIN_MATRIX_NDIM:
             new_rows = new_rows.reshape(-1, 1)
 
         # validate that the number of provided column names matches the shape of the provided array
@@ -273,13 +276,13 @@ class MariaDBStorage(StorageInterface):
                     "shape": (-1, *new_rows.shape[1:]),
                 }
                 cursor.execute(
-                    f"INSERT INTO `{self.dataset_reference_table}` (dataset_name, metadata, n_rows) VALUES (?, ?, 0)",  # noqa: S608  # table name is internal, not user input
+                    f"INSERT INTO `{self.dataset_reference_table}` (dataset_name, metadata, n_rows) VALUES (?, ?, 0)",  # noqa: S608 -- table name from internal constant
                     (dataset_name, json.dumps(metadata)),
                 )
 
                 # retrieve the DB-provided table index, to get an SQL-safe name for the dataset storage table
                 cursor.execute(
-                    f"SELECT table_idx FROM `{self.dataset_reference_table}` WHERE dataset_name=?",  # noqa: S608  # table name is internal, not user input
+                    f"SELECT table_idx FROM `{self.dataset_reference_table}` WHERE dataset_name=?",  # noqa: S608 -- table name from internal constant
                     (dataset_name,),
                 )
                 table_name = self._build_table_name(cursor.fetchone()[0])
@@ -332,23 +335,22 @@ class MariaDBStorage(StorageInterface):
 
         value_formatter = ",".join(["?" for _ in range(ncols)])
         with self.connection_manager as (conn, cursor):
-            # write each new_rows[i, j] to bytes
+            # write each new_rows[i, j] to bytes (JSON + gzip)
             byte_matrix = []
             for new_row in new_rows:
                 col_values = []
                 for col in new_row:
-                    with io.BytesIO() as bio:
-                        np.save(bio, col, allow_pickle=True)
-                        col_values.append(bio.getvalue())
+                    json_bytes = json.dumps(col, default=json_encoder).encode("utf-8")
+                    col_values.append(gzip.compress(json_bytes))
                 byte_matrix.append(tuple(col_values))
 
             # place the byte_matrix into the DB
             cursor.executemany(
-                f"INSERT INTO `{table_name}` ({','.join(cleaned_names)}) VALUES ({value_formatter})",  # noqa: S608  # SQL identifiers cannot be parameterized
+                f"INSERT INTO `{table_name}` ({','.join(cleaned_names)}) VALUES ({value_formatter})",  # noqa: S608 -- table name from _build_table_name()
                 byte_matrix,
             )
             cursor.execute(
-                f"UPDATE `{self.dataset_reference_table}` SET n_rows=? WHERE dataset_name=?",  # noqa: S608  # table name is internal, not user input
+                f"UPDATE `{self.dataset_reference_table}` SET n_rows=? WHERE dataset_name=?",  # noqa: S608 -- table name from internal constant
                 (
                     nrows + len(new_rows),
                     dataset_name,
@@ -383,19 +385,21 @@ class MariaDBStorage(StorageInterface):
         with self.connection_manager as (_conn, cursor):
             # grab matching data - using LIMIT/OFFSET from PR branch for better SQL compatibility
             cursor.execute(
-                f"SELECT * FROM `{table_name}` ORDER BY row_idx ASC LIMIT ? OFFSET ?",  # noqa: S608  # SQL identifiers cannot be parameterized
+                f"SELECT * FROM `{table_name}` ORDER BY row_idx ASC LIMIT ? OFFSET ?",  # noqa: S608 -- table name from _get_clean_table_name()
                 (n_rows, start_row),
             )
 
-            # parse saved data back to Numpy array
+            # parse saved data back to Numpy array (JSON + gzip)
             arr = []
             dtypes = set()
             for row in cursor.fetchall():
                 # first value in row is the index, so we can skip that
                 row_values = []
                 for cell in row[1:]:
-                    value = np.load(io.BytesIO(cell), allow_pickle=True)
-
+                    json_str = safe_gzip_decompress(cell).decode("utf-8")
+                    value = np.asarray(
+                        json.loads(json_str, object_hook=json_decoder_hook)
+                    )
                     dtypes.add(value.dtype)
                     row_values.append(value)
                 arr.append(row_values)
@@ -406,12 +410,12 @@ class MariaDBStorage(StorageInterface):
     # === COLUMN NAMES =============================================================================
     @require_existing_dataset
     async def get_original_column_names(self, dataset_name: str) -> list[str] | None:
-        """Get the original column names from the raw payloads."""
+        """Return the original column names for a dataset."""
         return (await self._get_dataset_metadata(dataset_name)).get("column_names")
 
     @require_existing_dataset
     async def get_aliased_column_names(self, dataset_name: str) -> list[str]:
-        """Get the current aliased column names after name mapping."""
+        """Return the aliased column names for a dataset."""
         return (await self._get_dataset_metadata(dataset_name)).get("aliased_names")
 
     @require_existing_dataset
@@ -438,7 +442,7 @@ class MariaDBStorage(StorageInterface):
             # parse aliased_name list into parameterized JSON_ARRAY argument
             array_parameters = ", ".join(["?" for _ in aliased_names])
             cursor.execute(
-                f"UPDATE `{self.dataset_reference_table}` "  # noqa: S608  # table name is internal, not user input
+                f"UPDATE `{self.dataset_reference_table}` "  # noqa: S608 -- table name from internal constant
                 f"SET metadata=JSON_SET(metadata, '$.aliased_names', "
                 f"JSON_ARRAY({array_parameters})) WHERE dataset_name=?",
                 (
@@ -458,7 +462,7 @@ class MariaDBStorage(StorageInterface):
             # parse original_names list into parameterized JSON_ARRAY argument
             array_parameters = ", ".join(["?" for _ in original_names])
             cursor.execute(
-                f"UPDATE `{self.dataset_reference_table}` "  # noqa: S608  # table name is internal, not user input
+                f"UPDATE `{self.dataset_reference_table}` "  # noqa: S608 -- table name from internal constant
                 f"SET metadata=JSON_SET(metadata, '$.aliased_names', "
                 f"JSON_ARRAY({array_parameters})) WHERE dataset_name=?",
                 (
@@ -492,10 +496,7 @@ class MariaDBStorage(StorageInterface):
         return list(model_ids)
 
     async def get_metadata(self, model_id: str) -> dict:
-        """Get metadata for a specific model including shapes, column names, etc.
-
-        Returns partial metadata even if some datasets don't exist.
-        """
+        """Get metadata for a specific model including shapes, column names, etc."""
         input_dataset = f"{model_id}_inputs"
         output_dataset = f"{model_id}_outputs"
         metadata_dataset = f"{model_id}_metadata"
@@ -520,7 +521,7 @@ class MariaDBStorage(StorageInterface):
                     if aliased_input_names is not None
                     else [],
                 }
-            except Exception as e:  # Intentional: metadata retrieval errors should not break entire metadata collection
+            except Exception as e:
                 logger.warning("Error getting input metadata for %s: %s", model_id, e)
 
         # Get output data metadata
@@ -540,7 +541,7 @@ class MariaDBStorage(StorageInterface):
                     if aliased_output_names is not None
                     else [],
                 }
-            except Exception as e:  # Intentional: metadata retrieval errors should not break entire metadata collection
+            except Exception as e:
                 logger.warning("Error getting output metadata for %s: %s", model_id, e)
 
         # Get metadata data info
@@ -554,7 +555,7 @@ class MariaDBStorage(StorageInterface):
                     if metadata_names is not None
                     else [],
                 }
-            except Exception as e:  # Intentional: metadata retrieval errors should not break entire metadata collection
+            except Exception as e:
                 logger.warning("Error getting metadata info for %s: %s", model_id, e)
 
         return metadata
@@ -567,11 +568,11 @@ class MariaDBStorage(StorageInterface):
         *,
         is_input: bool,
     ) -> None:
-        """Save a partial payload to the database."""
+        """Save a partial payload to the database using secure JSON + gzip serialization."""
         with self.connection_manager as (conn, cursor):
             cursor.execute(
-                f"INSERT INTO `{self.partial_payload_table}` (payload_id, is_input, payload_data) VALUES (?, ?, ?)",  # noqa: S608  # table name is internal, not user input
-                (payload_id, is_input, pkl.dumps(payload.model_dump())),
+                f"INSERT INTO `{self.partial_payload_table}` (payload_id, is_input, payload_data) VALUES (?, ?, ?)",  # noqa: S608 -- table name from internal constant
+                (payload_id, is_input, serialize_model(payload)),
             )
             conn.commit()
 
@@ -580,33 +581,49 @@ class MariaDBStorage(StorageInterface):
     ) -> PartialPayload | KServeInferenceRequest | KServeInferenceResponse | None:
         """Retrieve a partial payload from the database.
 
-        Returns None if the payload is not found.
-
-        SECURITY NOTE: This function deserializes pickled data from the database.
-        Data must originate from trusted internal sources only (stored via save_partial_payload).
-        Do not use with user-supplied or external data.
+        Uses JSON + gzip deserialization. Returns None if not found.
         """
         with self.connection_manager as (_conn, cursor):
             cursor.execute(
-                f"SELECT payload_data FROM `{self.partial_payload_table}` WHERE payload_id=? AND is_input=?",  # noqa: S608  # table name is internal, not user input
+                f"SELECT payload_data FROM `{self.partial_payload_table}` WHERE payload_id=? AND is_input=?",  # noqa: S608 -- table name from internal constant
                 (payload_id, is_input),
             )
             result = cursor.fetchone()
         if result is None or len(result) == 0:
+            # Payload not found in database - this is expected for new payloads
             return None
-        payload_dict = pkl.loads(result[0])  # noqa: S301  # nosec B301 — internal serialization, not user data
+
+        # Determine target class based on payload type
         if is_modelmesh:
-            return PartialPayload(**payload_dict)
-        if is_input:  # kserve input
-            return KServeInferenceRequest(**payload_dict)
-        # kserve output
-        return KServeInferenceResponse(**payload_dict)
+            target_class = PartialPayload
+        elif is_input:  # kserve input
+            target_class = KServeInferenceRequest
+        else:  # kserve output
+            target_class = KServeInferenceResponse
+
+        try:
+            return deserialize_model(result[0], target_class)
+        except Exception as e:
+            # Deserialization failure indicates data corruption or format issue
+            # This is distinct from "not found" and should be raised to caller
+            logger.exception(
+                "Deserialization failed for payload '%s' (%s, %s)",
+                payload_id,
+                "ModelMesh" if is_modelmesh else "KServe",
+                "input" if is_input else "output",
+            )
+            raise DeserializationError(
+                payload_id=payload_id,
+                reason=f"Failed to deserialize {'ModelMesh' if is_modelmesh else 'KServe'} "
+                f"{'input' if is_input else 'output'} payload from MariaDB",
+                original_exception=e,
+            ) from e
 
     async def delete_partial_payload(self, payload_id: str, *, is_input: bool) -> None:
-        """Delete a partial payload from storage."""
+        """Delete a partial payload from the database."""
         with self.connection_manager as (conn, cursor):
             cursor.execute(
-                f"DELETE FROM {self.partial_payload_table} WHERE payload_id=? AND is_input=?",  # noqa: S608  # table name is internal, not user input
+                f"DELETE FROM {self.partial_payload_table} WHERE payload_id=? AND is_input=?",  # noqa: S608 -- table name from internal constant
                 (payload_id, is_input),
             )
             conn.commit()
@@ -614,13 +631,13 @@ class MariaDBStorage(StorageInterface):
     async def persist_modelmesh_payload(
         self, payload: PartialPayload, request_id: str, *, is_input: bool
     ) -> None:
-        """Persist a ModelMesh partial payload to storage."""
+        """Persist a ModelMesh partial payload."""
         await self.persist_partial_payload(payload, request_id, is_input=is_input)
 
     async def get_modelmesh_payload(
         self, request_id: str, *, is_input: bool
     ) -> PartialPayload | None:
-        """Retrieve a ModelMesh partial payload from storage."""
+        """Retrieve a ModelMesh partial payload."""
         return await self.get_partial_payload(
             request_id, is_input=is_input, is_modelmesh=True
         )
@@ -628,21 +645,21 @@ class MariaDBStorage(StorageInterface):
     async def delete_modelmesh_payload(
         self, request_id: str, *, is_input: bool
     ) -> None:
-        """Delete a ModelMesh partial payload from storage."""
+        """Delete a ModelMesh partial payload."""
         await self.delete_partial_payload(request_id, is_input=is_input)
 
     # === DATABASE CLEANUP =========================================================================
     @require_existing_dataset
     async def delete_dataset(self, dataset_name: str) -> None:
-        """Delete a dataset and its associated table from the database."""
+        """Delete a dataset and its storage table."""
         table_name = await self._get_clean_table_name(dataset_name)
         logger.info("Deleting table=%s to delete dataset=%s.", table_name, dataset_name)
         with self.connection_manager as (conn, cursor):
             cursor.execute(
-                f"DELETE FROM `{self.dataset_reference_table}` WHERE dataset_name=?",  # noqa: S608  # table name is internal, not user input
+                f"DELETE FROM `{self.dataset_reference_table}` WHERE dataset_name=?",  # noqa: S608 -- table name from internal constant
                 (dataset_name,),
             )
-            cursor.execute(f"DROP TABLE IF EXISTS `{table_name}`")  # nosec S608
+            cursor.execute(f"DROP TABLE IF EXISTS `{table_name}`")
             conn.commit()
 
     async def delete_all_datasets(self) -> None:
@@ -652,10 +669,10 @@ class MariaDBStorage(StorageInterface):
             await self.delete_dataset(dataset_name)
 
     async def reset_database(self) -> None:
-        """Reset the database by deleting all datasets."""
+        """Drop all tables and reset the database to a clean state."""
         logger.warning("Fully resetting TrustyAI V2 database.")
         await self.delete_all_datasets()
         with self.connection_manager as (conn, cursor):
-            cursor.execute(f"DROP TABLE IF EXISTS `{self.dataset_reference_table}`")  # nosec S608
-            cursor.execute(f"DROP TABLE IF EXISTS `{self.partial_payload_table}`")  # nosec S608
+            cursor.execute(f"DROP TABLE IF EXISTS `{self.dataset_reference_table}`")
+            cursor.execute(f"DROP TABLE IF EXISTS `{self.partial_payload_table}`")
             conn.commit()

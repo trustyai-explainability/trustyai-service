@@ -1,68 +1,69 @@
-"""Utility functions for list and array manipulation operations."""
+"""List utility functions.
 
-import pickle  # nosec B403 - Used for internal data serialization only
+Provides utilities for working with nested lists and arrays.
+"""
+
+from __future__ import annotations
+
+import numbers
 
 import numpy as np
 
 
 def get_list_shape(lst: list) -> list[int]:
-    """Get the shape of a nested list, assuming the sublists are not jagged."""
-    return [len(lst), *get_list_shape(lst[0])] if isinstance(lst, list) else []
+    """Get the shape of a nested list, assuming the sublists are not jagged.
+
+    Args:
+        lst: Nested list to analyze
+
+    Returns:
+        List of dimensions (shape)
+
+    Examples:
+        >>> get_list_shape([1, 2, 3])
+        [3]
+        >>> get_list_shape([[1, 2], [3, 4]])
+        [2, 2]
+        >>> get_list_shape([[]])
+        [1, 0]
+
+    """
+    if not isinstance(lst, list) or not lst:
+        return []
+    # Handle empty inner lists
+    if isinstance(lst[0], list) and not lst[0]:
+        return [len(lst), 0]
+    return [len(lst), *get_list_shape(lst[0])]
 
 
 def contains_non_numeric(lst: object) -> bool:
-    """Check if an arbitrarily deep nested list contains any non-numeric elements."""
-    if isinstance(lst, (list, np.ndarray)):
-        return any(contains_non_numeric(item) for item in lst)
-    return isinstance(lst, (bool, str))
-
-
-def serialize_rows(lst: list | np.ndarray, max_void_type_length: int) -> np.ndarray:
-    """Convert a nested list to a 1D numpy array with dynamic void type sizing.
-
-    Each element contains a bytes serialization of the corresponding row.
-    The void type size is computed to fit the largest serialized row,
-    preventing silent truncation while optimizing storage.
+    """Check if an arbitrarily deep nested list contains any non-numeric elements.
 
     Args:
-        lst: List of rows to serialize
-        max_void_type_length: Maximum allowed void type size (raises error if exceeded)
+        lst: List or array to check
 
     Returns:
-        np.ndarray with dtype V{size} where size is the maximum serialized row size
+        True if any element is not a numeric type (including dict, bytes, None, bool, str, custom objects)
 
-    Raises:
-        ValueError: If any serialized row exceeds max_void_type_length
+    Examples:
+        >>> contains_non_numeric([1, 2, 3])
+        False
+        >>> contains_non_numeric([1, "two", 3])
+        True
+        >>> contains_non_numeric([[1, 2], [True, 4]])
+        True
+        >>> contains_non_numeric([{"key": "value"}])
+        True
+        >>> contains_non_numeric([b"bytes"])
+        True
 
     """
-    # Serialize all rows first to compute required size
-    serialized = [pickle.dumps(row) for row in lst]
-
-    # Compute required void type size (maximum of all serialized rows)
-    max_size = max(len(s) for s in serialized) if serialized else 0
-
-    # Validate against maximum allowed size
-    if max_size > max_void_type_length:
-        msg = (
-            f"Serialized row size {max_size} bytes exceeds maximum allowed size "
-            f"{max_void_type_length} bytes. Consider reducing payload size, using compression, "
-            f"or increasing MAX_VOID_TYPE_LENGTH configuration."
-        )
-        raise ValueError(
-            msg,
-        )
-
-    # Use dynamic void type based on actual data size (prevents truncation and saves space)
-    void_dtype = f"V{max_size}" if max_size > 0 else f"V{max_void_type_length}"
-    return np.array([np.void(s) for s in serialized], dtype=void_dtype)
-
-
-def deserialize_rows(serialized: np.ndarray) -> np.ndarray:
-    """Convert a 1D numpy array from `serialize_rows` to a numpy object array.
-
-    SECURITY NOTE: This function deserializes pickled data.
-    Only use with data serialized by serialize_rows() from trusted internal sources.
-    Do not use with user-supplied or external data.
-    """
-    deserialized = [pickle.loads(row) for row in serialized]  # noqa: S301  # nosec B301
-    return np.array(deserialized, dtype="O")
+    if isinstance(lst, (list, np.ndarray)):
+        return any(contains_non_numeric(item) for item in lst)
+    # Bools are technically numbers in Python (bool is subclass of int),
+    # but we treat them as non-numeric for serialization type preservation
+    if isinstance(lst, bool):
+        return True
+    # Consider a scalar non-numeric if it's not a number
+    # Use numbers.Number to catch Python numerics and np.number for NumPy scalars
+    return not isinstance(lst, (numbers.Number, np.number))
