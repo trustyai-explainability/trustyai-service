@@ -87,6 +87,8 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 # === SRC FILES ===
+"src/core/metrics/drift/greenwald_khanna_quantile_sketch.py" = ["RUF001", "RUF002", "RUF003"]
+"src/core/metrics/drift/kolmogorov_smirnov_streaming.py" = ["RUF001", "RUF002", "RUF003"]
 "src/core/metrics/drift/jensen_shannon.py" = ["PLR0913"]
 "src/core/metrics/fairness/group/*.py" = ["PLR0913"]
 "src/middleware/gzip_middleware.py" = ["C901", "PLR0911", "PLR0912", "PLR0913", "PLR0915"]
@@ -106,10 +108,12 @@ ignore = [
 "src/endpoints/metadata.py" = ["N815", "BLE001", "C901"]
 "src/endpoints/metrics/**/*.py" = ["N815"]
 "src/endpoints/metrics/fairness/group/*.py" = ["BLE001", "TRY300", "TRY301"]
+"src/endpoints/metrics/drift/kolmogorov_smirnov_streaming.py" = ["RUF001", "RUF002", "RUF003", "TRY301"]
 "src/endpoints/metrics/drift/jensen_shannon.py" = ["TRY300", "TRY301"]
 "src/endpoints/metrics/drift/compare_means.py" = ["C901", "TRY301"]
 # === TEST FILES ===
 "tests/**" = ["S101", "PT019", "SLF001"]
+"tests/core/metrics/drift/test_greenwald_khanna_quantile_sketch.py" = ["PLR2004", "RUF001", "RUF002", "RUF003"]
 "tests/core/metrics/test_fairness.py" = ["N803", "N806"]
 "tests/endpoints/metrics/drift/factory.py" = ["PLR0913", "C901", "PLR0915"]
 "tests/endpoints/test_upload_endpoint_maria.py" = ["S105"]

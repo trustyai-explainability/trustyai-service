@@ -29,6 +29,9 @@ from src.endpoints.metrics.drift.compare_means import (
     router as drift_comparemeans_router,
 )
 from src.endpoints.metrics.drift.kolmogorov_smirnov import router as drift_kstest_router
+from src.endpoints.metrics.drift.kolmogorov_smirnov_streaming import (
+    router as drift_ksteststreaming_router,
+)
 from src.endpoints.metrics.fairness.group.dir import router as dir_router
 from src.endpoints.metrics.fairness.group.spd import router as spd_router
 from src.endpoints.metrics.identity.identity_endpoint import router as identity_router
@@ -146,6 +149,12 @@ app.include_router(
     drift_kstest_router,
     tags=[
         "Drift Metrics: KSTest",
+    ],
+)
+app.include_router(
+    drift_ksteststreaming_router,
+    tags=[
+        "Drift Metrics: KSTestStreaming",
     ],
 )
 
