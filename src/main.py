@@ -25,13 +25,13 @@ from src.endpoints.data.data_upload import router as data_upload_router
 from src.endpoints.explainers.global_explainer import router as explainers_global_router
 from src.endpoints.explainers.local_explainer import router as explainers_local_router
 from src.endpoints.metadata import router as metadata_router
+from src.endpoints.metrics.batch_mean import router as batch_mean_router
 from src.endpoints.metrics.drift.compare_means import (
     router as drift_comparemeans_router,
 )
 from src.endpoints.metrics.drift.kolmogorov_smirnov import router as drift_kstest_router
 from src.endpoints.metrics.fairness.group.dir import router as dir_router
 from src.endpoints.metrics.fairness.group.spd import router as spd_router
-from src.endpoints.metrics.identity.identity_endpoint import router as identity_router
 from src.endpoints.metrics.metrics_info import router as metrics_info_router
 
 # Middleware
@@ -155,7 +155,7 @@ app.include_router(
     spd_router,
     tags=["Fairness Metrics: Group: Statistical Parity Difference"],
 )
-app.include_router(identity_router, tags=["Identity Endpoint"])
+app.include_router(batch_mean_router, tags=["Metrics: Batch Mean"])
 app.include_router(metadata_router, tags=["Service Metadata"])
 app.include_router(metrics_info_router, tags=["Metrics Information Endpoint"])
 
