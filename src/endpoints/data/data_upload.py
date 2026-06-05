@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from src.endpoints.consumer import KServeInferenceRequest, KServeInferenceResponse
-from src.endpoints.consumer.consumer_endpoint import consume_cloud_event
+from src.endpoints.consumer.consumer_endpoint import process_cloud_event
 from src.exceptions import ReconciliationError
 from src.service.constants import TRUSTYAI_TAG_PREFIX
 from src.service.data.model_data import ModelData
@@ -81,8 +81,8 @@ async def upload(payload: UploadPayload) -> dict[str, str]:
         else:
             previous_data_points = 0
 
-        await consume_cloud_event(payload.response, req_id)
-        await consume_cloud_event(payload.request, req_id, tag=payload.data_tag)
+        await process_cloud_event(payload.response, req_id)
+        await process_cloud_event(payload.request, req_id, tag=payload.data_tag)
 
         model_data = ModelData(payload.model_name)
         new_data_points = (await model_data.row_counts())[0]
