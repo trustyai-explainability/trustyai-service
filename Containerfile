@@ -10,7 +10,7 @@ ARG ENABLE_FIPS_POLICY="true"
 # =============================================================================
 # Stage 1: Builder — UBI10 Python 3.14 minimal with dev tools
 # =============================================================================
-FROM registry.redhat.io/ubi10/python-314-minimal:latest AS builder
+FROM registry.access.redhat.com/ubi10/python-314-minimal:latest AS builder
 
 ARG EXTRAS
 
@@ -45,7 +45,7 @@ RUN pip install --no-cache-dir --upgrade pip==26.1.1 uv==0.11.1 && \
 # =============================================================================
 # Stage 2: Runtime — UBI10 Python 3.14 minimal (no compilers, no dev headers)
 # =============================================================================
-FROM registry.redhat.io/ubi10/python-314-minimal:latest
+FROM registry.access.redhat.com/ubi10/python-314-minimal:latest
 
 ARG EXTRAS
 ARG VERSION
