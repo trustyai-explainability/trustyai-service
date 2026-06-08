@@ -3,6 +3,7 @@
 Provides readiness and liveness checks for OpenShift/Kubernetes deployments.
 """
 
+import contextlib
 import logging
 import os
 import threading
@@ -81,7 +82,14 @@ class HealthCache:
 
 # Global health cache instance with configurable TTL (default: 5 seconds)
 # Can be overridden via HEALTH_CACHE_TTL environment variable
-_health_cache_ttl = int(os.getenv("HEALTH_CACHE_TTL", "5"))
+try:
+    _health_cache_ttl = int(os.getenv("HEALTH_CACHE_TTL", "5"))
+except ValueError:
+    logger.warning(
+        "Invalid HEALTH_CACHE_TTL value '%s', using default 5 seconds",
+        os.getenv("HEALTH_CACHE_TTL"),
+    )
+    _health_cache_ttl = 5
 _health_cache = HealthCache(ttl_seconds=_health_cache_ttl)
 
 # Production mode detection for security features (path redaction)
@@ -211,6 +219,8 @@ class HealthCheckRegistry:
                 {"error": "MariaDB library not installed (missing 'mariadb' extra)"},
             )
 
+        conn = None
+        cursor = None
         try:
             # Get database configuration
             host = os.getenv("DATABASE_HOST", "mariadb")
@@ -234,9 +244,6 @@ class HealthCheckRegistry:
             cursor.execute("SELECT 1")
             result = cursor.fetchone()
 
-            cursor.close()
-            conn.close()
-
             if result is not None and result[0] == 1:
                 return HealthCheck("Storage readiness", STATUS_OK)
             return HealthCheck(
@@ -248,18 +255,38 @@ class HealthCheckRegistry:
         except (mariadb.Error, OSError, TimeoutError) as e:
             # Expected database/network errors
             logger.warning("Database health check failed: %s", e)
+            # Redact connection details in production
+            error_msg = (
+                "Database connection failed"
+                if _is_production
+                else f"Database connection failed: {e!s}"
+            )
             return HealthCheck(
                 "Storage readiness",
                 STATUS_ERROR,
-                {"error": f"Database connection failed: {e!s}"},
+                {"error": error_msg},
             )
         except Exception as e:  # Unexpected errors - log for debugging
             logger.exception("Unexpected error during database health check")
+            # Redact error details in production
+            error_msg = (
+                "Unexpected database error"
+                if _is_production
+                else f"Unexpected database error: {e!s}"
+            )
             return HealthCheck(
                 "Storage readiness",
                 STATUS_ERROR,
-                {"error": f"Unexpected database error: {e!s}"},
+                {"error": error_msg},
             )
+        finally:
+            # Always close resources
+            if cursor is not None:
+                with contextlib.suppress(Exception):
+                    cursor.close()
+            if conn is not None:
+                with contextlib.suppress(Exception):
+                    conn.close()
 
     @staticmethod
     def check_http_server() -> HealthCheck:
