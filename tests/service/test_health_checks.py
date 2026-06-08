@@ -1,9 +1,11 @@
 """Tests for health check endpoints and logic."""
 
 import os
+import sys
 import time
 from collections.abc import Generator
 from http import HTTPStatus
+from types import ModuleType
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -20,6 +22,14 @@ from src.service.health_checks import (
     perform_liveness_checks,
     perform_readiness_checks,
 )
+
+# Create a fake mariadb module for tests when mariadb extra is not installed
+# This allows @patch("mariadb.connect") to work even without the package
+if "mariadb" not in sys.modules:
+    fake_mariadb = ModuleType("mariadb")
+    fake_mariadb.Error = type("Error", (Exception,), {})  # type: ignore[attr-defined]
+    fake_mariadb.connect = MagicMock()  # type: ignore[attr-defined]
+    sys.modules["mariadb"] = fake_mariadb
 
 
 @pytest.fixture(autouse=True)
@@ -314,17 +324,27 @@ class TestHealthCheckRegistry:
 
             import src.service.health_checks  # noqa: PLC0415
 
-            importlib.reload(src.service.health_checks)
-            from src.service.health_checks import (  # noqa: PLC0415
-                HealthCheckRegistry,
-            )
+            # Save original module state for restoration
+            original_module = sys.modules.get("src.service.health_checks")
 
-            check = HealthCheckRegistry.check_storage_readiness()
-            assert check.status == STATUS_ERROR
-            assert check.name == "Storage readiness"
-            # Should NOT contain the full path in production
-            assert "/nonexistent/path" not in check.data["error"]
-            assert "not accessible" in check.data["error"]
+            try:
+                importlib.reload(src.service.health_checks)
+                from src.service.health_checks import (  # noqa: PLC0415
+                    HealthCheckRegistry,
+                )
+
+                check = HealthCheckRegistry.check_storage_readiness()
+                assert check.status == STATUS_ERROR
+                assert check.name == "Storage readiness"
+                # Should NOT contain the full path in production
+                assert "/nonexistent/path" not in check.data["error"]
+                assert "not accessible" in check.data["error"]
+            finally:
+                # Restore original module to prevent state leakage
+                if original_module is not None:
+                    sys.modules["src.service.health_checks"] = original_module
+                else:
+                    sys.modules.pop("src.service.health_checks", None)
 
 
 class TestHealthCheckFunctions:
