@@ -36,6 +36,11 @@ from src.endpoints.metrics.metrics_info import router as metrics_info_router
 
 # Middleware
 from src.middleware.gzip_middleware import GzipRequestMiddleware
+from src.service.health_checks import (
+    STATUS_OK,
+    perform_liveness_checks,
+    perform_readiness_checks,
+)
 from src.service.prometheus.shared_prometheus_scheduler import (
     get_shared_prometheus_scheduler,
 )
@@ -195,6 +200,34 @@ async def root() -> dict[str, str]:
     return {"message": "Welcome to TrustyAI Explainability Service"}
 
 
+@app.get("/q/health")
+async def general_health() -> JSONResponse:
+    """General health endpoint (optional).
+
+    Combines readiness and liveness checks for comprehensive health status.
+    Useful for debugging and manual health checks.
+
+    :return: JSON response with status ("healthy" or "unhealthy")
+             HTTP 200 if healthy, HTTP 503 if unhealthy
+    """
+    readiness_status, readiness_checks = perform_readiness_checks()
+    liveness_status, liveness_checks = perform_liveness_checks()
+
+    # Overall status is healthy only if both readiness and liveness pass
+    is_healthy = readiness_status == STATUS_OK and liveness_status == STATUS_OK
+
+    response_body = {
+        "status": "healthy" if is_healthy else "unhealthy",
+        "checks": {
+            "readiness": readiness_checks,
+            "liveness": liveness_checks,
+        },
+    }
+
+    status_code = HTTPStatus.OK if is_healthy else HTTPStatus.SERVICE_UNAVAILABLE
+    return JSONResponse(content=response_body, status_code=status_code)
+
+
 @app.get("/q/metrics")
 async def metrics(_request: Request) -> Response:
     """Prometheus metrics endpoint.
@@ -210,9 +243,16 @@ async def metrics(_request: Request) -> Response:
 async def readiness_probe() -> JSONResponse:
     """Kubernetes readiness probe endpoint.
 
-    :return: JSON response indicating service is ready
+    :return: JSON response with status ("ready" or "not_ready")
+             HTTP 200 if ready, HTTP 503 if not ready
     """
-    return JSONResponse(content={"status": "ready"}, status_code=HTTPStatus.OK)
+    status, checks = perform_readiness_checks()
+    is_ready = status == STATUS_OK
+
+    response_body = {"status": "ready" if is_ready else "not_ready", "details": checks}
+
+    status_code = HTTPStatus.OK if is_ready else HTTPStatus.SERVICE_UNAVAILABLE
+    return JSONResponse(content=response_body, status_code=status_code)
 
 
 # Liveness probe endpoint
@@ -220,9 +260,18 @@ async def readiness_probe() -> JSONResponse:
 async def liveness_probe() -> JSONResponse:
     """Kubernetes liveness probe endpoint.
 
-    :return: JSON response indicating service is alive
+    Lightweight check - if we can respond, we're alive.
+
+    :return: JSON response with status ("alive")
+             HTTP 200 if alive
     """
-    return JSONResponse(content={"status": "live"}, status_code=HTTPStatus.OK)
+    status, checks = perform_liveness_checks()
+    is_alive = status == STATUS_OK
+
+    response_body = {"status": "alive" if is_alive else "dead", "details": checks}
+
+    status_code = HTTPStatus.OK if is_alive else HTTPStatus.SERVICE_UNAVAILABLE
+    return JSONResponse(content=response_body, status_code=status_code)
 
 
 def get_tls_config() -> dict[str, Any] | None:
@@ -264,22 +313,25 @@ async def run_server() -> None:
     # Create hypercorn config
     config = Config()
 
-    # HTTP for kube-rbac-proxy (plain HTTP on insecure_bind)
-    config.insecure_bind = [f"{host_http}:{http_port}"]
-    logger.info("Binding HTTP on %s:%s for kube-rbac-proxy", host_http, http_port)
-
     # Configure for HTTP/1.1 compatibility and proper keep-alive
     config.h11_max_incomplete_size = 16 * 1024 * 1024  # 16MB for large requests
     config.keep_alive_timeout = float(os.getenv("KEEP_ALIVE", "75"))
 
     # Optional HTTPS (direct access on bind)
     if tls_config:
+        # HTTPS on bind (external access)
         config.bind = [f"{host_https}:{ssl_port}"]
         config.certfile = tls_config["ssl_certfile"]
         config.keyfile = tls_config["ssl_keyfile"]
+        # HTTP on insecure_bind (kube-rbac-proxy)
+        config.insecure_bind = [f"{host_http}:{http_port}"]
         logger.info("Binding HTTPS on %s:%s for direct access", host_https, ssl_port)
+        logger.info("Binding HTTP on %s:%s for kube-rbac-proxy", host_http, http_port)
         logger.info("TrustyAI service running with dual HTTP/HTTPS protocol support")
     else:
+        # HTTP only on bind (no TLS available)
+        config.bind = [f"{host_http}:{http_port}"]
+        logger.info("Binding HTTP on %s:%s for kube-rbac-proxy", host_http, http_port)
         logger.info("TLS certificates not found - running HTTP only")
 
     # Configure logging
