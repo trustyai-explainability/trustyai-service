@@ -17,14 +17,17 @@ ARG EXTRAS
 USER root
 
 # Install MariaDB dev libraries if needed
-# Note: RHEL 9 UBI ships MariaDB Connector/C 3.2.6, but Python mariadb >= 1.1 requires >= 3.3.1
-# Solution: Install from MariaDB's official repo instead
 RUN if echo "$EXTRAS" | grep -q "mariadb"; then \
-        curl -LsS https://r.mariadb.com/downloads/mariadb_repo_setup | bash -s -- --mariadb-server-version=11.4 && \
-        dnf install -y MariaDB-devel && \
-        dnf clean all; \
+        curl --fail -LsSO https://r.mariadb.com/downloads/mariadb_repo_setup && \
+        grep -q "mariadb_repo_setup" mariadb_repo_setup || { echo "ERROR: Downloaded script appears invalid"; exit 1; } && \
+        [ -s mariadb_repo_setup ] || { echo "ERROR: Downloaded script is empty"; exit 1; } && \
+        chmod +x mariadb_repo_setup && \
+        ./mariadb_repo_setup --mariadb-server-version="mariadb-11.4" --skip-check-installed && \
+        dnf install -y --disablerepo='rhel-*' MariaDB-shared-11.4* MariaDB-devel-11.4* && \
+        dnf clean all && \
+        rm -rf /var/cache/dnf /var/cache/yum /root/.cache mariadb_repo_setup; \
     else \
-        echo "MariaDB extra not requested, creating stub" && \
+        echo "MariaDB not requested, creating stub files for runtime stage compatibility" && \
         touch /usr/lib64/libmariadb.so.stub; \
     fi
 
@@ -34,8 +37,7 @@ COPY pyproject.toml README.md ./
 
 RUN pip install --no-cache-dir --upgrade pip==26.1.1 uv==0.11.1 && \
     uv pip install --no-cache ".[$EXTRAS]" && \
-    pip uninstall -y uv && \
-    rm -rf /root/.cache /tmp/*
+    pip uninstall -y uv
 
 # =============================================================================
 # Stage 2: Runtime — minimal UBI9 image (no compilers, no dev headers)
@@ -65,9 +67,9 @@ USER root
 #   https://docs.openshift.com/container-platform/latest/installing/installing-fips.html
 # ---------------------------------------------------------------------------
 RUN if [ "$ENABLE_FIPS_POLICY" = "true" ]; then \
-        microdnf install -y crypto-policies-scripts && \
+        microdnf --disablerepo='rhel-*' install -y crypto-policies-scripts && \
         update-crypto-policies --set FIPS && \
-        microdnf clean all && \
+        microdnf --disablerepo='rhel-*' clean all && \
         rm -rf /var/cache/yum && \
         echo "FIPS crypto policy enabled (full FIPS mode requires FIPS-enabled host)" && \
         echo "Crypto Policy: $(update-crypto-policies --show)"; \
@@ -80,8 +82,7 @@ RUN if [ "$ENABLE_FIPS_POLICY" = "true" ]; then \
 COPY --from=builder /usr/lib64/libmariadb.so* /usr/lib64/
 RUN rm -f /usr/lib64/libmariadb.so.stub
 
-# Upgrade system pip to eliminate base image CVEs
-RUN pip install --no-cache-dir --upgrade pip==26.1.1 && rm -rf /root/.cache
+RUN pip install --no-cache-dir --upgrade pip==26.1.1
 
 WORKDIR /opt/app-root
 
@@ -113,6 +114,7 @@ LABEL org.opencontainers.image.title="TrustyAI Service" \
       io.trustyai.fips.policy="${ENABLE_FIPS_POLICY}" \
       io.trustyai.fips.mode="host-dependent" \
       io.trustyai.fips.compatible="true" \
-      org.opencontainers.image.base.name="registry.access.redhat.com/ubi9/python-312-minimal"
+      org.opencontainers.image.base.name="registry.access.redhat.com/ubi9/python-312-minimal" \
+      io.trustyai.fips.documentation="https://docs.openshift.com/container-platform/latest/installing/installing-fips.html"
 
 CMD ["python", "-m", "src.main"]

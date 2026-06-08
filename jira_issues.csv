@@ -1,0 +1,65 @@
+Issue,Title,Type,Activity Type,Resolved Date,Project
+RHOAIENG-21046,Python implementation of metrics for TrustyAI-Service,Epic,,2026-03-26,RHOAIENG
+RHOAIENG-21050,Endpoints: /data/download and /data/upload,Task,New Features,2026-04-16,RHOAIENG
+RHOAIENG-27964,Ensure all storage_interface functions are consistently async,Task,New Features,2026-04-16,RHOAIENG
+RHOAIENG-27966,Ensure testing of both PVC and Maria backends for all data operations,Task,New Features,2026-04-16,RHOAIENG
+RHOAIENG-27967,Ensure consistent data upload logic for both Maria and PVC,Task,New Features,2026-04-16,RHOAIENG
+RHOAIENG-27968,Refactor upload endpoint and upload endpoint tests to use correct data abstractions,Task,New Features,2026-04-16,RHOAIENG
+RHOAIENG-34126,Install the rh-pre-commit tool,Sub-task,,2026-01-06,RHOAIENG
+RHOAIENG-43682,Kolmogorov–Smirnov test,Task,New Features,2026-01-22,RHOAIENG
+RHOAIENG-43683,Create uniform testing suite for drift metrics and endpoints,Task,New Features,2026-01-22,RHOAIENG
+RHOAIENG-43684,Jensen–Shannon divergence+distance,Task,New Features,2026-03-26,RHOAIENG
+RHOAIENG-43687,Update project dependencies,Initiative,,2026-01-19,RHOAIENG
+RHOAIENG-43688,Mean shift,Task,New Features,,RHOAIENG
+RHOAIENG-43690,Graph Fourier maximal mean discrepancy,Task,New Features,,RHOAIENG
+RHOAIENG-46216,Compare means,Task,New Features,2026-03-26,RHOAIENG
+RHOAIENG-46252,Streaming Kolmogorov-Smirnov test,Task,New Features,,RHOAIENG
+RHOAIENG-46335,[TrustyAI Service Python][metrics] Drift-detection metrics,Epic,New Features,,RHOAIENG
+RHOAIENG-46337,[TrustyAI Service Python][metrics] Explainability metrics and framework,Epic,New Features,,RHOAIENG
+RHOAIENG-46338,[TrustyAI Service Python][metrics] Anomaly-detection metrics,Epic,New Features,,RHOAIENG
+RHOAIENG-46339,[TrustyAI Service Python][metrics] Language metrics,Epic,New Features,,RHOAIENG
+RHOAIENG-51105,Support vLLM Payloads inside of the Python TrustyAI Service,Epic,New Features,,RHOAIENG
+RHOAIENG-52393,TrustyAI - Payload logging broken with KServe RawDeployment mode,Bug,Tech Debt & Quality,2026-03-26,RHOAIENG
+RHOAIENG-54136,[AIPCC req] Enable version detection from tag in midstream Garak,Task,Tech Debt & Quality,2026-03-18,RHOAIENG
+RHOAIENG-54436,[SPIKE] Research/try using AIPCC base image to build downstream garak provider image,Task,Tech Debt & Quality,2026-03-20,RHOAIENG
+RHOAIENG-55574,[TrustyAI Service Python][security] Security Remediation Program,Epic,Tech Debt & Quality,,RHOAIENG
+RHOAIENG-55578,Security Phase 1A - Upgrade Container Base Image from UBI8 to UBI9,Task,Tech Debt & Quality,2026-04-08,RHOAIENG
+RHOAIENG-55579,Security Phase 1B - Update Python Dependencies to Eliminate Critical Vulnerabilities,Task,Tech Debt & Quality,2026-04-08,RHOAIENG
+RHOAIENG-55580,Security Phase 2 - Update Build Tools to Resolve pip and uv Vulnerabilities,Task,Tech Debt & Quality,2026-04-08,RHOAIENG
+RHOAIENG-55581,Security Phase 3 - Code Security Review and Bandit Static Analysis Remediation,Task,Tech Debt & Quality,2026-04-08,RHOAIENG
+RHOAIENG-55582,[TrustyAI Service Python][container] Container Modernization and Optimization,Epic,Tech Debt & Quality,,RHOAIENG
+RHOAIENG-55583,[TrustyAI Service Python][tooling] Development Tooling and CI/CD Modernization,Epic,Tech Debt & Quality,,RHOAIENG
+RHOAIENG-55584,[TrustyAI Service Python][docs] Documentation and Developer Experience,Epic,Learning & Enablement,,RHOAIENG
+RHOAIENG-55585,Optimize Container Build with Layer Caching Strategy,Task,Tech Debt & Quality,2026-04-09,RHOAIENG
+RHOAIENG-55586,Implement FIPS Compliance with Crypto Policy Configuration,Task,Tech Debt & Quality,2026-04-09,RHOAIENG
+RHOAIENG-55587,Secure MariaDB Installation - Replace External Script with Verified Approach,Task,Tech Debt & Quality,,RHOAIENG
+RHOAIENG-55588,Replace isort and flake8 with Ruff for Linting and Formatting,Task,Tech Debt & Quality,,RHOAIENG
+RHOAIENG-55589,Replace mypy with Pyrefly for Faster Type Checking,Task,Tech Debt & Quality,,RHOAIENG
+RHOAIENG-55590,Add pytest-xdist for Parallel Test Execution,Task,Tech Debt & Quality,,RHOAIENG
+RHOAIENG-55591,Update pyproject.toml Configuration,Task,Tech Debt & Quality,,RHOAIENG
+RHOAIENG-55592,Update Pre-commit Hooks Configuration,Task,Tech Debt & Quality,,RHOAIENG
+RHOAIENG-55593,Modernize Type Hints to PEP 585/604 Standard,Task,Tech Debt & Quality,,RHOAIENG
+RHOAIENG-55595,Upgrade Python Version Requirement to 3.12-3.14,Task,Tech Debt & Quality,2026-04-17,RHOAIENG
+RHOAIENG-55596,Optimize GitHub Actions Python Version Test Matrix,Task,Tech Debt & Quality,2026-04-17,RHOAIENG
+RHOAIENG-55597,Replace Sourcery with CodeRabbit for AI-Powered Code Review,Task,Tech Debt & Quality,,RHOAIENG
+RHOAIENG-55598,Apply standard formatting and import sorting to the entire codebase,Task,Tech Debt & Quality,,RHOAIENG
+RHOAIENG-55599,Configure GitHub Advanced Security Integration for Bandit,Task,Tech Debt & Quality,2026-04-17,RHOAIENG
+RHOAIENG-55600,Update Core Documentation to Reflect Modernization Changes,Task,Learning & Enablement,,RHOAIENG
+RHOAIENG-55601,Create Comprehensive Getting Started Tutorial,Task,Learning & Enablement,,RHOAIENG
+RHOAIENG-55602,Create System Architecture Diagrams,Task,Learning & Enablement,,RHOAIENG
+RHOAIENG-55603,Create GitHub Issue and PR Templates,Task,Learning & Enablement,,RHOAIENG
+RHOAIENG-55604,Create CODEOWNERS File for Code Review Assignments,Task,Learning & Enablement,,RHOAIENG
+RHOAIENG-55605,Create Drift Metrics Selection User Guide,Task,Learning & Enablement,,RHOAIENG
+RHOAIENG-55606,Create Fairness Metrics Selection User Guide,Task,Learning & Enablement,,RHOAIENG
+RHOAIENG-55607,Create CONTRIBUTING.md Developer Guide,Task,Learning & Enablement,,RHOAIENG
+RHOAIENG-55608,Create API Reference Documentation,Task,Learning & Enablement,,RHOAIENG
+RHOAIENG-55609,Create Troubleshooting Guide and FAQ,Task,Learning & Enablement,,RHOAIENG
+RHOAIENG-55616,Fourier maximum mean discrepancy,Task,New Features,,RHOAIENG
+RHOAIENG-55619,Add CodeRabbit Pull Request Reviews badge to README.md,Task,Tech Debt & Quality,,RHOAIENG
+RHOAIENG-56132,Replace insecure pickle serialization with JSON+gzip for data storage,Task,Tech Debt & Quality,,RHOAIENG
+RHOAIENG-56133,[TrustyAI Service Python][refactoring] Codebase Refactoring,Epic,Tech Debt & Quality,,RHOAIENG
+RHOAIENG-56134,Remove lm-eval integration from Python service,Task,Tech Debt & Quality,,RHOAIENG
+RHOAIENG-56351,Refactor hardcoded endpoint paths to centralized constants,Task,Tech Debt & Quality,,RHOAIENG
+RHOAIENG-56536,Replace HTTP status code magic numbers with http.HTTPStatus constants,Task,Tech Debt & Quality,2026-04-17,RHOAIENG
+RHOAIENG-57675,Create a release notes doc with details of deprecations,Task,Learning & Enablement,,RHOAIENG
+RHOAIENG-57849,Reduce code complexity through refactoring patterns,Task,Tech Debt & Quality,2026-04-17,RHOAIENG
