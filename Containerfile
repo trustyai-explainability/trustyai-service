@@ -17,11 +17,8 @@ ARG EXTRAS
 USER root
 
 # Install MariaDB dev libraries if needed
-# Note: RHEL 9 UBI ships MariaDB Connector/C 3.2.6, but Python mariadb >= 1.1 requires >= 3.3.1
-# Solution: Install from MariaDB's official repo instead
 RUN if echo "$EXTRAS" | grep -q "mariadb"; then \
-        curl -LsS https://r.mariadb.com/downloads/mariadb_repo_setup | bash -s -- --mariadb-server-version=11.4 && \
-        dnf install -y MariaDB-devel && \
+        dnf install -y mariadb-connector-c-devel && \
         dnf clean all; \
     else \
         echo "MariaDB extra not requested, creating stub" && \
