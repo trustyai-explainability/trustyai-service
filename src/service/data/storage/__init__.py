@@ -81,6 +81,20 @@ def get_storage_interface() -> MariaDBStorage | PVCStorage:
                 "DATABASE_NAME"
             )
 
+            # Validate required parameters before constructing MariaDBStorage
+            missing = []
+            if not user:
+                missing.append("DATABASE_USERNAME or QUARKUS_DATASOURCE_USERNAME")
+            if not password:
+                missing.append("DATABASE_PASSWORD or QUARKUS_DATASOURCE_PASSWORD")
+            if not host:
+                missing.append("DATABASE_HOST or DATABASE_SERVICE")
+            if not database:
+                missing.append("DATABASE_DATABASE or DATABASE_NAME")
+            if missing:
+                msg = f"MariaDB storage requires environment variables: {', '.join(missing)}"
+                raise ValueError(msg)
+
             return MariaDBStorage(
                 user=user,
                 password=password,
