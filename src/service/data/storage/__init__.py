@@ -67,12 +67,26 @@ def get_storage_interface() -> MariaDBStorage | PVCStorage:
             migration_str = os.environ.get("DATABASE_ATTEMPT_MIGRATION", "0").lower()
             attempt_migration = migration_str in ("1", "true", "yes", "on")
 
+            # Support both operator env vars and direct deployment env vars
+            # Operator (Quarkus-based): QUARKUS_DATASOURCE_USERNAME/PASSWORD, DATABASE_SERVICE/NAME
+            # Direct deployment: DATABASE_USERNAME/PASSWORD, DATABASE_HOST/DATABASE
+            user = os.environ.get("DATABASE_USERNAME") or os.environ.get(
+                "QUARKUS_DATASOURCE_USERNAME"
+            )
+            password = os.environ.get("DATABASE_PASSWORD") or os.environ.get(
+                "QUARKUS_DATASOURCE_PASSWORD"
+            )
+            host = os.environ.get("DATABASE_HOST") or os.environ.get("DATABASE_SERVICE")
+            database = os.environ.get("DATABASE_DATABASE") or os.environ.get(
+                "DATABASE_NAME"
+            )
+
             return MariaDBStorage(
-                user=os.environ.get("DATABASE_USERNAME"),
-                password=os.environ.get("DATABASE_PASSWORD"),
-                host=os.environ.get("DATABASE_HOST"),
+                user=user,
+                password=password,
+                host=host,
                 port=int(os.environ.get("DATABASE_PORT", "3306")),
-                database=os.environ.get("DATABASE_DATABASE"),
+                database=database,
                 attempt_migration=attempt_migration,
             )
         except ImportError as e:
