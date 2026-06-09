@@ -268,3 +268,151 @@ class TestStorageInterfaceEnvVars:
             pytest.raises(ValueError, match="not yet supported"),
         ):
             get_storage_interface()
+
+    @pytest.mark.skipif(
+        not pytest.importorskip("mariadb", reason="mariadb extra not installed"),
+        reason="mariadb extra not installed",
+    )
+    def test_mariadb_missing_all_parameters(self) -> None:
+        """Test that missing all MariaDB parameters raises ValueError."""
+        with (
+            patch.dict(
+                os.environ,
+                {"SERVICE_STORAGE_FORMAT": "MARIA"},
+                clear=True,
+            ),
+            pytest.raises(
+                ValueError,
+                match="MariaDB storage requires environment variables: "
+                "DATABASE_USERNAME or QUARKUS_DATASOURCE_USERNAME, "
+                "DATABASE_PASSWORD or QUARKUS_DATASOURCE_PASSWORD, "
+                "DATABASE_HOST or DATABASE_SERVICE, "
+                "DATABASE_DATABASE or DATABASE_NAME",
+            ),
+        ):
+            get_storage_interface()
+
+    @pytest.mark.skipif(
+        not pytest.importorskip("mariadb", reason="mariadb extra not installed"),
+        reason="mariadb extra not installed",
+    )
+    def test_mariadb_missing_username(self) -> None:
+        """Test that missing username raises ValueError."""
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "SERVICE_STORAGE_FORMAT": "MARIA",
+                    "DATABASE_PASSWORD": "test_pass",  # pragma: allowlist secret
+                    "DATABASE_HOST": "localhost",
+                    "DATABASE_DATABASE": "test_db",
+                },
+                clear=True,
+            ),
+            pytest.raises(
+                ValueError,
+                match="MariaDB storage requires environment variables: "
+                "DATABASE_USERNAME or QUARKUS_DATASOURCE_USERNAME",
+            ),
+        ):
+            get_storage_interface()
+
+    @pytest.mark.skipif(
+        not pytest.importorskip("mariadb", reason="mariadb extra not installed"),
+        reason="mariadb extra not installed",
+    )
+    def test_mariadb_missing_password(self) -> None:
+        """Test that missing password raises ValueError."""
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "SERVICE_STORAGE_FORMAT": "MARIA",
+                    "DATABASE_USERNAME": "test_user",
+                    "DATABASE_HOST": "localhost",
+                    "DATABASE_DATABASE": "test_db",
+                },
+                clear=True,
+            ),
+            pytest.raises(
+                ValueError,
+                match="MariaDB storage requires environment variables: "
+                "DATABASE_PASSWORD or QUARKUS_DATASOURCE_PASSWORD",
+            ),
+        ):
+            get_storage_interface()
+
+    @pytest.mark.skipif(
+        not pytest.importorskip("mariadb", reason="mariadb extra not installed"),
+        reason="mariadb extra not installed",
+    )
+    def test_mariadb_missing_host(self) -> None:
+        """Test that missing host raises ValueError."""
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "SERVICE_STORAGE_FORMAT": "MARIA",
+                    "DATABASE_USERNAME": "test_user",
+                    "DATABASE_PASSWORD": "test_pass",  # pragma: allowlist secret
+                    "DATABASE_DATABASE": "test_db",
+                },
+                clear=True,
+            ),
+            pytest.raises(
+                ValueError,
+                match="MariaDB storage requires environment variables: "
+                "DATABASE_HOST or DATABASE_SERVICE",
+            ),
+        ):
+            get_storage_interface()
+
+    @pytest.mark.skipif(
+        not pytest.importorskip("mariadb", reason="mariadb extra not installed"),
+        reason="mariadb extra not installed",
+    )
+    def test_mariadb_missing_database(self) -> None:
+        """Test that missing database raises ValueError."""
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "SERVICE_STORAGE_FORMAT": "MARIA",
+                    "DATABASE_USERNAME": "test_user",
+                    "DATABASE_PASSWORD": "test_pass",  # pragma: allowlist secret
+                    "DATABASE_HOST": "localhost",
+                },
+                clear=True,
+            ),
+            pytest.raises(
+                ValueError,
+                match="MariaDB storage requires environment variables: "
+                "DATABASE_DATABASE or DATABASE_NAME",
+            ),
+        ):
+            get_storage_interface()
+
+    @pytest.mark.skipif(
+        not pytest.importorskip("mariadb", reason="mariadb extra not installed"),
+        reason="mariadb extra not installed",
+    )
+    def test_mariadb_missing_multiple_parameters(self) -> None:
+        """Test that missing multiple MariaDB parameters raises ValueError with all missing listed."""
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "SERVICE_STORAGE_FORMAT": "MARIA",
+                    "DATABASE_USERNAME": "test_user",
+                    "DATABASE_HOST": "localhost",
+                },
+                clear=True,
+            ),
+            pytest.raises(
+                ValueError,
+                match="MariaDB storage requires environment variables: "
+                "DATABASE_PASSWORD or QUARKUS_DATASOURCE_PASSWORD, "
+                "DATABASE_DATABASE or DATABASE_NAME",
+            ),
+        ):
+            get_storage_interface()
