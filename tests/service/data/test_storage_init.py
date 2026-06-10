@@ -12,6 +12,14 @@ from src.service.data.storage.pvc import PVCStorage
 DEFAULT_MARIADB_PORT = 3306
 ALTERNATE_MARIADB_PORT = 3307
 
+# Check if mariadb is available
+try:
+    import mariadb  # noqa: F401
+
+    HAS_MARIADB = True
+except ImportError:
+    HAS_MARIADB = False
+
 
 class TestStorageInterfaceEnvVars:
     """Test storage interface creation with different environment variable conventions."""
@@ -32,10 +40,7 @@ class TestStorageInterfaceEnvVars:
             assert storage.data_directory == "/tmp/test"  # noqa: S108
             assert storage.data_file == "test.hdf5"
 
-    @pytest.mark.skipif(
-        not pytest.importorskip("mariadb", reason="mariadb extra not installed"),
-        reason="mariadb extra not installed",
-    )
+    @pytest.mark.skipif(not HAS_MARIADB, reason="mariadb extra not installed")
     @patch("src.service.data.storage.maria.maria.MariaDBStorage")
     def test_mariadb_with_database_host_and_database(
         self, mock_storage: MagicMock
@@ -65,10 +70,7 @@ class TestStorageInterfaceEnvVars:
                 attempt_migration=False,
             )
 
-    @pytest.mark.skipif(
-        not pytest.importorskip("mariadb", reason="mariadb extra not installed"),
-        reason="mariadb extra not installed",
-    )
+    @pytest.mark.skipif(not HAS_MARIADB, reason="mariadb extra not installed")
     @patch("src.service.data.storage.maria.maria.MariaDBStorage")
     def test_mariadb_with_database_service_and_name(
         self, mock_storage: MagicMock
@@ -98,10 +100,7 @@ class TestStorageInterfaceEnvVars:
                 attempt_migration=False,
             )
 
-    @pytest.mark.skipif(
-        not pytest.importorskip("mariadb", reason="mariadb extra not installed"),
-        reason="mariadb extra not installed",
-    )
+    @pytest.mark.skipif(not HAS_MARIADB, reason="mariadb extra not installed")
     @patch("src.service.data.storage.maria.maria.MariaDBStorage")
     def test_mariadb_fallback_priority(self, mock_storage: MagicMock) -> None:
         """Test that DATABASE_HOST takes priority over DATABASE_SERVICE when both present."""
@@ -131,10 +130,7 @@ class TestStorageInterfaceEnvVars:
                 attempt_migration=False,
             )
 
-    @pytest.mark.skipif(
-        not pytest.importorskip("mariadb", reason="mariadb extra not installed"),
-        reason="mariadb extra not installed",
-    )
+    @pytest.mark.skipif(not HAS_MARIADB, reason="mariadb extra not installed")
     @patch("src.service.data.storage.maria.maria.MariaDBStorage")
     def test_mariadb_mixed_conventions(self, mock_storage: MagicMock) -> None:
         """Test MariaDB with mixed env var conventions (DATABASE_HOST + DATABASE_NAME)."""
@@ -162,10 +158,7 @@ class TestStorageInterfaceEnvVars:
                 attempt_migration=False,
             )
 
-    @pytest.mark.skipif(
-        not pytest.importorskip("mariadb", reason="mariadb extra not installed"),
-        reason="mariadb extra not installed",
-    )
+    @pytest.mark.skipif(not HAS_MARIADB, reason="mariadb extra not installed")
     @patch("src.service.data.storage.maria.maria.MariaDBStorage")
     def test_mariadb_with_database_format(self, mock_storage: MagicMock) -> None:
         """Test MariaDB with SERVICE_STORAGE_FORMAT=DATABASE (operator convention)."""
@@ -193,10 +186,7 @@ class TestStorageInterfaceEnvVars:
                 attempt_migration=False,
             )
 
-    @pytest.mark.skipif(
-        not pytest.importorskip("mariadb", reason="mariadb extra not installed"),
-        reason="mariadb extra not installed",
-    )
+    @pytest.mark.skipif(not HAS_MARIADB, reason="mariadb extra not installed")
     @patch("src.service.data.storage.maria.maria.MariaDBStorage")
     def test_mariadb_with_quarkus_credentials(self, mock_storage: MagicMock) -> None:
         """Test MariaDB with QUARKUS_DATASOURCE_USERNAME/PASSWORD (operator convention)."""
@@ -204,6 +194,8 @@ class TestStorageInterfaceEnvVars:
             os.environ,
             {
                 "SERVICE_STORAGE_FORMAT": "DATABASE",
+                "DATABASE_USERNAME": "",  # Explicitly clear to test fallback
+                "DATABASE_PASSWORD": "",  # Explicitly clear to test fallback
                 "QUARKUS_DATASOURCE_USERNAME": "quarkus_user",
                 "QUARKUS_DATASOURCE_PASSWORD": "quarkus_pass",  # pragma: allowlist secret
                 "DATABASE_SERVICE": "mariadb-service",
@@ -224,10 +216,7 @@ class TestStorageInterfaceEnvVars:
                 attempt_migration=False,
             )
 
-    @pytest.mark.skipif(
-        not pytest.importorskip("mariadb", reason="mariadb extra not installed"),
-        reason="mariadb extra not installed",
-    )
+    @pytest.mark.skipif(not HAS_MARIADB, reason="mariadb extra not installed")
     @patch("src.service.data.storage.maria.maria.MariaDBStorage")
     def test_mariadb_credentials_fallback_priority(
         self, mock_storage: MagicMock
@@ -269,10 +258,7 @@ class TestStorageInterfaceEnvVars:
         ):
             get_storage_interface()
 
-    @pytest.mark.skipif(
-        not pytest.importorskip("mariadb", reason="mariadb extra not installed"),
-        reason="mariadb extra not installed",
-    )
+    @pytest.mark.skipif(not HAS_MARIADB, reason="mariadb extra not installed")
     def test_mariadb_missing_all_parameters(self) -> None:
         """Test that missing all MariaDB parameters raises ValueError."""
         with (
@@ -292,10 +278,7 @@ class TestStorageInterfaceEnvVars:
         ):
             get_storage_interface()
 
-    @pytest.mark.skipif(
-        not pytest.importorskip("mariadb", reason="mariadb extra not installed"),
-        reason="mariadb extra not installed",
-    )
+    @pytest.mark.skipif(not HAS_MARIADB, reason="mariadb extra not installed")
     def test_mariadb_missing_username(self) -> None:
         """Test that missing username raises ValueError."""
         with (
@@ -317,10 +300,7 @@ class TestStorageInterfaceEnvVars:
         ):
             get_storage_interface()
 
-    @pytest.mark.skipif(
-        not pytest.importorskip("mariadb", reason="mariadb extra not installed"),
-        reason="mariadb extra not installed",
-    )
+    @pytest.mark.skipif(not HAS_MARIADB, reason="mariadb extra not installed")
     def test_mariadb_missing_password(self) -> None:
         """Test that missing password raises ValueError."""
         with (
@@ -342,10 +322,7 @@ class TestStorageInterfaceEnvVars:
         ):
             get_storage_interface()
 
-    @pytest.mark.skipif(
-        not pytest.importorskip("mariadb", reason="mariadb extra not installed"),
-        reason="mariadb extra not installed",
-    )
+    @pytest.mark.skipif(not HAS_MARIADB, reason="mariadb extra not installed")
     def test_mariadb_missing_host(self) -> None:
         """Test that missing host raises ValueError."""
         with (
@@ -367,10 +344,7 @@ class TestStorageInterfaceEnvVars:
         ):
             get_storage_interface()
 
-    @pytest.mark.skipif(
-        not pytest.importorskip("mariadb", reason="mariadb extra not installed"),
-        reason="mariadb extra not installed",
-    )
+    @pytest.mark.skipif(not HAS_MARIADB, reason="mariadb extra not installed")
     def test_mariadb_missing_database(self) -> None:
         """Test that missing database raises ValueError."""
         with (
@@ -392,10 +366,7 @@ class TestStorageInterfaceEnvVars:
         ):
             get_storage_interface()
 
-    @pytest.mark.skipif(
-        not pytest.importorskip("mariadb", reason="mariadb extra not installed"),
-        reason="mariadb extra not installed",
-    )
+    @pytest.mark.skipif(not HAS_MARIADB, reason="mariadb extra not installed")
     def test_mariadb_missing_multiple_parameters(self) -> None:
         """Test that missing multiple MariaDB parameters raises ValueError with all missing listed."""
         with (
