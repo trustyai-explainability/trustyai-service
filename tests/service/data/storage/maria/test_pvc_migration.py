@@ -226,6 +226,7 @@ class TestMigrationStatusTracking:
     def test_start_migration_tracking(self, mock_maria_storage):
         """Test starting migration tracking record."""
         mock_conn_mgr, mock_cursor = mock_connection_manager()
+        mock_cursor.fetchone.return_value = None  # No existing IN_PROGRESS migration
         mock_cursor.lastrowid = 42
         mock_maria_storage.connection_manager = mock_conn_mgr
 
@@ -233,12 +234,16 @@ class TestMigrationStatusTracking:
         migration_id = migrator._start_migration_tracking(total_files=10)
 
         assert migration_id == 42
-        mock_cursor.execute.assert_called_once()
+        assert mock_cursor.execute.call_count == 2  # SELECT + INSERT
 
-        # Verify INSERT statement
-        call_args = mock_cursor.execute.call_args[0]
-        assert "INSERT INTO trustyai_migration_status" in call_args[0]
-        assert call_args[1] == (
+        # Verify SELECT statement (first call)
+        first_call = mock_cursor.execute.call_args_list[0][0]
+        assert "SELECT id, total_files FROM trustyai_migration_status" in first_call[0]
+
+        # Verify INSERT statement (second call)
+        second_call = mock_cursor.execute.call_args_list[1][0]
+        assert "INSERT INTO trustyai_migration_status" in second_call[0]
+        assert second_call[1] == (
             MIGRATION_TYPE_PVC_TO_DB,
             MIGRATION_STATUS_IN_PROGRESS,
             10,
@@ -429,7 +434,7 @@ class TestDataWriting:
         call_kwargs = mock_maria_storage.write_data.call_args.kwargs
         assert call_kwargs["dataset_name"] == "test_dataset"
         assert call_kwargs["column_names"] == column_names
-        assert call_kwargs["new_rows"] == [[1, 2, 3], [4, 5, 6]]
+        np.testing.assert_array_equal(call_kwargs["new_rows"], [[1, 2, 3], [4, 5, 6]])
 
 
 class TestSingleFileMigration:
@@ -545,12 +550,29 @@ class TestErrorHandling:
     ):
         """Test migration continues when individual file fails."""
         mock_conn_mgr, mock_cursor = mock_connection_manager()
-        mock_cursor.fetchone = MagicMock(
-            side_effect=[
-                None,  # migration not completed
-                None,  # first file not migrated
-            ]
-        )
+
+        # Use semantic mock instead of brittle side_effect list
+        def mock_fetchone(*args, **kwargs):  # noqa: ARG001
+            if mock_cursor.execute.call_args:
+                call_args = mock_cursor.execute.call_args[0]
+                # Check for existing IN_PROGRESS migration (resume logic)
+                if (
+                    "SELECT id, total_files FROM trustyai_migration_status"
+                    in call_args[0]
+                ):
+                    return  # No existing migration to resume
+                # Check if migration already completed
+                if (
+                    "SELECT id FROM trustyai_migration_status" in call_args[0]
+                    and "status=?" in call_args[0]
+                ):
+                    return  # Migration not completed yet
+                # Check if file already migrated
+                if "SELECT id FROM trustyai_file_migration_status" in call_args[0]:
+                    return  # File not yet migrated
+            return  # Default for other queries
+
+        mock_cursor.fetchone = MagicMock(side_effect=mock_fetchone)
         mock_cursor.lastrowid = 1
         mock_maria_storage.connection_manager = mock_conn_mgr
 
@@ -624,12 +646,29 @@ class TestErrorHandling:
     ):
         """Test migration skips files that were already migrated."""
         mock_conn_mgr, mock_cursor = mock_connection_manager()
-        mock_cursor.fetchone = MagicMock(
-            side_effect=[
-                None,  # migration not complete
-                (1,),  # file already migrated (returns count)
-            ]
-        )
+
+        # Use semantic mock instead of brittle side_effect list
+        def mock_fetchone(*args, **kwargs):  # noqa: ARG001
+            if mock_cursor.execute.call_args:
+                call_args = mock_cursor.execute.call_args[0]
+                # Check for existing IN_PROGRESS migration (resume logic)
+                if (
+                    "SELECT id, total_files FROM trustyai_migration_status"
+                    in call_args[0]
+                ):
+                    return None  # No existing migration to resume
+                # Check if migration already completed
+                if (
+                    "SELECT id FROM trustyai_migration_status" in call_args[0]
+                    and "status=?" in call_args[0]
+                ):
+                    return None  # Migration not completed yet
+                # Check if file already migrated - return ID to indicate it was migrated
+                if "SELECT id FROM trustyai_file_migration_status" in call_args[0]:
+                    return (1,)  # File already migrated, skip it
+            return None  # Default for other queries
+
+        mock_cursor.fetchone = MagicMock(side_effect=mock_fetchone)
         mock_cursor.lastrowid = 1
         mock_maria_storage.connection_manager = mock_conn_mgr
 

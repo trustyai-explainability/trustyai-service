@@ -6,14 +6,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import h5py
 import numpy as np
 import pytest
+from prometheus_client import REGISTRY
 
 from src.service.data.storage.maria.pvc_migration import (
     DEFAULT_TIMEOUT_SECONDS,
     PVCToDBMigrator,
-    migration_files_failed,
-    migration_files_success,
-    migration_files_total,
-    migration_rows_total,
 )
 
 
@@ -110,6 +107,21 @@ class TestPrometheusMetrics:
         def mock_fetchone(*args, **kwargs):  # noqa: ARG001
             if mock_cursor.execute.call_args:
                 call_args = mock_cursor.execute.call_args[0]
+                # IN_PROGRESS migration check query (in _start_migration_tracking)
+                if (
+                    "SELECT id, total_files FROM trustyai_migration_status"
+                    in call_args[0]
+                ):
+                    return None  # No existing IN_PROGRESS migration
+                # File already migrated check query (in _is_file_already_migrated)
+                if "SELECT id FROM trustyai_file_migration_status" in call_args[0]:
+                    return None  # File not yet migrated
+                # Migration completion check query (in migrate())
+                if (
+                    "SELECT id FROM trustyai_migration_status" in call_args[0]
+                    and "status=?" in call_args[0]
+                ):
+                    return None  # Migration not completed yet
                 # Validation query returns row count
                 if "trustyai_v2_table_reference" in call_args[0]:
                     return (2,)  # 2 rows written
@@ -126,18 +138,34 @@ class TestPrometheusMetrics:
 
         migrator = PVCToDBMigrator(mock_maria_storage, pvc_folder=str(tmp_path))
 
-        # Get initial metric values
-        initial_files_total = migration_files_total._value._value
-        initial_files_success = migration_files_success._value._value
-        initial_rows_total = migration_rows_total._value._value
+        # Get initial metric values using public Prometheus API
+        # Note: Prometheus automatically adds _total suffix to all Counter metrics
+        initial_files_total = (
+            REGISTRY.get_sample_value("trustyai_migration_files_total") or 0
+        )
+        initial_files_success = (
+            REGISTRY.get_sample_value("trustyai_migration_files_success_total") or 0
+        )
+        initial_rows_total = (
+            REGISTRY.get_sample_value("trustyai_migration_rows_total") or 0
+        )
 
         # Run migration
         await migrator.migrate()
 
         # Verify metrics were incremented
-        assert migration_files_total._value._value == initial_files_total + 1
-        assert migration_files_success._value._value == initial_files_success + 1
-        assert migration_rows_total._value._value == initial_rows_total + 2  # 2 rows
+        assert (
+            REGISTRY.get_sample_value("trustyai_migration_files_total")
+            == initial_files_total + 1
+        )
+        assert (
+            REGISTRY.get_sample_value("trustyai_migration_files_success_total")
+            == initial_files_success + 1
+        )
+        assert (
+            REGISTRY.get_sample_value("trustyai_migration_rows_total")
+            == initial_rows_total + 2
+        )  # 2 rows
 
     @pytest.mark.asyncio
     async def test_metrics_incremented_on_failed_file(
@@ -156,6 +184,21 @@ class TestPrometheusMetrics:
         def mock_fetchone(*args, **kwargs):  # noqa: ARG001
             if mock_cursor.execute.call_args:
                 call_args = mock_cursor.execute.call_args[0]
+                # IN_PROGRESS migration check query (in _start_migration_tracking)
+                if (
+                    "SELECT id, total_files FROM trustyai_migration_status"
+                    in call_args[0]
+                ):
+                    return None  # No existing IN_PROGRESS migration
+                # File already migrated check query (in _is_file_already_migrated)
+                if "SELECT id FROM trustyai_file_migration_status" in call_args[0]:
+                    return None  # File not yet migrated
+                # Migration completion check query (in migrate())
+                if (
+                    "SELECT id FROM trustyai_migration_status" in call_args[0]
+                    and "status=?" in call_args[0]
+                ):
+                    return None  # Migration not completed yet
                 # Validation query returns row count
                 if "trustyai_v2_table_reference" in call_args[0]:
                     return (2,)  # 2 rows written
@@ -172,11 +215,17 @@ class TestPrometheusMetrics:
 
         migrator = PVCToDBMigrator(mock_maria_storage, pvc_folder=str(tmp_path))
 
-        # Get initial metric value
-        initial_files_failed = migration_files_failed._value._value
+        # Get initial metric value using public Prometheus API
+        # Note: Prometheus automatically adds _total suffix to all Counter metrics
+        initial_files_failed = (
+            REGISTRY.get_sample_value("trustyai_migration_files_failed_total") or 0
+        )
 
         # Run migration (should handle error gracefully)
         await migrator.migrate()
 
         # Verify failed counter was incremented
-        assert migration_files_failed._value._value == initial_files_failed + 1
+        assert (
+            REGISTRY.get_sample_value("trustyai_migration_files_failed_total")
+            == initial_files_failed + 1
+        )

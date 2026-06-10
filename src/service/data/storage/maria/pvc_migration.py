@@ -47,8 +47,9 @@ DEFAULT_PVC_FOLDER = "/inputs"  # Default PVC mount path
 MIGRATION_COMPLETE_MESSAGE = "Migration complete, the PVC is now safe to remove."
 
 # Prometheus metrics for migration observability
-migration_files_total = Counter(
-    "trustyai_migration_files_total",
+# Note: Prometheus automatically adds _total suffix to Counter metric names
+migration_files = Counter(
+    "trustyai_migration_files",
     "Total number of HDF5 files discovered for migration",
 )
 migration_files_success = Counter(
@@ -59,8 +60,8 @@ migration_files_failed = Counter(
     "trustyai_migration_files_failed",
     "Number of HDF5 files that failed to migrate",
 )
-migration_rows_total = Counter(
-    "trustyai_migration_rows_total",
+migration_rows = Counter(
+    "trustyai_migration_rows",
     "Total number of data rows migrated from PVC to MariaDB",
 )
 
@@ -134,9 +135,19 @@ class PVCToDBMigrator:
         self.pvc_folder = pvc_folder or os.environ.get(
             "STORAGE_DATA_FOLDER", DEFAULT_PVC_FOLDER
         )
-        self.batch_size = batch_size or int(
+
+        # Validate and set batch size
+        batch_size_value = batch_size or int(
             os.environ.get("MIGRATION_BATCH_SIZE", str(DEFAULT_BATCH_SIZE))
         )
+        if batch_size_value <= 0:
+            msg = (
+                f"MIGRATION_BATCH_SIZE must be > 0, got {batch_size_value}. "
+                f"Check MIGRATION_BATCH_SIZE environment variable or batch_size parameter."
+            )
+            raise ValueError(msg)
+        self.batch_size = batch_size_value
+
         self._migration_id: int | None = None
 
     def _create_migration_tables(self) -> None:
@@ -162,12 +173,33 @@ class PVCToDBMigrator:
             return result is not None
 
     def _start_migration_tracking(self, total_files: int) -> int:
-        """Create a new migration tracking record and return its ID.
+        """Create or resume a migration tracking record and return its ID.
+
+        Checks for an existing IN_PROGRESS migration and resumes it if found,
+        otherwise creates a new migration tracking record.
 
         :param total_files: Total number of HDF5 files to migrate
         :return: Migration ID for tracking this migration run
         """
         with self.connection_manager as (_conn, cursor):
+            # Check for existing IN_PROGRESS migration to resume
+            cursor.execute(
+                "SELECT id, total_files FROM trustyai_migration_status "
+                "WHERE migration_type=? AND status=? "
+                "ORDER BY started_at DESC LIMIT 1",
+                (MIGRATION_TYPE_PVC_TO_DB, MIGRATION_STATUS_IN_PROGRESS),
+            )
+            result = cursor.fetchone()
+
+            if result:
+                migration_id = result[0]
+                logger.info(
+                    "Resuming existing migration ID=%s (was in progress)",
+                    migration_id,
+                )
+                return migration_id
+
+            # No existing IN_PROGRESS migration - create new one
             cursor.execute(
                 "INSERT INTO trustyai_migration_status "
                 "(migration_type, status, files_processed, total_files) "
@@ -494,18 +526,18 @@ class PVCToDBMigrator:
         :param data: Data array to write
         :param column_names: Column names for the dataset
         """
-        # Convert numpy array to list for MariaDB write_data
-        data_list = data.tolist() if isinstance(data, np.ndarray) else list(data)
+        # Ensure data is ndarray (MariaDB write_data expects ndarray, not list)
+        data_array = data if isinstance(data, np.ndarray) else np.array(data)
 
         await self.maria_storage.write_data(
             dataset_name=dataset_name,
-            new_rows=data_list,
+            new_rows=data_array,
             column_names=column_names,
         )
 
         logger.debug(
             "Wrote %d rows to MariaDB dataset '%s'",
-            len(data_list),
+            len(data_array),
             dataset_name,
         )
 
@@ -569,58 +601,67 @@ class PVCToDBMigrator:
                     self.batch_size,
                 )
 
-                # Migrate in batches to avoid OOM on large datasets
-                start_idx = 0
-                while start_idx < dataset_rows:
-                    end_idx = min(start_idx + self.batch_size, dataset_rows)
+                # Handle empty datasets (0 rows) - skip migration and validation
+                if dataset_rows == 0:
+                    logger.info(
+                        "Dataset '%s' is empty (0 rows) - skipping migration",
+                        dataset_name,
+                    )
+                    # No data to migrate, validation will pass trivially (0 == 0)
+                    # Continue to next dataset
+                else:
+                    # Migrate in batches to avoid OOM on large datasets
+                    start_idx = 0
+                    while start_idx < dataset_rows:
+                        end_idx = min(start_idx + self.batch_size, dataset_rows)
 
-                    # Log progress for large datasets
-                    if dataset_rows > self.batch_size:
-                        logger.info(
-                            "    Processing rows %d-%d of %d",
-                            start_idx,
-                            end_idx,
-                            dataset_rows,
-                        )
-
-                    # Read batch from HDF5
-                    batch_data = dataset[start_idx:end_idx]
-
-                    # Deserialize if data is in serialized format (JSON+gzip)
-                    if is_bytes and batch_data.dtype.type in {np.bytes_, np.void}:
-                        logger.debug(
-                            "Deserializing byte data for dataset '%s' batch %d-%d",
-                            dataset_name,
-                            start_idx,
-                            end_idx,
-                        )
-                        try:
-                            batch_data = deserialize_rows(batch_data)
-                        except Exception as deser_error:
-                            error_msg = (
-                                f"Failed to deserialize dataset '{dataset_name}' "
-                                f"batch {start_idx}-{end_idx} in file {hdf5_file.name}: {deser_error}"
+                        # Log progress for large datasets
+                        if dataset_rows > self.batch_size:
+                            logger.info(
+                                "    Processing rows %d-%d of %d",
+                                start_idx,
+                                end_idx,
+                                dataset_rows,
                             )
-                            logger.exception(error_msg)
-                            raise ValueError(error_msg) from deser_error
 
-                    # Write batch to MariaDB with timeout protection
-                    await self._write_data_to_maria_with_timeout(
-                        dataset_name, batch_data, column_names, timeout_seconds=300
+                        # Read batch from HDF5
+                        batch_data = dataset[start_idx:end_idx]
+
+                        # Deserialize if data is in serialized format (JSON+gzip)
+                        if is_bytes and batch_data.dtype.type in {np.bytes_, np.void}:
+                            logger.debug(
+                                "Deserializing byte data for dataset '%s' batch %d-%d",
+                                dataset_name,
+                                start_idx,
+                                end_idx,
+                            )
+                            try:
+                                batch_data = deserialize_rows(batch_data)
+                            except Exception as deser_error:
+                                error_msg = (
+                                    f"Failed to deserialize dataset '{dataset_name}' "
+                                    f"batch {start_idx}-{end_idx} in file {hdf5_file.name}: {deser_error}"
+                                )
+                                logger.exception(error_msg)
+                                raise ValueError(error_msg) from deser_error
+
+                        # Write batch to MariaDB with timeout protection
+                        await self._write_data_to_maria_with_timeout(
+                            dataset_name, batch_data, column_names, timeout_seconds=300
+                        )
+
+                        start_idx += self.batch_size
+
+                    # POST-MIGRATION VALIDATION: Verify row count matches
+                    validation_passed = await self._validate_migration(
+                        dataset_name, dataset_rows
                     )
-
-                    start_idx += self.batch_size
-
-                # POST-MIGRATION VALIDATION: Verify row count matches
-                validation_passed = await self._validate_migration(
-                    dataset_name, dataset_rows
-                )
-                if not validation_passed:
-                    msg = (
-                        f"Post-migration validation failed for dataset '{dataset_name}' "
-                        f"in file {hdf5_file.name}"
-                    )
-                    raise ValueError(msg)
+                    if not validation_passed:
+                        msg = (
+                            f"Post-migration validation failed for dataset '{dataset_name}' "
+                            f"in file {hdf5_file.name}"
+                        )
+                        raise ValueError(msg)
 
                 total_rows += dataset_rows
                 logger.info(
@@ -671,7 +712,7 @@ class PVCToDBMigrator:
             return
 
         # Step 4: Start migration tracking
-        migration_files_total.inc(len(hdf5_files))
+        migration_files.inc(len(hdf5_files))
         self._migration_id = self._start_migration_tracking(len(hdf5_files))
         files_processed = 0
         files_failed = 0
@@ -703,7 +744,7 @@ class PVCToDBMigrator:
 
                     # Update Prometheus metrics
                     migration_files_success.inc()
-                    migration_rows_total.inc(rows_migrated)
+                    migration_rows.inc(rows_migrated)
 
                 except Exception as file_error:
                     logger.exception(

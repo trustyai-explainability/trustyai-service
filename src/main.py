@@ -331,6 +331,16 @@ async def readiness_probe() -> JSONResponse:
                             if response is not None:
                                 return response
                             # Migration complete - proceed to ready state
+                        else:
+                            # No migration row exists yet - migration not started
+                            # Treat as not ready to prevent traffic before migration begins
+                            return JSONResponse(
+                                content={
+                                    "status": "not_ready",
+                                    "reason": "Migration not started yet",
+                                },
+                                status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+                            )
 
             except Exception as e:
                 # If we can't check migration status, assume not ready
