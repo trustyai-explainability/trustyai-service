@@ -126,13 +126,13 @@ class KServeData(BaseModel):
     @model_validator(mode="after")
     def _validate_shape(self) -> "KServeData":
         raw = np.array(self.data, dtype=object)
-        actual = tuple(raw.shape)
         declared = tuple(self.shape)
-        if declared != actual:
-            msg = f"Declared shape {declared} does not match data shape {actual}"
-            raise ValueError(
-                msg,
-            )
+        expected_elements = int(np.prod(declared))
+        actual_elements = raw.size
+        if expected_elements != actual_elements:
+            msg = f"Declared shape {declared} requires {expected_elements} elements but got {actual_elements}"
+            raise ValueError(msg)
+        self.data = raw.reshape(declared).tolist()
         return self
 
     @model_validator(mode="after")
