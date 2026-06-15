@@ -4,69 +4,22 @@ from enum import StrEnum
 from typing import Any, Literal
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 PartialKind = Literal["request", "response"]
 
 
-class PartialPayloadId(BaseModel):
-    """Identifier for partial inference payloads."""
-
-    prediction_id: str | None = None
-    kind: PartialKind | None = None
-
-    def get_prediction_id(self) -> str | None:
-        """Get prediction ID."""
-        return self.prediction_id
-
-    def set_prediction_id(self, id_: str) -> None:
-        """Set prediction ID."""
-        self.prediction_id = id_
-
-    def get_kind(self) -> PartialKind | None:
-        """Get payload kind (request or response)."""
-        return self.kind
-
-    def set_kind(self, kind: PartialKind) -> None:
-        """Set payload kind (request or response)."""
-        self.kind = kind
-
-
 class InferencePartialPayload(BaseModel):
-    """Partial inference payload for KServe agent uploads."""
+    """Partial inference payload for KServe agent uploads.
 
-    partialPayloadId: PartialPayloadId | None = None
-    metadata: dict[str, str] | None = {}
+    Flat structure matching the Java TrustyAI service wire format.
+    """
+
+    id: str | None = None
+    kind: PartialKind | None = None
+    metadata: dict[str, str] = Field(default_factory=dict)
     data: str | None = None
     modelid: str | None = None
-
-    def get_id(self) -> str | None:
-        """Get prediction ID from partial payload."""
-        return self.partialPayloadId.prediction_id if self.partialPayloadId else None
-
-    def set_id(self, id_: str) -> None:
-        """Set prediction ID on partial payload."""
-        if not self.partialPayloadId:
-            self.partialPayloadId = PartialPayloadId()
-        self.partialPayloadId.prediction_id = id_
-
-    def get_kind(self) -> PartialKind | None:
-        """Get payload kind (request or response)."""
-        return self.partialPayloadId.kind if self.partialPayloadId else None
-
-    def set_kind(self, kind: PartialKind) -> None:
-        """Set payload kind (request or response)."""
-        if not self.partialPayloadId:
-            self.partialPayloadId = PartialPayloadId()
-        self.partialPayloadId.kind = kind
-
-    def get_model_id(self) -> str | None:
-        """Get model ID."""
-        return self.modelid
-
-    def set_model_id(self, model_id: str) -> None:
-        """Set model ID."""
-        self.modelid = model_id
 
 
 class KServeDataType(StrEnum):
