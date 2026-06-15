@@ -104,7 +104,8 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
         inference_payload = {
             "data": self.input_payload.data,
             "modelid": self.model_name,
-            "partialPayloadId": {"prediction_id": self.request_id, "kind": "request"},
+            "id": self.request_id,
+            "kind": "request",
         }
 
         response = self.client.post("/consumer/kserve/v2", json=inference_payload)
@@ -130,7 +131,8 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
         inference_payload = {
             "data": self.output_payload.data,
             "modelid": self.model_name,
-            "partialPayloadId": {"prediction_id": self.request_id, "kind": "response"},
+            "id": self.request_id,
+            "kind": "response",
         }
 
         response = self.client.post("/consumer/kserve/v2", json=inference_payload)
@@ -189,10 +191,8 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
             input_inference_payload = {
                 "data": self.input_payload.data,
                 "modelid": self.model_name,
-                "partialPayloadId": {
-                    "prediction_id": self.request_id,
-                    "kind": "request",
-                },
+                "id": self.request_id,
+                "kind": "request",
             }
 
             response_input = self.client.post(
@@ -220,10 +220,8 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
             output_inference_payload = {
                 "data": self.output_payload.data,
                 "modelid": self.model_name,
-                "partialPayloadId": {
-                    "prediction_id": self.request_id,
-                    "kind": "response",
-                },
+                "id": self.request_id,
+                "kind": "response",
             }
 
             response_output = self.client.post(
@@ -266,6 +264,82 @@ TestConsumerEndpointReconciliation.test_consume_output_payload = lambda self: ( 
 TestConsumerEndpointReconciliation.test_reconcile_payloads = lambda self: (  # type: ignore[attr-defined]
     run_async_test(self._test_reconcile_payloads())
 )
+
+
+class TestConsumerEndpointValidation(unittest.TestCase):
+    """Test validation of required fields and invalid values on the consumer endpoint."""
+
+    def setUp(self) -> None:
+        """Set up test client with mocked storage."""
+        self.storage_patch = mock.patch(
+            "src.endpoints.consumer.consumer_endpoint.get_global_storage_interface",
+        )
+        self.mock_get_storage = self.storage_patch.start()
+        self.mock_get_storage.return_value = mock.AsyncMock()
+
+        self.app = FastAPI()
+        self.app.include_router(consumer_router)
+        self.client = TestClient(self.app, raise_server_exceptions=False)
+
+        self.valid_payload = {
+            "id": "test-id",
+            "kind": "request",
+            "modelid": "test-model",
+            "data": "dGVzdA==",
+        }
+
+    def tearDown(self) -> None:
+        """Clean up patches."""
+        self.storage_patch.stop()
+
+    def test_missing_id_returns_400(self) -> None:
+        """Payload without 'id' field is rejected with 400."""
+        payload = {**self.valid_payload}
+        del payload["id"]
+        response = self.client.post("/consumer/kserve/v2", json=payload)
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert "id" in response.json()["detail"]
+
+    def test_missing_kind_returns_400(self) -> None:
+        """Payload without 'kind' field is rejected with 400."""
+        payload = {**self.valid_payload}
+        del payload["kind"]
+        response = self.client.post("/consumer/kserve/v2", json=payload)
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert "kind" in response.json()["detail"]
+
+    def test_missing_modelid_returns_400(self) -> None:
+        """Payload without 'modelid' field is rejected with 400."""
+        payload = {**self.valid_payload}
+        del payload["modelid"]
+        response = self.client.post("/consumer/kserve/v2", json=payload)
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert "modelid" in response.json()["detail"]
+
+    def test_missing_data_returns_400(self) -> None:
+        """Payload without 'data' field is rejected with 400."""
+        payload = {**self.valid_payload}
+        del payload["data"]
+        response = self.client.post("/consumer/kserve/v2", json=payload)
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert "data" in response.json()["detail"]
+
+    def test_invalid_kind_returns_422(self) -> None:
+        """Invalid kind value is rejected by Pydantic with 422."""
+        payload = {**self.valid_payload, "kind": "prediction"}
+        response = self.client.post("/consumer/kserve/v2", json=payload)
+        assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+
+    def test_nested_format_returns_400(self) -> None:
+        """Old nested format should fail — partialPayloadId is ignored, id is null."""
+        payload = {
+            "partialPayloadId": {"prediction_id": "test-id", "kind": "request"},
+            "modelid": "test-model",
+            "data": "dGVzdA==",
+        }
+        response = self.client.post("/consumer/kserve/v2", json=payload)
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert "id" in response.json()["detail"]
 
 
 if __name__ == "__main__":
