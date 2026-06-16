@@ -342,6 +342,7 @@ async def list_ksteststreaming_requests(
                 and hasattr(request, "fit_columns")
             ):
                 request_dict = {
+                    "id": str(request_id),  # deprecated: use requestId
                     "requestId": str(request_id),
                     "modelId": request.model_id,
                     "metricName": METRIC_NAME,
