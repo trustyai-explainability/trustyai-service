@@ -524,3 +524,38 @@ class TestGetDataframeByTag:
         df = await data_source.get_dataframe_by_tag("test-model", "TRAINING")
 
         assert len(df) == 0
+
+    @patch("src.service.data.datasources.data_source.ModelData")
+    @pytest.mark.asyncio
+    async def test_handles_numpy_array_tags_from_mariadb(
+        self, mock_model_data_class: Mock, data_source: DataSource
+    ) -> None:
+        """Tags stored as numpy arrays (MariaDB round-trip) are handled."""
+        mock = Mock(spec=ModelData)
+        mock.column_names = AsyncMock(
+            return_value=(
+                np.array(["feature1"]),
+                np.array(["output"]),
+                np.array(["id", "iso_time", "unix_timestamp", "tags"]),
+            ),
+        )
+        mock.data = AsyncMock(
+            return_value=(
+                np.array([[1.0], [2.0], [3.0]]),
+                np.array([[0.0], [1.0], [0.0]]),
+                np.array(
+                    [
+                        ["id_0", "t0", 0.0, np.array(["TRAINING"])],
+                        ["id_1", "t1", 1.0, np.array(["unlabeled"])],
+                        ["id_2", "t2", 2.0, np.array(["TRAINING"])],
+                    ],
+                    dtype=object,
+                ),
+            ),
+        )
+        mock_model_data_class.return_value = mock
+
+        df = await data_source.get_dataframe_by_tag("test-model", "TRAINING")
+
+        assert len(df) == 2  # noqa: PLR2004
+        assert df["feature1"].tolist() == [1.0, 3.0]
