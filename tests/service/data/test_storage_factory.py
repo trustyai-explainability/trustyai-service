@@ -14,7 +14,9 @@ class TestGetStorageInterface:
 
     def test_pvc_is_default(self) -> None:
         """PVC storage is returned when no format is specified."""
-        with patch.dict(os.environ, {"SERVICE_STORAGE_FORMAT": "PVC"}, clear=False):
+        env = os.environ.copy()
+        env.pop("SERVICE_STORAGE_FORMAT", None)
+        with patch.dict(os.environ, env, clear=True):
             storage = get_storage_interface()
             assert isinstance(storage, PVCStorage)
 
