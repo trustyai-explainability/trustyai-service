@@ -48,6 +48,21 @@ class TestAppCoreEndpoints:
         content = response.text
         assert len(content) > 0
 
+    def test_trailing_slash_no_redirect(self) -> None:
+        """Trailing slash must not 307 redirect (which drops POST bodies)."""
+        response = client.post(
+            "/metrics/drift/kstest/",
+            json={"modelId": "test"},
+        )
+        assert response.status_code != HTTPStatus.TEMPORARY_REDIRECT
+        assert response.status_code != HTTPStatus.NOT_FOUND
+        # Should match the same route as without trailing slash
+        response_no_slash = client.post(
+            "/metrics/drift/kstest",
+            json={"modelId": "test"},
+        )
+        assert response.status_code == response_no_slash.status_code
+
     def test_cors_headers(self) -> None:
         """Test that CORS headers are properly configured."""
         # CORS headers are added by middleware but may not appear in TestClient
