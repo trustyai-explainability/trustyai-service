@@ -468,6 +468,9 @@ def _register_mmd_calculator() -> None:
     scheduler = get_prometheus_scheduler()
     if scheduler and scheduler.metrics_directory:
         scheduler.metrics_directory.register(METRIC_NAME, calculate_mmd_metric)
+        scheduler.metrics_directory.register(
+            DEPRECATED_METRIC_NAME, calculate_mmd_metric
+        )
         logger.info("%s calculator registered with metrics directory", METRIC_NAME)
 
 
