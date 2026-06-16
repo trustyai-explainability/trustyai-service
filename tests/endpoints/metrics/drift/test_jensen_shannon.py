@@ -129,18 +129,18 @@ class TestJensenShannonEndpoints:
         expected_error_substring="referenceTag is required",
     )
 
-    test_compute_missing_fit_columns = factory.make_compute_endpoint_error_test(
-        metric_name="JensenShannon",
-        module_path="src.endpoints.metrics.drift.jensen_shannon",
-        endpoint_path="/metrics/drift/jensenshannon",
-        client=client,
-        request_payload={
-            "modelId": "test-model",
-            "referenceTag": "baseline",
-            # Missing fitColumns
-        },
-        expected_status_code=HTTPStatus.BAD_REQUEST,
-        expected_error_substring="fitColumns is required",
+    test_compute_missing_fit_columns_derives_from_metadata = (
+        factory.make_compute_endpoint_test(
+            metric_name="JensenShannon",
+            module_path="src.endpoints.metrics.drift.jensen_shannon",
+            endpoint_path="/metrics/drift/jensenshannon",
+            client=client,
+            request_payload={
+                "modelId": "test-model",
+                "referenceTag": "baseline",
+            },
+            expected_response_keys=["status", "value", "drift_detected"],
+        )
     )
 
     test_compute_invalid_feature = factory.make_compute_endpoint_error_test(

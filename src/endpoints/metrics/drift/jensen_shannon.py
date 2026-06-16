@@ -106,9 +106,13 @@ async def compute_jensenshannon(
         )
 
     if not request.fit_columns:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="fitColumns is required - specify which features to test for drift",
+        data_source = get_data_source()
+        metadata = await data_source.get_metadata(request.model_id)
+        request.fit_columns = list(metadata.input_schema.items.keys())
+        logger.info(
+            "fitColumns not specified, using all input columns for model %s: %s",
+            request.model_id,
+            request.fit_columns,
         )
 
     try:
@@ -231,9 +235,13 @@ async def schedule_jensenshannon(request: JensenShannonMetricRequest) -> dict[st
         )
 
     if not request.fit_columns:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="fitColumns is required - specify which features to test for drift",
+        data_source = get_data_source()
+        metadata = await data_source.get_metadata(request.model_id)
+        request.fit_columns = list(metadata.input_schema.items.keys())
+        logger.info(
+            "fitColumns not specified, using all input columns for model %s: %s",
+            request.model_id,
+            request.fit_columns,
         )
 
     # Get the scheduler and validate availability
