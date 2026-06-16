@@ -73,16 +73,17 @@ def make_compute_endpoint_test(
     def test_impl(_: object, mock_ds: MagicMock) -> None:
         """Test compute endpoint returns valid response structure."""
         # Create sample dataframe (Pandas or Polars based on df_type)
-        sample_df = _create_sample_dataframe(
-            request_payload.get("fitColumns", ["feature1"]),
-            df_type=df_type,
-        )
+        columns = request_payload.get("fitColumns", ["feature1"])
+        sample_df = _create_sample_dataframe(columns, df_type=df_type)
 
         # Mock data source
         mock_data_source = MagicMock()
         mock_data_source.get_dataframe_by_tag = AsyncMock(return_value=sample_df)
         mock_data_source.get_organic_dataframe = AsyncMock(return_value=sample_df)
         mock_data_source.get_dataframe = AsyncMock(return_value=sample_df)
+        mock_metadata = MagicMock()
+        mock_metadata.input_schema.items.keys.return_value = columns
+        mock_data_source.get_metadata = AsyncMock(return_value=mock_metadata)
         mock_ds.return_value = mock_data_source
 
         # Send request
@@ -184,7 +185,9 @@ def make_schedule_endpoint_test(
 
         # Mock data source (needed for KS test registration)
         mock_data_source = MagicMock()
-        mock_data_source.get_metadata = AsyncMock(return_value={"feature1": "type1"})
+        mock_sched_metadata = MagicMock()
+        mock_sched_metadata.input_schema.items.keys.return_value = ["feature1"]
+        mock_data_source.get_metadata = AsyncMock(return_value=mock_sched_metadata)
         mock_ds.return_value = mock_data_source
 
         # Send request
@@ -338,17 +341,17 @@ def make_compute_endpoint_error_test(
     def test_impl(_: object, mock_ds: MagicMock) -> None:
         """Test compute endpoint error handling."""
         if setup_mocks:
-            # Create sample dataframe
-            sample_df = _create_sample_dataframe(
-                ["feature1", "feature2"],
-                df_type=df_type,
-            )
+            columns = ["feature1", "feature2"]
+            sample_df = _create_sample_dataframe(columns, df_type=df_type)
 
             # Mock data source
             mock_data_source = MagicMock()
             mock_data_source.get_dataframe_by_tag = AsyncMock(return_value=sample_df)
             mock_data_source.get_organic_dataframe = AsyncMock(return_value=sample_df)
             mock_data_source.get_dataframe = AsyncMock(return_value=sample_df)
+            mock_metadata = MagicMock()
+            mock_metadata.input_schema.items.keys.return_value = columns
+            mock_data_source.get_metadata = AsyncMock(return_value=mock_metadata)
             mock_ds.return_value = mock_data_source
 
         # Send request
@@ -430,7 +433,9 @@ def make_schedule_endpoint_error_test(
 
         # Mock data source
         mock_data_source = MagicMock()
-        mock_data_source.get_metadata = AsyncMock(return_value={"feature1": "type1"})
+        mock_sched_metadata = MagicMock()
+        mock_sched_metadata.input_schema.items.keys.return_value = ["feature1"]
+        mock_data_source.get_metadata = AsyncMock(return_value=mock_sched_metadata)
         mock_ds.return_value = mock_data_source
 
         # Send request
