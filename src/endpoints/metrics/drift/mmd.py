@@ -247,7 +247,9 @@ async def schedule_mmd(request: MMDMetricRequest) -> dict[str, str]:
 
 
 @router.delete("/metrics/drift/mmd/request")
-async def delete_mmd_schedule(schedule: ScheduleId) -> dict[str, str]:
+async def delete_mmd_schedule(
+    schedule: ScheduleId, metric_name: str = METRIC_NAME
+) -> dict[str, str]:
     """Delete a recurring computation of MMD metric."""
     scheduler = get_prometheus_scheduler()
     if not scheduler:
@@ -265,7 +267,7 @@ async def delete_mmd_schedule(schedule: ScheduleId) -> dict[str, str]:
 
     try:
         logger.info("Deleting %s schedule: %s", METRIC_NAME, schedule.requestId)
-        await scheduler.delete(METRIC_NAME, request_uuid)
+        await scheduler.delete(metric_name, request_uuid)
 
     except HTTPException:
         raise
@@ -288,7 +290,9 @@ async def delete_mmd_schedule(schedule: ScheduleId) -> dict[str, str]:
 
 
 @router.get("/metrics/drift/mmd/requests")
-async def list_mmd_requests() -> dict[str, list[dict[str, Any]]]:
+async def list_mmd_requests(
+    metric_name: str = METRIC_NAME,
+) -> dict[str, list[dict[str, Any]]]:
     """List the currently scheduled computations of MMD metric."""
     scheduler = get_prometheus_scheduler()
     if not scheduler:
@@ -298,7 +302,7 @@ async def list_mmd_requests() -> dict[str, list[dict[str, Any]]]:
         )
 
     try:
-        requests = scheduler.get_requests(METRIC_NAME)
+        requests = scheduler.get_requests(metric_name)
 
         requests_list = []
         for request_id, request in requests.items():
@@ -411,7 +415,7 @@ async def delete_fouriermmd_schedule(schedule: ScheduleId) -> dict[str, str]:
     /metrics/drift/mmd/request instead.
     """
     log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
-    return await delete_mmd_schedule(schedule)
+    return await delete_mmd_schedule(schedule, metric_name=DEPRECATED_METRIC_NAME)
 
 
 @router.get("/metrics/drift/fouriermmd/requests", deprecated=True)
@@ -422,7 +426,7 @@ async def list_fouriermmd_requests() -> dict[str, list[dict[str, Any]]]:
     /metrics/drift/mmd/requests instead.
     """
     log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
-    return await list_mmd_requests()
+    return await list_mmd_requests(metric_name=DEPRECATED_METRIC_NAME)
 
 
 async def calculate_mmd_metric(
