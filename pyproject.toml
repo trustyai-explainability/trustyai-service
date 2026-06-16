@@ -19,7 +19,7 @@ dependencies = [
     "pydantic>=2.12,<3",
     "hypercorn>=0.17,<0.19",
     "protobuf>=7,<8",        # Security: Resolves CVE-2026-0994 (HIGH - Buffer overflow)
-    "cryptography>=46,<50",  # Security: Resolves CVE-2026-26007 (HIGH)
+    "cryptography>=48.0.1,<50",  # Security: Resolves CVE-2026-26007 (HIGH)
     "h5py>=3.13,<4",
     "isodate>=0.7,<0.8",
 ]
