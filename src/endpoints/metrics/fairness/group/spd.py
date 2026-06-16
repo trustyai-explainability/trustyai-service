@@ -158,7 +158,7 @@ async def compute_spd(
     return {
         "name": "SPD",
         "value": result.get_value(),
-        "type": "FAIRNESS",
+        "type": "metric",
         "specificDefinition": f"Statistical Parity Difference value of {result.get_value():.4f}",
         "thresholds": {
             "lowerBound": SPD_FAIRNESS_TARGET - delta,

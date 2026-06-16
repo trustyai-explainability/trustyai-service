@@ -152,7 +152,7 @@ async def compute_dir(
         return {
             "name": "DIR",
             "value": result.get_value(),
-            "type": "FAIRNESS",
+            "type": "metric",
             "specificDefinition": f"Disparate Impact Ratio value of {result.get_value():.4f}",
             "thresholds": {
                 "lowerBound": DIR_FAIRNESS_TARGET - delta,
