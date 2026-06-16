@@ -5,6 +5,7 @@ import uuid
 from http import HTTPStatus
 from typing import Any
 
+import pandas as pd
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -18,6 +19,7 @@ from src.core.metrics.drift.mmd import (
 from src.service.data.datasources.data_source import DataSource
 from src.service.data.shared_data_source import get_shared_data_source
 from src.service.payloads.metrics.base_metric_request import BaseMetricRequest
+from src.service.prometheus.metric_value_carrier import MetricValueCarrier
 from src.service.prometheus.prometheus_scheduler import PrometheusScheduler
 from src.service.prometheus.shared_prometheus_scheduler import (
     get_shared_prometheus_scheduler,
@@ -28,7 +30,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 METRIC_NAME = "MMD"
-DEPRECATED_METRIC_NAME = "FourierMMD"
+DEPRECATED_METRIC_NAME = "FOURIERMMD"
 DEFAULT_BATCH_SIZE = 100
 
 
@@ -225,7 +227,8 @@ async def schedule_mmd(request: MMDMetricRequest) -> dict[str, str]:
     try:
         request_id = uuid.uuid4()
         logger.info("Scheduling %s computation with ID: %s.", METRIC_NAME, request_id)
-        request.metric_name = METRIC_NAME
+        if not request.metric_name:
+            request.metric_name = METRIC_NAME
         await scheduler.register(request.metric_name, request_id, request)
 
     except HTTPException:
@@ -396,6 +399,7 @@ async def schedule_fouriermmd(request: FourierMMDMetricRequest) -> dict[str, str
     /metrics/drift/mmd/request instead.
     """
     log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
+    request.metric_name = DEPRECATED_METRIC_NAME
     return await schedule_mmd(request)
 
 
@@ -419,3 +423,50 @@ async def list_fouriermmd_requests() -> dict[str, list[dict[str, Any]]]:
     """
     log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
     return await list_mmd_requests()
+
+
+async def calculate_mmd_metric(
+    batch: pd.DataFrame,
+    request: BaseMetricRequest,
+) -> MetricValueCarrier:
+    """Calculate MMD metric for the Prometheus scheduler."""
+    data_source = get_data_source()
+    reference_df = await data_source.get_dataframe_by_tag(
+        request.model_id, request.reference_tag
+    )
+    fit_columns = request.fit_columns or list(batch.columns)
+    alpha = getattr(request, "alpha", DEFAULT_ALPHA)
+    n_permutations = getattr(request, "n_permutations", DEFAULT_NUM_PERMUTATIONS)
+    kernel = getattr(request, "kernel", DEFAULT_KERNEL)
+    bandwidth = getattr(request, "bandwidth", DEFAULT_BANDWIDTH)
+
+    reference_data = reference_df[fit_columns].to_numpy()
+    current_data = batch[fit_columns].to_numpy()
+
+    try:
+        result = MMD.compute(
+            reference_data=reference_data,
+            current_data=current_data,
+            alpha=alpha,
+            n_permutations=n_permutations,
+            kernel=kernel,
+            bandwidth=bandwidth,
+        )
+        return MetricValueCarrier(result.get("mmd_value", 0.0))
+    except ImportError:
+        logger.warning("MMD computation requires 'goodpoints' package")
+        return MetricValueCarrier(0.0)
+
+
+def _register_mmd_calculator() -> None:
+    """Register the MMD calculator with the metrics directory."""
+    scheduler = get_prometheus_scheduler()
+    if scheduler and scheduler.metrics_directory:
+        scheduler.metrics_directory.register(METRIC_NAME, calculate_mmd_metric)
+        logger.info("%s calculator registered with metrics directory", METRIC_NAME)
+
+
+try:
+    _register_mmd_calculator()
+except (AttributeError, TypeError) as e:
+    logger.warning("Could not register %s calculator on import: %s", METRIC_NAME, e)
