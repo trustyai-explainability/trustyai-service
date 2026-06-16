@@ -171,6 +171,58 @@ class DataSource:
 
         return df
 
+    async def get_dataframe_by_tag(self, model_id: str, tag: str) -> pd.DataFrame:
+        """Get a dataframe filtered to rows matching a specific tag.
+
+        Args:
+            model_id: The model ID
+            tag: The tag value to filter by (e.g. "TRAINING")
+
+        Returns:
+            A pandas DataFrame containing only rows whose tags list includes the tag
+
+        """
+        try:
+            model_data = ModelData(model_id)
+            input_data, _, metadata = await model_data.data()
+            input_names, _, metadata_names = await model_data.column_names()
+
+            if metadata is None or input_data is None:
+                return pd.DataFrame()
+
+            tags_col = (
+                list(metadata_names).index("tags") if "tags" in metadata_names else -1
+            )
+            if tags_col < 0:
+                return pd.DataFrame()
+
+            mask = [
+                tag in (row[tags_col] if isinstance(row[tags_col], list) else [])
+                for row in metadata
+            ]
+            filtered_input = input_data[mask]
+
+            df_data: dict[str, object] = {}
+            for i, col_name in enumerate(input_names):
+                if (
+                    len(filtered_input.shape) == ARRAY_DIM_2D
+                    and i < filtered_input.shape[1]
+                ):
+                    df_data[col_name] = filtered_input[:, i]
+                elif len(filtered_input.shape) == 1 and i == 0:
+                    df_data[col_name] = filtered_input
+
+            return pd.DataFrame(df_data)
+
+        except Exception as e:  # Broad catch intentional: dataframe creation involves dynamic storage operations
+            logger.exception(
+                "Error creating dataframe by tag for model=%s, tag=%s",
+                model_id,
+                tag,
+            )
+            msg = f"Error creating dataframe by tag for model={model_id}: {e!s}"
+            raise DataframeCreateError(msg) from e
+
     # METADATA READS
 
     async def get_metadata(self, model_id: str) -> StorageMetadata:
