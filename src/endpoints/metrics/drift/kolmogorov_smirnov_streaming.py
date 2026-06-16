@@ -268,7 +268,9 @@ async def schedule_ksteststreaming(
 
 
 @router.delete("/metrics/drift/ksteststreaming/request")
-async def delete_ksteststreaming_schedule(schedule: ScheduleId) -> dict[str, str]:
+async def delete_ksteststreaming_schedule(
+    schedule: ScheduleId, metric_name: str = METRIC_NAME
+) -> dict[str, str]:
     """Delete a recurring computation of KS Test Streaming metric."""
     # Get the scheduler and validate availability
     scheduler = get_prometheus_scheduler()
@@ -290,7 +292,7 @@ async def delete_ksteststreaming_schedule(schedule: ScheduleId) -> dict[str, str
         logger.info("Deleting %s schedule: %s", METRIC_NAME, schedule.requestId)
 
         # Delete from scheduler
-        await scheduler.delete(METRIC_NAME, request_uuid)
+        await scheduler.delete(metric_name, request_uuid)
 
     except HTTPException:
         raise
@@ -313,7 +315,9 @@ async def delete_ksteststreaming_schedule(schedule: ScheduleId) -> dict[str, str
 
 
 @router.get("/metrics/drift/ksteststreaming/requests")
-async def list_ksteststreaming_requests() -> dict[str, list[dict[str, Any]]]:
+async def list_ksteststreaming_requests(
+    metric_name: str = METRIC_NAME,
+) -> dict[str, list[dict[str, Any]]]:
     """List the currently scheduled computations of KS Test Streaming metric."""
     # Get the scheduler and validate availability
     scheduler = get_prometheus_scheduler()
@@ -325,7 +329,7 @@ async def list_ksteststreaming_requests() -> dict[str, list[dict[str, Any]]]:
 
     try:
         # Get all requests for KSTestStreaming
-        requests = scheduler.get_requests(METRIC_NAME)
+        requests = scheduler.get_requests(metric_name)
 
         # Convert to list format expected by client
         requests_list = []
@@ -421,7 +425,9 @@ async def delete_approxkstest_schedule_deprecated(
     This endpoint is deprecated. Please use /metrics/drift/ksteststreaming/request instead.
     """
     log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
-    return await delete_ksteststreaming_schedule(schedule)
+    return await delete_ksteststreaming_schedule(
+        schedule, metric_name=DEPRECATED_METRIC_NAME
+    )
 
 
 @router.get("/metrics/drift/approxkstest/requests", deprecated=True)
@@ -431,7 +437,7 @@ async def list_approxkstest_requests_deprecated() -> dict[str, list[dict[str, An
     This endpoint is deprecated. Please use /metrics/drift/ksteststreaming/requests instead.
     """
     log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
-    return await list_ksteststreaming_requests()
+    return await list_ksteststreaming_requests(metric_name=DEPRECATED_METRIC_NAME)
 
 
 async def calculate_ksteststreaming_metric(
