@@ -529,6 +529,9 @@ def _register_compare_means_calculator() -> None:
         scheduler.metrics_directory.register(
             METRIC_NAME, calculate_compare_means_metric
         )
+        scheduler.metrics_directory.register(
+            DEPRECATED_METRIC_NAME, calculate_compare_means_metric
+        )
         logger.info("%s calculator registered with metrics directory", METRIC_NAME)
 
 
