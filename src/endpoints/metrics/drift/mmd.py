@@ -80,7 +80,7 @@ class MMDMetricRequest(BaseMetricRequest):
         return tags
 
 
-def _validate_drift_request(request: MMDMetricRequest) -> list[str]:
+async def _validate_drift_request(request: MMDMetricRequest) -> list[str]:
     """Validate common drift request fields and return cleaned fit_columns."""
     if not request.model_id or not request.model_id.strip():
         raise HTTPException(
@@ -94,10 +94,15 @@ def _validate_drift_request(request: MMDMetricRequest) -> list[str]:
         )
 
     if not request.fit_columns:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="fitColumns is required - specify which features to test for drift",
+        data_source = get_data_source()
+        metadata = await data_source.get_metadata(request.model_id)
+        request.fit_columns = list(metadata.input_schema.items.keys())
+        logger.info(
+            "fitColumns not specified, using all input columns for model %s: %s",
+            request.model_id,
+            request.fit_columns,
         )
+        return request.fit_columns
 
     valid_features = [f.strip() for f in request.fit_columns if f.strip()]
     if not valid_features:
@@ -113,7 +118,7 @@ async def compute_mmd(
     request: MMDMetricRequest,
 ) -> dict[str, float | bool | str | list[str]]:
     """Compute the current value of MMD metric."""
-    valid_features = _validate_drift_request(request)
+    valid_features = await _validate_drift_request(request)
     logger.info("Computing %s for model: %s", METRIC_NAME, request.model_id)
 
     data_source = get_data_source()
@@ -215,7 +220,7 @@ async def schedule_mmd(request: MMDMetricRequest) -> dict[str, str]:
             detail="Prometheus scheduler not available",
         )
 
-    _validate_drift_request(request)
+    await _validate_drift_request(request)
 
     try:
         request_id = uuid.uuid4()
