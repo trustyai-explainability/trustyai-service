@@ -5,6 +5,7 @@ import uuid
 from http import HTTPStatus
 from typing import Any
 
+import pandas as pd
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -18,6 +19,7 @@ from src.core.metrics.drift.compare_means import (
 from src.service.data.datasources.data_source import DataSource
 from src.service.data.shared_data_source import get_shared_data_source
 from src.service.payloads.metrics.base_metric_request import BaseMetricRequest
+from src.service.prometheus.metric_value_carrier import MetricValueCarrier
 from src.service.prometheus.prometheus_scheduler import PrometheusScheduler
 from src.service.prometheus.shared_prometheus_scheduler import (
     get_shared_prometheus_scheduler,
@@ -483,3 +485,47 @@ async def list_meanshift_requests() -> dict[str, list[dict[str, Any]]]:
     """
     log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
     return await list_compare_means_requests()
+
+
+async def calculate_compare_means_metric(
+    batch: pd.DataFrame,
+    request: BaseMetricRequest,
+) -> MetricValueCarrier:
+    """Calculate CompareMeans metric for the Prometheus scheduler."""
+    data_source = get_data_source()
+    reference_df = await data_source.get_dataframe_by_tag(
+        request.model_id, request.reference_tag
+    )
+    fit_columns = request.fit_columns or list(batch.columns)
+    alpha = getattr(request, "alpha", DEFAULT_ALPHA)
+    equal_var = getattr(request, "equal_var", DEFAULT_EQUAL_VAR)
+    nan_policy = getattr(request, "nan_policy", DEFAULT_NAN_POLICY)
+
+    named_values = {}
+    for feature_name in fit_columns:
+        if feature_name in reference_df.columns and feature_name in batch.columns:
+            result = CompareMeans.ttest_ind(
+                reference_data=reference_df[feature_name].to_numpy(),
+                current_data=batch[feature_name].to_numpy(),
+                alpha=alpha,
+                equal_var=equal_var,
+                nan_policy=nan_policy,
+            )
+            named_values[feature_name] = result["statistic"]
+    return MetricValueCarrier(named_values or 0.0)
+
+
+def _register_compare_means_calculator() -> None:
+    """Register the CompareMeans calculator with the metrics directory."""
+    scheduler = get_prometheus_scheduler()
+    if scheduler and scheduler.metrics_directory:
+        scheduler.metrics_directory.register(
+            METRIC_NAME, calculate_compare_means_metric
+        )
+        logger.info("%s calculator registered with metrics directory", METRIC_NAME)
+
+
+try:
+    _register_compare_means_calculator()
+except (AttributeError, TypeError) as e:
+    logger.warning("Could not register %s calculator on import: %s", METRIC_NAME, e)
