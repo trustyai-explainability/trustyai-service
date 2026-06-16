@@ -5,6 +5,7 @@ import uuid
 from http import HTTPStatus
 from typing import Any
 
+import pandas as pd
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -15,6 +16,7 @@ from src.core.metrics.drift.kolmogorov_smirnov_streaming import (
 from src.service.data.datasources.data_source import DataSource
 from src.service.data.shared_data_source import get_shared_data_source
 from src.service.payloads.metrics.base_metric_request import BaseMetricRequest
+from src.service.prometheus.metric_value_carrier import MetricValueCarrier
 from src.service.prometheus.prometheus_scheduler import PrometheusScheduler
 from src.service.prometheus.shared_prometheus_scheduler import (
     get_shared_prometheus_scheduler,
@@ -25,8 +27,8 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 # Metric name constants
-METRIC_NAME = "KSTestStreaming"
-DEPRECATED_METRIC_NAME = "ApproxKSTest"  # Legacy name for backwards compatibility
+METRIC_NAME = "KSTESTSTREAMING"
+DEPRECATED_METRIC_NAME = "APPROXKSTEST"
 
 
 def get_prometheus_scheduler() -> PrometheusScheduler:
@@ -242,8 +244,8 @@ async def schedule_ksteststreaming(
         request_id = uuid.uuid4()
         logger.info("Scheduling %s computation with ID: %s.", METRIC_NAME, request_id)
 
-        # Set metric name automatically
-        request.metric_name = METRIC_NAME
+        if not request.metric_name:
+            request.metric_name = METRIC_NAME
 
         # Register with the scheduler (this will reconcile the request and store it)
         await scheduler.register(request.metric_name, request_id, request)
@@ -406,6 +408,7 @@ async def schedule_approxkstest_deprecated(
     This endpoint is deprecated. Please use /metrics/drift/ksteststreaming/request instead.
     """
     log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
+    request.metric_name = DEPRECATED_METRIC_NAME
     return await schedule_ksteststreaming(request)
 
 
@@ -429,3 +432,43 @@ async def list_approxkstest_requests_deprecated() -> dict[str, list[dict[str, An
     """
     log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
     return await list_ksteststreaming_requests()
+
+
+async def calculate_ksteststreaming_metric(
+    batch: pd.DataFrame,
+    request: BaseMetricRequest,
+) -> MetricValueCarrier:
+    """Calculate KSTestStreaming metric for the Prometheus scheduler."""
+    data_source = get_data_source()
+    reference_df = await data_source.get_dataframe_by_tag(
+        request.model_id, request.reference_tag
+    )
+    fit_columns = request.fit_columns or list(batch.columns)
+    alpha = getattr(request, "threshold_delta", 0.05)
+
+    named_values = {}
+    for feature_name in fit_columns:
+        if feature_name in reference_df.columns and feature_name in batch.columns:
+            result = KolmogorovSmirnovStreaming.approx_kstest(
+                reference_data=reference_df[feature_name].to_numpy(),
+                current_data=batch[feature_name].to_numpy(),
+                alpha=alpha,
+            )
+            named_values[feature_name] = result["statistic"]
+    return MetricValueCarrier(named_values or 0.0)
+
+
+def _register_ksteststreaming_calculator() -> None:
+    """Register the KSTestStreaming calculator with the metrics directory."""
+    scheduler = get_prometheus_scheduler()
+    if scheduler and scheduler.metrics_directory:
+        scheduler.metrics_directory.register(
+            METRIC_NAME, calculate_ksteststreaming_metric
+        )
+        logger.info("%s calculator registered with metrics directory", METRIC_NAME)
+
+
+try:
+    _register_ksteststreaming_calculator()
+except (AttributeError, TypeError) as e:
+    logger.warning("Could not register %s calculator on import: %s", METRIC_NAME, e)
