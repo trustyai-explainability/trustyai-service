@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -67,12 +68,15 @@ def get_storage_interface() -> MariaDBStorage | PVCStorage:
             migration_str = os.environ.get("DATABASE_ATTEMPT_MIGRATION", "0").lower()
             attempt_migration = migration_str in ("1", "true", "yes", "on")
 
+            ssl_ca = os.environ.get("DATABASE_TLS_CA_CERT", "/etc/tls/db/ca.crt")
+
             return MariaDBStorage(
                 user=os.environ.get("DATABASE_USERNAME"),
                 password=os.environ.get("DATABASE_PASSWORD"),
                 host=os.environ.get("DATABASE_HOST"),
                 port=int(os.environ.get("DATABASE_PORT", "3306")),
                 database=os.environ.get("DATABASE_DATABASE"),
+                ssl_ca=ssl_ca if Path(ssl_ca).exists() else None,
                 attempt_migration=attempt_migration,
             )
         except ImportError as e:

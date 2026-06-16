@@ -97,6 +97,7 @@ class MariaDBStorage(StorageInterface):
         port: int,
         database: str,
         *,
+        ssl_ca: str | None = None,
         attempt_migration: bool = True,
     ) -> None:
         """Initialize MariaDB storage and create schema tables."""
@@ -106,7 +107,7 @@ class MariaDBStorage(StorageInterface):
         self.port = port
         self.database = database
         self.connection_manager = MariaConnectionManager(
-            user, password, host, port, database
+            user, password, host, port, database, ssl_ca=ssl_ca
         )
 
         self.schema_prefix = "trustyai_v2"
