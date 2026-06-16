@@ -314,6 +314,7 @@ async def list_mmd_requests(
             ):
                 requests_list.append(
                     {
+                        "id": str(request_id),  # deprecated: use requestId
                         "requestId": str(request_id),
                         "modelId": request.model_id,
                         "metricName": METRIC_NAME,
