@@ -3,6 +3,7 @@
 import logging
 import os
 
+import numpy as np
 import pandas as pd
 
 from src.service.constants import (
@@ -196,10 +197,14 @@ class DataSource:
             if tags_col < 0:
                 return pd.DataFrame()
 
-            mask = [
-                tag in (row[tags_col] if isinstance(row[tags_col], list) else [])
-                for row in metadata
-            ]
+            def _extract_tags(cell: object) -> list:
+                if isinstance(cell, np.ndarray):
+                    return cell.tolist()
+                if isinstance(cell, list):
+                    return cell
+                return []
+
+            mask = [tag in _extract_tags(row[tags_col]) for row in metadata]
             filtered_input = input_data[mask]
 
             df_data: dict[str, object] = {}
