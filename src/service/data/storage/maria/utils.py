@@ -61,7 +61,7 @@ class MariaConnectionManager:
 
     def __enter__(self) -> tuple[mariadb.Connection, mariadb.Cursor]:
         """Enter context manager and establish database connection."""
-        connect_kwargs: dict[str, str | int | None] = {
+        connect_kwargs: dict[str, str | int | bool | None] = {
             "user": self.user,
             "password": self.password,
             "host": self.host,
@@ -70,6 +70,7 @@ class MariaConnectionManager:
         }
         if self.ssl_ca:
             connect_kwargs["ssl_ca"] = self.ssl_ca
+            connect_kwargs["ssl_verify_cert"] = True
         self.conn = mariadb.connect(**connect_kwargs)
         return self.conn, self.conn.cursor()
 
