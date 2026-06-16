@@ -11,6 +11,7 @@ from src.service.constants import INPUT_SUFFIX, OUTPUT_SUFFIX
 from src.service.data.datasources.data_source import DataSource
 from src.service.data.shared_data_source import get_shared_data_source
 from src.service.data.storage import get_storage_interface
+from src.service.payloads.service.schema import Schema
 from src.service.prometheus.prometheus_scheduler import PrometheusScheduler
 from src.service.prometheus.shared_prometheus_scheduler import (
     get_shared_prometheus_scheduler,
@@ -20,6 +21,20 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 storage_interface = get_storage_interface()
+
+
+def _build_readable_schema(schema: Schema) -> dict:
+    """Convert a Schema to the Java-compatible ReadableSchema format."""
+    items = {}
+    for name, item in schema.items.items():
+        items[name] = {
+            "type": item.type.value if hasattr(item.type, "value") else str(item.type),
+            "index": item.column_index,
+        }
+    return {
+        "items": items,
+        "nameMapping": dict(schema.name_mapping),
+    }
 
 
 def get_data_source() -> DataSource:
@@ -120,6 +135,16 @@ async def get_service_info() -> dict[str, dict]:
                         "outputTensorName": model_metadata.output_tensor_name
                         if model_metadata
                         else "output",
+                        "inputSchema": _build_readable_schema(
+                            model_metadata.input_schema
+                        )
+                        if model_metadata
+                        else {"items": {}, "nameMapping": {}},
+                        "outputSchema": _build_readable_schema(
+                            model_metadata.output_schema
+                        )
+                        if model_metadata
+                        else {"items": {}, "nameMapping": {}},
                     },
                     "metrics": {"scheduledMetadata": scheduled_metadata},
                 }
@@ -142,6 +167,8 @@ async def get_service_info() -> dict[str, dict]:
                         "hasRecordedInferences": False,
                         "inputTensorName": "input",
                         "outputTensorName": "output",
+                        "inputSchema": {"items": {}, "nameMapping": {}},
+                        "outputSchema": {"items": {}, "nameMapping": {}},
                     },
                     "metrics": {"scheduledMetadata": {}},
                     "error": str(e),
