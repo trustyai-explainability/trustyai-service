@@ -23,7 +23,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 # Metric name constant
-METRIC_NAME = "KSTest"
+METRIC_NAME = "KSTEST"
 
 
 def get_prometheus_scheduler() -> PrometheusScheduler:
@@ -201,8 +201,8 @@ async def schedule_kstest(request: KSTestMetricRequest) -> dict[str, str]:
         request_id = uuid.uuid4()
         logger.info("Scheduling %s computation with ID: %s.", METRIC_NAME, request_id)
 
-        # Set metric name automatically
-        request.metric_name = METRIC_NAME
+        if not request.metric_name:
+            request.metric_name = METRIC_NAME
 
         # Register with the scheduler (this will reconcile the request and store it)
         await scheduler.register(request.metric_name, request_id, request)
