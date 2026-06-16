@@ -56,7 +56,7 @@ def get_storage_interface() -> MariaDBStorage | PVCStorage:
             data_directory=os.environ.get("STORAGE_DATA_FOLDER", "/tmp"),  # noqa: S108 -- fallback default for STORAGE_DATA_FOLDER env var
             data_file=os.environ.get("STORAGE_DATA_FILENAME", "trustyai.hdf5"),
         )
-    if storage_format == "MARIA":
+    if storage_format in ("MARIA", "DATABASE"):
         try:
             # Import MariaDB storage only when needed (optional dependency)
             from src.service.data.storage.maria.maria import (  # noqa: PLC0415 -- lazy import: mariadb is optional
