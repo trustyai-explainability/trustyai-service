@@ -296,6 +296,7 @@ async def list_dir_requests() -> dict[str, list[dict]]:
             ):
                 requests_list.append(
                     {
+                        "id": str(request_id),  # deprecated: use requestId
                         "requestId": str(request_id),
                         "modelId": request.model_id,
                         "metricName": "DIR",

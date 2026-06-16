@@ -604,7 +604,9 @@ def make_list_requests_with_data_test(
 
         # Verify request structure
         for req in data["requests"]:
-            assert "requestId" in req, "Missing 'requestId' in request"
+            assert "id" in req or "requestId" in req, "Missing 'id' or 'requestId'"
+            if "id" in req and "requestId" in req:
+                assert req["id"] == req["requestId"], "id and requestId must match"
             assert "modelId" in req, "Missing 'modelId' in request"
             assert "metricName" in req, "Missing 'metricName' in request"
             assert "batchSize" in req, "Missing 'batchSize' in request"
@@ -717,7 +719,9 @@ def make_list_requests_with_malformed_data_test(
 
         # Verify all returned requests have the required structure
         for req in data["requests"]:
-            assert "requestId" in req, "Missing 'requestId' in request"
+            assert "id" in req or "requestId" in req, "Missing 'id' or 'requestId'"
+            if "id" in req and "requestId" in req:
+                assert req["id"] == req["requestId"], "id and requestId must match"
             assert "modelId" in req, "Missing 'modelId' in request"
             assert "metricName" in req, "Missing 'metricName' in request"
             assert "batchSize" in req, "Missing 'batchSize' in request"
