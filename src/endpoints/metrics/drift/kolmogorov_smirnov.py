@@ -221,7 +221,9 @@ async def schedule_kstest(request: KSTestMetricRequest) -> dict[str, str]:
 
 
 @router.delete("/metrics/drift/kstest/request")
-async def delete_kstest_schedule(schedule: ScheduleId) -> dict[str, str]:
+async def delete_kstest_schedule(
+    schedule: ScheduleId, metric_name: str = METRIC_NAME
+) -> dict[str, str]:
     """Delete a recurring computation of KSTest metric."""
     # Get the scheduler and validate availability
     scheduler = get_prometheus_scheduler()
@@ -243,7 +245,7 @@ async def delete_kstest_schedule(schedule: ScheduleId) -> dict[str, str]:
         logger.info("Deleting %s schedule: %s", METRIC_NAME, schedule.requestId)
 
         # Delete from scheduler
-        await scheduler.delete(METRIC_NAME, request_uuid)
+        await scheduler.delete(metric_name, request_uuid)
 
     except HTTPException:
         raise
@@ -266,7 +268,9 @@ async def delete_kstest_schedule(schedule: ScheduleId) -> dict[str, str]:
 
 
 @router.get("/metrics/drift/kstest/requests")
-async def list_kstest_requests() -> dict[str, list[dict[str, Any]]]:
+async def list_kstest_requests(
+    metric_name: str = METRIC_NAME,
+) -> dict[str, list[dict[str, Any]]]:
     """List the currently scheduled computations of KSTest metric."""
     # Get the scheduler and validate availability
     scheduler = get_prometheus_scheduler()
@@ -278,7 +282,7 @@ async def list_kstest_requests() -> dict[str, list[dict[str, Any]]]:
 
     try:
         # Get all requests for KSTest
-        requests = scheduler.get_requests(METRIC_NAME)
+        requests = scheduler.get_requests(metric_name)
 
         # Convert to list format expected by client
         requests_list = []
