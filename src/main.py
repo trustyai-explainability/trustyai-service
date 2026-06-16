@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import os
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from http import HTTPStatus
 from pathlib import Path
@@ -126,6 +126,17 @@ app.add_middleware(
 # Gzip decompression for KServe agent uploads (added last, runs first)
 # This ensures request decompression happens before other middleware
 app.add_middleware(GzipRequestMiddleware)
+
+
+@app.middleware("http")
+async def strip_trailing_slash(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
+    """Strip trailing slashes to avoid 307 redirects that drop POST bodies."""
+    if request.url.path != "/" and request.url.path.endswith("/"):
+        request.scope["path"] = request.url.path.rstrip("/")
+    return await call_next(request)
+
 
 # Include all routers
 app.include_router(
