@@ -103,18 +103,22 @@ async def compute_compare_means(
         )
 
     if not request.fit_columns:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="fitColumns is required - specify which features to test for drift",
+        data_source = get_data_source()
+        metadata = await data_source.get_metadata(request.model_id)
+        request.fit_columns = list(metadata.input_schema.items.keys())
+        logger.info(
+            "fitColumns not specified, using all input columns for model %s: %s",
+            request.model_id,
+            request.fit_columns,
         )
-
-    # Validate feature names are not blank/whitespace
-    valid_features = [f.strip() for f in request.fit_columns if f.strip()]
-    if not valid_features:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="fitColumns must contain at least one non-empty feature name",
-        )
+    else:
+        valid_features = [f.strip() for f in request.fit_columns if f.strip()]
+        if not valid_features:
+            raise HTTPException(
+                status_code=HTTPStatus.BAD_REQUEST,
+                detail="fitColumns must contain at least one non-empty feature name",
+            )
+        request.fit_columns = valid_features
 
     try:
         logger.info("Computing %s for model: %s", METRIC_NAME, request.model_id)
@@ -153,7 +157,7 @@ async def compute_compare_means(
 
         # Multi-feature case: iterate over features
         results = {}
-        for feature_name in valid_features:
+        for feature_name in request.fit_columns:
             if (
                 feature_name not in reference_df.columns
                 or feature_name not in current_df.columns
@@ -254,18 +258,22 @@ async def schedule_compare_means(request: CompareMeansMetricRequest) -> dict[str
         )
 
     if not request.fit_columns:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="fitColumns is required - specify which features to test for drift",
+        data_source = get_data_source()
+        metadata = await data_source.get_metadata(request.model_id)
+        request.fit_columns = list(metadata.input_schema.items.keys())
+        logger.info(
+            "fitColumns not specified, using all input columns for model %s: %s",
+            request.model_id,
+            request.fit_columns,
         )
-
-    # Validate feature names are not blank/whitespace
-    valid_features = [f.strip() for f in request.fit_columns if f.strip()]
-    if not valid_features:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="fitColumns must contain at least one non-empty feature name",
-        )
+    else:
+        valid_features = [f.strip() for f in request.fit_columns if f.strip()]
+        if not valid_features:
+            raise HTTPException(
+                status_code=HTTPStatus.BAD_REQUEST,
+                detail="fitColumns must contain at least one non-empty feature name",
+            )
+        request.fit_columns = valid_features
 
     try:
         # Generate UUID for this request
