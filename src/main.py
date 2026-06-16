@@ -28,8 +28,15 @@ from src.endpoints.explainers.global_explainer import router as explainers_globa
 from src.endpoints.explainers.local_explainer import router as explainers_local_router
 from src.endpoints.metadata import router as metadata_router
 from src.endpoints.metrics.batch_mean import router as batch_mean_router
+from src.endpoints.metrics.drift.approx_ks_test import (
+    router as drift_approxkstest_router,
+)
 from src.endpoints.metrics.drift.compare_means import (
     router as drift_comparemeans_router,
+)
+from src.endpoints.metrics.drift.fourier_mmd import router as drift_fouriermmd_router
+from src.endpoints.metrics.drift.jensen_shannon import (
+    router as drift_jensenshannon_router,
 )
 from src.endpoints.metrics.drift.kolmogorov_smirnov import router as drift_kstest_router
 from src.endpoints.metrics.fairness.group.dir import router as dir_router
@@ -160,6 +167,18 @@ app.include_router(
     tags=[
         "Drift Metrics: KSTest",
     ],
+)
+app.include_router(
+    drift_fouriermmd_router,
+    tags=["Drift Metrics: FourierMMD"],
+)
+app.include_router(
+    drift_approxkstest_router,
+    tags=["Drift Metrics: ApproxKSTest"],
+)
+app.include_router(
+    drift_jensenshannon_router,
+    tags=["Drift Metrics: JensenShannon"],
 )
 
 app.include_router(explainers_global_router, tags=["Explainers: Global"])

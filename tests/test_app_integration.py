@@ -230,3 +230,51 @@ class TestCompareMeansMetricIntegration:
 
         meanshift_list = openapi["paths"]["/metrics/drift/meanshift/requests"]["get"]
         assert meanshift_list.get("deprecated") is True
+
+
+class TestFourierMMDMetricIntegration:
+    """Integration tests for FourierMMD drift metric registration."""
+
+    def test_fouriermmd_endpoints_in_openapi(self) -> None:
+        """FourierMMD endpoints are registered in OpenAPI."""
+        response = client.get("/openapi.json")
+        openapi = response.json()
+        for path in [
+            "/metrics/drift/fouriermmd",
+            "/metrics/drift/fouriermmd/definition",
+            "/metrics/drift/fouriermmd/request",
+            "/metrics/drift/fouriermmd/requests",
+        ]:
+            assert path in openapi["paths"], f"{path} not found in OpenAPI"
+
+
+class TestApproxKSTestMetricIntegration:
+    """Integration tests for ApproxKSTest drift metric registration."""
+
+    def test_approxkstest_endpoints_in_openapi(self) -> None:
+        """ApproxKSTest endpoints are registered in OpenAPI."""
+        response = client.get("/openapi.json")
+        openapi = response.json()
+        for path in [
+            "/metrics/drift/approxkstest",
+            "/metrics/drift/approxkstest/definition",
+            "/metrics/drift/approxkstest/request",
+            "/metrics/drift/approxkstest/requests",
+        ]:
+            assert path in openapi["paths"], f"{path} not found in OpenAPI"
+
+
+class TestJensenShannonMetricIntegration:
+    """Integration tests for JensenShannon drift metric registration."""
+
+    def test_jensenshannon_endpoints_in_openapi(self) -> None:
+        """JensenShannon endpoints are registered in OpenAPI."""
+        response = client.get("/openapi.json")
+        openapi = response.json()
+        for path in [
+            "/metrics/drift/jensenshannon",
+            "/metrics/drift/jensenshannon/definition",
+            "/metrics/drift/jensenshannon/request",
+            "/metrics/drift/jensenshannon/requests",
+        ]:
+            assert path in openapi["paths"], f"{path} not found in OpenAPI"
