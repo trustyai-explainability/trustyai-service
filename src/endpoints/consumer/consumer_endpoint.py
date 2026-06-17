@@ -255,21 +255,18 @@ async def write_reconciled_data(
     )
     logger.debug("DataSource instance id: %s", id(data_source))
 
-    # Update metadata: mark inferences recorded and increment observation count
+    # Mark that inference data has been recorded for this model
     try:
         metadata = await data_source.get_metadata(model_id)
         metadata.set_recorded_inferences(recorded_inferences=True)
-        metadata.increment_observations(len(input_array))
     except (
         Exception
     ) as e:  # Intentional: metadata update is non-critical; continue on failure
-        logger.warning("Could not update metadata for model %s: %s", model_id, e)
-    else:
-        logger.info(
-            "Updated metadata for model %s: recorded_inferences=True, added %d observations",
-            model_id,
-            len(input_array),
+        logger.warning(
+            "Could not update recorded_inferences flag for model %s: %s", model_id, e
         )
+    else:
+        logger.info("Marked model %s as having recorded inferences", model_id)
 
     # Clean up
     await storage_interface.delete_partial_payload(id_, is_input=True)
