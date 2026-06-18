@@ -3,7 +3,6 @@
 Provides readiness and liveness checks for OpenShift/Kubernetes deployments.
 """
 
-import contextlib
 import logging
 import os
 import threading
@@ -20,7 +19,7 @@ STATUS_ERROR = "error"
 
 # MariaDB is an optional dependency (mariadb extra)
 try:
-    import mariadb  # type: ignore[import-untyped]
+    import mariadb  # type: ignore[import-untyped]  # noqa: F401
 
     MARIADB_AVAILABLE = True
 except ModuleNotFoundError:
@@ -146,7 +145,7 @@ class HealthCheckRegistry:
                 return _health_cache.get_or_compute(
                     "pvc_storage", HealthCheckRegistry._check_pvc_storage
                 )
-            if storage_format == "MARIA":
+            if storage_format in ("MARIA", "DATABASE"):
                 # Cache MariaDB checks to reduce connection overhead
                 return _health_cache.get_or_compute(
                     "maria_storage", HealthCheckRegistry._check_maria_storage
@@ -210,6 +209,9 @@ class HealthCheckRegistry:
     def _check_maria_storage() -> HealthCheck:
         """Check MariaDB storage accessibility.
 
+        Reuses MariaConnectionManager and MariaDBConfig for consistent
+        connection handling (TLS, env var fallbacks, resource cleanup).
+
         :return: HealthCheck for MariaDB storage
         """
         if not MARIADB_AVAILABLE:
@@ -219,30 +221,26 @@ class HealthCheckRegistry:
                 {"error": "MariaDB library not installed (missing 'mariadb' extra)"},
             )
 
-        conn = None
-        cursor = None
         try:
-            # Get database configuration
-            host = os.getenv("DATABASE_HOST", "mariadb")
-            port = int(os.getenv("DATABASE_PORT", "3306"))
-            user = os.getenv("DATABASE_USERNAME", "trustyai_user")
-            password = os.getenv("DATABASE_PASSWORD", "")
-            database = os.getenv("DATABASE_DATABASE", "trustyai_db")
-
-            # Fast connection test
-            conn = mariadb.connect(
-                host=host,
-                port=port,
-                user=user,
-                password=password,
-                database=database,
-                connect_timeout=2,  # 2 second timeout for health checks
+            from src.service.data.storage import MariaDBConfig  # noqa: PLC0415
+            from src.service.data.storage.maria.utils import (  # noqa: PLC0415
+                MariaConnectionManager,
             )
 
-            # Execute a simple query
-            cursor = conn.cursor()
-            cursor.execute("SELECT 1")
-            result = cursor.fetchone()
+            config = MariaDBConfig()
+            mgr = MariaConnectionManager(
+                user=config.user,
+                password=config.password,
+                host=config.host,
+                port=config.port,
+                database=config.database,
+                ssl_ca=config.ssl_ca,
+                connect_timeout=2,
+            )
+
+            with mgr as (_conn, cursor):
+                cursor.execute("SELECT 1")
+                result = cursor.fetchone()
 
             if result is not None and result[0] == 1:
                 return HealthCheck("Storage readiness", STATUS_OK)
@@ -252,10 +250,8 @@ class HealthCheckRegistry:
                 {"error": "Database query returned unexpected result"},
             )
 
-        except (mariadb.Error, OSError, TimeoutError) as e:
-            # Expected database/network errors
+        except (OSError, TimeoutError) as e:
             logger.warning("Database health check failed: %s", e)
-            # Redact connection details in production
             error_msg = (
                 "Database connection failed"
                 if _is_production
@@ -266,9 +262,8 @@ class HealthCheckRegistry:
                 STATUS_ERROR,
                 {"error": error_msg},
             )
-        except Exception as e:  # Unexpected errors - log for debugging
+        except Exception as e:  # Health check must not crash
             logger.exception("Unexpected error during database health check")
-            # Redact error details in production
             error_msg = (
                 "Unexpected database error"
                 if _is_production
@@ -279,14 +274,6 @@ class HealthCheckRegistry:
                 STATUS_ERROR,
                 {"error": error_msg},
             )
-        finally:
-            # Always close resources
-            if cursor is not None:
-                with contextlib.suppress(Exception):
-                    cursor.close()
-            if conn is not None:
-                with contextlib.suppress(Exception):
-                    conn.close()
 
     @staticmethod
     def check_http_server() -> HealthCheck:

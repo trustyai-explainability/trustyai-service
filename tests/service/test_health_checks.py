@@ -249,15 +249,22 @@ class TestHealthCheckRegistry:
             assert "not installed" in check.data["error"]
 
     @patch("src.service.health_checks.MARIADB_AVAILABLE", True)
-    @patch("mariadb.connect")
-    def test_check_maria_storage_connection_success(self, mock_connect) -> None:
+    @patch("src.service.data.storage.maria.utils.MariaConnectionManager.__enter__")
+    @patch(
+        "src.service.data.storage.maria.utils.MariaConnectionManager.__exit__",
+        return_value=False,
+    )
+    @patch(
+        "src.service.data.storage.maria.utils.MariaConnectionManager.__init__",
+        return_value=None,
+    )
+    def test_check_maria_storage_connection_success(
+        self, mock_init, _mock_exit, mock_enter
+    ) -> None:
         """Test MariaDB check succeeds when connection works."""
-        # Mock successful connection
-        mock_conn = MagicMock()
         mock_cursor = MagicMock()
         mock_cursor.fetchone.return_value = (1,)
-        mock_conn.cursor.return_value = mock_cursor
-        mock_connect.return_value = mock_conn
+        mock_enter.return_value = (MagicMock(), mock_cursor)
 
         with patch.dict(
             os.environ,
@@ -274,22 +281,31 @@ class TestHealthCheckRegistry:
             assert check.status == STATUS_OK
             assert check.name == "Storage readiness"
 
-        # Verify connection was attempted with correct parameters
-        mock_connect.assert_called_once_with(
-            host="localhost",
-            port=3306,
+        mock_init.assert_called_once_with(
             user="test_user",
             password="test_pass",  # pragma: allowlist secret
+            host="localhost",
+            port=3306,
             database="test_db",
+            ssl_ca=None,
             connect_timeout=2,
         )
 
     @patch("src.service.health_checks.MARIADB_AVAILABLE", True)
-    @patch("mariadb.connect")
-    def test_check_maria_storage_connection_failure(self, mock_connect) -> None:
+    @patch("src.service.data.storage.maria.utils.MariaConnectionManager.__enter__")
+    @patch(
+        "src.service.data.storage.maria.utils.MariaConnectionManager.__exit__",
+        return_value=False,
+    )
+    @patch(
+        "src.service.data.storage.maria.utils.MariaConnectionManager.__init__",
+        return_value=None,
+    )
+    def test_check_maria_storage_connection_failure(
+        self, _mock_init, _mock_exit, mock_enter
+    ) -> None:
         """Test MariaDB check fails when connection fails."""
-        # Mock connection failure (generic Exception)
-        mock_connect.side_effect = Exception("Connection refused")
+        mock_enter.side_effect = Exception("Connection refused")
 
         with patch.dict(
             os.environ,
@@ -301,11 +317,20 @@ class TestHealthCheckRegistry:
             assert "Connection refused" in check.data["error"]
 
     @patch("src.service.health_checks.MARIADB_AVAILABLE", True)
-    @patch("mariadb.connect")
-    def test_check_maria_storage_network_error(self, mock_connect) -> None:
+    @patch("src.service.data.storage.maria.utils.MariaConnectionManager.__enter__")
+    @patch(
+        "src.service.data.storage.maria.utils.MariaConnectionManager.__exit__",
+        return_value=False,
+    )
+    @patch(
+        "src.service.data.storage.maria.utils.MariaConnectionManager.__init__",
+        return_value=None,
+    )
+    def test_check_maria_storage_network_error(
+        self, _mock_init, _mock_exit, mock_enter
+    ) -> None:
         """Test MariaDB check handles network errors specifically."""
-        # Mock network error (OSError)
-        mock_connect.side_effect = OSError("Network unreachable")
+        mock_enter.side_effect = OSError("Network unreachable")
 
         with patch.dict(
             os.environ,
@@ -315,6 +340,37 @@ class TestHealthCheckRegistry:
             assert check.status == STATUS_ERROR
             assert check.name == "Storage readiness"
             assert "Network unreachable" in check.data["error"]
+
+    @patch("src.service.health_checks.MARIADB_AVAILABLE", True)
+    @patch("src.service.data.storage.maria.utils.MariaConnectionManager.__enter__")
+    @patch(
+        "src.service.data.storage.maria.utils.MariaConnectionManager.__exit__",
+        return_value=False,
+    )
+    @patch(
+        "src.service.data.storage.maria.utils.MariaConnectionManager.__init__",
+        return_value=None,
+    )
+    def test_check_maria_storage_database_alias(
+        self, _mock_init, _mock_exit, mock_enter
+    ) -> None:
+        """Test MariaDB check works with SERVICE_STORAGE_FORMAT=DATABASE alias."""
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = (1,)
+        mock_enter.return_value = (MagicMock(), mock_cursor)
+
+        with patch.dict(
+            os.environ,
+            {
+                "SERVICE_STORAGE_FORMAT": "DATABASE",
+                "DATABASE_HOST": "localhost",
+                "DATABASE_USERNAME": "user",
+                "DATABASE_PASSWORD": "pass",  # pragma: allowlist secret
+                "DATABASE_DATABASE": "db",
+            },
+        ):
+            check = HealthCheckRegistry.check_storage_readiness()
+            assert check.status == STATUS_OK
 
     def test_check_storage_unknown_format(self) -> None:
         """Test storage check fails with unknown storage format."""
