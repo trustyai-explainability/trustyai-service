@@ -7,7 +7,7 @@ from typing import Any
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from src.core.metrics.drift.greenwald_khanna_quantile_sketch import EPSILON_DEFAULT
 from src.core.metrics.drift.kolmogorov_smirnov_streaming import (
@@ -72,6 +72,12 @@ class ApproxKSTestMetricRequest(BaseMetricRequest):
         le=0.5,
         description="Error parameter for GK sketch; must be in (0, 0.5]. Default: 0.01",
     )
+
+    @model_validator(mode="after")
+    def _set_default_metric_name(self) -> "ApproxKSTestMetricRequest":
+        """Automatically set metric_name to the canonical value."""
+        self.metric_name = METRIC_NAME
+        return self
 
     def retrieve_tags(self) -> dict[str, str]:
         """Retrieve tags for this ApproxKSTest metric request."""
@@ -243,9 +249,6 @@ async def schedule_ksteststreaming(
         # Generate UUID for this request
         request_id = uuid.uuid4()
         logger.info("Scheduling %s computation with ID: %s.", METRIC_NAME, request_id)
-
-        if not request.metric_name:
-            request.metric_name = METRIC_NAME
 
         # Register with the scheduler (this will reconcile the request and store it)
         await scheduler.register(request.metric_name, request_id, request)
@@ -452,15 +455,15 @@ async def calculate_ksteststreaming_metric(
     )
     fit_columns = request.fit_columns or list(batch.columns)
     alpha = getattr(request, "threshold_delta", 0.05)
+    epsilon = getattr(request, "epsilon", EPSILON_DEFAULT)
 
     named_values = {}
     for feature_name in fit_columns:
         if feature_name in reference_df.columns and feature_name in batch.columns:
-            result = KolmogorovSmirnovStreaming.approx_kstest(
-                reference_data=reference_df[feature_name].to_numpy(),
-                current_data=batch[feature_name].to_numpy(),
-                alpha=alpha,
-            )
+            ks = KolmogorovSmirnovStreaming(epsilon=epsilon)
+            ks.insert_reference_batch(reference_df[feature_name].to_numpy())
+            ks.insert_current_batch(batch[feature_name].to_numpy())
+            result = ks.kstest(alpha=alpha)
             named_values[feature_name] = result["statistic"]
     return MetricValueCarrier(named_values or 0.0)
 
