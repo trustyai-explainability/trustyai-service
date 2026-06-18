@@ -490,10 +490,10 @@ class TestHealthEndpoints:
                 HTTPStatus.SERVICE_UNAVAILABLE,
             ]
             assert data["status"] in ["ready", "not_ready"]
-            assert len(data["details"]) == 2
+            assert len(data["checks"]) == 2
             # At least one check should report (structure test)
             assert all(
-                "name" in check and "status" in check for check in data["details"]
+                "name" in check and "status" in check for check in data["checks"]
             )
 
     def test_readiness_endpoint_failure(self, client) -> None:
@@ -506,7 +506,7 @@ class TestHealthEndpoints:
             assert response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
             data = response.json()
             assert data["status"] == "not_ready"
-            assert len(data["details"]) == 2
+            assert len(data["checks"]) == 2
 
     def test_liveness_endpoint(self, client) -> None:
         """Test /q/health/live endpoint."""
@@ -514,8 +514,8 @@ class TestHealthEndpoints:
         assert response.status_code == HTTPStatus.OK
         data = response.json()
         assert data["status"] == "alive"
-        assert len(data["details"]) == 1
-        assert data["details"][0]["name"] == "Application"
+        assert len(data["checks"]) == 1
+        assert data["checks"][0]["name"] == "Application"
 
     def test_general_health_endpoint_success(self, client, tmp_path) -> None:
         """Test /q/health endpoint returns correct format.

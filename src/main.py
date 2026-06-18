@@ -270,7 +270,7 @@ async def readiness_probe() -> JSONResponse:
     status, checks = perform_readiness_checks()
     is_ready = status == STATUS_OK
 
-    response_body = {"status": "ready" if is_ready else "not_ready", "details": checks}
+    response_body = {"status": "ready" if is_ready else "not_ready", "checks": checks}
 
     status_code = HTTPStatus.OK if is_ready else HTTPStatus.SERVICE_UNAVAILABLE
     return JSONResponse(content=response_body, status_code=status_code)
@@ -289,7 +289,7 @@ async def liveness_probe() -> JSONResponse:
     status, checks = perform_liveness_checks()
     is_alive = status == STATUS_OK
 
-    response_body = {"status": "alive" if is_alive else "dead", "details": checks}
+    response_body = {"status": "alive" if is_alive else "dead", "checks": checks}
 
     status_code = HTTPStatus.OK if is_alive else HTTPStatus.SERVICE_UNAVAILABLE
     return JSONResponse(content=response_body, status_code=status_code)
