@@ -7,7 +7,7 @@ from typing import Any
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.metrics.drift.greenwald_khanna_quantile_sketch import EPSILON_DEFAULT
 from src.core.metrics.drift.kolmogorov_smirnov_streaming import (
@@ -72,12 +72,6 @@ class ApproxKSTestMetricRequest(BaseMetricRequest):
         le=0.5,
         description="Error parameter for GK sketch; must be in (0, 0.5]. Default: 0.01",
     )
-
-    @model_validator(mode="after")
-    def _set_default_metric_name(self) -> "ApproxKSTestMetricRequest":
-        """Automatically set metric_name to the canonical value."""
-        self.metric_name = METRIC_NAME
-        return self
 
     def retrieve_tags(self) -> dict[str, str]:
         """Retrieve tags for this ApproxKSTest metric request."""
