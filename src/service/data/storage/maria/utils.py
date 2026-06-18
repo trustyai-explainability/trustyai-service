@@ -41,6 +41,7 @@ class MariaConnectionManager:
         host: str | None,
         port: int,
         database: str | None,
+        ssl_ca: str | None = None,
     ) -> None:
         """Initialize connection manager with database credentials.
 
@@ -49,22 +50,28 @@ class MariaConnectionManager:
         :param host: Database host
         :param port: Database port
         :param database: Database name
+        :param ssl_ca: Path to CA certificate for TLS connection
         """
         self.user = user
         self.password = password
         self.host = host
         self.port = port
         self.database = database
+        self.ssl_ca = ssl_ca
 
     def __enter__(self) -> tuple[mariadb.Connection, mariadb.Cursor]:
         """Enter context manager and establish database connection."""
-        self.conn = mariadb.connect(
-            user=self.user,
-            password=self.password,
-            host=self.host,
-            port=self.port,
-            database=self.database,
-        )
+        connect_kwargs: dict[str, str | int | bool | None] = {
+            "user": self.user,
+            "password": self.password,
+            "host": self.host,
+            "port": self.port,
+            "database": self.database,
+        }
+        if self.ssl_ca:
+            connect_kwargs["ssl_ca"] = self.ssl_ca
+            connect_kwargs["ssl_verify_cert"] = True
+        self.conn = mariadb.connect(**connect_kwargs)
         return self.conn, self.conn.cursor()
 
     def __exit__(

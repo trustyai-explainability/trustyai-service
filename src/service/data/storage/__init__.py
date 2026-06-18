@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -95,12 +96,15 @@ def get_storage_interface() -> MariaDBStorage | PVCStorage:
                 msg = f"MariaDB storage requires environment variables: {', '.join(missing)}"
                 raise ValueError(msg)
 
+            ssl_ca = os.environ.get("DATABASE_TLS_CA_CERT", "/etc/tls/db/ca.crt")
+
             return MariaDBStorage(
                 user=user,
                 password=password,
                 host=host,
                 port=int(os.environ.get("DATABASE_PORT", "3306")),
                 database=database,
+                ssl_ca=ssl_ca if Path(ssl_ca).exists() else None,
                 attempt_migration=attempt_migration,
             )
         except ImportError as e:
