@@ -68,9 +68,12 @@ class AllLMEvalJobs(BaseModel):
 
 
 # === Dynamic API Object from LM-Eval CLI ==========================================================
+# Executable path is server-side only — never user-controllable (CWE-78 mitigation).
+# Override via LM_EVAL_PATH env var at deployment time if needed.
+LM_EVAL_EXECUTABLE = os.environ.get("LM_EVAL_PATH", f"{sys.executable} -m lm_eval")
+
 NON_CLI_ARGUMENTS = {
     "env_vars": (dict[str, str], {}),
-    "lm_eval_path": (str, f"{sys.executable} -m lm_eval"),
 }
 
 
@@ -243,7 +246,7 @@ def convert_to_cli(request: BaseModel) -> str:
         get_lm_eval_arguments()
     )  # grab the cli argument spec to translate json to cli
 
-    cli_cmd = request.lm_eval_path  # type: ignore[attr-defined]
+    cli_cmd = LM_EVAL_EXECUTABLE
     for field in request.model_fields_set:
         if field in NON_CLI_ARGUMENTS:
             continue
@@ -352,8 +355,8 @@ def _launch_job(job: LMEvalJob) -> None:
     # Merge environment variables (user overrides take precedence)
     merged_env = {**os.environ, **job.request.env_vars}
 
-    # Arguments are safely parsed using shlex.split() which prevents command injection
-    p = subprocess.Popen(  # noqa: S603  # args safely parsed via shlex.split
+    # Executable is a server-side constant (LM_EVAL_EXECUTABLE); CLI args are shlex.quote()'d
+    p = subprocess.Popen(  # noqa: S603  # executable hardcoded, args quoted
         shlex.split(job.argument),
         env=merged_env,
         stdout=subprocess.PIPE,
