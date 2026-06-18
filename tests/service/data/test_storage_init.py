@@ -1,6 +1,7 @@
 """Tests for storage interface initialization with environment variables."""
 
 import os
+import tempfile
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -67,6 +68,7 @@ class TestStorageInterfaceEnvVars:
                 host="localhost",
                 port=DEFAULT_MARIADB_PORT,
                 database="test_db",
+                ssl_ca=None,
                 attempt_migration=False,
             )
 
@@ -97,6 +99,7 @@ class TestStorageInterfaceEnvVars:
                 host="mariadb-service",
                 port=ALTERNATE_MARIADB_PORT,
                 database="operator_db",
+                ssl_ca=None,
                 attempt_migration=False,
             )
 
@@ -127,6 +130,7 @@ class TestStorageInterfaceEnvVars:
                 host="direct_host",
                 port=DEFAULT_MARIADB_PORT,
                 database="direct_db",
+                ssl_ca=None,
                 attempt_migration=False,
             )
 
@@ -155,6 +159,7 @@ class TestStorageInterfaceEnvVars:
                 host="mixed_host",
                 port=DEFAULT_MARIADB_PORT,
                 database="mixed_db",
+                ssl_ca=None,
                 attempt_migration=False,
             )
 
@@ -183,6 +188,7 @@ class TestStorageInterfaceEnvVars:
                 host="mariadb-service",
                 port=DEFAULT_MARIADB_PORT,
                 database="operator_db",
+                ssl_ca=None,
                 attempt_migration=False,
             )
 
@@ -213,6 +219,7 @@ class TestStorageInterfaceEnvVars:
                 host="mariadb-service",
                 port=DEFAULT_MARIADB_PORT,
                 database="operator_db",
+                ssl_ca=None,
                 attempt_migration=False,
             )
 
@@ -245,6 +252,72 @@ class TestStorageInterfaceEnvVars:
                 host="localhost",
                 port=DEFAULT_MARIADB_PORT,
                 database="test_db",
+                ssl_ca=None,
+                attempt_migration=False,
+            )
+
+    @pytest.mark.skipif(not HAS_MARIADB, reason="mariadb extra not installed")
+    @patch("src.service.data.storage.maria.maria.MariaDBStorage")
+    def test_mariadb_ssl_ca_passed_when_file_exists(
+        self, mock_storage: MagicMock
+    ) -> None:
+        """Test that ssl_ca is passed through when the CA cert file exists."""
+        with (
+            tempfile.NamedTemporaryFile(suffix=".crt") as ca_file,
+            patch.dict(
+                os.environ,
+                {
+                    "SERVICE_STORAGE_FORMAT": "MARIA",
+                    "DATABASE_USERNAME": "test_user",
+                    "DATABASE_PASSWORD": "test_pass",  # pragma: allowlist secret
+                    "DATABASE_HOST": "localhost",
+                    "DATABASE_PORT": str(DEFAULT_MARIADB_PORT),
+                    "DATABASE_DATABASE": "test_db",
+                    "DATABASE_TLS_CA_CERT": ca_file.name,
+                    "DATABASE_ATTEMPT_MIGRATION": "0",
+                },
+                clear=False,
+            ),
+        ):
+            get_storage_interface()
+            mock_storage.assert_called_once_with(
+                user="test_user",
+                password="test_pass",  # noqa: S106  # pragma: allowlist secret
+                host="localhost",
+                port=DEFAULT_MARIADB_PORT,
+                database="test_db",
+                ssl_ca=ca_file.name,
+                attempt_migration=False,
+            )
+
+    @pytest.mark.skipif(not HAS_MARIADB, reason="mariadb extra not installed")
+    @patch("src.service.data.storage.maria.maria.MariaDBStorage")
+    def test_mariadb_ssl_ca_none_when_file_missing(
+        self, mock_storage: MagicMock
+    ) -> None:
+        """Test that ssl_ca is None when the configured CA cert file does not exist."""
+        with patch.dict(
+            os.environ,
+            {
+                "SERVICE_STORAGE_FORMAT": "MARIA",
+                "DATABASE_USERNAME": "test_user",
+                "DATABASE_PASSWORD": "test_pass",  # pragma: allowlist secret
+                "DATABASE_HOST": "localhost",
+                "DATABASE_PORT": str(DEFAULT_MARIADB_PORT),
+                "DATABASE_DATABASE": "test_db",
+                "DATABASE_TLS_CA_CERT": "/nonexistent/path/ca.crt",
+                "DATABASE_ATTEMPT_MIGRATION": "0",
+            },
+            clear=False,
+        ):
+            get_storage_interface()
+            mock_storage.assert_called_once_with(
+                user="test_user",
+                password="test_pass",  # noqa: S106  # pragma: allowlist secret
+                host="localhost",
+                port=DEFAULT_MARIADB_PORT,
+                database="test_db",
+                ssl_ca=None,
                 attempt_migration=False,
             )
 
