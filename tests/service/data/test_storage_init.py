@@ -67,6 +67,7 @@ class TestStorageInterfaceEnvVars:
                 host="localhost",
                 port=DEFAULT_MARIADB_PORT,
                 database="test_db",
+                ssl_ca=None,
                 attempt_migration=False,
             )
 
@@ -97,6 +98,7 @@ class TestStorageInterfaceEnvVars:
                 host="mariadb-service",
                 port=ALTERNATE_MARIADB_PORT,
                 database="operator_db",
+                ssl_ca=None,
                 attempt_migration=False,
             )
 
@@ -127,6 +129,7 @@ class TestStorageInterfaceEnvVars:
                 host="direct_host",
                 port=DEFAULT_MARIADB_PORT,
                 database="direct_db",
+                ssl_ca=None,
                 attempt_migration=False,
             )
 
@@ -155,6 +158,7 @@ class TestStorageInterfaceEnvVars:
                 host="mixed_host",
                 port=DEFAULT_MARIADB_PORT,
                 database="mixed_db",
+                ssl_ca=None,
                 attempt_migration=False,
             )
 
@@ -183,6 +187,7 @@ class TestStorageInterfaceEnvVars:
                 host="mariadb-service",
                 port=DEFAULT_MARIADB_PORT,
                 database="operator_db",
+                ssl_ca=None,
                 attempt_migration=False,
             )
 
@@ -213,6 +218,7 @@ class TestStorageInterfaceEnvVars:
                 host="mariadb-service",
                 port=DEFAULT_MARIADB_PORT,
                 database="operator_db",
+                ssl_ca=None,
                 attempt_migration=False,
             )
 
@@ -245,6 +251,7 @@ class TestStorageInterfaceEnvVars:
                 host="localhost",
                 port=DEFAULT_MARIADB_PORT,
                 database="test_db",
+                ssl_ca=None,
                 attempt_migration=False,
             )
 
