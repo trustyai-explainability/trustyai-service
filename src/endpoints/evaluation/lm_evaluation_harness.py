@@ -25,7 +25,12 @@ from typing import Any, TextIO
 
 from fastapi import APIRouter, HTTPException
 from fastapi.applications import FastAPI
-from pydantic import BaseModel, create_model
+from pydantic import BaseModel, create_model, model_validator
+
+from src.endpoints.evaluation._env_security import (
+    build_subprocess_env,
+    validate_env_vars_model,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +113,13 @@ def get_model() -> type[BaseModel]:
     args = get_lm_eval_arguments()
     model_args = {k: (v["type"], v["default"]) for k, v in args.items()}
     model_args.update(NON_CLI_ARGUMENTS)
-    return create_model("LMEvalRequest", **model_args)
+    return create_model(
+        "LMEvalRequest",
+        __validators__={
+            "_check_env_vars": model_validator(mode="after")(validate_env_vars_model),
+        },
+        **model_args,
+    )
 
 
 # Dynamically create the lm-eval-harness job request from the library's argparse
@@ -352,13 +363,12 @@ def _launch_job(job: LMEvalJob) -> None:
     logger.debug("Launching lm-eval job %s", job.job_id)
     logger.debug("Launching with custom env vars: %s keys", len(job.request.env_vars))
 
-    # Merge environment variables (user overrides take precedence)
-    merged_env = {**os.environ, **job.request.env_vars}
+    env = build_subprocess_env(job.request.env_vars)
 
     # Executable is a server-side constant (LM_EVAL_EXECUTABLE); CLI args are shlex.quote()'d
     p = subprocess.Popen(  # noqa: S603  # executable hardcoded, args quoted
         shlex.split(job.argument),
-        env=merged_env,
+        env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
