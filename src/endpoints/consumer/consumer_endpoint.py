@@ -82,38 +82,22 @@ async def consume_inference_payload(
     """
     storage_interface = get_global_storage_interface()
 
-    # Validate payload fields before entering try block
-    if not payload.modelid:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="Payload requires 'modelid' field",
-        )
-
-    payload_id = payload.get_id()
-    payload_kind = payload.get_kind()
-    model_id = payload.get_model_id()
-
-    if not payload_id:
+    # Validate required fields before processing
+    if not payload.id:
         raise HTTPException(
             status_code=HTTPStatus.BAD_REQUEST, detail="Payload requires 'id' field"
         )
 
-    if not model_id:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="Payload requires 'modelid' field",
-        )
-
-    if not payload_kind:
+    if not payload.kind:
         raise HTTPException(
             status_code=HTTPStatus.BAD_REQUEST,
             detail="Payload must specify 'kind' as either 'request' or 'response'",
         )
 
-    if payload_kind not in ("request", "response"):
+    if not payload.modelid:
         raise HTTPException(
             status_code=HTTPStatus.BAD_REQUEST,
-            detail=f"Unsupported payload kind={payload_kind}",
+            detail="Payload requires 'modelid' field",
         )
 
     if not payload.data:
@@ -124,11 +108,11 @@ async def consume_inference_payload(
 
     try:
         partial_payload = PartialPayload(data=payload.data)
-        if payload_kind == "request":
+        if payload.kind == "request":
             logger.info(
                 "Received partial input payload from model=%s, id=%s",
-                model_id,
-                payload_id,
+                payload.modelid,
+                payload.id,
             )
 
             try:
@@ -143,24 +127,24 @@ async def consume_inference_payload(
 
             # Store the input payload
             await storage_interface.persist_partial_payload(
-                partial_payload, payload_id=payload_id, is_input=is_input
+                partial_payload, payload_id=payload.id, is_input=is_input
             )
 
             output_payload = await storage_interface.get_partial_payload(
-                payload_id, is_input=False, is_modelmesh=True
+                payload.id, is_input=False, is_modelmesh=True
             )
 
             if output_payload:
                 _validate_payload_type(output_payload, PartialPayload)
                 await reconcile_modelmesh_payloads(
-                    partial_payload, output_payload, payload_id, model_id
+                    partial_payload, output_payload, payload.id, payload.modelid
                 )
 
-        elif payload_kind == "response":
+        elif payload.kind == "response":
             logger.info(
                 "Received partial output payload from model=%s, id=%s",
-                model_id,
-                payload_id,
+                payload.modelid,
+                payload.id,
             )
 
             try:
@@ -175,18 +159,18 @@ async def consume_inference_payload(
 
             # Store the output payload
             await storage_interface.persist_partial_payload(
-                payload=partial_payload, payload_id=payload_id, is_input=is_input
+                payload=partial_payload, payload_id=payload.id, is_input=is_input
             )
 
             input_payload = await storage_interface.get_partial_payload(
-                payload_id, is_input=True, is_modelmesh=True
+                payload.id, is_input=True, is_modelmesh=True
             )
 
             if input_payload:
                 # We have both input and output. Reconcile them
                 _validate_payload_type(input_payload, PartialPayload)
                 await reconcile_modelmesh_payloads(
-                    input_payload, partial_payload, payload_id, model_id
+                    input_payload, partial_payload, payload.id, payload.modelid
                 )
     except HTTPException:
         # HTTPException always goes through
@@ -202,7 +186,7 @@ async def consume_inference_payload(
     else:
         return {
             "status": "success",
-            "message": f"Payload for {payload_id} processed successfully",
+            "message": f"Payload for {payload.id} processed successfully",
         }
 
 

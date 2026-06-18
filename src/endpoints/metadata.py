@@ -11,6 +11,7 @@ from src.service.constants import INPUT_SUFFIX, OUTPUT_SUFFIX
 from src.service.data.datasources.data_source import DataSource
 from src.service.data.shared_data_source import get_shared_data_source
 from src.service.data.storage import get_storage_interface
+from src.service.payloads.service.schema import Schema
 from src.service.prometheus.prometheus_scheduler import PrometheusScheduler
 from src.service.prometheus.shared_prometheus_scheduler import (
     get_shared_prometheus_scheduler,
@@ -20,6 +21,29 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 storage_interface = get_storage_interface()
+
+
+def _build_readable_schema(
+    schema: Schema,
+    original_names: list[str],
+    aliased_names: list[str],
+) -> dict:
+    """Convert a Schema to the Java-compatible ReadableSchema format."""
+    items = {}
+    for name, item in schema.items.items():
+        items[name] = {
+            "type": item.type.value if hasattr(item.type, "value") else str(item.type),
+            "index": item.column_index,
+        }
+    name_mapping = {
+        orig: alias
+        for orig, alias in zip(original_names, aliased_names, strict=False)
+        if orig != alias
+    }
+    return {
+        "items": items,
+        "nameMapping": name_mapping,
+    }
 
 
 def get_data_source() -> DataSource:
@@ -109,6 +133,22 @@ async def get_service_info() -> dict[str, dict]:
                         e,
                     )
 
+                # Fetch column names for name mapping
+                input_dataset = model_id + INPUT_SUFFIX
+                output_dataset = model_id + OUTPUT_SUFFIX
+                input_original = await storage_interface.get_original_column_names(
+                    input_dataset
+                )
+                input_aliased = await storage_interface.get_aliased_column_names(
+                    input_dataset
+                )
+                output_original = await storage_interface.get_original_column_names(
+                    output_dataset
+                )
+                output_aliased = await storage_interface.get_aliased_column_names(
+                    output_dataset
+                )
+
                 # Transform to match expected format
                 service_metadata[model_id] = {
                     "data": {
@@ -120,6 +160,20 @@ async def get_service_info() -> dict[str, dict]:
                         "outputTensorName": model_metadata.output_tensor_name
                         if model_metadata
                         else "output",
+                        "inputSchema": _build_readable_schema(
+                            model_metadata.input_schema,
+                            input_original,
+                            input_aliased,
+                        )
+                        if model_metadata
+                        else {"items": {}, "nameMapping": {}},
+                        "outputSchema": _build_readable_schema(
+                            model_metadata.output_schema,
+                            output_original,
+                            output_aliased,
+                        )
+                        if model_metadata
+                        else {"items": {}, "nameMapping": {}},
                     },
                     "metrics": {"scheduledMetadata": scheduled_metadata},
                 }
@@ -142,6 +196,8 @@ async def get_service_info() -> dict[str, dict]:
                         "hasRecordedInferences": False,
                         "inputTensorName": "input",
                         "outputTensorName": "output",
+                        "inputSchema": {"items": {}, "nameMapping": {}},
+                        "outputSchema": {"items": {}, "nameMapping": {}},
                     },
                     "metrics": {"scheduledMetadata": {}},
                     "error": str(e),

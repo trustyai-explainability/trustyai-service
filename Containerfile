@@ -1,4 +1,4 @@
-# Multi-stage build: full UBI9 Python builder, minimal UBI9 Python runtime.
+# Multi-stage build: UBI10 Python 3.14 minimal for builder and runtime.
 # FIPS crypto policy support included.
 
 ARG EXTRAS=""
@@ -8,20 +8,28 @@ ARG VCS_REF
 ARG ENABLE_FIPS_POLICY="true"
 
 # =============================================================================
-# Stage 1: Builder — full UBI9 image with compilers and dev headers
+# Stage 1: Builder — UBI10 Python 3.14 minimal with dev tools
 # =============================================================================
-FROM registry.access.redhat.com/ubi9/python-312:latest AS builder
+FROM registry.access.redhat.com/ubi10/python-314-minimal:latest AS builder
 
 ARG EXTRAS
 
 USER root
 
-# Install MariaDB dev libraries if needed
+# Install development tools and MariaDB libraries for C extension compilation
+# UBI10 ships MariaDB Connector/C 3.4.4, compatible with Python mariadb >= 1.1
+# Note: UBI10 uses python3.14-devel (version-specific package name)
 RUN if echo "$EXTRAS" | grep -q "mariadb"; then \
-        dnf install -y mariadb-connector-c-devel && \
-        dnf clean all; \
+        microdnf install -y \
+            gcc \
+            python3.14-devel \
+            make \
+            mariadb-connector-c-devel && \
+        microdnf clean all; \
     else \
-        echo "MariaDB extra not requested, creating stub" && \
+        echo "MariaDB extra not requested, installing minimal dev tools for other C extensions" && \
+        microdnf install -y gcc python3.14-devel make && \
+        microdnf clean all && \
         touch /usr/lib64/libmariadb.so.stub; \
     fi
 
@@ -35,9 +43,9 @@ RUN pip install --no-cache-dir --upgrade pip==26.1.1 uv==0.11.1 && \
     rm -rf /root/.cache /tmp/*
 
 # =============================================================================
-# Stage 2: Runtime — minimal UBI9 image (no compilers, no dev headers)
+# Stage 2: Runtime — UBI10 Python 3.14 minimal (no compilers, no dev headers)
 # =============================================================================
-FROM registry.access.redhat.com/ubi9/python-312-minimal:latest
+FROM registry.access.redhat.com/ubi10/python-314-minimal:latest
 
 ARG EXTRAS
 ARG VERSION
@@ -83,8 +91,8 @@ RUN pip install --no-cache-dir --upgrade pip==26.1.1 && rm -rf /root/.cache
 WORKDIR /opt/app-root
 
 # Copy installed packages from builder
-COPY --from=builder /opt/app-root/lib/python3.12/site-packages /opt/app-root/lib/python3.12/site-packages
-COPY --from=builder /opt/app-root/lib64/python3.12/site-packages /opt/app-root/lib64/python3.12/site-packages
+COPY --from=builder /opt/app-root/lib/python3.14/site-packages /opt/app-root/lib/python3.14/site-packages
+COPY --from=builder /opt/app-root/lib64/python3.14/site-packages /opt/app-root/lib64/python3.14/site-packages
 COPY --from=builder /opt/app-root/bin /opt/app-root/bin
 
 COPY src src
@@ -110,6 +118,6 @@ LABEL org.opencontainers.image.title="TrustyAI Service" \
       io.trustyai.fips.policy="${ENABLE_FIPS_POLICY}" \
       io.trustyai.fips.mode="host-dependent" \
       io.trustyai.fips.compatible="true" \
-      org.opencontainers.image.base.name="registry.access.redhat.com/ubi9/python-312-minimal"
+      org.opencontainers.image.base.name="registry.redhat.io/ubi10/python-314-minimal"
 
 CMD ["python", "-m", "src.main"]

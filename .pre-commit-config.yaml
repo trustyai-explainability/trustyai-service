@@ -30,7 +30,7 @@ repos:
   # === CODE FORMATTING & LINTING ===
   # Check first (auto-fix lint issues), then format
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.16
+    rev: v0.15.17
     hooks:
       - id: ruff-check
       - id: ruff-format
@@ -65,6 +65,18 @@ repos:
         additional_dependencies: ["bandit[toml]"]
 
   # === COMMIT MESSAGE VALIDATION ===
+  - repo: local
+    hooks:
+      - id: check-signoff
+        name: Check Signed-off-by
+        stages: [commit-msg]
+        language: system
+        entry: >
+          bash -c 'grep -q "^Signed-off-by: .* <.*@.*>" "$1" ||
+          { echo "ERROR: Commit message must include a valid Signed-off-by trailer.";
+          echo "  Use: git commit -s";
+          echo "  Or add manually: Signed-off-by: Your Name <your@email.com>"; exit 1; }' --
+
   - repo: https://github.com/compilerla/conventional-pre-commit
     rev: v4.4.0
     hooks:
