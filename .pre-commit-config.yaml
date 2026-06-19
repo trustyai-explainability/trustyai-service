@@ -64,6 +64,19 @@ repos:
         args: [-c, pyproject.toml]
         additional_dependencies: ["bandit[toml]"]
 
+  # === CI WORKFLOW LINTING ===
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
+
+  # === MARKDOWN LINTING ===
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: v0.22.1
+    hooks:
+      - id: markdownlint-cli2
+        args: [--fix]
+
   # === COMMIT MESSAGE VALIDATION ===
   - repo: local
     hooks:
