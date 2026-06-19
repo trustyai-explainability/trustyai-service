@@ -199,6 +199,10 @@ app.include_router(
         "Drift Metrics: KSTestStreaming",
     ],
 )
+app.include_router(
+    drift_jensenshannon_router,
+    tags=["Drift Metrics: JensenShannon"],
+)
 
 # Drift metrics (gated by "drift" group + individual flags)
 register_if_enabled_with_group(

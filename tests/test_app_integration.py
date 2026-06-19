@@ -249,13 +249,56 @@ class TestCompareMeansMetricIntegration:
         assert meanshift_list.get("deprecated") is True
 
 
-def _build_app_with_flags(overrides: dict[str, bool]) -> FastAPI:
-    """Build a minimal FastAPI app with custom feature flag overrides.
+class TestFourierMMDMetricIntegration:
+    """Integration tests for FourierMMD drift metric registration."""
 
-    Constructs a fresh app and registers drift/fairness routers using
-    the same ``register_if_enabled_with_group`` helper that ``src/main.py``
-    uses, but with patched flags.
-    """
+    def test_fouriermmd_endpoints_in_openapi(self) -> None:
+        """FourierMMD endpoints are registered in OpenAPI."""
+        response = client.get("/openapi.json")
+        openapi = response.json()
+        for path in [
+            "/metrics/drift/fouriermmd",
+            "/metrics/drift/fouriermmd/definition",
+            "/metrics/drift/fouriermmd/request",
+            "/metrics/drift/fouriermmd/requests",
+        ]:
+            assert path in openapi["paths"], f"{path} not found in OpenAPI"
+
+
+class TestApproxKSTestMetricIntegration:
+    """Integration tests for ApproxKSTest drift metric registration."""
+
+    def test_approxkstest_endpoints_in_openapi(self) -> None:
+        """ApproxKSTest endpoints are registered in OpenAPI."""
+        response = client.get("/openapi.json")
+        openapi = response.json()
+        for path in [
+            "/metrics/drift/approxkstest",
+            "/metrics/drift/approxkstest/definition",
+            "/metrics/drift/approxkstest/request",
+            "/metrics/drift/approxkstest/requests",
+        ]:
+            assert path in openapi["paths"], f"{path} not found in OpenAPI"
+
+
+class TestJensenShannonMetricIntegration:
+    """Integration tests for JensenShannon drift metric registration."""
+
+    def test_jensenshannon_endpoints_in_openapi(self) -> None:
+        """JensenShannon endpoints are registered in OpenAPI."""
+        response = client.get("/openapi.json")
+        openapi = response.json()
+        for path in [
+            "/metrics/drift/jensenshannon",
+            "/metrics/drift/jensenshannon/definition",
+            "/metrics/drift/jensenshannon/request",
+            "/metrics/drift/jensenshannon/requests",
+        ]:
+            assert path in openapi["paths"], f"{path} not found in OpenAPI"
+
+
+def _build_app_with_flags(overrides: dict[str, bool]) -> FastAPI:
+    """Build a minimal FastAPI app with custom feature flag overrides."""
     test_app = FastAPI()
     patched = {**ENDPOINTS, **overrides}
 
@@ -322,11 +365,9 @@ class TestFeatureFlagGating:
         """Setting fairness=False removes all fairness endpoints."""
         test_app = _build_app_with_flags({"fairness": False})
         test_client = TestClient(test_app)
-
         response = test_client.get("/openapi.json")
         assert response.status_code == HTTPStatus.OK
         paths = response.json()["paths"]
-
         fairness_paths = [
             p for p in paths if p.startswith(("/dir", "/spd")) or "/fairness/" in p
         ]
@@ -336,11 +377,9 @@ class TestFeatureFlagGating:
         """Setting drift=False removes KSTest, CompareMeans, and JensenShannon."""
         test_app = _build_app_with_flags({"drift": False})
         test_client = TestClient(test_app)
-
         response = test_client.get("/openapi.json")
         assert response.status_code == HTTPStatus.OK
         paths = response.json()["paths"]
-
         drift_paths = [p for p in paths if "/metrics/drift/" in p]
         assert drift_paths == []
 
@@ -348,10 +387,8 @@ class TestFeatureFlagGating:
         """Disabling drift_ks_test removes KS but keeps CompareMeans."""
         test_app = _build_app_with_flags({"drift_ks_test": False})
         test_client = TestClient(test_app)
-
         response = test_client.get("/openapi.json")
         assert response.status_code == HTTPStatus.OK
         paths = response.json()["paths"]
-
         assert "/metrics/drift/kstest" not in paths
         assert "/metrics/drift/comparemeans" in paths
