@@ -5,6 +5,7 @@ import uuid
 from http import HTTPStatus
 from typing import Any
 
+import pandas as pd
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -18,6 +19,7 @@ from src.core.metrics.drift.compare_means import (
 from src.service.data.datasources.data_source import DataSource
 from src.service.data.shared_data_source import get_shared_data_source
 from src.service.payloads.metrics.base_metric_request import BaseMetricRequest
+from src.service.prometheus.metric_value_carrier import MetricValueCarrier
 from src.service.prometheus.prometheus_scheduler import PrometheusScheduler
 from src.service.prometheus.shared_prometheus_scheduler import (
     get_shared_prometheus_scheduler,
@@ -28,8 +30,8 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 # Metric name constants
-METRIC_NAME = "CompareMeans"
-DEPRECATED_METRIC_NAME = "Meanshift"  # Legacy name for backwards compatibility
+METRIC_NAME = "COMPAREMEANS"
+DEPRECATED_METRIC_NAME = "MEANSHIFT"
 
 # Default parameter values
 DEFAULT_BATCH_SIZE = 100
@@ -281,7 +283,8 @@ async def schedule_compare_means(request: CompareMeansMetricRequest) -> dict[str
         logger.info("Scheduling %s computation with ID: %s.", METRIC_NAME, request_id)
 
         # Set metric name automatically
-        request.metric_name = METRIC_NAME
+        if not request.metric_name:
+            request.metric_name = METRIC_NAME
 
         # Register with the scheduler (this will reconcile the request and store it)
         await scheduler.register(request.metric_name, request_id, request)
@@ -302,7 +305,9 @@ async def schedule_compare_means(request: CompareMeansMetricRequest) -> dict[str
 
 
 @router.delete("/metrics/drift/comparemeans/request")
-async def delete_compare_means_schedule(schedule: ScheduleId) -> dict[str, str]:
+async def delete_compare_means_schedule(
+    schedule: ScheduleId, metric_name: str = METRIC_NAME
+) -> dict[str, str]:
     """Delete a recurring computation of CompareMeans metric."""
     # Get the scheduler and validate availability
     scheduler = get_prometheus_scheduler()
@@ -324,7 +329,7 @@ async def delete_compare_means_schedule(schedule: ScheduleId) -> dict[str, str]:
         logger.info("Deleting %s schedule: %s", METRIC_NAME, schedule.requestId)
 
         # Delete from scheduler
-        await scheduler.delete(METRIC_NAME, request_uuid)
+        await scheduler.delete(metric_name, request_uuid)
 
     except HTTPException:
         raise
@@ -347,7 +352,9 @@ async def delete_compare_means_schedule(schedule: ScheduleId) -> dict[str, str]:
 
 
 @router.get("/metrics/drift/comparemeans/requests")
-async def list_compare_means_requests() -> dict[str, list[dict[str, Any]]]:
+async def list_compare_means_requests(
+    metric_name: str = METRIC_NAME,
+) -> dict[str, list[dict[str, Any]]]:
     """List the currently scheduled computations of CompareMeans metric."""
     # Get the scheduler and validate availability
     scheduler = get_prometheus_scheduler()
@@ -358,8 +365,7 @@ async def list_compare_means_requests() -> dict[str, list[dict[str, Any]]]:
         )
 
     try:
-        # Get all requests for CompareMeans
-        requests = scheduler.get_requests(METRIC_NAME)
+        requests = scheduler.get_requests(metric_name)
 
         # Convert to list format expected by client
         requests_list = []
@@ -469,6 +475,7 @@ async def schedule_meanshift(request: MeanshiftMetricRequest) -> dict[str, str]:
     compare_means_request = CompareMeansMetricRequest.model_validate(
         request.model_dump(exclude_none=True)
     )
+    compare_means_request.metric_name = DEPRECATED_METRIC_NAME
     return await schedule_compare_means(compare_means_request)
 
 
@@ -480,7 +487,9 @@ async def delete_meanshift_schedule(schedule: ScheduleId) -> dict[str, str]:
     /metrics/drift/comparemeans/request instead.
     """
     log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
-    return await delete_compare_means_schedule(schedule)
+    return await delete_compare_means_schedule(
+        schedule, metric_name=DEPRECATED_METRIC_NAME
+    )
 
 
 @router.get("/metrics/drift/meanshift/requests", deprecated=True)
@@ -491,4 +500,51 @@ async def list_meanshift_requests() -> dict[str, list[dict[str, Any]]]:
     /metrics/drift/comparemeans/requests instead.
     """
     log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
-    return await list_compare_means_requests()
+    return await list_compare_means_requests(metric_name=DEPRECATED_METRIC_NAME)
+
+
+async def calculate_compare_means_metric(
+    batch: pd.DataFrame,
+    request: BaseMetricRequest,
+) -> MetricValueCarrier:
+    """Calculate CompareMeans metric for the Prometheus scheduler."""
+    data_source = get_data_source()
+    reference_df = await data_source.get_dataframe_by_tag(
+        request.model_id, request.reference_tag
+    )
+    fit_columns = request.fit_columns or list(batch.columns)
+    alpha = getattr(request, "alpha", DEFAULT_ALPHA)
+    equal_var = getattr(request, "equal_var", DEFAULT_EQUAL_VAR)
+    nan_policy = getattr(request, "nan_policy", DEFAULT_NAN_POLICY)
+
+    named_values = {}
+    for feature_name in fit_columns:
+        if feature_name in reference_df.columns and feature_name in batch.columns:
+            result = CompareMeans.ttest_ind(
+                reference_data=reference_df[feature_name].to_numpy(),
+                current_data=batch[feature_name].to_numpy(),
+                alpha=alpha,
+                equal_var=equal_var,
+                nan_policy=nan_policy,
+            )
+            named_values[feature_name] = result["statistic"]
+    return MetricValueCarrier(named_values or 0.0)
+
+
+def _register_compare_means_calculator() -> None:
+    """Register the CompareMeans calculator with the metrics directory."""
+    scheduler = get_prometheus_scheduler()
+    if scheduler and scheduler.metrics_directory:
+        scheduler.metrics_directory.register(
+            METRIC_NAME, calculate_compare_means_metric
+        )
+        scheduler.metrics_directory.register(
+            DEPRECATED_METRIC_NAME, calculate_compare_means_metric
+        )
+        logger.info("%s calculator registered with metrics directory", METRIC_NAME)
+
+
+try:
+    _register_compare_means_calculator()
+except (AttributeError, TypeError) as e:
+    logger.warning("Could not register %s calculator on import: %s", METRIC_NAME, e)
