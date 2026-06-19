@@ -24,11 +24,12 @@ RUN if echo "$EXTRAS" | grep -q "mariadb"; then \
             gcc \
             python3.14-devel \
             make \
+            git \
             mariadb-connector-c-devel && \
         microdnf clean all; \
     else \
         echo "MariaDB extra not requested, installing minimal dev tools for other C extensions" && \
-        microdnf install -y gcc python3.14-devel make && \
+        microdnf install -y gcc python3.14-devel make git && \
         microdnf clean all && \
         touch /usr/lib64/libmariadb.so.stub; \
     fi
