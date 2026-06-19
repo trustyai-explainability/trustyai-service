@@ -37,9 +37,10 @@ USER 1001
 
 COPY pyproject.toml README.md ./
 
-RUN pip install --no-cache-dir --upgrade pip==26.1.1 uv==0.11.1 && \
+RUN pip install --no-cache-dir --upgrade pip==26.1.1 uv==0.11.22 && \
     uv pip install --no-cache ".[$EXTRAS]" && \
     pip uninstall -y uv && \
+    rm -f /opt/app-root/bin/uv /opt/app-root/bin/uvx && \
     rm -rf /root/.cache /tmp/*
 
 # =============================================================================
