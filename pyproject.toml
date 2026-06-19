@@ -60,7 +60,7 @@ eval = [
     "sqlitedict>=2.1,<3",    # Security: Resolves CVE-2024-35515 (HIGH)
 ]
 # Note: grpcio/grpcio-tools removed - incompatible with protobuf v7, unused (protoc used instead)
-mmd = ["goodpoints>=0.5.0"]
+mmd = ["goodpoints @ git+https://github.com/SudipSinha/goodpoints.git@fix/numpy2-unnecessary-linkage"]
 mariadb = ["mariadb>=1.1,<1.2", "javaobj-py3>=0.5,<0.6"]
 
 [tool.hatch.build.targets.sdist]
