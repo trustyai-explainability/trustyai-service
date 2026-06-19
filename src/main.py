@@ -36,6 +36,7 @@ from src.endpoints.metrics.drift.kolmogorov_smirnov import router as drift_kstes
 from src.endpoints.metrics.drift.kolmogorov_smirnov_streaming import (
     router as drift_ksteststreaming_router,
 )
+from src.endpoints.metrics.drift.mmd import router as drift_mmd_router
 from src.endpoints.metrics.fairness.group.dir import router as dir_router
 from src.endpoints.metrics.fairness.group.spd import router as spd_router
 from src.endpoints.metrics.metrics_info import router as metrics_info_router
@@ -164,6 +165,12 @@ register_if_enabled_with_group(
     "fairness",
     "fairness_spd",
     "Fairness Metrics: Group: Statistical Parity Difference",
+)
+app.include_router(
+    drift_mmd_router,
+    tags=[
+        "Drift Metrics: MMD",
+    ],
 )
 app.include_router(
     drift_ksteststreaming_router,
