@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import os
+import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from http import HTTPStatus
@@ -44,6 +45,12 @@ from src.endpoints.metrics.metrics_info import router as metrics_info_router
 # Middleware
 from src.middleware.gzip_middleware import GzipRequestMiddleware
 from src.service.config.registry import register_if_enabled_with_group
+from src.service.data.storage.maria.pvc_migration import (
+    MIGRATION_STATUS_COMPLETE,
+    MIGRATION_STATUS_FAILED,
+    MIGRATION_STATUS_IN_PROGRESS,
+    MIGRATION_STATUS_PARTIAL,
+)
 from src.service.health_checks import (
     STATUS_OK,
     perform_liveness_checks,
@@ -52,6 +59,9 @@ from src.service.health_checks import (
 from src.service.prometheus.shared_prometheus_scheduler import (
     get_shared_prometheus_scheduler,
 )
+
+# Valid storage formats (for environment variable validation)
+VALID_STORAGE_FORMATS = {"PVC", "MARIA"}
 
 lm_evaluation_harness_router: "APIRouter | None" = None
 try:
@@ -69,6 +79,12 @@ logging.basicConfig(
 # Enable debug logging for TrustyAI components only
 logging.getLogger("src").setLevel(logging.DEBUG)
 logging.getLogger("__main__").setLevel(logging.DEBUG)
+
+# Migration status cache for readiness probe optimization
+# Prevents database query on every health check (typically every 10s)
+# Cache TTL: 60 seconds (once migration is complete, it stays complete)
+_migration_status_cache: dict[str, Any] = {"status": None, "timestamp": 0}
+_MIGRATION_CACHE_TTL = 60.0  # seconds
 
 # Remove noisy HTTP/2 and hypercorn internal logs
 logging.getLogger("hpack.hpack").setLevel(logging.WARNING)
@@ -298,21 +314,141 @@ async def metrics(_request: Request) -> Response:
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
+def _handle_migration_status(status: str) -> JSONResponse | None:
+    """Handle migration status and return appropriate readiness response.
+
+    :param status: Migration status (IN_PROGRESS, FAILED, PARTIAL, or COMPLETE)
+    :return: JSONResponse if service should be not ready, None if ready
+    """
+    if status == MIGRATION_STATUS_IN_PROGRESS:
+        return JSONResponse(
+            content={
+                "status": "not_ready",
+                "reason": "Data migration in progress",
+            },
+            status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+        )
+    if status == MIGRATION_STATUS_FAILED:
+        return JSONResponse(
+            content={
+                "status": "not_ready",
+                "reason": "Data migration failed",
+            },
+            status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+        )
+    if status == MIGRATION_STATUS_PARTIAL:
+        logger.warning("Service ready with partial migration - some files failed")
+        # Fall through to ready (return None)
+    # COMPLETE or PARTIAL status - service is ready
+    return None
+
+
 # Readiness probe
 @app.get("/q/health/ready")
 async def readiness_probe() -> JSONResponse:
     """Kubernetes readiness probe endpoint.
 
-    :return: JSON response with status ("ready" or "not_ready")
-             HTTP 200 if ready, HTTP 503 if not ready
+    Blocks pod readiness if DATABASE_ATTEMPT_MIGRATION is enabled and migration
+    is still in progress. This ensures the service doesn't receive traffic until
+    data migration completes.
+
+    :return: JSON response indicating service is ready (200) or not ready (503)
     """
-    status, checks = perform_readiness_checks()
-    is_ready = status == STATUS_OK
+    # Check if migration is required
+    storage_format = os.environ.get("SERVICE_STORAGE_FORMAT", "PVC")
 
-    response_body = {"status": "ready" if is_ready else "not_ready", "checks": checks}
+    # Validate storage format
+    if storage_format not in VALID_STORAGE_FORMATS:
+        logger.warning(
+            "Invalid SERVICE_STORAGE_FORMAT '%s', defaulting to PVC. Valid formats: %s",
+            storage_format,
+            VALID_STORAGE_FORMATS,
+        )
+        storage_format = "PVC"
 
-    status_code = HTTPStatus.OK if is_ready else HTTPStatus.SERVICE_UNAVAILABLE
-    return JSONResponse(content=response_body, status_code=status_code)
+    migration_enabled = os.environ.get("DATABASE_ATTEMPT_MIGRATION", "0").lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+    if storage_format == "MARIA" and migration_enabled:
+        # Check cache first to avoid DB query on every health check
+        current_time = time.time()
+        cache_age = current_time - _migration_status_cache["timestamp"]
+
+        # Use cached status if:
+        # 1. Cache is fresh (< TTL), OR
+        # 2. Migration is COMPLETE (no need to check again)
+        if (
+            cache_age < _MIGRATION_CACHE_TTL
+            or _migration_status_cache["status"] == MIGRATION_STATUS_COMPLETE
+        ):
+            cached_status = _migration_status_cache["status"]
+            if cached_status is not None:
+                response = _handle_migration_status(cached_status)
+                if response is not None:
+                    return response
+                # COMPLETE or PARTIAL status - fall through to ready
+        else:
+            # Cache miss or expired - query database and update cache
+            try:
+                from src.service.data.storage import (  # noqa: PLC0415 -- conditional import based on runtime config
+                    get_global_storage_interface,
+                )
+                from src.service.data.storage.maria.maria import (  # noqa: PLC0415 -- conditional import
+                    MariaDBStorage,
+                )
+
+                storage = get_global_storage_interface()
+
+                # Check if storage is MariaDB (type guard)
+                if isinstance(storage, MariaDBStorage):
+                    # Query migration status from database
+                    with storage.connection_manager as (_conn, cursor):
+                        cursor.execute(
+                            "SELECT status FROM trustyai_migration_status "
+                            "WHERE migration_type IN ('PVC_TO_DB', 'LEGACY_DB') "
+                            "ORDER BY started_at DESC LIMIT 1"
+                        )
+                        result = cursor.fetchone()
+
+                        if result:
+                            migration_status = result[0]
+                            # Update cache
+                            _migration_status_cache["status"] = migration_status
+                            _migration_status_cache["timestamp"] = current_time
+
+                            response = _handle_migration_status(migration_status)
+                            if response is not None:
+                                return response
+                            # Migration complete - proceed to ready state
+                        else:
+                            # No migration row exists yet - migration not started
+                            # Treat as not ready to prevent traffic before migration begins
+                            return JSONResponse(
+                                content={
+                                    "status": "not_ready",
+                                    "reason": "Migration not started yet",
+                                },
+                                status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+                            )
+
+            except Exception as e:
+                # If we can't check migration status, assume not ready
+                # This prevents traffic during migration issues
+                logger.exception("Failed to check migration status")
+                return JSONResponse(
+                    content={
+                        "status": "not_ready",
+                        "reason": f"Unable to verify migration status: {e}",
+                    },
+                    status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+                )
+
+    # No migration required or migration completed successfully
+    return JSONResponse(content={"status": "ready"}, status_code=HTTPStatus.OK)
 
 
 # Liveness probe endpoint
