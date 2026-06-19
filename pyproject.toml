@@ -111,6 +111,7 @@ ignore = [
 "src/endpoints/metrics/drift/kolmogorov_smirnov_streaming.py" = ["RUF001", "RUF002", "RUF003", "TRY301"]
 "src/endpoints/metrics/drift/jensen_shannon.py" = ["TRY300", "TRY301"]
 "src/endpoints/metrics/drift/compare_means.py" = ["C901", "TRY301"]
+"src/service/config/registry.py" = ["PLR0913"]
 # === TEST FILES ===
 "tests/**" = ["S101", "PT019", "SLF001"]
 "tests/core/metrics/drift/test_greenwald_khanna_quantile_sketch.py" = ["PLR2004", "RUF001", "RUF002", "RUF003"]
