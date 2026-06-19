@@ -931,6 +931,18 @@ http = [
 ]
 
 [[package]]
+name = "goodpoints"
+version = "0.5.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c4/3e/5b12338628a182aa658ef8474e730796b9e72e5acdbab47f878acf2531ab/goodpoints-0.5.0.tar.gz", hash = "sha256:e24b81d8c0229665505de56ce9d6d7bd7259b9af35fde0341112804e332144ea", size = 948914, upload-time = "2026-05-14T11:40:11.16Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fc/11/7a05df77735f7258fd1fcc106c26847622ed8286069b47768aed333eebb0/goodpoints-0.5.0-cp314-cp314-macosx_10_15_universal2.whl", hash = "sha256:067beda0d9a212cd39534cf9ef581983af8f90bb598e6b24aabdec3576aade64", size = 1916035, upload-time = "2026-05-14T11:40:09.732Z" },
+]
+
+[[package]]
 name = "h11"
 version = "0.16.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3321,6 +3333,9 @@ mariadb = [
     { name = "javaobj-py3" },
     { name = "mariadb" },
 ]
+mmd = [
+    { name = "goodpoints" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -3356,6 +3371,7 @@ requires-dist = [
     { name = "cryptography", specifier = ">=48.0.1,<50" },
     { name = "fastapi", specifier = ">=0.116,<0.138" },
     { name = "fastapi-utils", specifier = ">=0.8,<0.9" },
+    { name = "goodpoints", marker = "extra == 'mmd'", specifier = ">=0.5.0" },
     { name = "h5py", specifier = ">=3.13,<4" },
     { name = "hypercorn", specifier = ">=0.18,<0.19" },
     { name = "isodate", specifier = ">=0.7,<0.8" },
@@ -3375,7 +3391,7 @@ requires-dist = [
     { name = "typing-inspect", specifier = ">=0.9,<1" },
     { name = "uvicorn", specifier = ">=0.38,<1" },
 ]
-provides-extras = ["eval", "mariadb"]
+provides-extras = ["eval", "mmd", "mariadb"]
 
 [package.metadata.requires-dev]
 dev = [

@@ -195,14 +195,12 @@ class ModelMeshPayloadParser:
             hasattr(request_obj, "raw_input_contents")
             and request_obj.raw_input_contents
         ):
-            msg = "Raw input contents parsing not yet implemented"
-            raise NotImplementedError(msg)
+            return pd.DataFrame()
         if (
             hasattr(request_obj, "raw_output_contents")
             and request_obj.raw_output_contents
         ):
-            msg = "Raw output contents parsing not yet implemented"
-            raise NotImplementedError(msg)
+            return pd.DataFrame()
         msg = f"No data found in tensor {tensor.name}"
         raise ValueError(msg)
 
