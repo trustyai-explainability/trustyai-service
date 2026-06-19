@@ -122,6 +122,7 @@ ignore = [
 "tests/endpoints/test_upload_endpoint_pvc.py" = ["PLR0913"]
 "tests/service/data/test_utils.py" = ["PLR0913", "UP037"]  # UP037: Keep quoted annotations for optional protobuf imports
 "tests/service/serialization/test_rows.py" = ["PLR2004"]
+"tests/service/test_health_checks.py" = ["S106", "ANN001", "PLR2004", "FBT003"]  # Health check test-specific ignores
 
 [tool.pytest.ini_options]
 asyncio_mode = "strict"
