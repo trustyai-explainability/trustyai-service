@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI, Request, Response
 
+from src import __version__
+
 if TYPE_CHECKING:
     from fastapi import APIRouter
 from fastapi.middleware.cors import CORSMiddleware
@@ -109,7 +111,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
 
 app = FastAPI(
     title="TrustyAI Service API",
-    version="1.0.0rc0",
+    version=__version__,
     description="TrustyAI Service API",
     lifespan=lifespan,
 )

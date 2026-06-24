@@ -35,7 +35,7 @@ jobs:
           grep -A 1 'org.opencontainers.image.base.name=' Containerfile | grep -q 'quay.expires-after=7d' || { echo "::error::Failed to inject quay.expires-after label after base.name line"; exit 1; }
 
       - name: Build image
-        run: docker build -f Containerfile -t trustyai-ci:${{ github.event.pull_request.head.sha }} .
+        run: docker build -f Containerfile --build-arg VERSION="0.0.0.dev0" -t trustyai-ci:${{ github.event.pull_request.head.sha }} .
 
       - name: Save image
         run: docker save trustyai-ci:${{ github.event.pull_request.head.sha }} | gzip > /tmp/image.tar.gz
