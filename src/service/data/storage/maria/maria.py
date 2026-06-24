@@ -11,7 +11,6 @@ import mariadb
 import numpy as np
 
 from src.endpoints.consumer import KServeInferenceRequest, KServeInferenceResponse
-from src.service.data.modelmesh_parser import PartialPayload
 from src.service.data.storage.exceptions import DeserializationError
 from src.service.data.storage.maria.legacy_maria_reader import (
     LegacyMariaDBStorageReader,
@@ -564,7 +563,7 @@ class MariaDBStorage(StorageInterface):
     # === PARTIAL PAYLOADS =========================================================================
     async def persist_partial_payload(
         self,
-        payload: PartialPayload | KServeInferenceRequest | KServeInferenceResponse,
+        payload: KServeInferenceRequest | KServeInferenceResponse,
         payload_id: str,
         *,
         is_input: bool,
@@ -578,8 +577,8 @@ class MariaDBStorage(StorageInterface):
             conn.commit()
 
     async def get_partial_payload(
-        self, payload_id: str, *, is_input: bool, is_modelmesh: bool
-    ) -> PartialPayload | KServeInferenceRequest | KServeInferenceResponse | None:
+        self, payload_id: str, *, is_input: bool
+    ) -> KServeInferenceRequest | KServeInferenceResponse | None:
         """Retrieve a partial payload from the database.
 
         Uses JSON + gzip deserialization. Returns None if not found.
@@ -595,28 +594,22 @@ class MariaDBStorage(StorageInterface):
             return None
 
         # Determine target class based on payload type
-        if is_modelmesh:
-            target_class = PartialPayload
-        elif is_input:  # kserve input
-            target_class = KServeInferenceRequest
-        else:  # kserve output
-            target_class = KServeInferenceResponse
+        target_class = KServeInferenceRequest if is_input else KServeInferenceResponse
 
         try:
             return deserialize_model(result[0], target_class)
         except Exception as e:
             # Deserialization failure indicates data corruption or format issue
             # This is distinct from "not found" and should be raised to caller
+            direction = "input" if is_input else "output"
             logger.exception(
-                "Deserialization failed for payload '%s' (%s, %s)",
+                "Deserialization failed for payload '%s' (KServe, %s)",
                 payload_id,
-                "ModelMesh" if is_modelmesh else "KServe",
-                "input" if is_input else "output",
+                direction,
             )
             raise DeserializationError(
                 payload_id=payload_id,
-                reason=f"Failed to deserialize {'ModelMesh' if is_modelmesh else 'KServe'} "
-                f"{'input' if is_input else 'output'} payload from MariaDB",
+                reason=f"Failed to deserialize KServe {direction} payload from MariaDB",
                 original_exception=e,
             ) from e
 
@@ -628,26 +621,6 @@ class MariaDBStorage(StorageInterface):
                 (payload_id, is_input),
             )
             conn.commit()
-
-    async def persist_modelmesh_payload(
-        self, payload: PartialPayload, request_id: str, *, is_input: bool
-    ) -> None:
-        """Persist a ModelMesh partial payload."""
-        await self.persist_partial_payload(payload, request_id, is_input=is_input)
-
-    async def get_modelmesh_payload(
-        self, request_id: str, *, is_input: bool
-    ) -> PartialPayload | None:
-        """Retrieve a ModelMesh partial payload."""
-        return await self.get_partial_payload(
-            request_id, is_input=is_input, is_modelmesh=True
-        )
-
-    async def delete_modelmesh_payload(
-        self, request_id: str, *, is_input: bool
-    ) -> None:
-        """Delete a ModelMesh partial payload."""
-        await self.delete_partial_payload(request_id, is_input=is_input)
 
     # === DATABASE CLEANUP =========================================================================
     @require_existing_dataset
