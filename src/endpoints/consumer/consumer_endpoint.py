@@ -20,22 +20,20 @@ from src.endpoints.consumer import (
     KServeInferenceResponse,
 )
 from src.exceptions import ReconciliationError
+from src.service.constants import (
+    BIAS_IGNORE_PARAM,
+    INPUT_SUFFIX,
+    METADATA_SUFFIX,
+    OUTPUT_SUFFIX,
+    SYNTHETIC_TAG,
+    UNLABELED_TAG,
+)
 from src.service.data.datasources.data_source import DataSource
-
-# Import local dependencies
 from src.service.data.model_data import ModelData
 from src.service.data.modelmesh_parser import ModelMeshPayloadParser, PartialPayload
 from src.service.data.shared_data_source import get_shared_data_source
 from src.service.data.storage import get_global_storage_interface
 from src.service.utils import list_utils
-
-# Define constants locally to avoid import issues
-INPUT_SUFFIX = "_inputs"
-OUTPUT_SUFFIX = "_outputs"
-METADATA_SUFFIX = "_metadata"
-SYNTHETIC_TAG = "synthetic"
-UNLABELED_TAG = "unlabeled"
-BIAS_IGNORE_PARAM = "bias-ignore"
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
