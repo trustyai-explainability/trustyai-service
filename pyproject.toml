@@ -1,6 +1,6 @@
 [project]
 name = "trustyai-service"
-version = "1.0.0rc0"
+dynamic = ["version"]
 description = "TrustyAI Service"
 authors = [{ name = "Rui Vieira" }, { name = "TrustyAI team" }]
 requires-python = ">=3.12, <3.15"
@@ -62,19 +62,30 @@ eval = [
 # Note: grpcio/grpcio-tools removed - incompatible with protobuf v7, unused (protoc used instead)
 mariadb = ["mariadb>=1.1,<1.2", "javaobj-py3>=0.5,<0.6"]
 
+[tool.hatch.version]
+source = "vcs"
+fallback-version = "0.0.0.dev0"
+
+[tool.hatch.version.raw-options]
+version_scheme = "no-guess-dev"
+local_scheme = "dirty-tag"
+
 [tool.hatch.build.targets.sdist]
 include = ["src"]
 
 [tool.hatch.build.targets.wheel]
 include = ["src"]
 
+[tool.hatch.build.hooks.vcs]
+version-file = "src/_version.py"
+
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [tool.ruff]
 # Exclude generated protobuf files from all ruff operations
-exclude = ["src/proto/grpc_predict_v2_pb2.py"]
+exclude = ["src/proto/grpc_predict_v2_pb2.py", "src/_version.py"]
 
 [tool.ruff.lint]
 select = ["ALL"]
@@ -131,7 +142,7 @@ skips = [
 ]
 
 [tool.pyrefly]
-project-excludes = ["**/proto/**", "src/proto/**", "src/proto/grpc_predict_v2_pb2.py"]
+project-excludes = ["**/proto/**", "src/proto/**", "src/proto/grpc_predict_v2_pb2.py", "src/_version.py"]
 disable-project-excludes-heuristics = true
 # Forward-looking: pyrefly uses this for type checking, not runtime
 python-version = "3.14.0"
