@@ -12,6 +12,7 @@
 [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-yellow?logo=conventionalcommits&logoColor=white)](https://conventionalcommits.org)
 [![Contributing](https://img.shields.io/badge/Contributing-guide-blue)](https://github.com/trustyai-explainability/trustyai-service/blob/main/CONTRIBUTING.md)
 [![CodeRabbit](https://img.shields.io/badge/CodeRabbit-AI%20Reviews-orange?logo=coderabbit)](https://coderabbit.ai)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/trustyai-explainability/trustyai-service/badge)](https://scorecard.dev/viewer/?uri=github.com/trustyai-explainability/trustyai-service)
 
 👋 The TrustyAI Service is intended to be a hub for all kinds of Responsible AI workflows, such as
 explainability, drift, and Large Language Model (LLM) evaluation. Designed as a REST server wrapping
