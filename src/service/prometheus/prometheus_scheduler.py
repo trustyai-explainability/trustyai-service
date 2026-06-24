@@ -7,8 +7,7 @@ import uuid
 from collections import defaultdict
 
 import isodate
-from pandas import DataFrame
-from pandas.errors import DataError
+import narwhals.stable.v2 as nw
 
 from src.endpoints.metrics.metrics_directory import MetricsDirectory
 from src.service.data.datasources.data_source import DataSource
@@ -469,7 +468,7 @@ class PrometheusScheduler:
             df = await self._get_model_dataframe(
                 model_id, max_batch_size, throw_errors=throw_errors
             )
-            if df is None or df.empty:
+            if df is None or df.is_empty():
                 return
 
             for req_id, request in requests_for_model:
@@ -535,7 +534,7 @@ class PrometheusScheduler:
 
     async def _get_model_dataframe(
         self, model_id: str, batch_size: int, *, throw_errors: bool
-    ) -> DataFrame | None:
+    ) -> nw.DataFrame | None:
         """Get the dataframe for a model.
 
         Args:
@@ -549,7 +548,7 @@ class PrometheusScheduler:
         """
         try:
             df = await self.data_source.get_organic_dataframe(model_id, batch_size)
-            if df.empty:
+            if df.is_empty():
                 logger.warning(
                     "Empty dataframe returned for model=%s, skipping calculations",
                     model_id,
@@ -561,11 +560,6 @@ class PrometheusScheduler:
                 e,
                 f"Failed to create dataframe for model={model_id}",
                 throw_errors=throw_errors,
-            )
-            return None
-        except DataError as e:
-            self._handle_error(
-                e, f"Pandas data error for model={model_id}", throw_errors=throw_errors
             )
             return None
         except (MissingH5PYDataError, OSError) as e:
@@ -583,7 +577,7 @@ class PrometheusScheduler:
         model_id: str,
         req_id: uuid.UUID,
         request: BaseMetricRequest,
-        df: DataFrame,
+        df: nw.DataFrame,
         *,
         throw_errors: bool,
     ) -> None:
@@ -629,7 +623,7 @@ class PrometheusScheduler:
         self,
         model_id: str,
         metric_name: str,
-        batch: DataFrame,
+        batch: nw.DataFrame,
         request: BaseMetricRequest,
         *,
         throw_errors: bool,

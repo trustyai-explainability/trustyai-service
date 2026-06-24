@@ -2,6 +2,7 @@
 
 from unittest.mock import AsyncMock, Mock, patch
 
+import narwhals.stable.v2 as nw
 import numpy as np
 import pandas as pd
 import pytest
@@ -104,7 +105,7 @@ class TestDataSource:
 
     @patch("src.service.data.datasources.data_source.ModelData")
     @pytest.mark.asyncio
-    async def test_get_dataframe_with_batch_size_success(
+    async def test_get_native_dataframe_success(
         self,
         mock_model_data_class: Mock,
         data_source: DataSource,
@@ -119,7 +120,7 @@ class TestDataSource:
             np.array([["meta1"], ["meta2"]]),
         )
 
-        df = await data_source.get_dataframe_with_batch_size("test_model", 50)
+        df = await data_source._get_native_dataframe("test_model", 50)
 
         assert isinstance(df, pd.DataFrame)
         assert len(df) == EXPECTED_ORGANIC_ROWS
@@ -153,7 +154,7 @@ class TestDataSource:
         with patch.dict("os.environ", {"SERVICE_BATCH_SIZE": "200"}):
             df = await data_source.get_dataframe("test_model")
 
-        assert isinstance(df, pd.DataFrame)
+        assert isinstance(df, nw.DataFrame)
         mock_model_data.data.assert_called_once()
 
     @patch("src.service.data.datasources.data_source.ModelData")
@@ -371,7 +372,7 @@ class TestDataSource:
         )
 
         gt_df = await data_source.get_ground_truths("test_model")
-        assert isinstance(gt_df, pd.DataFrame)
+        assert isinstance(gt_df, nw.DataFrame)
 
         # Verify correct model name was used
         expected_gt_name = DataSource.get_ground_truth_name("test_model")
@@ -419,7 +420,7 @@ class TestDataSource:
         )
 
         # Request more data than available
-        df = await data_source.get_dataframe_with_batch_size("test_model", 100)
+        df = await data_source._get_native_dataframe("test_model", 100)
 
         # Should get all available data
         assert len(df) == EXPECTED_AVAILABLE_ROWS
