@@ -7,7 +7,12 @@ from typing import Annotated, Never
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from src.service.constants import INPUT_SUFFIX, METADATA_SUFFIX, OUTPUT_SUFFIX
+from src.service.constants import (
+    INPUT_SUFFIX,
+    METADATA_SUFFIX,
+    OUTPUT_SUFFIX,
+    SYNTHETIC_TAG,
+)
 from src.service.data.datasources.data_source import DataSource
 from src.service.data.model_data import ModelData
 from src.service.data.shared_data_source import get_shared_data_source
@@ -238,18 +243,39 @@ class InferenceIdResponse(BaseModel):
 # Column indices within the metadata array
 METADATA_ID_COL = 0
 METADATA_TIMESTAMP_COL = 1
+METADATA_TAGS_COL = 3
+
+_VALID_INFERENCE_TYPES = frozenset({"all", "organic"})
+
+
+def _get_tags(cell: object) -> list[str]:
+    """Extract tag strings from a metadata cell value."""
+    if isinstance(cell, list):
+        return cell
+    if isinstance(cell, str):
+        return [cell]
+    return []
 
 
 @router.get("/info/inference/ids/{model}")
 async def get_inference_ids(
     model: str,
+    inference_type: Annotated[str, Query(alias="type")] = "all",
     limit: Annotated[int, Query(ge=1, le=10000)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> InferenceIdResponse:
     """Get a list of all inference IDs within a particular model's stored data."""
+    normalized_type = inference_type.lower()
+    if normalized_type not in _VALID_INFERENCE_TYPES:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail=f"Invalid type parameter. Valid values must be in {sorted(_VALID_INFERENCE_TYPES)}.",
+        )
+
     logger.info(
-        "Retrieving inference IDs for model=%s (limit=%d, offset=%d)",
+        "Retrieving inference IDs for model=%s (type=%s, limit=%d, offset=%d)",
         model,
+        normalized_type,
         limit,
         offset,
     )
@@ -259,8 +285,9 @@ async def get_inference_ids(
 
     if not await storage_interface.dataset_exists(metadata_dataset):
         raise HTTPException(
-            status_code=HTTPStatus.NOT_FOUND,
-            detail=f"No inference data found for model={model}",
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail=f"No metadata found for model={model}. "
+            "This can happen if TrustyAI has not yet logged any inferences from this model.",
         )
 
     try:
@@ -276,6 +303,13 @@ async def get_inference_ids(
 
     if metadata is None or len(metadata) == 0:
         return InferenceIdResponse(ids=[], total=0, limit=limit, offset=offset)
+
+    if normalized_type == "organic":
+        metadata = [
+            row
+            for row in metadata
+            if SYNTHETIC_TAG not in _get_tags(row[METADATA_TAGS_COL])
+        ]
 
     all_items = [
         InferenceIdItem(

@@ -6,15 +6,21 @@ import numpy as np
 from fastapi.testclient import TestClient
 
 from src.main import app
+from src.service.constants import SYNTHETIC_TAG
 
 client = TestClient(app)
 
 FAKE_TIMESTAMP = "2025-01-01T00:00:00"
 
 
-def _make_metadata(ids: list[str]) -> np.ndarray:
+def _make_metadata(ids: list[str], tags: list[list[str]] | None = None) -> np.ndarray:
     """Build a metadata array matching the storage layout."""
-    rows = [[id_, FAKE_TIMESTAMP, 1735689600.0, []] for id_ in ids]
+    if tags is None:
+        tags = [[] for _ in ids]
+    rows = [
+        [id_, FAKE_TIMESTAMP, 1735689600.0, tag_list]
+        for id_, tag_list in zip(ids, tags, strict=True)
+    ]
     return np.array(rows, dtype="O")
 
 
@@ -56,14 +62,14 @@ class TestGetInferenceIds:
         assert body["offset"] == 0
 
     @patch("src.endpoints.metadata.storage_interface")
-    def test_returns_404_for_unknown_model(self, mock_storage: AsyncMock) -> None:
-        """Unknown model returns 404."""
+    def test_returns_400_for_unknown_model(self, mock_storage: AsyncMock) -> None:
+        """Unknown model returns 400 BAD_REQUEST (matching Java)."""
         mock_storage.dataset_exists = AsyncMock(return_value=False)
 
         response = client.get("/info/inference/ids/nonexistent")
 
-        assert response.status_code == 404  # noqa: PLR2004
-        assert "nonexistent" in response.json()["detail"]
+        assert response.status_code == 400  # noqa: PLR2004
+        assert "No metadata found" in response.json()["detail"]
 
     @patch("src.endpoints.metadata.storage_interface")
     @patch("src.service.data.model_data.get_global_storage_interface")
@@ -83,6 +89,82 @@ class TestGetInferenceIds:
         body = response.json()
         assert body["ids"] == []
         assert body["total"] == 0
+
+
+class TestInferenceIdsTypeFilter:
+    """Tests for the type query parameter (organic/all filtering)."""
+
+    @patch("src.endpoints.metadata.storage_interface")
+    @patch("src.service.data.model_data.get_global_storage_interface")
+    def test_type_all_returns_everything(
+        self, mock_global_storage: AsyncMock, mock_storage: AsyncMock
+    ) -> None:
+        """type=all returns all rows including synthetic."""
+        ids = ["organic1", "synthetic1", "organic2"]
+        tags = [[], [SYNTHETIC_TAG], []]
+        metadata = _make_metadata(ids, tags)
+
+        mock_storage.dataset_exists = AsyncMock(return_value=True)
+        mock_global_storage.return_value = mock_storage
+        mock_storage.read_data = AsyncMock(side_effect=_read_data_side_effect(metadata))
+
+        response = client.get("/info/inference/ids/test-model?type=all")
+
+        assert response.status_code == 200  # noqa: PLR2004
+        body = response.json()
+        assert body["total"] == 3  # noqa: PLR2004
+        returned_ids = [item["id"] for item in body["ids"]]
+        assert returned_ids == ids
+
+    @patch("src.endpoints.metadata.storage_interface")
+    @patch("src.service.data.model_data.get_global_storage_interface")
+    def test_type_organic_filters_synthetic(
+        self, mock_global_storage: AsyncMock, mock_storage: AsyncMock
+    ) -> None:
+        """type=organic excludes rows with SYNTHETIC_TAG."""
+        ids = ["organic1", "synthetic1", "organic2", "synthetic2"]
+        tags = [[], [SYNTHETIC_TAG], [], [SYNTHETIC_TAG]]
+        metadata = _make_metadata(ids, tags)
+
+        mock_storage.dataset_exists = AsyncMock(return_value=True)
+        mock_global_storage.return_value = mock_storage
+        mock_storage.read_data = AsyncMock(side_effect=_read_data_side_effect(metadata))
+
+        response = client.get("/info/inference/ids/test-model?type=organic")
+
+        assert response.status_code == 200  # noqa: PLR2004
+        body = response.json()
+        assert body["total"] == 2  # noqa: PLR2004
+        returned_ids = [item["id"] for item in body["ids"]]
+        assert returned_ids == ["organic1", "organic2"]
+
+    @patch("src.endpoints.metadata.storage_interface")
+    @patch("src.service.data.model_data.get_global_storage_interface")
+    def test_type_case_insensitive(
+        self, mock_global_storage: AsyncMock, mock_storage: AsyncMock
+    ) -> None:
+        """Type parameter is case-insensitive."""
+        ids = ["organic1", "synthetic1"]
+        tags = [[], [SYNTHETIC_TAG]]
+        metadata = _make_metadata(ids, tags)
+
+        mock_storage.dataset_exists = AsyncMock(return_value=True)
+        mock_global_storage.return_value = mock_storage
+        mock_storage.read_data = AsyncMock(side_effect=_read_data_side_effect(metadata))
+
+        response = client.get("/info/inference/ids/test-model?type=ORGANIC")
+
+        assert response.status_code == 200  # noqa: PLR2004
+        body = response.json()
+        assert body["total"] == 1
+        assert body["ids"][0]["id"] == "organic1"
+
+    def test_type_invalid_returns_400(self) -> None:
+        """Invalid type value returns 400 BAD_REQUEST."""
+        response = client.get("/info/inference/ids/any-model?type=invalid")
+
+        assert response.status_code == 400  # noqa: PLR2004
+        assert "Invalid type parameter" in response.json()["detail"]
 
 
 class TestInferenceIdsPagination:
