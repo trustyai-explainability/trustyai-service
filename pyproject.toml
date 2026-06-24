@@ -112,6 +112,7 @@ ignore = [
 "tests/**" = ["S101", "PT019", "SLF001"]
 "tests/core/metrics/test_fairness.py" = ["N803", "N806"]
 "tests/endpoints/metrics/drift/factory.py" = ["PLR0913", "C901", "PLR0915"]
+"tests/endpoints/metrics/fairness/group/factory.py" = ["PLR0913", "PLC0415"]
 "tests/endpoints/test_upload_endpoint_maria.py" = ["S105"]
 "tests/endpoints/test_upload_endpoint_pvc.py" = ["PLR0913"]
 "tests/service/data/test_utils.py" = ["PLR0913", "UP037"]  # UP037: Keep quoted annotations for optional protobuf imports
