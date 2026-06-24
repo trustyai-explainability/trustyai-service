@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.service.constants import UNLABELED_TAG
+from src.service.constants import SYNTHETIC_TAG
 from src.service.data.datasources.data_source import DataSource
 from src.service.data.exceptions import DataframeCreateError, StorageReadError
 from src.service.data.metadata.storage_metadata import (
@@ -176,20 +176,19 @@ class TestDataSource:
 
     @patch("src.service.data.datasources.data_source.ModelData")
     @pytest.mark.asyncio
-    async def test_get_organic_dataframe_filters_unlabeled(
+    async def test_get_organic_dataframe_filters_synthetic(
         self,
         mock_model_data_class: Mock,
         data_source: DataSource,
         mock_model_data: Mock,
     ) -> None:
-        """Test that organic dataframe filters out unlabeled (synthetic) data."""
+        """Test that organic dataframe filters out synthetic data."""
         mock_model_data_class.return_value = mock_model_data
 
-        # Add unlabeled column to mock data
         mock_model_data.column_names.return_value = (
             ["feature1", "feature2"],
             ["target"],
-            [UNLABELED_TAG],
+            [SYNTHETIC_TAG],
         )
         mock_model_data.data.return_value = (
             np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]),
@@ -201,7 +200,7 @@ class TestDataSource:
 
         # Should filter out synthetic rows
         assert len(df) == EXPECTED_ORGANIC_ROWS
-        assert not df[UNLABELED_TAG].any()  # No True values should remain
+        assert not df[SYNTHETIC_TAG].any()  # No True values should remain
 
     @patch("src.service.data.datasources.data_source.ModelData")
     @pytest.mark.asyncio
