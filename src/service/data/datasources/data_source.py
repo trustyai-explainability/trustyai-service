@@ -3,12 +3,14 @@
 import logging
 import os
 
+import numpy as np
 import pandas as pd
 
 from src.service.constants import (
     GROUND_TRUTH_SUFFIX,
     INTERNAL_DATA_FILENAME,
     METADATA_FILENAME,
+    SYNTHETIC_TAG,
     UNLABELED_TAG,
 )
 from src.service.data.exceptions import DataframeCreateError, StorageReadError
@@ -165,11 +167,82 @@ class DataSource:
         """
         df = await self.get_dataframe_with_batch_size(model_id, batch_size)
 
-        # Filter out any rows with the unlabeled tag (synthetic data)
-        if UNLABELED_TAG in df.columns:
-            df = df[~df[UNLABELED_TAG].fillna(value=False)]
+        # Filter out synthetic rows — match both the current prefixed tag and
+        # the legacy unprefixed value for backward compatibility with data
+        # written before the tag-prefix migration.
+        for col in (SYNTHETIC_TAG, "synthetic"):
+            if col in df.columns:
+                df = df[~df[col].fillna(value=False)]
 
         return df
+
+    async def get_dataframe_by_tag(self, model_id: str, tag: str) -> pd.DataFrame:
+        """Get a dataframe filtered to rows matching a specific tag.
+
+        Args:
+            model_id: The model ID
+            tag: The tag value to filter by (e.g. "TRAINING")
+
+        Returns:
+            A pandas DataFrame containing only rows whose tags list includes the tag
+
+        """
+        try:
+            model_data = ModelData(model_id)
+            input_data, _, metadata = await model_data.data()
+            input_names, _, metadata_names = await model_data.column_names()
+
+            if metadata is None or input_data is None:
+                return pd.DataFrame()
+
+            tags_col = (
+                list(metadata_names).index("tags") if "tags" in metadata_names else -1
+            )
+            if tags_col < 0:
+                return pd.DataFrame()
+
+            def _extract_tags(cell: object) -> list:
+                if isinstance(cell, np.ndarray):
+                    return cell.tolist()
+                if isinstance(cell, list):
+                    return cell
+                if isinstance(cell, str):
+                    return [cell]
+                return []
+
+            _legacy_aliases: dict[str, str] = {
+                UNLABELED_TAG: "unlabeled",
+                SYNTHETIC_TAG: "synthetic",
+            }
+            match_tags = {tag}
+            if tag in _legacy_aliases:
+                match_tags.add(_legacy_aliases[tag])
+
+            mask = [
+                bool(match_tags & set(_extract_tags(row[tags_col]))) for row in metadata
+            ]
+            filtered_input = input_data[mask]
+
+            df_data: dict[str, object] = {}
+            for i, col_name in enumerate(input_names):
+                if (
+                    len(filtered_input.shape) == ARRAY_DIM_2D
+                    and i < filtered_input.shape[1]
+                ):
+                    df_data[col_name] = filtered_input[:, i]
+                elif len(filtered_input.shape) == 1 and i == 0:
+                    df_data[col_name] = filtered_input
+
+            return pd.DataFrame(df_data)
+
+        except Exception as e:  # Broad catch intentional: dataframe creation involves dynamic storage operations
+            logger.exception(
+                "Error creating dataframe by tag for model=%s, tag=%s",
+                model_id,
+                tag,
+            )
+            msg = f"Error creating dataframe by tag for model={model_id}: {e!s}"
+            raise DataframeCreateError(msg) from e
 
     # METADATA READS
 

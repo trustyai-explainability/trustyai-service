@@ -1,14 +1,18 @@
 """Metadata endpoint for managing model metadata and schema information."""
 
 import logging
+from collections import Counter
 from http import HTTPStatus
-from typing import Never
+from typing import Annotated, Never
 
-from fastapi import APIRouter, HTTPException
+import numpy as np
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from src.service.constants import INPUT_SUFFIX, OUTPUT_SUFFIX
+from src.endpoints.data.data_upload import validate_data_tag
+from src.service.constants import INPUT_SUFFIX, METADATA_SUFFIX, OUTPUT_SUFFIX
 from src.service.data.datasources.data_source import DataSource
+from src.service.data.model_data import ModelData
 from src.service.data.shared_data_source import get_shared_data_source
 from src.service.data.storage import get_storage_interface
 from src.service.payloads.service.schema import Schema
@@ -461,20 +465,220 @@ async def remove_column_names(request: ModelIdRequest) -> dict[str, str]:
         return {"message": "Feature and output name mapping successfully cleared."}
 
 
-@router.get("/info/tags", response_model=None)
-async def get_tags() -> Never:
-    """Retrieve the tags that have been applied to a particular model dataset, as well as a count of that tag's frequency within the dataset."""
-    raise HTTPException(
-        status_code=HTTPStatus.NOT_IMPLEMENTED,
-        detail="Tag retrieval is not yet implemented",
-    )
+def _extract_tags(cell: object) -> list[str]:
+    """Extract a list of tag strings from a metadata cell value."""
+    if isinstance(cell, np.ndarray):
+        return cell.tolist()
+    if isinstance(cell, list):
+        return cell
+    if isinstance(cell, str):
+        return [cell]
+    return []
 
 
-@router.post("/info/tags", response_model=None)
-async def apply_tags(data_tagging: DataTagging) -> Never:
-    """Apply per-row tags to a particular inference model dataset, to label certain rows as training or drift reference data, etc."""
-    logger.info("Applying tags for model: %s", data_tagging.modelId)
-    raise HTTPException(
-        status_code=HTTPStatus.NOT_IMPLEMENTED,
-        detail="Tag application is not yet implemented",
-    )
+def _find_tags_column(metadata_names: list[str]) -> int:
+    """Return the column index of the ``tags`` column, or -1 if absent."""
+    return list(metadata_names).index("tags") if "tags" in metadata_names else -1
+
+
+async def _read_metadata(
+    model_id: str,
+) -> tuple[np.ndarray | None, list[str]]:
+    """Read the metadata array and column names for a model."""
+    model_data = ModelData(model_id)
+    try:
+        _, _, metadata = await model_data.data(get_input=False, get_output=False)
+    except Exception as exc:
+        logger.exception("Error reading metadata for model=%s", model_id)
+        raise HTTPException(
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+            detail=f"Error reading metadata for model={model_id}",
+        ) from exc
+    _, _, metadata_names = await model_data.column_names()
+    return metadata, list(metadata_names)
+
+
+async def _ensure_model_exists(
+    model_id: str,
+    data_source: DataSource,
+) -> None:
+    """Raise 404 if the model is not known to the data source."""
+    if model_id not in await data_source.get_known_models():
+        raise HTTPException(
+            status_code=HTTPStatus.NOT_FOUND,
+            detail=f"No model found with id={model_id}",
+        )
+
+
+def _parse_range(r: list[int]) -> tuple[int, int]:
+    """Parse a ``[start, end]`` or ``[index]`` range into ``(start, end)``."""
+    expected_pair_len = 2
+    if len(r) == 1:
+        return r[0], r[0] + 1
+    if len(r) == expected_pair_len:
+        return r[0], r[1]
+    msg = f"Each range must be [start, end] or [index], got {r}"
+    raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=msg)
+
+
+def _validate_range(start: int, end: int, total_rows: int) -> None:
+    """Raise 400 if the range is invalid or out of bounds."""
+    if start < 0 or end < 0:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail=f"Row indices must be non-negative, got [{start}, {end})",
+        )
+    if start >= end:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail=f"Range start must be less than end, got [{start}, {end})",
+        )
+    if end > total_rows:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail=(f"Range [{start}, {end}) exceeds dataset size ({total_rows} rows)"),
+        )
+
+
+@router.get("/info/tags")
+async def get_tags(
+    model_id: Annotated[str | None, Query(alias="modelId")] = None,
+) -> dict:
+    """Retrieve per-tag row counts for a model's dataset.
+
+    If ``modelId`` is provided, returns ``dict[str, int]`` for that model.
+    If omitted, returns ``dict[str, dict[str, int]]`` for every known model.
+    """
+    data_source = get_data_source()
+
+    if model_id is not None:
+        return await _get_tag_counts_for_model(model_id, data_source)
+
+    known_models = await data_source.get_verified_models()
+    result: dict[str, dict[str, int]] = {}
+    for mid in known_models:
+        try:
+            result[mid] = await _get_tag_counts_for_model(mid, data_source)
+        except HTTPException:
+            continue
+    return result
+
+
+async def _get_tag_counts_for_model(
+    model_id: str,
+    data_source: DataSource,
+) -> dict[str, int]:
+    """Return a Counter-style dict mapping tag name to row count."""
+    await _ensure_model_exists(model_id, data_source)
+
+    metadata, metadata_names = await _read_metadata(model_id)
+    if metadata is None or len(metadata) == 0:
+        return {}
+
+    tags_col = _find_tags_column(metadata_names)
+    if tags_col < 0:
+        return {}
+
+    counter: Counter[str] = Counter()
+    for row in metadata:
+        counter.update(_extract_tags(row[tags_col]))
+
+    return dict(counter)
+
+
+@router.post("/info/tags")
+async def apply_tags(data_tagging: DataTagging) -> dict:
+    """Apply per-row tags to a model dataset.
+
+    Tags are appended idempotently (a tag already present on a row is not
+    duplicated).  The ``_trustyai`` prefix is reserved for internal use.
+    """
+    model_id = data_tagging.modelId
+    logger.info("Applying tags for model: %s", model_id)
+
+    data_source = get_data_source()
+    await _ensure_model_exists(model_id, data_source)
+
+    if not data_tagging.dataTagging:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail="dataTagging must contain at least one tag with ranges",
+        )
+
+    for tag_name in data_tagging.dataTagging:
+        validation_msg = validate_data_tag(tag_name)
+        if validation_msg is not None:
+            raise HTTPException(
+                status_code=HTTPStatus.BAD_REQUEST,
+                detail=validation_msg,
+            )
+
+    metadata, metadata_names = await _read_metadata(model_id)
+    if metadata is None or len(metadata) == 0:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail=f"Model {model_id} has no observation data to tag",
+        )
+
+    tags_col = _find_tags_column(metadata_names)
+    if tags_col < 0:
+        raise HTTPException(
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+            detail="Metadata dataset is missing the 'tags' column",
+        )
+
+    applied = _apply_tags_to_metadata(data_tagging.dataTagging, metadata, tags_col)
+
+    await _persist_metadata(model_id, metadata, metadata_names)
+
+    logger.info("Successfully applied tags to model=%s: %s", model_id, applied)
+    return {"message": "Datapoints successfully tagged.", "applied": applied}
+
+
+def _apply_tags_to_metadata(
+    tagging: dict[str, list[list[int]]],
+    metadata: np.ndarray,
+    tags_col: int,
+) -> dict[str, int]:
+    """Mutate *metadata* in place, appending tags idempotently.
+
+    Returns a dict mapping each tag name to the number of rows processed.
+    """
+    total_rows = len(metadata)
+    applied: dict[str, int] = {}
+
+    for tag_name, ranges in tagging.items():
+        rows_tagged = 0
+        for r in ranges:
+            start, end = _parse_range(r)
+            _validate_range(start, end, total_rows)
+            for idx in range(start, end):
+                existing = _extract_tags(metadata[idx][tags_col])
+                if tag_name not in existing:
+                    existing.append(tag_name)
+                    metadata[idx][tags_col] = existing
+                rows_tagged += 1
+        applied[tag_name] = rows_tagged
+
+    return applied
+
+
+async def _persist_metadata(
+    model_id: str,
+    metadata: np.ndarray,
+    metadata_names: list[str],
+) -> None:
+    """Delete-and-rewrite the metadata dataset for a model.
+
+    .. todo:: Read-modify-write is not atomic; concurrent tag requests may conflict.
+    """
+    metadata_dataset = model_id + METADATA_SUFFIX
+    try:
+        await storage_interface.delete_dataset(metadata_dataset)
+        await storage_interface.write_data(metadata_dataset, metadata, metadata_names)
+    except Exception as exc:
+        logger.exception("Error writing tagged metadata for model=%s", model_id)
+        raise HTTPException(
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+            detail=f"Error persisting tags for model={model_id}",
+        ) from exc
