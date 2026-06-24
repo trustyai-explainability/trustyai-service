@@ -2,7 +2,7 @@
 # FIPS crypto policy support included.
 
 ARG EXTRAS=""
-ARG VERSION="1.0.0rc0"
+ARG VERSION="0.0.0.dev0"
 ARG BUILD_DATE
 ARG VCS_REF
 ARG ENABLE_FIPS_POLICY="true"
@@ -37,7 +37,10 @@ USER 1001
 
 COPY pyproject.toml README.md ./
 
-RUN pip install --no-cache-dir --upgrade pip==26.1.1 uv==0.11.22 && \
+ENV SETUPTOOLS_SCM_PRETEND_VERSION="0.0.0.dev0"
+
+RUN mkdir -p src && \
+    pip install --no-cache-dir --upgrade pip==26.1.1 uv==0.11.22 && \
     uv pip install --no-cache ".[$EXTRAS]" && \
     pip uninstall -y uv && \
     rm -f /opt/app-root/bin/uv /opt/app-root/bin/uvx && \
@@ -98,6 +101,9 @@ COPY --from=builder /opt/app-root/bin /opt/app-root/bin
 
 COPY src src
 COPY pyproject.toml README.md ./
+
+RUN printf '__version__ = version = "%s"\n' "${VERSION}" > src/_version.py && \
+    chown 1001:0 src/_version.py
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

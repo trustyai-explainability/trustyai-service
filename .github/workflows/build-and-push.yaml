@@ -32,23 +32,34 @@ jobs:
           REF_NAME: ${{ github.ref_name }}
         run: |
           if [[ "${GIT_REF}" == refs/tags/v* ]]; then
-            # Push both version tag and latest for releases
-            echo "tags=${REF_NAME} latest" >> "$GITHUB_OUTPUT"
-            echo "primary_tag=${REF_NAME}" >> "$GITHUB_OUTPUT"
+            # Full version from tag (strip v prefix)
+            VERSION="${REF_NAME#v}"
+            # Sanitize for OCI image tag: replace + with - (OCI tags: [a-zA-Z0-9._-])
+            SANITIZED_TAG="${REF_NAME//+/-}"
+            echo "tags=${SANITIZED_TAG} latest" >> "$GITHUB_OUTPUT"
+            echo "primary_tag=${SANITIZED_TAG}" >> "$GITHUB_OUTPUT"
+            echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           else
             # Push only latest for main branch
             echo "tags=latest" >> "$GITHUB_OUTPUT"
             echo "primary_tag=latest" >> "$GITHUB_OUTPUT"
+            echo "version=0.0.0.dev0" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Build image
         env:
           QUAY_REPO: ${{ vars.QUAY_RELEASE_REPO }}
           TAGS: ${{ steps.tags.outputs.tags }}
+          VERSION: ${{ steps.tags.outputs.version }}
+          VCS_REF: ${{ github.sha }}
         run: |
           # Build image with first tag
           FIRST_TAG=$(echo "${TAGS}" | awk '{print $1}')
-          docker build -f Containerfile -t "${QUAY_REPO}:${FIRST_TAG}" .
+          docker build -f Containerfile \
+            --build-arg VERSION="${VERSION}" \
+            --build-arg BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+            --build-arg VCS_REF="${VCS_REF}" \
+            -t "${QUAY_REPO}:${FIRST_TAG}" .
 
           # Tag with additional tags if present
           for tag in ${TAGS}; do

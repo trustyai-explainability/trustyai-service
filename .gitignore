@@ -3,6 +3,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# hatch-vcs auto-generated version file
+src/_version.py
+
 # C extensions
 *.so
 
