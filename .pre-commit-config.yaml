@@ -6,7 +6,7 @@ default_language_version:
 
 ci:
   autofix_prs: false # Disable autofix for PRs
-  skip: [pyrefly-check]  # Requires uv + pyrefly (language: system), not available in pre-commit.ci
+  skip: [pyrefly-check, markdownlint]  # language: system hooks not available in pre-commit.ci
 
 repos:
   # === FAST FILE CHECKS ===
@@ -63,6 +63,22 @@ repos:
       - id: bandit
         args: [-c, pyproject.toml]
         additional_dependencies: ["bandit[toml]"]
+
+  # === CI WORKFLOW LINTING ===
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
+
+  # === MARKDOWN LINTING (warn-only, does not block commits) ===
+  - repo: local
+    hooks:
+      - id: markdownlint
+        name: markdownlint (warn-only)
+        entry: bash -c 'npx --yes markdownlint-cli2 "$@" || true' --
+        language: system
+        types: [markdown]
+        verbose: true
 
   # === COMMIT MESSAGE VALIDATION ===
   - repo: local
