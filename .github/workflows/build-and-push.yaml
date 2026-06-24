@@ -23,7 +23,7 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Set image tags
         id: tags
@@ -74,7 +74,7 @@ jobs:
           done
 
       - name: Trivy scan
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
         with:
           scan-type: 'image'
           image-ref: "${{ vars.QUAY_RELEASE_REPO }}:${{ steps.tags.outputs.primary_tag }}"
@@ -86,7 +86,7 @@ jobs:
           vuln-type: 'os,library'
 
       - name: Update Security tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@b0c4fd77f6c559021d78430ec4d0d169ae74a4eb # v3
         with:
           sarif_file: 'trivy-results.sarif'
           category: 'trivy-release-scan'

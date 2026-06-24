@@ -21,13 +21,13 @@ jobs:
       contents: read
       pull-requests: read
     steps:
-      - uses: mheap/github-action-required-labels@v4
+      - uses: mheap/github-action-required-labels@a5a913cf90303cbc96c2f317edb7b4a6fd182055 # v4
         with:
           mode: minimum
           count: 1
           labels: "ok-to-test, lgtm, approved"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Add expiry label to CI image
         run: |
@@ -46,7 +46,7 @@ jobs:
           echo "${{ github.event.pull_request.head.sha }}" > /tmp/pr-sha.txt
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ci-build
           path: |
