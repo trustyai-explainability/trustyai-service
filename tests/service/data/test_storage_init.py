@@ -327,7 +327,7 @@ class TestStorageInterfaceEnvVars:
             patch.dict(
                 os.environ, {"SERVICE_STORAGE_FORMAT": "UNSUPPORTED"}, clear=False
             ),
-            pytest.raises(ValueError, match="not yet supported"),
+            pytest.raises(ValueError, match="Unsupported storage format"),
         ):
             get_storage_interface()
 

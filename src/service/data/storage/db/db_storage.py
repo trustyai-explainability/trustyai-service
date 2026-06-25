@@ -4,6 +4,7 @@ Supports MariaDB and PostgreSQL through dialect-agnostic queries.
 Replaces the MariaDB-specific raw SQL implementation.
 """
 
+import asyncio
 import gzip
 import json
 import logging
@@ -34,15 +35,19 @@ class DBStorage(StorageInterface):
         """Initialize with an async SQLAlchemy engine."""
         self.engine = engine
         self._initialized = False
+        self._init_lock = asyncio.Lock()
 
     async def _ensure_initialized(self) -> None:
         """Create tables on first use (lazy initialization)."""
         if self._initialized:
             return
-        async with self.engine.begin() as conn:
-            await conn.run_sync(metadata_obj.create_all)
-        self._initialized = True
-        logger.info("Database tables initialized")
+        async with self._init_lock:
+            if self._initialized:
+                return
+            async with self.engine.begin() as conn:
+                await conn.run_sync(metadata_obj.create_all)
+            self._initialized = True
+            logger.info("Database tables initialized")
 
     async def initialize(self) -> None:
         """Create tables if they don't exist."""
@@ -332,6 +337,11 @@ class DBStorage(StorageInterface):
                 return None
 
             payload_bytes = bytes(row.payload_data)
+            json_str = gzip.decompress(payload_bytes).decode("utf-8")
+            target_class = (
+                KServeInferenceRequest if is_input else KServeInferenceResponse
+            )
+            parsed = target_class.model_validate_json(json_str)
 
             await conn.execute(
                 delete(partial_payloads_table).where(
@@ -340,9 +350,7 @@ class DBStorage(StorageInterface):
                 )
             )
 
-        json_str = gzip.decompress(payload_bytes).decode("utf-8")
-        target_class = KServeInferenceRequest if is_input else KServeInferenceResponse
-        return target_class.model_validate_json(json_str)
+        return parsed
 
     async def delete_partial_payload(self, payload_id: str, *, is_input: bool) -> None:
         """Delete a stored partial payload."""

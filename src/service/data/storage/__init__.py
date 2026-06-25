@@ -2,28 +2,28 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from src.service.data.storage.maria.maria import MariaDBStorage
+    from src.service.data.storage.storage_interface import StorageInterface
 
+from src.service.data.storage.db.db_storage import DBStorage
 from src.service.data.storage.pvc import PVCStorage
+
+logger = logging.getLogger(__name__)
 
 
 class GlobalStorageInterface:
     """Singleton holder for global storage interface."""
 
-    _instance: MariaDBStorage | PVCStorage | None = None
+    _instance: StorageInterface | None = None
 
     @classmethod
-    def get(cls, *, force_reload: bool = False) -> MariaDBStorage | PVCStorage:
-        """Get or create the global storage interface singleton.
-
-        :param force_reload: If True, force recreation of the storage interface
-        :return: Storage interface instance (PVCStorage or MariaDBStorage)
-        """
+    def get(cls, *, force_reload: bool = False) -> StorageInterface:
+        """Get or create the global storage interface singleton."""
         if cls._instance is None or force_reload:
             cls._instance = get_storage_interface()
         return cls._instance
@@ -34,86 +34,90 @@ class GlobalStorageInterface:
         cls._instance = None
 
 
-def get_global_storage_interface(
-    *, force_reload: bool = False
-) -> MariaDBStorage | PVCStorage:
-    """Get or create the global storage interface singleton.
-
-    :param force_reload: If True, force recreation of the storage interface
-    :return: Storage interface instance (PVCStorage or MariaDBStorage)
-    """
+def get_global_storage_interface(*, force_reload: bool = False) -> StorageInterface:
+    """Get or create the global storage interface singleton."""
     return GlobalStorageInterface.get(force_reload=force_reload)
 
 
-def get_storage_interface() -> MariaDBStorage | PVCStorage:
+def _create_legacy_mariadb_storage() -> StorageInterface:
+    """Create MariaDBStorage using the legacy synchronous mariadb connector."""
+    from src.service.data.storage.maria.maria import (  # noqa: PLC0415
+        MariaDBStorage,
+    )
+
+    migration_str = os.environ.get("DATABASE_ATTEMPT_MIGRATION", "0").lower()
+    attempt_migration = migration_str in ("1", "true", "yes", "on")
+
+    user = os.environ.get("DATABASE_USERNAME") or os.environ.get(
+        "QUARKUS_DATASOURCE_USERNAME"
+    )
+    password = os.environ.get("DATABASE_PASSWORD") or os.environ.get(
+        "QUARKUS_DATASOURCE_PASSWORD"
+    )
+    host = os.environ.get("DATABASE_HOST") or os.environ.get("DATABASE_SERVICE")
+    database = os.environ.get("DATABASE_DATABASE") or os.environ.get("DATABASE_NAME")
+
+    missing = []
+    if not user:
+        missing.append("DATABASE_USERNAME or QUARKUS_DATASOURCE_USERNAME")
+    if not password:
+        missing.append("DATABASE_PASSWORD or QUARKUS_DATASOURCE_PASSWORD")
+    if not host:
+        missing.append("DATABASE_HOST or DATABASE_SERVICE")
+    if not database:
+        missing.append("DATABASE_DATABASE or DATABASE_NAME")
+    if missing:
+        msg = f"MariaDB storage requires environment variables: {', '.join(missing)}"
+        raise ValueError(msg)
+
+    ssl_ca = os.environ.get("DATABASE_TLS_CA_CERT", "/etc/tls/db/ca.crt")
+
+    return MariaDBStorage(
+        user=user,
+        password=password,
+        host=host,
+        port=int(os.environ.get("DATABASE_PORT", "3306")),
+        database=database,
+        ssl_ca=ssl_ca if Path(ssl_ca).exists() else None,
+        attempt_migration=attempt_migration,
+    )
+
+
+def get_storage_interface() -> StorageInterface:
     """Create a new storage interface based on environment configuration.
 
-    :return: Storage interface instance (PVCStorage or MariaDBStorage)
-    :raises ValueError: If storage format is unsupported or dependencies missing
+    Supported formats:
+    - PVC: HDF5-based file storage (default)
+    - MARIA / DATABASE: MariaDB (legacy sync or async SQLAlchemy)
+    - POSTGRES / POSTGRESQL: PostgreSQL via SQLAlchemy async (asyncpg)
     """
     storage_format = os.environ.get("SERVICE_STORAGE_FORMAT", "PVC")
+
     if storage_format == "PVC":
         return PVCStorage(
-            data_directory=os.environ.get("STORAGE_DATA_FOLDER", "/tmp"),  # noqa: S108 -- fallback default for STORAGE_DATA_FOLDER env var
+            data_directory=os.environ.get("STORAGE_DATA_FOLDER", "/tmp"),  # noqa: S108
             data_file=os.environ.get("STORAGE_DATA_FILENAME", "trustyai.hdf5"),
         )
+
+    if storage_format in ("POSTGRES", "POSTGRESQL"):
+        from src.service.data.storage.db.engine import (  # noqa: PLC0415
+            create_db_engine,
+        )
+
+        engine = create_db_engine(storage_format)
+        return DBStorage(engine)
+
     if storage_format in ("MARIA", "DATABASE"):
         try:
-            # Import MariaDB storage only when needed (optional dependency)
-            from src.service.data.storage.maria.maria import (  # noqa: PLC0415 -- lazy import: mariadb is optional
-                MariaDBStorage,
+            return _create_legacy_mariadb_storage()
+        except ImportError:
+            logger.info("Legacy mariadb connector not available, using async DBStorage")
+            from src.service.data.storage.db.engine import (  # noqa: PLC0415
+                create_db_engine,
             )
 
-            # Parse DATABASE_ATTEMPT_MIGRATION with tolerance for boolean strings
-            migration_str = os.environ.get("DATABASE_ATTEMPT_MIGRATION", "0").lower()
-            attempt_migration = migration_str in ("1", "true", "yes", "on")
+            engine = create_db_engine(storage_format)
+            return DBStorage(engine)
 
-            # Support both operator env vars and direct deployment env vars
-            # Operator (Quarkus-based): QUARKUS_DATASOURCE_USERNAME/PASSWORD, DATABASE_SERVICE/NAME
-            # Direct deployment: DATABASE_USERNAME/PASSWORD, DATABASE_HOST/DATABASE
-            user = os.environ.get("DATABASE_USERNAME") or os.environ.get(
-                "QUARKUS_DATASOURCE_USERNAME"
-            )
-            password = os.environ.get("DATABASE_PASSWORD") or os.environ.get(
-                "QUARKUS_DATASOURCE_PASSWORD"
-            )
-            host = os.environ.get("DATABASE_HOST") or os.environ.get("DATABASE_SERVICE")
-            database = os.environ.get("DATABASE_DATABASE") or os.environ.get(
-                "DATABASE_NAME"
-            )
-
-            # Validate required parameters before constructing MariaDBStorage
-            missing = []
-            if not user:
-                missing.append("DATABASE_USERNAME or QUARKUS_DATASOURCE_USERNAME")
-            if not password:
-                missing.append("DATABASE_PASSWORD or QUARKUS_DATASOURCE_PASSWORD")
-            if not host:
-                missing.append("DATABASE_HOST or DATABASE_SERVICE")
-            if not database:
-                missing.append("DATABASE_DATABASE or DATABASE_NAME")
-            if missing:
-                msg = f"MariaDB storage requires environment variables: {', '.join(missing)}"
-                raise ValueError(msg)
-
-            ssl_ca = os.environ.get("DATABASE_TLS_CA_CERT", "/etc/tls/db/ca.crt")
-
-            return MariaDBStorage(
-                user=user,
-                password=password,
-                host=host,
-                port=int(os.environ.get("DATABASE_PORT", "3306")),
-                database=database,
-                ssl_ca=ssl_ca if Path(ssl_ca).exists() else None,
-                attempt_migration=attempt_migration,
-            )
-        except ImportError as e:
-            msg = (
-                "MariaDB storage requires optional dependencies. "
-                "Install with: pip install trustyai-service[mariadb]. "
-                f"Error: {e}"
-            )
-            raise ValueError(msg) from e
-    else:
-        msg = f"Storage format={storage_format} not yet supported by the Python implementation of the service."
-        raise ValueError(msg)
+    msg = f"Unsupported storage format: {storage_format}"
+    raise ValueError(msg)

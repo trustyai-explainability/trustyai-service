@@ -24,7 +24,7 @@ def _read_db_config(storage_format: str) -> dict:
     )
     host = os.environ.get("DATABASE_HOST") or os.environ.get("DATABASE_SERVICE")
     database = os.environ.get("DATABASE_DATABASE") or os.environ.get("DATABASE_NAME")
-    ssl_ca = os.environ.get("DATABASE_SSL_CA")
+    ssl_ca = os.environ.get("DATABASE_SSL_CA") or os.environ.get("DATABASE_TLS_CA_CERT")
 
     default_port = (
         _POSTGRESQL_DEFAULT_PORT
