@@ -119,6 +119,7 @@ ignore = [
 "src/endpoints/metrics/fairness/group/*.py" = ["BLE001", "TRY300", "TRY301"]
 "src/endpoints/metrics/drift/jensen_shannon.py" = ["TRY300", "TRY301"]
 "src/endpoints/metrics/drift/compare_means.py" = ["C901", "TRY301"]
+"src/service/config/registry.py" = ["PLR0913"]
 # === TEST FILES ===
 "tests/**" = ["S101", "PT019", "SLF001"]
 "tests/core/metrics/test_fairness.py" = ["N803", "N806"]
