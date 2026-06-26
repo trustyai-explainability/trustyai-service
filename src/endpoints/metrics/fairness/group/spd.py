@@ -182,7 +182,7 @@ async def get_spd_definition() -> dict[str, str]:
 @router.post("/metrics/group/fairness/spd/definition")
 async def interpret_spd_value(request: GroupDefinitionRequest) -> dict[str, str]:
     """Provide a specific, plain-english interpretation of a specific value of SPD metric."""
-    logger.info("Interpreting SPD value for model: %s", request.modelId)
+    logger.info("Interpreting SPD value for model: %s", request.model_id)
     raise HTTPException(
         status_code=HTTPStatus.NOT_IMPLEMENTED,
         detail="SPD value interpretation is not yet implemented",
