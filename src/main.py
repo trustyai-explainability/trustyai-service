@@ -28,17 +28,16 @@ from src.endpoints.explainers.global_explainer import router as explainers_globa
 from src.endpoints.explainers.local_explainer import router as explainers_local_router
 from src.endpoints.metadata import router as metadata_router
 from src.endpoints.metrics.batch_mean import router as batch_mean_router
-from src.endpoints.metrics.drift.approx_ks_test import (
-    router as drift_approxkstest_router,
-)
 from src.endpoints.metrics.drift.compare_means import (
     router as drift_comparemeans_router,
 )
-from src.endpoints.metrics.drift.fourier_mmd import router as drift_fouriermmd_router
 from src.endpoints.metrics.drift.jensen_shannon import (
     router as drift_jensenshannon_router,
 )
 from src.endpoints.metrics.drift.kolmogorov_smirnov import router as drift_kstest_router
+from src.endpoints.metrics.drift.kolmogorov_smirnov_streaming import (
+    router as drift_ksteststreaming_router,
+)
 from src.endpoints.metrics.fairness.group.dir import router as dir_router
 from src.endpoints.metrics.fairness.group.spd import router as spd_router
 from src.endpoints.metrics.metrics_info import router as metrics_info_router
@@ -169,12 +168,10 @@ app.include_router(
     ],
 )
 app.include_router(
-    drift_fouriermmd_router,
-    tags=["Drift Metrics: FourierMMD"],
-)
-app.include_router(
-    drift_approxkstest_router,
-    tags=["Drift Metrics: ApproxKSTest"],
+    drift_ksteststreaming_router,
+    tags=[
+        "Drift Metrics: KSTestStreaming",
+    ],
 )
 app.include_router(
     drift_jensenshannon_router,
