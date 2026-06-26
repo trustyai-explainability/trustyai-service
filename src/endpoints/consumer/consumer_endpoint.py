@@ -10,184 +10,35 @@ from http import HTTPStatus
 from typing import Annotated, Never
 
 import numpy as np
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Header, HTTPException
 from numpy import ndarray
-from pydantic import TypeAdapter, ValidationError
 
 from src.endpoints.consumer import (
-    InferencePartialPayload,
     KServeData,
     KServeInferenceRequest,
     KServeInferenceResponse,
 )
-from src.endpoints.consumer.gzip_utils import decompress_if_gzip
 from src.exceptions import ReconciliationError
-from src.service.constants import (
-    BIAS_IGNORE_PARAM,
-    INPUT_SUFFIX,
-    METADATA_SUFFIX,
-    OUTPUT_SUFFIX,
-    SYNTHETIC_TAG,
-    UNLABELED_TAG,
-)
 from src.service.data.datasources.data_source import DataSource
 from src.service.data.model_data import ModelData
-from src.service.data.modelmesh_parser import ModelMeshPayloadParser, PartialPayload
 from src.service.data.shared_data_source import get_shared_data_source
 from src.service.data.storage import get_global_storage_interface
 from src.service.utils import list_utils
 
+INPUT_SUFFIX = "_inputs"
+OUTPUT_SUFFIX = "_outputs"
+METADATA_SUFFIX = "_metadata"
+SYNTHETIC_TAG = "synthetic"
+UNLABELED_TAG = "unlabeled"
+BIAS_IGNORE_PARAM = "bias-ignore"
+
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-unreconciled_inputs = {}
-unreconciled_outputs = {}
 
 
 def get_data_source() -> DataSource:
     """Get the shared data source instance."""
     return get_shared_data_source()
-
-
-def _validate_payload_type(payload: object, expected_type: type) -> None:
-    """Validate payload type from storage.
-
-    :param payload: The payload to validate
-    :param expected_type: Expected type class
-    :raises HTTPException: If payload type doesn't match expected
-    """
-    if not isinstance(payload, expected_type):
-        raise HTTPException(
-            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
-            detail="Invalid payload type from storage",
-        )
-
-
-@router.post("/consumer/kserve/v2")
-async def consume_inference_payload(
-    payload: InferencePartialPayload,
-) -> dict[str, str]:
-    """Process a KServe v2 payload.
-
-    This endpoint accepts both input (request) and output (response) payloads from ModelMesh-served models
-    and stores them for reconciliation. When both input and output payloads for the same ID are available,
-    they are reconciled and stored as data.
-
-    Args:
-        payload: The KServe v2 payload containing either request or response data
-
-    Returns:
-        A JSON response indicating success or failure
-
-    """
-    storage_interface = get_global_storage_interface()
-
-    # Validate required fields before processing
-    if not payload.id:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST, detail="Payload requires 'id' field"
-        )
-
-    if not payload.kind:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="Payload must specify 'kind' as either 'request' or 'response'",
-        )
-
-    if not payload.modelid:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="Payload requires 'modelid' field",
-        )
-
-    if not payload.data:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="Payload requires 'data' field containing base64-encoded data",
-        )
-
-    try:
-        partial_payload = PartialPayload(data=payload.data)
-        if payload.kind == "request":
-            logger.info(
-                "Received partial input payload from model=%s, id=%s",
-                payload.modelid,
-                payload.id,
-            )
-
-            try:
-                ModelMeshPayloadParser.parse_input_payload(partial_payload)
-                is_input = True
-            except ValueError as e:
-                logger.exception("Invalid input payload")
-                raise HTTPException(
-                    status_code=HTTPStatus.BAD_REQUEST,
-                    detail=f"Invalid input payload: {e!s}",
-                ) from e
-
-            # Store the input payload
-            await storage_interface.persist_partial_payload(
-                partial_payload, payload_id=payload.id, is_input=is_input
-            )
-
-            output_payload = await storage_interface.get_partial_payload(
-                payload.id, is_input=False, is_modelmesh=True
-            )
-
-            if output_payload:
-                _validate_payload_type(output_payload, PartialPayload)
-                await reconcile_modelmesh_payloads(
-                    partial_payload, output_payload, payload.id, payload.modelid
-                )
-
-        elif payload.kind == "response":
-            logger.info(
-                "Received partial output payload from model=%s, id=%s",
-                payload.modelid,
-                payload.id,
-            )
-
-            try:
-                ModelMeshPayloadParser.parse_output_payload(partial_payload)
-                is_input = False
-            except ValueError as e:
-                logger.exception("Invalid output payload")
-                raise HTTPException(
-                    status_code=HTTPStatus.BAD_REQUEST,
-                    detail=f"Invalid output payload: {e!s}",
-                ) from e
-
-            # Store the output payload
-            await storage_interface.persist_partial_payload(
-                payload=partial_payload, payload_id=payload.id, is_input=is_input
-            )
-
-            input_payload = await storage_interface.get_partial_payload(
-                payload.id, is_input=True, is_modelmesh=True
-            )
-
-            if input_payload:
-                # We have both input and output. Reconcile them
-                _validate_payload_type(input_payload, PartialPayload)
-                await reconcile_modelmesh_payloads(
-                    input_payload, partial_payload, payload.id, payload.modelid
-                )
-    except HTTPException:
-        # HTTPException always goes through
-        raise
-    except (
-        Exception
-    ) as e:  # Broad catch intentional: endpoint catch-all for unknown processing errors
-        logger.exception("Error processing payload")
-        raise HTTPException(
-            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
-            detail="An internal error occurred while processing the payload",
-        ) from e
-    else:
-        return {
-            "status": "success",
-            "message": f"Payload for {payload.id} processed successfully",
-        }
 
 
 async def write_reconciled_data(
@@ -255,61 +106,22 @@ async def write_reconciled_data(
     )
     logger.debug("DataSource instance id: %s", id(data_source))
 
-    # Update metadata: mark inferences recorded and increment observation count.
-    # Only increment if metadata was already cached — on cache miss, get_metadata
-    # reads the correct count from storage (which already includes the new rows).
+    # Mark that inference data has been recorded for this model
     try:
-        was_cached = model_id in data_source.metadata_cache
         metadata = await data_source.get_metadata(model_id)
         metadata.set_recorded_inferences(recorded_inferences=True)
-        if was_cached:
-            metadata.increment_observations(len(input_array))
     except (
         Exception
     ) as e:  # Intentional: metadata update is non-critical; continue on failure
-        logger.warning("Could not update metadata for model %s: %s", model_id, e)
-    else:
-        logger.info(
-            "Updated metadata for model %s: recorded_inferences=True, observations=%d",
-            model_id,
-            metadata.get_observations(),
+        logger.warning(
+            "Could not update recorded_inferences flag for model %s: %s", model_id, e
         )
+    else:
+        logger.info("Marked model %s as having recorded inferences", model_id)
 
     # Clean up
     await storage_interface.delete_partial_payload(id_, is_input=True)
     await storage_interface.delete_partial_payload(id_, is_input=False)
-
-
-async def reconcile_modelmesh_payloads(
-    input_payload: PartialPayload,
-    output_payload: PartialPayload,
-    request_id: str,
-    model_id: str,
-) -> None:
-    """Reconcile the input and output ModelMesh payloads into dataset entries."""
-    df = ModelMeshPayloadParser.payloads_to_dataframe(
-        input_payload, output_payload, request_id, model_id
-    )
-
-    input_cols = [
-        col
-        for col in df.columns
-        if not col.startswith("output_") and col not in ["id", "model_id", "synthetic"]
-    ]
-    output_cols = [col for col in df.columns if col.startswith("output_")]
-
-    # Create metadata array
-    tags = [SYNTHETIC_TAG] if any(df["synthetic"]) else [UNLABELED_TAG]
-
-    await write_reconciled_data(
-        df[input_cols].values,
-        input_cols,
-        df[output_cols].values,
-        output_cols,
-        model_id=model_id,
-        tags=tags,
-        id_=request_id,
-    )
 
 
 async def reconcile_kserve(
@@ -447,24 +259,23 @@ def process_payload(
         return np.array(kserve_data.data), column_names
 
 
-_kserve_payload_adapter = TypeAdapter(KServeInferenceRequest | KServeInferenceResponse)
-
-
-async def process_cloud_event(
+@router.post("/")
+async def consume_cloud_event(
     payload: KServeInferenceRequest | KServeInferenceResponse,
-    ce_id: str | None = None,
+    ce_id: Annotated[str | None, Header()] = None,
     tag: str | None = None,
 ) -> dict[str, str]:
-    """Process a KServe payload from a cloud event or internal call.
+    """Consume KServe v2 payloads from cloud events.
 
-    This is the core logic shared by the HTTP endpoint and the upload
-    endpoint's internal forwarding path.
+    This endpoint accepts both input (request) and output (response) payloads
+    from KServe-served models and stores them for reconciliation.
 
-    :param payload: Parsed KServe inference request or response
-    :param ce_id: Cloud event ID from header (overrides payload.id)
+    :param payload: KServe inference request or response
+    :param ce_id: Cloud event ID from header
     :param tag: Optional tag to associate with the data
     :raises HTTPException: If payload processing fails
     """
+    # set payload id from cloud event header if present
     if ce_id is not None:
         payload.id = ce_id
 
@@ -474,6 +285,7 @@ async def process_cloud_event(
             detail="Payload requires 'id' field or 'ce-id' header",
         )
 
+    # get global storage interface
     storage_interface = get_global_storage_interface()
 
     try:
@@ -485,11 +297,13 @@ async def process_cloud_event(
                 )
                 raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=msg)
             logger.info("KServe Inference Input %s received.", payload.id)
+            # if a match is found, the payload is auto-deleted from data
             partial_output = await storage_interface.get_partial_payload(
-                payload.id, is_input=False, is_modelmesh=False
+                payload.id, is_input=False
             )
             if partial_output is not None:
                 if not isinstance(partial_output, KServeInferenceResponse):
+                    # This should never happen - indicates storage interface error
                     raise HTTPException(
                         status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
                         detail="Invalid payload type from storage",
@@ -517,10 +331,11 @@ async def process_cloud_event(
                 payload.model_name,
             )
             partial_input = await storage_interface.get_partial_payload(
-                payload.id, is_input=True, is_modelmesh=False
+                payload.id, is_input=True
             )
             if partial_input is not None:
                 if not isinstance(partial_input, KServeInferenceRequest):
+                    # This should never happen - indicates storage interface error
                     raise HTTPException(
                         status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
                         detail="Invalid payload type from storage",
@@ -536,6 +351,8 @@ async def process_cloud_event(
                 "message": f"Output payload {payload.id} processed successfully",
             }
 
+        # Defensive programming: this should never happen due to type annotation
+        # but adding explicit fallback for type safety
         raise HTTPException(
             status_code=HTTPStatus.BAD_REQUEST,
             detail="Payload must be either KServeInferenceRequest or KServeInferenceResponse",
@@ -544,34 +361,3 @@ async def process_cloud_event(
     except ReconciliationError as e:
         logger.exception("Reconciliation failed for payload %s", payload.id)
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=str(e)) from e
-
-
-@router.post("/")
-async def consume_cloud_event(
-    http_request: Request,
-    ce_id: Annotated[str | None, Header()] = None,
-    tag: str | None = None,
-) -> dict[str, str]:
-    """Consume KServe v2 payloads from cloud events.
-
-    Knative Eventing may strip the Content-Encoding header while leaving the
-    body gzip-compressed, so this endpoint detects gzip by magic bytes and
-    decompresses before JSON parsing.
-
-    :param http_request: Raw HTTP request (body may be gzip-compressed without header)
-    :param ce_id: Cloud event ID from header
-    :param tag: Optional tag to associate with the data
-    :raises HTTPException: If payload processing fails
-    """
-    raw_body = await http_request.body()
-    body = decompress_if_gzip(raw_body)
-
-    try:
-        payload = _kserve_payload_adapter.validate_json(body)
-    except ValidationError as e:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail=f"Invalid payload: {e}",
-        ) from e
-
-    return await process_cloud_event(payload, ce_id=ce_id, tag=tag)
