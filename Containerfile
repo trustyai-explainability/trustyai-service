@@ -10,7 +10,7 @@ ARG ENABLE_FIPS_POLICY="true"
 # =============================================================================
 # Stage 1: Builder — UBI10 Python 3.14 minimal with dev tools
 # =============================================================================
-FROM registry.access.redhat.com/ubi10/python-314-minimal:latest AS builder
+FROM registry.access.redhat.com/ubi10/python-314-minimal@sha256:0d6de003c233849fc6690277d18b66a2f0217b6c8c447c074462aa22267b6982 AS builder
 
 ARG EXTRAS
 
@@ -49,7 +49,7 @@ RUN mkdir -p src && \
 # =============================================================================
 # Stage 2: Runtime — UBI10 Python 3.14 minimal (no compilers, no dev headers)
 # =============================================================================
-FROM registry.access.redhat.com/ubi10/python-314-minimal:latest
+FROM registry.access.redhat.com/ubi10/python-314-minimal@sha256:0d6de003c233849fc6690277d18b66a2f0217b6c8c447c074462aa22267b6982
 
 ARG EXTRAS
 ARG VERSION
