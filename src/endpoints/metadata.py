@@ -6,7 +6,7 @@ from http import HTTPStatus
 from typing import Annotated
 
 import numpy as np
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Body, HTTPException, Query
 from pydantic import BaseModel
 
 from src.endpoints.data.data_upload import validate_data_tag
@@ -42,6 +42,7 @@ def _build_readable_schema(
     for name, item in schema.items.items():
         items[name] = {
             "type": item.type.value if hasattr(item.type, "value") else str(item.type),
+            "name": item.name,
             "index": item.column_index,
         }
     name_mapping = {
@@ -80,12 +81,6 @@ class DataTagging(BaseModel):
     dataTagging: dict[str, list[list[int]]] = {}
 
 
-class ModelIdRequest(BaseModel):
-    """Request payload containing a model identifier."""
-
-    modelId: str
-
-
 @router.get("/info")
 async def get_service_info() -> dict[str, dict]:
     """Get a comprehensive overview of the model inference datasets collected by TrustyAI.
@@ -108,7 +103,6 @@ async def get_service_info() -> dict[str, dict]:
                 # Get metadata for each model
                 model_metadata = await data_source.get_metadata(model_id)
                 num_observations = await data_source.get_num_observations(model_id)
-                has_inferences = await data_source.has_recorded_inferences(model_id)
 
                 # Get scheduled metrics for this model
                 scheduled_metadata = {}
@@ -162,7 +156,6 @@ async def get_service_info() -> dict[str, dict]:
                 service_metadata[model_id] = {
                     "data": {
                         "observations": num_observations,
-                        "hasRecordedInferences": has_inferences,
                         "inputTensorName": model_metadata.input_tensor_name
                         if model_metadata
                         else "input",
@@ -184,14 +177,15 @@ async def get_service_info() -> dict[str, dict]:
                         if model_metadata
                         else {"items": {}, "nameMapping": {}},
                     },
-                    "metrics": {"scheduledMetadata": scheduled_metadata},
+                    "metrics": {
+                        "scheduledMetadata": {"metricCounts": scheduled_metadata},
+                    },
                 }
 
                 logger.debug(
-                    "Retrieved metadata for model %s: observations=%s, hasInferences=%s",
+                    "Retrieved metadata for model %s: observations=%s",
                     model_id,
                     num_observations,
-                    has_inferences,
                 )
 
             except Exception as e:  # Intentional: per-model errors should not break entire info endpoint
@@ -202,13 +196,14 @@ async def get_service_info() -> dict[str, dict]:
                 service_metadata[model_id] = {
                     "data": {
                         "observations": 0,
-                        "hasRecordedInferences": False,
                         "inputTensorName": "input",
                         "outputTensorName": "output",
                         "inputSchema": {"items": {}, "nameMapping": {}},
                         "outputSchema": {"items": {}, "nameMapping": {}},
                     },
-                    "metrics": {"scheduledMetadata": {}},
+                    "metrics": {
+                        "scheduledMetadata": {"metricCounts": {}},
+                    },
                     "error": str(e),
                 }
 
@@ -476,32 +471,42 @@ async def apply_column_names(name_mapping: NameMapping) -> dict[str, str]:
         )
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=error_msg)
 
-    try:
-        # Apply input mappings if provided and dataset exists
-        if name_mapping.inputMapping and input_exists:
-            logger.info(
-                "Applying input mappings for model %s: %s",
-                model_id,
-                name_mapping.inputMapping,
+    # Validate column names before applying
+    if name_mapping.inputMapping and input_exists:
+        original_input = await storage_interface.get_original_column_names(
+            input_dataset_name
+        )
+        invalid = set(name_mapping.inputMapping.keys()) - set(original_input)
+        if invalid:
+            raise HTTPException(
+                status_code=HTTPStatus.BAD_REQUEST,
+                detail=f"No feature found with name={', '.join(sorted(invalid))}. "
+                f"Valid features: {original_input}",
             )
+
+    if name_mapping.outputMapping and output_exists:
+        original_output = await storage_interface.get_original_column_names(
+            output_dataset_name
+        )
+        invalid = set(name_mapping.outputMapping.keys()) - set(original_output)
+        if invalid:
+            raise HTTPException(
+                status_code=HTTPStatus.BAD_REQUEST,
+                detail=f"No output found with name={', '.join(sorted(invalid))}. "
+                f"Valid outputs: {original_output}",
+            )
+
+    try:
+        if name_mapping.inputMapping and input_exists:
             await storage_interface.apply_name_mapping(
                 input_dataset_name, name_mapping.inputMapping
             )
 
-        # Apply output mappings if provided and dataset exists
         if name_mapping.outputMapping and output_exists:
-            logger.info(
-                "Applying output mappings for model %s: %s",
-                model_id,
-                name_mapping.outputMapping,
-            )
             await storage_interface.apply_name_mapping(
                 output_dataset_name, name_mapping.outputMapping
             )
 
-    except HTTPException:
-        # Re-raise HTTP exceptions without wrapping
-        raise
     except Exception as e:  # Broad catch intentional: endpoint catch-all for unknown application errors
         logger.exception("Error applying column names")
         raise HTTPException(
@@ -514,9 +519,10 @@ async def apply_column_names(name_mapping: NameMapping) -> dict[str, str]:
 
 
 @router.delete("/info/names")
-async def remove_column_names(request: ModelIdRequest) -> dict[str, str]:
+async def remove_column_names(
+    model_id: Annotated[str, Body(embed=False)],
+) -> dict[str, str]:
     """Remove any column names that have been applied to a particular inference."""
-    model_id = request.modelId
     logger.info("Removing column names for model: %s", model_id)
 
     input_dataset_name = model_id + INPUT_SUFFIX
