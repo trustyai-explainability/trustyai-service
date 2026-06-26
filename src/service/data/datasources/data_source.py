@@ -10,6 +10,7 @@ from src.service.constants import (
     GROUND_TRUTH_SUFFIX,
     INTERNAL_DATA_FILENAME,
     METADATA_FILENAME,
+    SYNTHETIC_TAG,
     UNLABELED_TAG,
 )
 from src.service.data.exceptions import DataframeCreateError, StorageReadError
@@ -166,9 +167,12 @@ class DataSource:
         """
         df = await self.get_dataframe_with_batch_size(model_id, batch_size)
 
-        # Filter out any rows with the unlabeled tag (synthetic data)
-        if UNLABELED_TAG in df.columns:
-            df = df[~df[UNLABELED_TAG].fillna(value=False)]
+        # Filter out synthetic rows — match both the current prefixed tag and
+        # the legacy unprefixed value for backward compatibility with data
+        # written before the tag-prefix migration.
+        for col in (SYNTHETIC_TAG, "synthetic"):
+            if col in df.columns:
+                df = df[~df[col].fillna(value=False)]
 
         return df
 
@@ -202,9 +206,21 @@ class DataSource:
                     return cell.tolist()
                 if isinstance(cell, list):
                     return cell
+                if isinstance(cell, str):
+                    return [cell]
                 return []
 
-            mask = [tag in _extract_tags(row[tags_col]) for row in metadata]
+            _legacy_aliases: dict[str, str] = {
+                UNLABELED_TAG: "unlabeled",
+                SYNTHETIC_TAG: "synthetic",
+            }
+            match_tags = {tag}
+            if tag in _legacy_aliases:
+                match_tags.add(_legacy_aliases[tag])
+
+            mask = [
+                bool(match_tags & set(_extract_tags(row[tags_col]))) for row in metadata
+            ]
             filtered_input = input_data[mask]
 
             df_data: dict[str, object] = {}
