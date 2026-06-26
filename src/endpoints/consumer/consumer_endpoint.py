@@ -10,8 +10,9 @@ from http import HTTPStatus
 from typing import Annotated, Never
 
 import numpy as np
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Request
 from numpy import ndarray
+from pydantic import TypeAdapter, ValidationError
 
 from src.endpoints.consumer import (
     InferencePartialPayload,
@@ -19,6 +20,7 @@ from src.endpoints.consumer import (
     KServeInferenceRequest,
     KServeInferenceResponse,
 )
+from src.endpoints.consumer.gzip_utils import decompress_if_gzip
 from src.exceptions import ReconciliationError
 from src.service.data.datasources.data_source import DataSource
 
@@ -440,23 +442,24 @@ def process_payload(
         return np.array(kserve_data.data), column_names
 
 
-@router.post("/")
-async def consume_cloud_event(
+_kserve_payload_adapter = TypeAdapter(KServeInferenceRequest | KServeInferenceResponse)
+
+
+async def process_cloud_event(
     payload: KServeInferenceRequest | KServeInferenceResponse,
-    ce_id: Annotated[str | None, Header()] = None,
+    ce_id: str | None = None,
     tag: str | None = None,
 ) -> dict[str, str]:
-    """Consume KServe v2 payloads from cloud events.
+    """Process a KServe payload from a cloud event or internal call.
 
-    This endpoint accepts both input (request) and output (response) payloads
-    from ModelMesh-served models and stores them for reconciliation.
+    This is the core logic shared by the HTTP endpoint and the upload
+    endpoint's internal forwarding path.
 
-    :param payload: KServe inference request or response
-    :param ce_id: Cloud event ID from header
+    :param payload: Parsed KServe inference request or response
+    :param ce_id: Cloud event ID from header (overrides payload.id)
     :param tag: Optional tag to associate with the data
     :raises HTTPException: If payload processing fails
     """
-    # set payload id from cloud event header if present
     if ce_id is not None:
         payload.id = ce_id
 
@@ -466,7 +469,6 @@ async def consume_cloud_event(
             detail="Payload requires 'id' field or 'ce-id' header",
         )
 
-    # get global storage interface
     storage_interface = get_global_storage_interface()
 
     try:
@@ -478,13 +480,11 @@ async def consume_cloud_event(
                 )
                 raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=msg)
             logger.info("KServe Inference Input %s received.", payload.id)
-            # if a match is found, the payload is auto-deleted from data
             partial_output = await storage_interface.get_partial_payload(
                 payload.id, is_input=False, is_modelmesh=False
             )
             if partial_output is not None:
                 if not isinstance(partial_output, KServeInferenceResponse):
-                    # This should never happen - indicates storage interface error
                     raise HTTPException(
                         status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
                         detail="Invalid payload type from storage",
@@ -516,7 +516,6 @@ async def consume_cloud_event(
             )
             if partial_input is not None:
                 if not isinstance(partial_input, KServeInferenceRequest):
-                    # This should never happen - indicates storage interface error
                     raise HTTPException(
                         status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
                         detail="Invalid payload type from storage",
@@ -532,8 +531,6 @@ async def consume_cloud_event(
                 "message": f"Output payload {payload.id} processed successfully",
             }
 
-        # Defensive programming: this should never happen due to type annotation
-        # but adding explicit fallback for type safety
         raise HTTPException(
             status_code=HTTPStatus.BAD_REQUEST,
             detail="Payload must be either KServeInferenceRequest or KServeInferenceResponse",
@@ -542,3 +539,34 @@ async def consume_cloud_event(
     except ReconciliationError as e:
         logger.exception("Reconciliation failed for payload %s", payload.id)
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=str(e)) from e
+
+
+@router.post("/")
+async def consume_cloud_event(
+    http_request: Request,
+    ce_id: Annotated[str | None, Header()] = None,
+    tag: str | None = None,
+) -> dict[str, str]:
+    """Consume KServe v2 payloads from cloud events.
+
+    Knative Eventing may strip the Content-Encoding header while leaving the
+    body gzip-compressed, so this endpoint detects gzip by magic bytes and
+    decompresses before JSON parsing.
+
+    :param http_request: Raw HTTP request (body may be gzip-compressed without header)
+    :param ce_id: Cloud event ID from header
+    :param tag: Optional tag to associate with the data
+    :raises HTTPException: If payload processing fails
+    """
+    raw_body = await http_request.body()
+    body = decompress_if_gzip(raw_body)
+
+    try:
+        payload = _kserve_payload_adapter.validate_json(body)
+    except ValidationError as e:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail=f"Invalid payload: {e}",
+        ) from e
+
+    return await process_cloud_event(payload, ce_id=ce_id, tag=tag)
