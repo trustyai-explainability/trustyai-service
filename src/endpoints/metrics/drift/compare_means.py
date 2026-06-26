@@ -373,6 +373,7 @@ async def list_compare_means_requests() -> dict[str, list[dict[str, Any]]]:
             ):
                 requests_list.append(
                     {
+                        "id": str(request_id),  # deprecated: use requestId
                         "requestId": str(request_id),
                         "modelId": request.model_id,
                         "metricName": METRIC_NAME,
