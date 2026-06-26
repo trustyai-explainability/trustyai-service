@@ -36,12 +36,12 @@ jobs:
             VERSION="${REF_NAME#v}"
             # Sanitize for OCI image tag: replace + with - (OCI tags: [a-zA-Z0-9._-])
             SANITIZED_TAG="${REF_NAME//+/-}"
-            echo "tags=${SANITIZED_TAG} latest" >> "$GITHUB_OUTPUT"
+            echo "tags=${SANITIZED_TAG} latest upstream" >> "$GITHUB_OUTPUT"
             echo "primary_tag=${SANITIZED_TAG}" >> "$GITHUB_OUTPUT"
             echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           else
-            # Push only latest for main branch
-            echo "tags=latest" >> "$GITHUB_OUTPUT"
+            # Push latest and upstream for main branch
+            echo "tags=latest upstream" >> "$GITHUB_OUTPUT"
             echo "primary_tag=latest" >> "$GITHUB_OUTPUT"
             echo "version=0.0.0.dev0" >> "$GITHUB_OUTPUT"
           fi
