@@ -356,8 +356,8 @@ class TestDeprecatedIdentityEndpoints:
 class TestBatchMeanRequest:
     """Tests for BatchMeanRequest model validation."""
 
-    def test_model_validator_sets_metric_name(self) -> None:
-        """Default metric_name is set to BatchMean by model validator."""
+    def test_default_metric_name(self) -> None:
+        """Default metric_name is set to BatchMean via field default."""
         request = BatchMeanRequest(modelId="test", columnName="col")
         assert request.metric_name == "BatchMean"
 
