@@ -6,7 +6,7 @@ from http import HTTPStatus
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from trustyai_service.core.metrics.drift.compare_means import (
     DEFAULT_ALPHA,
@@ -62,9 +62,7 @@ class CompareMeansMetricRequest(BaseMetricRequest):
     model_config = ConfigDict(populate_by_name=True)
 
     model_id: str = Field(alias="modelId")
-    metric_name: str | None = Field(
-        default=None, alias="metricName"
-    )  # Will be set by endpoint
+    metric_name: str = Field(default=METRIC_NAME, alias="metricName")
     request_name: str | None = Field(default=None, alias="requestName")
     batch_size: int = Field(default=DEFAULT_BATCH_SIZE, alias="batchSize", gt=0)
 
@@ -74,13 +72,6 @@ class CompareMeansMetricRequest(BaseMetricRequest):
     nan_policy: NanPolicy = Field(default=DEFAULT_NAN_POLICY, alias="nanPolicy")
     reference_tag: str | None = Field(default=None, alias="referenceTag")
     fit_columns: list[str] = Field(default_factory=list, alias="fitColumns")
-
-    @model_validator(mode="after")
-    def _set_default_metric_name(self) -> "CompareMeansMetricRequest":
-        """Automatically set metric_name to default if not provided."""
-        if self.metric_name is None:
-            self.metric_name = METRIC_NAME
-        return self
 
     def retrieve_tags(self) -> dict[str, str]:
         """Retrieve tags for this CompareMeans metric request."""
