@@ -2,13 +2,19 @@
 
 import logging
 from http import HTTPStatus
-from typing import Never
+from typing import Annotated, Never
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from src.service.constants import INPUT_SUFFIX, OUTPUT_SUFFIX
+from src.service.constants import (
+    INPUT_SUFFIX,
+    METADATA_SUFFIX,
+    OUTPUT_SUFFIX,
+    SYNTHETIC_TAG,
+)
 from src.service.data.datasources.data_source import DataSource
+from src.service.data.model_data import ModelData
 from src.service.data.shared_data_source import get_shared_data_source
 from src.service.data.storage import get_storage_interface
 from src.service.payloads.service.schema import Schema
@@ -218,15 +224,106 @@ async def get_service_info() -> dict[str, dict]:
         return service_metadata
 
 
-@router.get("/info/inference/ids/{model}", response_model=None)
-async def get_inference_ids(model: str, inference_type: str = "all") -> Never:
-    """Get a list of all inference ids within a particular model inference."""
+class InferenceIdItem(BaseModel):
+    """A single inference ID with its associated timestamp."""
+
+    id: str
+    timestamp: str
+
+
+class InferenceIdResponse(BaseModel):
+    """Paginated response containing inference IDs for a model."""
+
+    ids: list[InferenceIdItem]
+    total: int
+    limit: int
+    offset: int
+
+
+# Column indices within the metadata array
+METADATA_ID_COL = 0
+METADATA_TIMESTAMP_COL = 1
+METADATA_TAGS_COL = 3
+
+_VALID_INFERENCE_TYPES = frozenset({"all", "organic"})
+
+
+def _get_tags(cell: object) -> list[str]:
+    """Extract tag strings from a metadata cell value."""
+    if isinstance(cell, list):
+        return cell
+    if isinstance(cell, str):
+        return [cell]
+    return []
+
+
+@router.get("/info/inference/ids/{model}")
+async def get_inference_ids(
+    model: str,
+    inference_type: Annotated[str, Query(alias="type")] = "all",
+    limit: Annotated[int, Query(ge=1, le=10000)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> InferenceIdResponse:
+    """Get a list of all inference IDs within a particular model's stored data."""
+    normalized_type = inference_type.lower()
+    if normalized_type not in _VALID_INFERENCE_TYPES:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail=f"Invalid type parameter. Valid values must be in {sorted(_VALID_INFERENCE_TYPES)}.",
+        )
+
     logger.info(
-        "Retrieving inference IDs for model: %s, type: %s", model, inference_type
+        "Retrieving inference IDs for model=%s (type=%s, limit=%d, offset=%d)",
+        model,
+        normalized_type,
+        limit,
+        offset,
     )
-    raise HTTPException(
-        status_code=HTTPStatus.NOT_IMPLEMENTED,
-        detail="Inference ID retrieval is not yet implemented",
+
+    model_data = ModelData(model)
+    metadata_dataset = model + METADATA_SUFFIX
+
+    if not await storage_interface.dataset_exists(metadata_dataset):
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail=f"No metadata found for model={model}. "
+            "This can happen if TrustyAI has not yet logged any inferences from this model.",
+        )
+
+    try:
+        _, _, metadata = await model_data.data(get_input=False, get_output=False)
+    except (
+        Exception
+    ) as e:  # Broad catch intentional: storage errors should yield a clear HTTP error
+        logger.exception("Error reading metadata for model=%s", model)
+        raise HTTPException(
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+            detail=f"Error reading metadata for model={model}: {e!s}",
+        ) from e
+
+    if metadata is None or len(metadata) == 0:
+        return InferenceIdResponse(ids=[], total=0, limit=limit, offset=offset)
+
+    if normalized_type == "organic":
+        metadata = [
+            row
+            for row in metadata
+            if SYNTHETIC_TAG not in _get_tags(row[METADATA_TAGS_COL])
+        ]
+
+    all_items = [
+        InferenceIdItem(
+            id=str(row[METADATA_ID_COL]),
+            timestamp=str(row[METADATA_TIMESTAMP_COL]),
+        )
+        for row in metadata
+    ]
+
+    total = len(all_items)
+    paginated_items = all_items[offset : offset + limit]
+
+    return InferenceIdResponse(
+        ids=paginated_items, total=total, limit=limit, offset=offset
     )
 
 
