@@ -1,25 +1,10 @@
 """Inference payload consumer endpoints."""
 
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Any
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, Field, model_validator
-
-PartialKind = Literal["request", "response"]
-
-
-class InferencePartialPayload(BaseModel):
-    """Partial inference payload for KServe agent uploads.
-
-    Flat structure matching the Java TrustyAI service wire format.
-    """
-
-    id: str | None = None
-    kind: PartialKind | None = None
-    metadata: dict[str, str] = Field(default_factory=dict)
-    data: str | None = None
-    modelid: str | None = None
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
 class KServeDataType(StrEnum):
