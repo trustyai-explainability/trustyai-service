@@ -3,7 +3,7 @@
 import logging
 from collections.abc import Callable
 
-from pandas import DataFrame
+import narwhals.stable.v2 as nw
 
 from src.service.payloads.metrics.base_metric_request import BaseMetricRequest
 from src.service.prometheus.metric_value_carrier import MetricValueCarrier
@@ -17,13 +17,13 @@ class MetricsDirectory:
     def __init__(self) -> None:
         """Initialize the metrics directory with an empty calculator registry."""
         self.calculator_directory: dict[
-            str, Callable[[DataFrame, BaseMetricRequest], MetricValueCarrier]
+            str, Callable[[nw.DataFrame, BaseMetricRequest], MetricValueCarrier]
         ] = {}
 
     def register(
         self,
         name: str,
-        calculator: Callable[[DataFrame, BaseMetricRequest], MetricValueCarrier],
+        calculator: Callable[[nw.DataFrame, BaseMetricRequest], MetricValueCarrier],
     ) -> None:
         """Register a metric calculator function.
 
@@ -41,7 +41,7 @@ class MetricsDirectory:
 
     def get_calculator(
         self, name: str
-    ) -> Callable[[DataFrame, BaseMetricRequest], MetricValueCarrier]:
+    ) -> Callable[[nw.DataFrame, BaseMetricRequest], MetricValueCarrier]:
         """Get the calculator function for a metric.
 
         :param name: Metric name identifier

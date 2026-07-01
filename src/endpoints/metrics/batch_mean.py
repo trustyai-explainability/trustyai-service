@@ -12,8 +12,8 @@ import logging
 import uuid
 from http import HTTPStatus
 
+import narwhals.stable.v2 as nw
 import numpy as np
-import pandas as pd
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -79,7 +79,7 @@ class BatchMeanRequest(BaseMetricRequest):
 
 
 def calculate_batch_mean_metric(
-    dataframe: pd.DataFrame,
+    dataframe: nw.DataFrame,
     request: BatchMeanRequest,
 ) -> MetricValueCarrier:
     """Calculate the mean of a column's values over the last N data points.
@@ -147,7 +147,7 @@ async def compute_batch_mean(request: BatchMeanRequest) -> dict:
 
     dataframe = await data_source.get_organic_dataframe(request.model_id, batch_size)
 
-    if dataframe.empty:
+    if dataframe.is_empty():
         raise HTTPException(
             status_code=HTTPStatus.NOT_FOUND,
             detail=f"No data found for model: {request.model_id}",

@@ -5,7 +5,7 @@ import uuid
 from http import HTTPStatus
 from typing import Annotated
 
-import pandas as pd
+import narwhals.stable.v2 as nw
 from fastapi import APIRouter, HTTPException, Query
 
 from src.core.metrics.fairness.group.disparate_impact_ratio import DisparateImpactRatio
@@ -29,7 +29,7 @@ DIR_FAIRNESS_TARGET = 1  # Perfect fairness target for DIR (ratio of 1.0)
 
 
 def calculate_dir_metric(
-    dataframe: pd.DataFrame,
+    dataframe: nw.DataFrame,
     request: GroupMetricRequest,
 ) -> MetricValueCarrier:
     """Calculate the Disparate Impact Ratio metric for the given dataframe and request.
@@ -71,8 +71,8 @@ def calculate_dir_metric(
         raise ValueError(msg)
 
     # Prepare data in the format expected by DisparateImpactRatio
-    privileged_array = privileged_data[[outcome_name]].to_numpy()
-    unprivileged_array = unprivileged_data[[outcome_name]].to_numpy()
+    privileged_array = privileged_data.select(outcome_name).to_numpy()
+    unprivileged_array = unprivileged_data.select(outcome_name).to_numpy()
 
     # Calculate DIR using the core implementation
     dir_value = DisparateImpactRatio.calculate(
@@ -125,7 +125,7 @@ async def compute_dir(
         )
 
         # Validate data availability
-        if dataframe.empty:
+        if dataframe.is_empty():
             raise HTTPException(
                 status_code=HTTPStatus.NOT_FOUND,
                 detail=f"No data found for model: {request.model_id}",

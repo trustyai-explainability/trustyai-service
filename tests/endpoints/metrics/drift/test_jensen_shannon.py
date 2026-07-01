@@ -22,8 +22,7 @@ client = TestClient(app)
 class TestJensenShannonEndpoints:
     """Unified endpoint tests for Jensen-Shannon metric."""
 
-    # Pandas DataFrame tests
-    test_compute_endpoint_pandas = factory.make_compute_endpoint_test(
+    test_compute_endpoint = factory.make_compute_endpoint_test(
         metric_name="JensenShannon",
         module_path="src.endpoints.metrics.drift.jensen_shannon",
         endpoint_path="/metrics/drift/jensenshannon",
@@ -46,34 +45,6 @@ class TestJensenShannonEndpoints:
             "Jensen-Shannon_distance",
             "Jensen-Shannon_divergence",
         ],
-        df_type="Pandas",
-    )
-
-    # Polars DataFrame tests
-    test_compute_endpoint_polars = factory.make_compute_endpoint_test(
-        metric_name="JensenShannon",
-        module_path="src.endpoints.metrics.drift.jensen_shannon",
-        endpoint_path="/metrics/drift/jensenshannon",
-        client=client,
-        request_payload={
-            "modelId": "test-model",
-            "referenceTag": "baseline",
-            "fitColumns": ["feature1", "feature2"],
-            "batchSize": 100,
-            "statistic": "distance",
-            "threshold": 0.1,
-            "method": "kde",
-            "gridPoints": 256,
-            "bins": 64,
-        },
-        expected_response_keys=[
-            "status",
-            "value",
-            "drift_detected",
-            "Jensen-Shannon_distance",
-            "Jensen-Shannon_divergence",
-        ],
-        df_type="Polars",
     )
 
     test_definition_endpoint = factory.make_definition_endpoint_test(
