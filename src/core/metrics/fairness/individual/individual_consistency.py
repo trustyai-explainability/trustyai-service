@@ -33,6 +33,12 @@ class IndividualConsistency:
             if len(prediction_outputs) == 0:
                 msg = "Model output cannot be empty."
                 raise ValueError(msg)
+            if len(prediction_outputs) != 1:
+                msg = (
+                    f"Expected 1 prediction per sample, got {len(prediction_outputs)}. "
+                    "The model must return exactly one prediction for a single input."
+                )
+                raise ValueError(msg)
             prediction_output = prediction_outputs[0]
             # Handle both scalar and array predictions
             output_width = int(np.size(prediction_output))
