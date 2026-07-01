@@ -9,11 +9,22 @@ from http import HTTPStatus
 from typing import Any
 from unittest import mock
 
+import numpy as np
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.endpoints.consumer.consumer_endpoint import router as consumer_router
+from src.endpoints.consumer.consumer_endpoint import (
+    router as consumer_router,
+)
+from src.endpoints.consumer.consumer_endpoint import (
+    write_reconciled_data,
+)
+from src.service.data.metadata.storage_metadata import (
+    StorageMetadata,
+    StorageMetadataConfig,
+)
 from src.service.data.modelmesh_parser import ModelMeshPayloadParser, PartialPayload
+from src.service.payloads.service.schema import Schema
 from tests.service.data.test_utils import ModelMeshTestData
 
 
@@ -340,6 +351,118 @@ class TestConsumerEndpointValidation(unittest.TestCase):
         response = self.client.post("/consumer/kserve/v2", json=payload)
         assert response.status_code == HTTPStatus.BAD_REQUEST
         assert "id" in response.json()["detail"]
+
+
+class TestWriteReconciledDataMetadata(unittest.TestCase):
+    """Test observation count behavior on cache miss vs cache hit."""
+
+    async def _test_cache_miss_no_double_count(self) -> None:
+        """First reconciliation (cache miss): observations come from storage, no increment."""
+        mock_storage = mock.AsyncMock()
+
+        real_metadata = StorageMetadata(
+            StorageMetadataConfig(
+                model_id="test-model",
+                input_schema=Schema(),
+                output_schema=Schema(),
+                observations=5,
+                recorded_inferences=False,
+            )
+        )
+
+        mock_data_source = mock.AsyncMock()
+        mock_data_source.get_metadata = mock.AsyncMock(return_value=real_metadata)
+        mock_data_source.metadata_cache = {}
+
+        input_array = np.zeros((5, 3))
+        output_array = np.zeros((5, 1))
+
+        with (
+            mock.patch(
+                "src.endpoints.consumer.consumer_endpoint.get_global_storage_interface",
+                return_value=mock_storage,
+            ),
+            mock.patch(
+                "src.endpoints.consumer.consumer_endpoint.ModelData",
+            ) as mock_model_data,
+            mock.patch(
+                "src.endpoints.consumer.consumer_endpoint.get_data_source",
+                return_value=mock_data_source,
+            ),
+        ):
+            mock_model_data.return_value.shapes = mock.AsyncMock(
+                return_value=[(5, 3), (5, 1), (5, 4)]
+            )
+
+            await write_reconciled_data(
+                input_array=input_array,
+                input_names=["a", "b", "c"],
+                output_array=output_array,
+                output_names=["out"],
+                model_id="test-model",
+                tags=["tag1"],
+                id_="req-123",
+            )
+
+        assert real_metadata.get_observations() == 5  # noqa: PLR2004
+
+    async def _test_cache_hit_increments(self) -> None:
+        """Subsequent reconciliation (cache hit): observations increment correctly."""
+        mock_storage = mock.AsyncMock()
+
+        real_metadata = StorageMetadata(
+            StorageMetadataConfig(
+                model_id="test-model",
+                input_schema=Schema(),
+                output_schema=Schema(),
+                observations=5,
+                recorded_inferences=True,
+            )
+        )
+
+        mock_data_source = mock.AsyncMock()
+        mock_data_source.get_metadata = mock.AsyncMock(return_value=real_metadata)
+        mock_data_source.metadata_cache = {"test-model": real_metadata}
+
+        input_array = np.zeros((5, 3))
+        output_array = np.zeros((5, 1))
+
+        with (
+            mock.patch(
+                "src.endpoints.consumer.consumer_endpoint.get_global_storage_interface",
+                return_value=mock_storage,
+            ),
+            mock.patch(
+                "src.endpoints.consumer.consumer_endpoint.ModelData",
+            ) as mock_model_data,
+            mock.patch(
+                "src.endpoints.consumer.consumer_endpoint.get_data_source",
+                return_value=mock_data_source,
+            ),
+        ):
+            mock_model_data.return_value.shapes = mock.AsyncMock(
+                return_value=[(10, 3), (10, 1), (10, 4)]
+            )
+
+            await write_reconciled_data(
+                input_array=input_array,
+                input_names=["a", "b", "c"],
+                output_array=output_array,
+                output_names=["out"],
+                model_id="test-model",
+                tags=["tag1"],
+                id_="req-456",
+            )
+
+        assert real_metadata.get_observations() == 10  # noqa: PLR2004
+
+
+TestWriteReconciledDataMetadata.test_cache_miss_no_double_count = (  # type: ignore[attr-defined]
+    lambda self: run_async_test(self._test_cache_miss_no_double_count())
+)
+TestWriteReconciledDataMetadata.test_cache_hit_increments = (  # type: ignore[attr-defined]
+    lambda self: run_async_test(self._test_cache_hit_increments())
+)
 
 
 if __name__ == "__main__":
