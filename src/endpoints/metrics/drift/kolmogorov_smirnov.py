@@ -47,9 +47,7 @@ class KSTestMetricRequest(BaseMetricRequest):
     model_config = ConfigDict(populate_by_name=True)
 
     model_id: str = Field(alias="modelId")
-    metric_name: str | None = Field(
-        default=None, alias="metricName"
-    )  # Will be set by endpoint
+    metric_name: str = Field(default=METRIC_NAME, alias="metricName")
     request_name: str | None = Field(default=None, alias="requestName")
     batch_size: int = Field(default=100, alias="batchSize")
 
