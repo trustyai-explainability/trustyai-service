@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from src.endpoints.consumer import KServeInferenceRequest, KServeInferenceResponse
 from src.endpoints.consumer.consumer_endpoint import consume_cloud_event
+from src.endpoints.paths import DATA_UPLOAD
 from src.exceptions import ReconciliationError
 from src.service.constants import TRUSTYAI_TAG_PREFIX
 from src.service.data.model_data import ModelData
@@ -41,7 +42,7 @@ def validate_data_tag(tag: str | None) -> str | None:
     return None
 
 
-@router.post("/data/upload")
+@router.post(DATA_UPLOAD)
 async def upload(payload: UploadPayload) -> dict[str, str]:
     """Upload model data."""
     # validate tag

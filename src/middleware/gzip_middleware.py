@@ -14,6 +14,8 @@ from io import BytesIO
 from prometheus_client import Counter, Histogram
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from src.endpoints.paths import DATA_UPLOAD
+
 logger = logging.getLogger(__name__)
 
 # Chunk size for streaming decompression (64KB)
@@ -40,7 +42,7 @@ class GzipRequestMiddleware:
     """
 
     # Default configuration constants
-    DEFAULT_PATHS = ("/data/upload",)  # Tuple to avoid mutable default
+    DEFAULT_PATHS = (DATA_UPLOAD,)
     DEFAULT_ALLOWED_CONTENT_TYPES = (
         "application/json",
         "application/cloudevents+json",

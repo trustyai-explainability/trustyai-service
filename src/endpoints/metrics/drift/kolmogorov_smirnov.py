@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.metrics.drift.kolmogorov_smirnov import KolmogorovSmirnov
+from src.endpoints.paths import DRIFT_KSTEST
 from src.service.data.datasources.data_source import DataSource
 from src.service.data.shared_data_source import get_shared_data_source
 from src.service.payloads.metrics.base_metric_request import BaseMetricRequest
@@ -70,7 +71,7 @@ class KSTestMetricRequest(BaseMetricRequest):
         return tags
 
 
-@router.post("/metrics/drift/kstest")
+@router.post(DRIFT_KSTEST.compute)
 async def compute_kstest(
     request: KSTestMetricRequest,
 ) -> dict[str, float | bool | str | dict[str, dict[str, float]]]:
@@ -170,7 +171,7 @@ async def compute_kstest(
     }
 
 
-@router.get("/metrics/drift/kstest/definition")
+@router.get(DRIFT_KSTEST.definition)
 async def get_kstest_definition() -> dict[str, str]:
     """Provide a general definition of KSTest metric."""
     description = """The two-sampled Kolmogorov-Smirnov test is a nonparametric statistical test.
@@ -187,7 +188,7 @@ async def get_kstest_definition() -> dict[str, str]:
     }
 
 
-@router.post("/metrics/drift/kstest/request")
+@router.post(DRIFT_KSTEST.request)
 async def schedule_kstest(request: KSTestMetricRequest) -> dict[str, str]:
     """Schedule a recurring computation of KSTest metric."""
     if not request.fit_columns:
@@ -232,7 +233,7 @@ async def schedule_kstest(request: KSTestMetricRequest) -> dict[str, str]:
         return {"requestId": str(request_id)}
 
 
-@router.delete("/metrics/drift/kstest/request")
+@router.delete(DRIFT_KSTEST.request)
 async def delete_kstest_schedule(schedule: ScheduleId) -> dict[str, str]:
     """Delete a recurring computation of KSTest metric."""
     # Get the scheduler and validate availability
@@ -277,7 +278,7 @@ async def delete_kstest_schedule(schedule: ScheduleId) -> dict[str, str]:
         }
 
 
-@router.get("/metrics/drift/kstest/requests")
+@router.get(DRIFT_KSTEST.requests)
 async def list_kstest_requests() -> dict[str, list[dict[str, Any]]]:
     """List the currently scheduled computations of KSTest metric."""
     # Get the scheduler and validate availability

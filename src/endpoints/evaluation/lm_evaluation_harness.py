@@ -31,10 +31,9 @@ from src.endpoints.evaluation._env_security import (
     build_subprocess_env,
     validate_env_vars_model,
 )
+from src.endpoints.paths import EVAL_PREFIX as API_PREFIX
 
 logger = logging.getLogger(__name__)
-
-API_PREFIX = "/eval/lm-evaluation-harness"
 
 
 # === STATIC API OBJECTS ===========================================================================
