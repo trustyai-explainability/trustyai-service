@@ -24,7 +24,7 @@ class TestGetStorageInterface:
         """Unsupported format raises ValueError."""
         with (
             patch.dict(os.environ, {"SERVICE_STORAGE_FORMAT": "REDIS"}, clear=False),
-            pytest.raises(ValueError, match="not yet supported"),
+            pytest.raises(ValueError, match="Unsupported storage format"),
         ):
             get_storage_interface()
 
