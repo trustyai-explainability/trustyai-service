@@ -4,6 +4,18 @@ from http import HTTPStatus
 
 from fastapi.testclient import TestClient
 
+from src.endpoints.paths import (
+    CONSUMER_ROOT,
+    DRIFT_APPROX_KS_TEST,
+    DRIFT_COMPARE_MEANS,
+    DRIFT_FOURIER_MMD,
+    DRIFT_JENSEN_SHANNON,
+    DRIFT_KSTEST,
+    DRIFT_MEANSHIFT,
+    HEALTH_LIVE,
+    HEALTH_READY,
+    PROMETHEUS_METRICS,
+)
 from src.main import app
 
 client = TestClient(app)
@@ -14,19 +26,19 @@ class TestAppCoreEndpoints:
 
     def test_root_endpoint(self) -> None:
         """Test root endpoint is accessible."""
-        response = client.get("/")
+        response = client.get(CONSUMER_ROOT)
         assert response.status_code == HTTPStatus.OK
         assert "message" in response.json()
 
     def test_health_endpoints(self) -> None:
         """Test health check endpoints are registered."""
         # Readiness probe
-        response = client.get("/q/health/ready")
+        response = client.get(HEALTH_READY)
         assert response.status_code == HTTPStatus.OK
         assert response.json()["status"] == "ready"
 
         # Liveness probe
-        response = client.get("/q/health/live")
+        response = client.get(HEALTH_LIVE)
         assert response.status_code == HTTPStatus.OK
         assert response.json()["status"] == "live"
 
@@ -40,7 +52,7 @@ class TestAppCoreEndpoints:
 
     def test_prometheus_metrics_endpoint(self) -> None:
         """Test that Prometheus metrics endpoint is accessible."""
-        response = client.get("/q/metrics")
+        response = client.get(PROMETHEUS_METRICS)
         assert response.status_code == HTTPStatus.OK
         # Prometheus metrics are in text format
         assert "text/plain" in response.headers["content-type"]
@@ -51,14 +63,14 @@ class TestAppCoreEndpoints:
     def test_trailing_slash_no_redirect(self) -> None:
         """Trailing slash must not 307 redirect (which drops POST bodies)."""
         response = client.post(
-            "/metrics/drift/kstest/",
+            f"{DRIFT_KSTEST.compute}/",
             json={"modelId": "test"},
         )
         assert response.status_code != HTTPStatus.TEMPORARY_REDIRECT
         assert response.status_code != HTTPStatus.NOT_FOUND
         # Should match the same route as without trailing slash
         response_no_slash = client.post(
-            "/metrics/drift/kstest",
+            DRIFT_KSTEST.compute,
             json={"modelId": "test"},
         )
         assert response.status_code == response_no_slash.status_code
@@ -67,7 +79,9 @@ class TestAppCoreEndpoints:
         """Test that CORS headers are properly configured."""
         # CORS headers are added by middleware but may not appear in TestClient
         # unless an origin is specified. Test with an OPTIONS request.
-        response = client.options("/", headers={"Origin": "http://example.com"})
+        response = client.options(
+            CONSUMER_ROOT, headers={"Origin": "http://example.com"}
+        )
         # CORS middleware should allow the request
         assert response.status_code in [
             HTTPStatus.OK,
@@ -80,7 +94,7 @@ class TestKSTestMetricIntegration:
 
     def test_kstest_definition_endpoint_accessible(self) -> None:
         """Test that KSTest definition endpoint is accessible."""
-        response = client.get("/metrics/drift/kstest/definition")
+        response = client.get(DRIFT_KSTEST.definition)
         assert response.status_code == HTTPStatus.OK
         data = response.json()
         assert "name" in data
@@ -95,10 +109,10 @@ class TestKSTestMetricIntegration:
 
         # Check that all KSTest endpoints are documented
         expected_paths = [
-            "/metrics/drift/kstest",
-            "/metrics/drift/kstest/definition",
-            "/metrics/drift/kstest/request",
-            "/metrics/drift/kstest/requests",
+            DRIFT_KSTEST.compute,
+            DRIFT_KSTEST.definition,
+            DRIFT_KSTEST.request,
+            DRIFT_KSTEST.requests,
         ]
 
         for path in expected_paths:
@@ -113,17 +127,17 @@ class TestKSTestMetricIntegration:
         openapi = response.json()
 
         # Check tags for compute endpoint
-        kstest_compute = openapi["paths"]["/metrics/drift/kstest"]["post"]
+        kstest_compute = openapi["paths"][DRIFT_KSTEST.compute]["post"]
         assert "tags" in kstest_compute
         assert "Drift Metrics: KSTest" in kstest_compute["tags"]
 
         # Check tags for definition endpoint
-        kstest_definition = openapi["paths"]["/metrics/drift/kstest/definition"]["get"]
+        kstest_definition = openapi["paths"][DRIFT_KSTEST.definition]["get"]
         assert "tags" in kstest_definition
         assert "Drift Metrics: KSTest" in kstest_definition["tags"]
 
         # Check tags for schedule endpoint
-        kstest_schedule = openapi["paths"]["/metrics/drift/kstest/request"]["post"]
+        kstest_schedule = openapi["paths"][DRIFT_KSTEST.request]["post"]
         assert "tags" in kstest_schedule
         assert "Drift Metrics: KSTest" in kstest_schedule["tags"]
 
@@ -133,7 +147,7 @@ class TestCompareMeansMetricIntegration:
 
     def test_comparemeans_definition_endpoint_accessible(self) -> None:
         """Test that CompareMeans definition endpoint is accessible."""
-        response = client.get("/metrics/drift/comparemeans/definition")
+        response = client.get(DRIFT_COMPARE_MEANS.definition)
         assert response.status_code == HTTPStatus.OK
         data = response.json()
         assert "name" in data
@@ -148,10 +162,10 @@ class TestCompareMeansMetricIntegration:
 
         # Check that all CompareMeans endpoints are documented
         expected_paths = [
-            "/metrics/drift/comparemeans",
-            "/metrics/drift/comparemeans/definition",
-            "/metrics/drift/comparemeans/request",
-            "/metrics/drift/comparemeans/requests",
+            DRIFT_COMPARE_MEANS.compute,
+            DRIFT_COMPARE_MEANS.definition,
+            DRIFT_COMPARE_MEANS.request,
+            DRIFT_COMPARE_MEANS.requests,
         ]
 
         for path in expected_paths:
@@ -166,21 +180,19 @@ class TestCompareMeansMetricIntegration:
         openapi = response.json()
 
         # Check tags for compute endpoint
-        comparemeans_compute = openapi["paths"]["/metrics/drift/comparemeans"]["post"]
+        comparemeans_compute = openapi["paths"][DRIFT_COMPARE_MEANS.compute]["post"]
         assert "tags" in comparemeans_compute
         assert "Drift Metrics: CompareMeans" in comparemeans_compute["tags"]
 
         # Check tags for definition endpoint
-        comparemeans_definition = openapi["paths"][
-            "/metrics/drift/comparemeans/definition"
-        ]["get"]
+        comparemeans_definition = openapi["paths"][DRIFT_COMPARE_MEANS.definition][
+            "get"
+        ]
         assert "tags" in comparemeans_definition
         assert "Drift Metrics: CompareMeans" in comparemeans_definition["tags"]
 
         # Check tags for schedule endpoint
-        comparemeans_schedule = openapi["paths"]["/metrics/drift/comparemeans/request"][
-            "post"
-        ]
+        comparemeans_schedule = openapi["paths"][DRIFT_COMPARE_MEANS.request]["post"]
         assert "tags" in comparemeans_schedule
         assert "Drift Metrics: CompareMeans" in comparemeans_schedule["tags"]
 
@@ -192,10 +204,10 @@ class TestCompareMeansMetricIntegration:
 
         # Check that all deprecated Meanshift endpoints are documented
         expected_paths = [
-            "/metrics/drift/meanshift",
-            "/metrics/drift/meanshift/definition",
-            "/metrics/drift/meanshift/request",
-            "/metrics/drift/meanshift/requests",
+            DRIFT_MEANSHIFT.compute,
+            DRIFT_MEANSHIFT.definition,
+            DRIFT_MEANSHIFT.request,
+            DRIFT_MEANSHIFT.requests,
         ]
 
         for path in expected_paths:
@@ -210,25 +222,19 @@ class TestCompareMeansMetricIntegration:
         openapi = response.json()
 
         # Check that Meanshift endpoints are marked as deprecated
-        meanshift_compute = openapi["paths"]["/metrics/drift/meanshift"]["post"]
+        meanshift_compute = openapi["paths"][DRIFT_MEANSHIFT.compute]["post"]
         assert meanshift_compute.get("deprecated") is True
 
-        meanshift_definition = openapi["paths"]["/metrics/drift/meanshift/definition"][
-            "get"
-        ]
+        meanshift_definition = openapi["paths"][DRIFT_MEANSHIFT.definition]["get"]
         assert meanshift_definition.get("deprecated") is True
 
-        meanshift_schedule = openapi["paths"]["/metrics/drift/meanshift/request"][
-            "post"
-        ]
+        meanshift_schedule = openapi["paths"][DRIFT_MEANSHIFT.request]["post"]
         assert meanshift_schedule.get("deprecated") is True
 
-        meanshift_delete = openapi["paths"]["/metrics/drift/meanshift/request"][
-            "delete"
-        ]
+        meanshift_delete = openapi["paths"][DRIFT_MEANSHIFT.request]["delete"]
         assert meanshift_delete.get("deprecated") is True
 
-        meanshift_list = openapi["paths"]["/metrics/drift/meanshift/requests"]["get"]
+        meanshift_list = openapi["paths"][DRIFT_MEANSHIFT.requests]["get"]
         assert meanshift_list.get("deprecated") is True
 
 
@@ -240,10 +246,10 @@ class TestFourierMMDMetricIntegration:
         response = client.get("/openapi.json")
         openapi = response.json()
         for path in [
-            "/metrics/drift/fouriermmd",
-            "/metrics/drift/fouriermmd/definition",
-            "/metrics/drift/fouriermmd/request",
-            "/metrics/drift/fouriermmd/requests",
+            DRIFT_FOURIER_MMD.compute,
+            DRIFT_FOURIER_MMD.definition,
+            DRIFT_FOURIER_MMD.request,
+            DRIFT_FOURIER_MMD.requests,
         ]:
             assert path in openapi["paths"], f"{path} not found in OpenAPI"
 
@@ -256,10 +262,10 @@ class TestApproxKSTestMetricIntegration:
         response = client.get("/openapi.json")
         openapi = response.json()
         for path in [
-            "/metrics/drift/approxkstest",
-            "/metrics/drift/approxkstest/definition",
-            "/metrics/drift/approxkstest/request",
-            "/metrics/drift/approxkstest/requests",
+            DRIFT_APPROX_KS_TEST.compute,
+            DRIFT_APPROX_KS_TEST.definition,
+            DRIFT_APPROX_KS_TEST.request,
+            DRIFT_APPROX_KS_TEST.requests,
         ]:
             assert path in openapi["paths"], f"{path} not found in OpenAPI"
 
@@ -272,9 +278,9 @@ class TestJensenShannonMetricIntegration:
         response = client.get("/openapi.json")
         openapi = response.json()
         for path in [
-            "/metrics/drift/jensenshannon",
-            "/metrics/drift/jensenshannon/definition",
-            "/metrics/drift/jensenshannon/request",
-            "/metrics/drift/jensenshannon/requests",
+            DRIFT_JENSEN_SHANNON.compute,
+            DRIFT_JENSEN_SHANNON.definition,
+            DRIFT_JENSEN_SHANNON.request,
+            DRIFT_JENSEN_SHANNON.requests,
         ]:
             assert path in openapi["paths"], f"{path} not found in OpenAPI"

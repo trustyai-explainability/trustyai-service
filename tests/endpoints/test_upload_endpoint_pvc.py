@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 from httpx import Response
 
 import src.main
+from src.endpoints.paths import DATA_UPLOAD
 from src.service.constants import (
     TRUSTYAI_TAG_PREFIX,
 )
@@ -276,7 +277,7 @@ class TestUploadEndpointPVC(unittest.TestCase):
         _check_msgs: list[str],
     ) -> Response:
         """Post a payload and check the response."""
-        response = self.client.post("/data/upload", json=payload)
+        response = self.client.post(DATA_UPLOAD, json=payload)
         assert response.status_code == expected_status_code
         return response
 
@@ -399,7 +400,7 @@ class TestUploadEndpointPVC(unittest.TestCase):
             "FP64",
             "TRAINING",
         )
-        response = self.client.post("/data/upload", json=payload)
+        response = self.client.post(DATA_UPLOAD, json=payload)
         assert response.status_code == HTTPStatus.BAD_REQUEST
         assert "input shapes were mismatched" in response.text
         assert "[250, 4]" in response.text
@@ -435,7 +436,7 @@ class TestUploadEndpointPVC(unittest.TestCase):
             },
         }
 
-        response = self.client.post("/data/upload", json=payload)
+        response = self.client.post(DATA_UPLOAD, json=payload)
         assert response.status_code == HTTPStatus.BAD_REQUEST
         response_text = response.text
         assert "Could not reconcile" in response_text

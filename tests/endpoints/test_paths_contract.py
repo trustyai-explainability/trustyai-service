@@ -14,6 +14,13 @@ from src.endpoints.paths import (
     DRIFT_JENSEN_SHANNON,
     DRIFT_KSTEST,
     DRIFT_MEANSHIFT,
+    EVAL_PREFIX,
+    EXPLAINER_GLOBAL_LIME,
+    EXPLAINER_GLOBAL_PDP,
+    EXPLAINER_LOCAL_CF,
+    EXPLAINER_LOCAL_LIME,
+    EXPLAINER_LOCAL_SHAP,
+    EXPLAINER_LOCAL_TSSALIENCY,
     FAIRNESS_DIR,
     FAIRNESS_SPD,
     HEALTH_LIVE,
@@ -23,6 +30,8 @@ from src.endpoints.paths import (
     INFO_INFERENCE_IDS,
     INFO_NAMES,
     INFO_TAGS,
+    LEGACY_DIR,
+    LEGACY_SPD,
     METRICS_ALL_REQUESTS,
     PROMETHEUS_METRICS,
 )
@@ -72,6 +81,14 @@ class TestFairnessPaths:
         """SPD paths."""
         assert FAIRNESS_SPD.compute == "/metrics/group/fairness/spd"
 
+    def test_legacy_dir(self) -> None:
+        """Legacy DIR deprecated alias."""
+        assert LEGACY_DIR.compute == "/dir"
+
+    def test_legacy_spd(self) -> None:
+        """Legacy SPD deprecated alias."""
+        assert LEGACY_SPD.compute == "/spd"
+
 
 class TestOtherPaths:
     """Non-metric paths match the API contract."""
@@ -109,3 +126,16 @@ class TestOtherPaths:
     def test_metrics_info(self) -> None:
         """Metrics info path."""
         assert METRICS_ALL_REQUESTS == "/metrics/all/requests"
+
+    def test_explainers(self) -> None:
+        """Explainer paths."""
+        assert EXPLAINER_GLOBAL_LIME == "/explainers/global/lime"
+        assert EXPLAINER_GLOBAL_PDP == "/explainers/global/pdp"
+        assert EXPLAINER_LOCAL_LIME == "/explainers/local/lime"
+        assert EXPLAINER_LOCAL_SHAP == "/explainers/local/shap"
+        assert EXPLAINER_LOCAL_CF == "/explainers/local/cf"
+        assert EXPLAINER_LOCAL_TSSALIENCY == "/explainers/local/tssaliency"
+
+    def test_eval(self) -> None:
+        """LM evaluation prefix."""
+        assert EVAL_PREFIX == "/eval/lm-evaluation-harness"
