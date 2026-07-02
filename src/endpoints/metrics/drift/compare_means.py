@@ -15,7 +15,7 @@ from src.core.metrics.drift.compare_means import (
     CompareMeans,
     NanPolicy,
 )
-from src.endpoints.paths import DRIFT_COMPARE_MEANS, DRIFT_MEANSHIFT
+from src.endpoints import routes
 from src.service.data.datasources.data_source import DataSource
 from src.service.data.shared_data_source import get_shared_data_source
 from src.service.payloads.metrics.base_metric_request import BaseMetricRequest
@@ -91,7 +91,7 @@ class CompareMeansMetricRequest(BaseMetricRequest):
         return tags
 
 
-@router.post(DRIFT_COMPARE_MEANS.compute)
+@router.post(routes.DRIFT_COMPARE_MEANS.compute)
 async def compute_compare_means(
     request: CompareMeansMetricRequest,
 ) -> dict[str, float | bool | str | dict[str, dict[str, float | bool]]]:
@@ -215,7 +215,7 @@ async def compute_compare_means(
     }
 
 
-@router.get(DRIFT_COMPARE_MEANS.definition)
+@router.get(routes.DRIFT_COMPARE_MEANS.definition)
 async def get_compare_means_definition() -> dict[str, str]:
     """Provide a general definition of CompareMeans metric."""
     description = """The independent two-sample t-test is used to determine whether two independent samples
@@ -233,7 +233,7 @@ async def get_compare_means_definition() -> dict[str, str]:
     }
 
 
-@router.post(DRIFT_COMPARE_MEANS.request)
+@router.post(routes.DRIFT_COMPARE_MEANS.request)
 async def schedule_compare_means(request: CompareMeansMetricRequest) -> dict[str, str]:
     """Schedule a recurring computation of CompareMeans metric."""
     # Get the scheduler and validate availability
@@ -302,7 +302,7 @@ async def schedule_compare_means(request: CompareMeansMetricRequest) -> dict[str
         return {"requestId": str(request_id)}
 
 
-@router.delete(DRIFT_COMPARE_MEANS.request)
+@router.delete(routes.DRIFT_COMPARE_MEANS.request)
 async def delete_compare_means_schedule(schedule: ScheduleId) -> dict[str, str]:
     """Delete a recurring computation of CompareMeans metric."""
     # Get the scheduler and validate availability
@@ -347,7 +347,7 @@ async def delete_compare_means_schedule(schedule: ScheduleId) -> dict[str, str]:
         }
 
 
-@router.get(DRIFT_COMPARE_MEANS.requests)
+@router.get(routes.DRIFT_COMPARE_MEANS.requests)
 async def list_compare_means_requests() -> dict[str, list[dict[str, Any]]]:
     """List the currently scheduled computations of CompareMeans metric."""
     # Get the scheduler and validate availability
@@ -427,7 +427,7 @@ class MeanshiftMetricRequest(CompareMeansMetricRequest):
     """
 
 
-@router.post(DRIFT_MEANSHIFT.compute, deprecated=True)
+@router.post(routes.DRIFT_MEANSHIFT.compute, deprecated=True)
 async def compute_meanshift(
     request: MeanshiftMetricRequest,
 ) -> dict[str, float | bool | str | dict[str, dict[str, float | bool]]]:
@@ -445,7 +445,7 @@ async def compute_meanshift(
     return await compute_compare_means(compare_means_request)
 
 
-@router.get(DRIFT_MEANSHIFT.definition, deprecated=True)
+@router.get(routes.DRIFT_MEANSHIFT.definition, deprecated=True)
 async def get_meanshift_definition() -> dict[str, str]:
     """Provide a general definition of Meanshift metric (deprecated).
 
@@ -456,7 +456,7 @@ async def get_meanshift_definition() -> dict[str, str]:
     return await get_compare_means_definition()
 
 
-@router.post(DRIFT_MEANSHIFT.request, deprecated=True)
+@router.post(routes.DRIFT_MEANSHIFT.request, deprecated=True)
 async def schedule_meanshift(request: MeanshiftMetricRequest) -> dict[str, str]:
     """Schedule a recurring computation of Meanshift metric (deprecated).
 
@@ -472,7 +472,7 @@ async def schedule_meanshift(request: MeanshiftMetricRequest) -> dict[str, str]:
     return await schedule_compare_means(compare_means_request)
 
 
-@router.delete(DRIFT_MEANSHIFT.request, deprecated=True)
+@router.delete(routes.DRIFT_MEANSHIFT.request, deprecated=True)
 async def delete_meanshift_schedule(schedule: ScheduleId) -> dict[str, str]:
     """Delete a recurring computation of Meanshift metric (deprecated).
 
@@ -483,7 +483,7 @@ async def delete_meanshift_schedule(schedule: ScheduleId) -> dict[str, str]:
     return await delete_compare_means_schedule(schedule)
 
 
-@router.get(DRIFT_MEANSHIFT.requests, deprecated=True)
+@router.get(routes.DRIFT_MEANSHIFT.requests, deprecated=True)
 async def list_meanshift_requests() -> dict[str, list[dict[str, Any]]]:
     """List the currently scheduled computations of Meanshift metric (deprecated).
 

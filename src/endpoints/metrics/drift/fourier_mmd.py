@@ -7,7 +7,7 @@ from typing import Never
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
-from src.endpoints.paths import DRIFT_FOURIER_MMD
+from src.endpoints import routes
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -59,7 +59,7 @@ class FourierMMDMetricRequest(BaseModel):
     fitting: FourierMMDFitting | None = None
 
 
-@router.post(DRIFT_FOURIER_MMD.compute, response_model=None)
+@router.post(routes.DRIFT_FOURIER_MMD.compute, response_model=None)
 async def compute_fouriermmd(request: FourierMMDMetricRequest) -> Never:
     """Compute the current value of FourierMMD metric."""
     logger.info("Computing FourierMMD for model: %s", request.modelId)
@@ -69,7 +69,7 @@ async def compute_fouriermmd(request: FourierMMDMetricRequest) -> Never:
     )
 
 
-@router.get(DRIFT_FOURIER_MMD.definition)
+@router.get(routes.DRIFT_FOURIER_MMD.definition)
 async def get_fouriermmd_definition() -> dict[str, str]:
     """Provide a general definition of FourierMMD metric."""
     return {
@@ -78,7 +78,7 @@ async def get_fouriermmd_definition() -> dict[str, str]:
     }
 
 
-@router.post(DRIFT_FOURIER_MMD.request, response_model=None)
+@router.post(routes.DRIFT_FOURIER_MMD.request, response_model=None)
 async def schedule_fouriermmd(
     _request: FourierMMDMetricRequest, _background_tasks: BackgroundTasks
 ) -> Never:
@@ -90,7 +90,7 @@ async def schedule_fouriermmd(
     )
 
 
-@router.delete(DRIFT_FOURIER_MMD.request, response_model=None)
+@router.delete(routes.DRIFT_FOURIER_MMD.request, response_model=None)
 async def delete_fouriermmd_schedule(schedule: ScheduleId) -> Never:
     """Delete a recurring computation of FourierMMD metric."""
     logger.info("Deleting FourierMMD schedule: %s", schedule.requestId)
@@ -100,7 +100,7 @@ async def delete_fouriermmd_schedule(schedule: ScheduleId) -> Never:
     )
 
 
-@router.get(DRIFT_FOURIER_MMD.requests, response_model=None)
+@router.get(routes.DRIFT_FOURIER_MMD.requests, response_model=None)
 async def list_fouriermmd_requests() -> Never:
     """List the currently scheduled computations of FourierMMD metric."""
     raise HTTPException(

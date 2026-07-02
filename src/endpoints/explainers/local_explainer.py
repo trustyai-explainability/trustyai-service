@@ -8,12 +8,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from src.endpoints.paths import (
-    EXPLAINER_LOCAL_CF,
-    EXPLAINER_LOCAL_LIME,
-    EXPLAINER_LOCAL_SHAP,
-    EXPLAINER_LOCAL_TSSALIENCY,
-)
+from src.endpoints import routes
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -64,7 +59,7 @@ class LimeExplanationRequest(BaseModel):
     config: LimeExplanationConfig
 
 
-@router.post(EXPLAINER_LOCAL_LIME)
+@router.post(routes.EXPLAINER_LOCAL_LIME)
 async def local_lime_explanation(request: LimeExplanationRequest) -> dict[str, Any]:
     """Compute a LIME explanation."""
     logger.info(
@@ -119,7 +114,7 @@ class SHAPExplanationRequest(BaseModel):
     config: SHAPExplanationConfig
 
 
-@router.post(EXPLAINER_LOCAL_SHAP)
+@router.post(routes.EXPLAINER_LOCAL_SHAP)
 async def local_shap_explanation(request: SHAPExplanationRequest) -> dict[str, Any]:
     """Compute a SHAP explanation."""
     logger.info(
@@ -154,7 +149,7 @@ class CounterfactualExplanationRequest(BaseModel):
     explanationConfig: CounterfactualExplanationConfig | None = None
 
 
-@router.post(EXPLAINER_LOCAL_CF)
+@router.post(routes.EXPLAINER_LOCAL_CF)
 async def local_counterfactual_explanation(
     request: CounterfactualExplanationRequest,
 ) -> dict[str, Any]:
@@ -194,7 +189,7 @@ class TSSaliencyExplanationRequest(BaseModel):
     config: TSSaliencyExplanationConfig
 
 
-@router.post(EXPLAINER_LOCAL_TSSALIENCY)
+@router.post(routes.EXPLAINER_LOCAL_TSSALIENCY)
 async def local_tssaliency_explanation(
     request: TSSaliencyExplanationRequest,
 ) -> dict[str, Any]:

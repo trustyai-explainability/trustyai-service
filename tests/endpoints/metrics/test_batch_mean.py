@@ -10,8 +10,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from src.endpoints import routes
 from src.endpoints.metrics.batch_mean import BatchMeanRequest, router
-from src.endpoints.paths import BATCH_MEAN, IDENTITY
 
 app = FastAPI()
 app.include_router(router)
@@ -55,7 +55,7 @@ class TestBatchMeanCompute:
         )
         mock_ds.return_value = mock_data_source
 
-        response = client.post(BATCH_MEAN.compute, json=_base_payload())
+        response = client.post(routes.BATCH_MEAN.compute, json=_base_payload())
 
         assert response.status_code == HTTPStatus.OK
         data = response.json()
@@ -72,7 +72,9 @@ class TestBatchMeanCompute:
         mock_data_source.get_organic_dataframe = AsyncMock(return_value=df)
         mock_ds.return_value = mock_data_source
 
-        response = client.post(BATCH_MEAN.compute, json=_base_payload(columnName="col"))
+        response = client.post(
+            routes.BATCH_MEAN.compute, json=_base_payload(columnName="col")
+        )
 
         assert response.status_code == HTTPStatus.OK
         assert response.json()["value"] == 6.0  # noqa: PLR2004
@@ -86,7 +88,7 @@ class TestBatchMeanCompute:
         mock_ds.return_value = mock_data_source
 
         response = client.post(
-            BATCH_MEAN.compute,
+            routes.BATCH_MEAN.compute,
             json=_base_payload(
                 columnName="col", lowerThreshold=0.0, upperThreshold=10.0
             ),
@@ -106,7 +108,7 @@ class TestBatchMeanCompute:
         mock_ds.return_value = mock_data_source
 
         response = client.post(
-            BATCH_MEAN.compute,
+            routes.BATCH_MEAN.compute,
             json=_base_payload(
                 columnName="col", lowerThreshold=0.0, upperThreshold=10.0
             ),
@@ -124,7 +126,7 @@ class TestBatchMeanCompute:
         )
         mock_ds.return_value = mock_data_source
 
-        response = client.post(BATCH_MEAN.compute, json=_base_payload())
+        response = client.post(routes.BATCH_MEAN.compute, json=_base_payload())
 
         assert response.status_code == HTTPStatus.OK
         assert "thresholds" not in response.json()
@@ -136,7 +138,7 @@ class TestBatchMeanCompute:
         mock_data_source.get_organic_dataframe = AsyncMock(return_value=pd.DataFrame())
         mock_ds.return_value = mock_data_source
 
-        response = client.post(BATCH_MEAN.compute, json=_base_payload())
+        response = client.post(routes.BATCH_MEAN.compute, json=_base_payload())
         assert response.status_code == HTTPStatus.NOT_FOUND
 
     @patch(f"{MODULE}.get_data_source")
@@ -149,7 +151,7 @@ class TestBatchMeanCompute:
 
         with pytest.raises(ValueError, match="not found"):
             client.post(
-                BATCH_MEAN.compute,
+                routes.BATCH_MEAN.compute,
                 json=_base_payload(columnName="nonexistent"),
             )
 
@@ -159,7 +161,7 @@ class TestBatchMeanDefinition:
 
     def test_definition_returns_name_and_description(self) -> None:
         """GET definition returns name and non-empty description."""
-        response = client.get(BATCH_MEAN.definition)
+        response = client.get(routes.BATCH_MEAN.definition)
         assert response.status_code == HTTPStatus.OK
         data = response.json()
         assert "Batch Mean" in data["name"]
@@ -168,7 +170,7 @@ class TestBatchMeanDefinition:
     def test_interpret_value(self) -> None:
         """POST definition returns an interpretation string."""
         response = client.post(
-            BATCH_MEAN.definition,
+            routes.BATCH_MEAN.definition,
             json=_base_payload(),
         )
         assert response.status_code == HTTPStatus.OK
@@ -185,7 +187,7 @@ class TestBatchMeanSchedule:
         mock_sched.register = AsyncMock(return_value=None)
         mock_sched_fn.return_value = mock_sched
 
-        response = client.post(BATCH_MEAN.request, json=_base_payload())
+        response = client.post(routes.BATCH_MEAN.request, json=_base_payload())
 
         assert response.status_code == HTTPStatus.OK
         assert "requestId" in response.json()
@@ -200,7 +202,7 @@ class TestBatchMeanSchedule:
 
         response = client.request(
             "DELETE",
-            BATCH_MEAN.request,
+            routes.BATCH_MEAN.request,
             json={"requestId": "123e4567-e89b-12d3-a456-426614174000"},
         )
         assert response.status_code == HTTPStatus.OK
@@ -214,7 +216,7 @@ class TestBatchMeanSchedule:
 
         response = client.request(
             "DELETE",
-            BATCH_MEAN.request,
+            routes.BATCH_MEAN.request,
             json={"requestId": "not-a-uuid"},
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
@@ -230,7 +232,7 @@ class TestBatchMeanList:
         mock_sched.get_requests = MagicMock(return_value={})
         mock_sched_fn.return_value = mock_sched
 
-        response = client.get(BATCH_MEAN.requests)
+        response = client.get(routes.BATCH_MEAN.requests)
         assert response.status_code == HTTPStatus.OK
         assert response.json()["requests"] == []
 
@@ -251,7 +253,7 @@ class TestBatchMeanList:
         mock_sched.get_requests = MagicMock(return_value=mock_requests)
         mock_sched_fn.return_value = mock_sched
 
-        response = client.get(BATCH_MEAN.requests)
+        response = client.get(routes.BATCH_MEAN.requests)
         assert response.status_code == HTTPStatus.OK
         data = response.json()
         assert len(data["requests"]) == num_requests
@@ -278,7 +280,7 @@ class TestBatchMeanList:
         mock_sched.get_requests = MagicMock(return_value=mock_requests)
         mock_sched_fn.return_value = mock_sched
 
-        response = client.get(BATCH_MEAN.requests)
+        response = client.get(routes.BATCH_MEAN.requests)
         assert response.status_code == HTTPStatus.OK
         assert len(response.json()["requests"]) == 1
 
@@ -290,7 +292,7 @@ class TestBatchMeanList:
         mock_sched_fn.return_value = mock_sched
 
         with pytest.raises(RuntimeError, match="DB error"):
-            client.get(BATCH_MEAN.requests)
+            client.get(routes.BATCH_MEAN.requests)
 
 
 class TestDeprecatedIdentityEndpoints:
@@ -304,14 +306,14 @@ class TestDeprecatedIdentityEndpoints:
         mock_data_source.get_organic_dataframe = AsyncMock(return_value=df)
         mock_ds.return_value = mock_data_source
 
-        response = client.post(IDENTITY.compute, json=_base_payload())
+        response = client.post(routes.IDENTITY.compute, json=_base_payload())
         assert response.status_code == HTTPStatus.OK
         assert response.json()["name"] == "BatchMean"
         assert response.json()["value"] == 2.0  # noqa: PLR2004
 
     def test_deprecated_definition(self) -> None:
         """Deprecated definition forwards to BatchMean definition."""
-        response = client.get(IDENTITY.definition)
+        response = client.get(routes.IDENTITY.definition)
         assert response.status_code == HTTPStatus.OK
         assert "Batch Mean" in response.json()["name"]
 
@@ -322,7 +324,7 @@ class TestDeprecatedIdentityEndpoints:
         mock_sched.register = AsyncMock(return_value=None)
         mock_sched_fn.return_value = mock_sched
 
-        response = client.post(IDENTITY.request, json=_base_payload())
+        response = client.post(routes.IDENTITY.request, json=_base_payload())
         assert response.status_code == HTTPStatus.OK
         assert "requestId" in response.json()
 
@@ -335,7 +337,7 @@ class TestDeprecatedIdentityEndpoints:
 
         response = client.request(
             "DELETE",
-            IDENTITY.request,
+            routes.IDENTITY.request,
             json={"requestId": "123e4567-e89b-12d3-a456-426614174000"},
         )
         assert response.status_code == HTTPStatus.OK
@@ -347,7 +349,7 @@ class TestDeprecatedIdentityEndpoints:
         mock_sched.get_requests = MagicMock(return_value={})
         mock_sched_fn.return_value = mock_sched
 
-        response = client.get(IDENTITY.requests)
+        response = client.get(routes.IDENTITY.requests)
         assert response.status_code == HTTPStatus.OK
         assert "requests" in response.json()
 

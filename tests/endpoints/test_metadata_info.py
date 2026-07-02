@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
+from src.endpoints import routes
 from src.endpoints.metadata import _build_readable_schema
-from src.endpoints.paths import INFO
 from src.main import app
 from src.service.payloads.service.schema import Schema
 from src.service.payloads.service.schema_item import SchemaItem
@@ -83,7 +83,7 @@ class TestInfoEndpointSchema:
             side_effect=lambda ds: ["Feature One"] if "inputs" in ds else ["out"]
         )
 
-        response = client.get(INFO)
+        response = client.get(routes.INFO)
 
         assert response.status_code == 200  # noqa: PLR2004
         data = response.json()["test-model"]["data"]

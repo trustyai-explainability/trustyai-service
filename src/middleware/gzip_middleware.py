@@ -14,7 +14,7 @@ from io import BytesIO
 from prometheus_client import Counter, Histogram
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from src.endpoints.paths import DATA_UPLOAD
+from src.endpoints import routes
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ class GzipRequestMiddleware:
     """
 
     # Default configuration constants
-    DEFAULT_PATHS = (DATA_UPLOAD,)
+    DEFAULT_PATHS = (routes.DATA_UPLOAD,)
     DEFAULT_ALLOWED_CONTENT_TYPES = (
         "application/json",
         "application/cloudevents+json",

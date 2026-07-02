@@ -7,7 +7,7 @@ from typing import Never
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from src.endpoints.paths import EXPLAINER_GLOBAL_LIME, EXPLAINER_GLOBAL_PDP
+from src.endpoints import routes
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -27,7 +27,7 @@ class GlobalExplanationRequest(BaseModel):
     modelConfig: ModelConfig
 
 
-@router.post(EXPLAINER_GLOBAL_LIME)
+@router.post(routes.EXPLAINER_GLOBAL_LIME)
 async def global_lime_explanation(request: GlobalExplanationRequest) -> None:
     """Compute a global LIME explanation."""
     logger.info(
@@ -39,7 +39,7 @@ async def global_lime_explanation(request: GlobalExplanationRequest) -> None:
     )
 
 
-@router.post(EXPLAINER_GLOBAL_PDP, response_model=None)
+@router.post(routes.EXPLAINER_GLOBAL_PDP, response_model=None)
 async def global_pdp_explanation(request: GlobalExplanationRequest) -> Never:
     """Compute a global PDP explanation."""
     logger.info(

@@ -16,7 +16,7 @@ from src.core.metrics.drift.jensen_shannon import (
     DEFAULT_THRESHOLD,
     JensenShannon,
 )
-from src.endpoints.paths import DRIFT_JENSEN_SHANNON
+from src.endpoints import routes
 from src.service.data.shared_data_source import DataSource, get_shared_data_source
 from src.service.payloads.metrics.base_metric_request import BaseMetricRequest
 from src.service.prometheus.prometheus_scheduler import PrometheusScheduler
@@ -94,7 +94,7 @@ class JensenShannonMetricRequest(BaseMetricRequest):
         return tags
 
 
-@router.post(DRIFT_JENSEN_SHANNON.compute)
+@router.post(routes.DRIFT_JENSEN_SHANNON.compute)
 async def compute_jensenshannon(
     request: JensenShannonMetricRequest,
 ) -> dict[str, float | bool | str | dict[str, dict[str, float | bool]]]:
@@ -205,7 +205,7 @@ async def compute_jensenshannon(
         ) from e
 
 
-@router.get(DRIFT_JENSEN_SHANNON.definition)
+@router.get(routes.DRIFT_JENSEN_SHANNON.definition)
 async def get_jensenshannon_definition() -> dict[str, str]:
     """Provide a general definition of Jensen-Shannon metric."""
     description = """The Jensen-Shannon divergence is a symmetric
@@ -225,7 +225,7 @@ async def get_jensenshannon_definition() -> dict[str, str]:
     }
 
 
-@router.post(DRIFT_JENSEN_SHANNON.request)
+@router.post(routes.DRIFT_JENSEN_SHANNON.request)
 async def schedule_jensenshannon(request: JensenShannonMetricRequest) -> dict[str, str]:
     """Schedule a recurring computation of Jensen-Shannon metric."""
     # Validate inputs before scheduling
@@ -277,7 +277,7 @@ async def schedule_jensenshannon(request: JensenShannonMetricRequest) -> dict[st
         return {"requestId": str(request_id)}
 
 
-@router.delete(DRIFT_JENSEN_SHANNON.request)
+@router.delete(routes.DRIFT_JENSEN_SHANNON.request)
 async def delete_jensenshannon_schedule(schedule: ScheduleId) -> dict[str, str]:
     """Delete a recurring computation of Jensen-Shannon metric."""
     # Get the scheduler and validate availability
@@ -322,7 +322,7 @@ async def delete_jensenshannon_schedule(schedule: ScheduleId) -> dict[str, str]:
         }
 
 
-@router.get(DRIFT_JENSEN_SHANNON.requests)
+@router.get(routes.DRIFT_JENSEN_SHANNON.requests)
 async def list_jensenshannon_requests() -> dict[str, list[dict[str, Any]]]:
     """List the currently scheduled computations of Jensen-Shannon metric."""
     # Get the scheduler and validate availability

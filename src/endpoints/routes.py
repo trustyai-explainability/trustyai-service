@@ -76,10 +76,6 @@ EXPLAINER_LOCAL_SHAP = "/explainers/local/shap"
 EXPLAINER_LOCAL_CF = "/explainers/local/cf"
 EXPLAINER_LOCAL_TSSALIENCY = "/explainers/local/tssaliency"
 
-# === LM Evaluation ===
-
-EVAL_PREFIX = "/eval/lm-evaluation-harness"
-
 # === Health & Monitoring ===
 
 HEALTH_READY = "/q/health/ready"
