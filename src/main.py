@@ -7,19 +7,16 @@ from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from http import HTTPStatus
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from fastapi import FastAPI, Request, Response
-
-from src import __version__
-
-if TYPE_CHECKING:
-    from fastapi import APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from hypercorn.asyncio import serve
 from hypercorn.config import Config
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+
+from src import __version__
 
 # Endpoint routers
 from src.endpoints.consumer.consumer_endpoint import router as consumer_router
@@ -48,16 +45,6 @@ from src.middleware.gzip_middleware import GzipRequestMiddleware
 from src.service.prometheus.shared_prometheus_scheduler import (
     get_shared_prometheus_scheduler,
 )
-
-lm_evaluation_harness_router: "APIRouter | None" = None
-try:
-    from src.endpoints.evaluation.lm_evaluation_harness import router
-
-    lm_evaluation_harness_router = router
-except ImportError:
-    # LM evaluation harness requires optional 'eval' extra dependencies
-    # ImportError (not ModuleNotFoundError) because the module may exist but fail to import
-    pass
 
 logging.basicConfig(
     level=logging.INFO,  # Reduce default verbosity
@@ -191,10 +178,6 @@ app.include_router(batch_mean_router, tags=["Metrics: Batch Mean"])
 app.include_router(metadata_router, tags=["Service Metadata"])
 app.include_router(metrics_info_router, tags=["Metrics Information Endpoint"])
 
-if lm_evaluation_harness_router is not None:
-    app.include_router(
-        lm_evaluation_harness_router, tags=["LM Evaluation Harness Endpoint"]
-    )
 
 # Deprecated endpoints
 app.include_router(
