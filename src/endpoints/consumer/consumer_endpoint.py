@@ -13,6 +13,7 @@ import numpy as np
 from fastapi import APIRouter, Header, HTTPException
 from numpy import ndarray
 
+from src.endpoints import routes
 from src.endpoints.consumer import (
     InferencePartialPayload,
     KServeData,
@@ -63,7 +64,7 @@ def _validate_payload_type(payload: object, expected_type: type) -> None:
         )
 
 
-@router.post("/consumer/kserve/v2")
+@router.post(routes.CONSUMER_KSERVE_V2)
 async def consume_inference_payload(
     payload: InferencePartialPayload,
 ) -> dict[str, str]:
@@ -440,7 +441,7 @@ def process_payload(
         return np.array(kserve_data.data), column_names
 
 
-@router.post("/")
+@router.post(routes.CONSUMER_ROOT)
 async def consume_cloud_event(
     payload: KServeInferenceRequest | KServeInferenceResponse,
     ce_id: Annotated[str | None, Header()] = None,

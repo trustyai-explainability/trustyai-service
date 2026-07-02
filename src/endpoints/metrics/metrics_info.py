@@ -6,11 +6,13 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
+from src.endpoints import routes
+
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-@router.get("/metrics/all/requests")
+@router.get(routes.METRICS_ALL_REQUESTS)
 async def get_all_metric_requests(type_: str | None = None) -> dict[str, list[Any]]:
     """Retrieve a list of all currently scheduled metric computations."""
     logger.info("Retrieving all metric requests, type filter: %s", type_)

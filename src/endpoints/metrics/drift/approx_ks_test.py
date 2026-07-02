@@ -7,6 +7,8 @@ from typing import Any, Never
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
+from src.endpoints import routes
+
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
@@ -42,7 +44,7 @@ class ApproxKSTestMetricRequest(BaseModel):
     sketchFitting: dict[str, GKSketch] | None = None
 
 
-@router.post("/metrics/drift/approxkstest", response_model=None)
+@router.post(routes.DRIFT_APPROX_KS_TEST.compute, response_model=None)
 async def compute_approxkstest(request: ApproxKSTestMetricRequest) -> Never:
     """Compute the current value of ApproxKSTest metric."""
     logger.info("Computing ApproxKSTest for model: %s", request.modelId)
@@ -52,7 +54,7 @@ async def compute_approxkstest(request: ApproxKSTestMetricRequest) -> Never:
     )
 
 
-@router.get("/metrics/drift/approxkstest/definition")
+@router.get(routes.DRIFT_APPROX_KS_TEST.definition)
 async def get_approxkstest_definition() -> dict[str, str]:
     """Provide a general definition of ApproxKSTest metric."""
     return {
@@ -61,7 +63,7 @@ async def get_approxkstest_definition() -> dict[str, str]:
     }
 
 
-@router.post("/metrics/drift/approxkstest/request", response_model=None)
+@router.post(routes.DRIFT_APPROX_KS_TEST.request, response_model=None)
 async def schedule_approxkstest(
     _request: ApproxKSTestMetricRequest, _background_tasks: BackgroundTasks
 ) -> Never:
@@ -73,7 +75,7 @@ async def schedule_approxkstest(
     )
 
 
-@router.delete("/metrics/drift/approxkstest/request", response_model=None)
+@router.delete(routes.DRIFT_APPROX_KS_TEST.request, response_model=None)
 async def delete_approxkstest_schedule(schedule: ScheduleId) -> Never:
     """Delete a recurring computation of ApproxKSTest metric."""
     logger.info("Deleting ApproxKSTest schedule: %s", schedule.requestId)
@@ -83,7 +85,7 @@ async def delete_approxkstest_schedule(schedule: ScheduleId) -> Never:
     )
 
 
-@router.get("/metrics/drift/approxkstest/requests", response_model=None)
+@router.get(routes.DRIFT_APPROX_KS_TEST.requests, response_model=None)
 async def list_approxkstest_requests() -> Never:
     """List the currently scheduled computations of ApproxKSTest metric."""
     raise HTTPException(
