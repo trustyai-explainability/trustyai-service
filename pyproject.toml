@@ -12,14 +12,10 @@ dependencies = [
     "pandas>=3.0,<4",
     "polars>=1.2,<2",
     "fastapi>=0.116,<0.139",
-    "fastapi-utils>=0.8,<0.9",
-    "uvicorn>=0.38,<1",
-    "typing-inspect>=0.9,<1",
     "prometheus-client>=0.22,<0.26",
     "pydantic>=2.13,<3",
     "hypercorn>=0.18,<0.19",
     "protobuf>=7,<8",        # Security: Resolves CVE-2026-0994 (HIGH - Buffer overflow)
-    "cryptography>=48.0.1,<50",  # Security: Resolves CVE-2026-26007 (HIGH)
     "h5py>=3.13,<4",
     "isodate>=0.7,<0.8",
 ]
@@ -30,7 +26,7 @@ dev = [
     "pyrefly>=0.61",
     "bandit[toml]>=1.9.4",
     "bandit-sarif-formatter>=1.1.1",
-    "httpx>=0.28.1",
+    "httpx2>=2.0",
 ]
 types = [
     "pandas-stubs>=2.3.3",
@@ -45,12 +41,6 @@ test = [
     "pytest-xdist[psutil]>=3.8.0",
     "hypothesis>=6.151.12",
     "aif360>=0.6.1",
-    "pillow>=12.2.0",        # Security: Resolves CVE-2026-25990 (HIGH - Out-of-bounds write)
-]
-notebook = [
-    "ipykernel>=7.2.0",
-    "ipywidgets>=8.1.8",
-    "tornado>=6.5.7",        # Security: Resolves CVE-2026-31958 (HIGH - DoS via malformed headers) and 1 MEDIUM
 ]
 
 [project.optional-dependencies]
@@ -210,14 +200,6 @@ matches = "src/core/metrics/fairness/**"
 
 [tool.pyrefly.sub-config.errors]
 missing-attribute = "ignore"
-
-# Suppress scipy API issues in notebooks
-[[tool.pyrefly.sub-config]]
-matches = "**/*.ipynb"
-
-[tool.pyrefly.sub-config.errors]
-unexpected-keyword = "ignore"
-no-matching-overload = "ignore"
 
 # Suppress intentional private attribute access in test files
 [[tool.pyrefly.sub-config]]
