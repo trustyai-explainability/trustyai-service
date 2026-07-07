@@ -471,9 +471,10 @@ class TestGetDataframeByTag:
         df = await data_source.get_dataframe_by_tag("test-model", "TRAINING")
 
         assert len(df) == 2  # noqa: PLR2004
-        assert list(df.columns) == ["feature1", "feature2"]
+        assert list(df.columns) == ["feature1", "feature2", "output"]
         assert df["feature1"].tolist() == [1.0, 5.0]
         assert df["feature2"].tolist() == [2.0, 6.0]
+        assert df["output"].tolist() == [0.0, 0.0]
 
     @patch("src.service.data.datasources.data_source.ModelData")
     @pytest.mark.asyncio
@@ -559,3 +560,4 @@ class TestGetDataframeByTag:
 
         assert len(df) == 2  # noqa: PLR2004
         assert df["feature1"].tolist() == [1.0, 3.0]
+        assert df["output"].tolist() == [0.0, 0.0]

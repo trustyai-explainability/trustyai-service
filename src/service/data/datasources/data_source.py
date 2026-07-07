@@ -185,8 +185,8 @@ class DataSource:
         """
         try:
             model_data = ModelData(model_id)
-            input_data, _, metadata = await model_data.data()
-            input_names, _, metadata_names = await model_data.column_names()
+            input_data, output_data, metadata = await model_data.data()
+            input_names, output_names, metadata_names = await model_data.column_names()
 
             if metadata is None or input_data is None:
                 return pd.DataFrame()
@@ -216,6 +216,17 @@ class DataSource:
                     df_data[col_name] = filtered_input[:, i]
                 elif len(filtered_input.shape) == 1 and i == 0:
                     df_data[col_name] = filtered_input
+
+            if output_data is not None:
+                filtered_output = output_data[mask]
+                for i, col_name in enumerate(output_names):
+                    if (
+                        len(filtered_output.shape) == ARRAY_DIM_2D
+                        and i < filtered_output.shape[1]
+                    ):
+                        df_data[col_name] = filtered_output[:, i]
+                    elif len(filtered_output.shape) == 1 and i == 0:
+                        df_data[col_name] = filtered_output
 
             return pd.DataFrame(df_data)
 
