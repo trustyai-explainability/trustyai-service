@@ -204,7 +204,10 @@ class DataSource:
                     return cell
                 return []
 
-            mask = [tag in _extract_tags(row[tags_col]) for row in metadata]
+            if len(metadata.shape) == 1:
+                mask = [tag in _extract_tags(cell) for cell in metadata]
+            else:
+                mask = [tag in _extract_tags(row[tags_col]) for row in metadata]
             filtered_input = input_data[mask]
 
             df_data: dict[str, object] = {}

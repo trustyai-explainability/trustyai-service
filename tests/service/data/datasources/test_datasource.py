@@ -561,3 +561,30 @@ class TestGetDataframeByTag:
         assert len(df) == 2  # noqa: PLR2004
         assert df["feature1"].tolist() == [1.0, 3.0]
         assert df["output"].tolist() == [0.0, 0.0]
+
+    @patch("src.service.data.datasources.data_source.ModelData")
+    @pytest.mark.asyncio
+    async def test_handles_1d_metadata_returns_empty(
+        self, mock_model_data_class: Mock, data_source: DataSource
+    ) -> None:
+        """1D metadata (no tags column) returns empty DataFrame."""
+        mock = Mock(spec=ModelData)
+        mock.column_names = AsyncMock(
+            return_value=(
+                np.array(["feature1"]),
+                np.array(["output"]),
+                np.array(["id"]),
+            ),
+        )
+        mock.data = AsyncMock(
+            return_value=(
+                np.array([[1.0], [2.0]]),
+                np.array([[0.0], [1.0]]),
+                np.array(["id_0", "id_1"]),
+            ),
+        )
+        mock_model_data_class.return_value = mock
+
+        df = await data_source.get_dataframe_by_tag("test-model", "TRAINING")
+
+        assert len(df) == 0
