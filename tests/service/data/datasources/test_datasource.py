@@ -188,19 +188,24 @@ class TestDataSource:
         mock_model_data.column_names.return_value = (
             ["feature1", "feature2"],
             ["target"],
-            [SYNTHETIC_TAG],
+            ["id", "iso_time", "unix_timestamp", "tags"],
         )
         mock_model_data.data.return_value = (
             np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]),
             np.array([[0.0], [1.0], [0.0]]),
-            np.array([[False], [True], [False]]),  # Second row is synthetic
+            np.array(
+                [
+                    ["id_0", "t0", 0.0, ["_trustyai_unlabeled"]],
+                    ["id_1", "t1", 1.0, [SYNTHETIC_TAG]],
+                    ["id_2", "t2", 2.0, ["_trustyai_unlabeled"]],
+                ],
+                dtype=object,
+            ),
         )
 
         df = await data_source.get_organic_dataframe("test_model", 100)
 
-        # Should filter out synthetic rows
         assert len(df) == EXPECTED_ORGANIC_ROWS
-        assert not df[SYNTHETIC_TAG].any()  # No True values should remain
 
     @patch("src.service.data.datasources.data_source.ModelData")
     @pytest.mark.asyncio

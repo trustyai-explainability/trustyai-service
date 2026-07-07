@@ -167,12 +167,17 @@ class DataSource:
         """
         df = await self.get_dataframe_with_batch_size(model_id, batch_size)
 
-        # Filter out synthetic rows — match both the current prefixed tag and
-        # the legacy unprefixed value for backward compatibility with data
-        # written before the tag-prefix migration.
-        for col in (SYNTHETIC_TAG, "synthetic"):
-            if col in df.columns:
-                df = df[~df[col].fillna(value=False)]
+        if "tags" in df.columns:
+            synthetic_tags = {SYNTHETIC_TAG, "synthetic"}
+            mask = df["tags"].apply(
+                lambda tags: (
+                    not any(
+                        t in synthetic_tags
+                        for t in (tags if isinstance(tags, list) else [])
+                    )
+                )
+            )
+            df = df[mask]
 
         return df
 

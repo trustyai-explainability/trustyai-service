@@ -54,7 +54,7 @@ class TestGetTags:
     ) -> None:
         """Returns correct tag counts for a specific model."""
         mock_ds = MagicMock()
-        mock_ds.get_known_models = AsyncMock(return_value={"test-model"})
+        mock_ds.has_metadata = AsyncMock(return_value=True)
         mock_get_ds.return_value = mock_ds
 
         tags = [
@@ -83,7 +83,7 @@ class TestGetTags:
     ) -> None:
         """Returns 404 for a non-existent model."""
         mock_ds = MagicMock()
-        mock_ds.get_known_models = AsyncMock(return_value=set())
+        mock_ds.has_metadata = AsyncMock(return_value=False)
         mock_get_ds.return_value = mock_ds
 
         response = client.get("/info/tags", params={"modelId": "nonexistent"})
@@ -97,7 +97,7 @@ class TestGetTags:
     ) -> None:
         """Returns empty dict when model has no metadata rows."""
         mock_ds = MagicMock()
-        mock_ds.get_known_models = AsyncMock(return_value={"empty-model"})
+        mock_ds.has_metadata = AsyncMock(return_value=True)
         mock_get_ds.return_value = mock_ds
 
         md = MagicMock()
@@ -118,7 +118,7 @@ class TestGetTags:
         """Returns tag counts for all known models when modelId is omitted."""
         mock_ds = MagicMock()
         mock_ds.get_verified_models = AsyncMock(return_value=["model-a", "model-b"])
-        mock_ds.get_known_models = AsyncMock(return_value={"model-a", "model-b"})
+        mock_ds.has_metadata = AsyncMock(return_value=True)
         mock_get_ds.return_value = mock_ds
 
         tags_a = [["TRAINING"], ["TRAINING"]]
@@ -153,7 +153,7 @@ class TestApplyTags:
     ) -> None:
         """Applies tags to specified row ranges."""
         mock_ds = MagicMock()
-        mock_ds.get_known_models = AsyncMock(return_value={"test-model"})
+        mock_ds.has_metadata = AsyncMock(return_value=True)
         mock_get_ds.return_value = mock_ds
 
         mock_storage.delete_dataset = AsyncMock()
@@ -184,7 +184,7 @@ class TestApplyTags:
     ) -> None:
         """Rejects tags with the reserved _trustyai prefix."""
         mock_ds = MagicMock()
-        mock_ds.get_known_models = AsyncMock(return_value={"test-model"})
+        mock_ds.has_metadata = AsyncMock(return_value=True)
         mock_get_ds.return_value = mock_ds
 
         response = client.post(
@@ -205,7 +205,7 @@ class TestApplyTags:
     ) -> None:
         """Rejects ranges that exceed dataset size."""
         mock_ds = MagicMock()
-        mock_ds.get_known_models = AsyncMock(return_value={"test-model"})
+        mock_ds.has_metadata = AsyncMock(return_value=True)
         mock_get_ds.return_value = mock_ds
 
         with patch(
@@ -230,7 +230,7 @@ class TestApplyTags:
     ) -> None:
         """Applying the same tag twice does not duplicate it in the row."""
         mock_ds = MagicMock()
-        mock_ds.get_known_models = AsyncMock(return_value={"test-model"})
+        mock_ds.has_metadata = AsyncMock(return_value=True)
         mock_get_ds.return_value = mock_ds
 
         metadata = _make_metadata_rows(3, [["TRAINING"]] * 3)
@@ -271,7 +271,7 @@ class TestApplyTags:
     ) -> None:
         """Returns 404 for a non-existent model."""
         mock_ds = MagicMock()
-        mock_ds.get_known_models = AsyncMock(return_value=set())
+        mock_ds.has_metadata = AsyncMock(return_value=False)
         mock_get_ds.return_value = mock_ds
 
         response = client.post(
@@ -291,7 +291,7 @@ class TestApplyTags:
     ) -> None:
         """Rejects ranges where start >= end."""
         mock_ds = MagicMock()
-        mock_ds.get_known_models = AsyncMock(return_value={"test-model"})
+        mock_ds.has_metadata = AsyncMock(return_value=True)
         mock_get_ds.return_value = mock_ds
 
         with patch(
@@ -316,7 +316,7 @@ class TestApplyTags:
     ) -> None:
         """Rejects ranges containing negative indices."""
         mock_ds = MagicMock()
-        mock_ds.get_known_models = AsyncMock(return_value={"test-model"})
+        mock_ds.has_metadata = AsyncMock(return_value=True)
         mock_get_ds.return_value = mock_ds
 
         with patch(
@@ -341,7 +341,7 @@ class TestApplyTags:
     ) -> None:
         """Overlapping ranges apply tags correctly without duplicates."""
         mock_ds = MagicMock()
-        mock_ds.get_known_models = AsyncMock(return_value={"test-model"})
+        mock_ds.has_metadata = AsyncMock(return_value=True)
         mock_get_ds.return_value = mock_ds
 
         mock_storage.delete_dataset = AsyncMock()
@@ -382,7 +382,7 @@ class TestApplyTags:
     ) -> None:
         """Multiple tags applied to different ranges in a single request."""
         mock_ds = MagicMock()
-        mock_ds.get_known_models = AsyncMock(return_value={"test-model"})
+        mock_ds.has_metadata = AsyncMock(return_value=True)
         mock_get_ds.return_value = mock_ds
 
         mock_storage.delete_dataset = AsyncMock()
@@ -430,7 +430,7 @@ class TestApplyTags:
     ) -> None:
         """Non-contiguous ranges tag only specified rows."""
         mock_ds = MagicMock()
-        mock_ds.get_known_models = AsyncMock(return_value={"test-model"})
+        mock_ds.has_metadata = AsyncMock(return_value=True)
         mock_get_ds.return_value = mock_ds
 
         mock_storage.delete_dataset = AsyncMock()
@@ -474,7 +474,7 @@ class TestApplyTags:
     ) -> None:
         """Singleton range [n] tags only row n."""
         mock_ds = MagicMock()
-        mock_ds.get_known_models = AsyncMock(return_value={"test-model"})
+        mock_ds.has_metadata = AsyncMock(return_value=True)
         mock_get_ds.return_value = mock_ds
 
         mock_storage.delete_dataset = AsyncMock()
@@ -515,7 +515,7 @@ class TestApplyTags:
     ) -> None:
         """Empty dataTagging dict returns 400."""
         mock_ds = MagicMock()
-        mock_ds.get_known_models = AsyncMock(return_value={"test-model"})
+        mock_ds.has_metadata = AsyncMock(return_value=True)
         mock_get_ds.return_value = mock_ds
 
         response = client.post(
@@ -536,7 +536,7 @@ class TestApplyTags:
     ) -> None:
         """Range with 3+ elements returns 400."""
         mock_ds = MagicMock()
-        mock_ds.get_known_models = AsyncMock(return_value={"test-model"})
+        mock_ds.has_metadata = AsyncMock(return_value=True)
         mock_get_ds.return_value = mock_ds
 
         with patch(

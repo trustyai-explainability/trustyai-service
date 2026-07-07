@@ -503,7 +503,7 @@ async def _ensure_model_exists(
     data_source: DataSource,
 ) -> None:
     """Raise 404 if the model is not known to the data source."""
-    if model_id not in await data_source.get_known_models():
+    if not await data_source.has_metadata(model_id):
         raise HTTPException(
             status_code=HTTPStatus.NOT_FOUND,
             detail=f"No model found with id={model_id}",
@@ -559,8 +559,10 @@ async def get_tags(
     for mid in known_models:
         try:
             result[mid] = await _get_tag_counts_for_model(mid, data_source)
-        except HTTPException:
-            continue
+        except HTTPException as exc:
+            if exc.status_code == HTTPStatus.NOT_FOUND:
+                continue
+            raise
     return result
 
 
@@ -606,6 +608,11 @@ async def apply_tags(data_tagging: DataTagging) -> dict:
         )
 
     for tag_name in data_tagging.dataTagging:
+        if not tag_name:
+            raise HTTPException(
+                status_code=HTTPStatus.BAD_REQUEST,
+                detail="Tag names must be non-empty",
+            )
         validation_msg = validate_data_tag(tag_name)
         if validation_msg is not None:
             raise HTTPException(
@@ -668,16 +675,36 @@ async def _persist_metadata(
     metadata: np.ndarray,
     metadata_names: list[str],
 ) -> None:
-    """Delete-and-rewrite the metadata dataset for a model.
+    """Replace the metadata dataset for a model.
+
+    Reads the old data first as a backup, then deletes and rewrites.
+    If the write fails, attempts to restore the original data to
+    prevent permanent data loss.
 
     .. todo:: Read-modify-write is not atomic; concurrent tag requests may conflict.
     """
     metadata_dataset = model_id + METADATA_SUFFIX
     try:
+        old_metadata = await storage_interface.read_data(metadata_dataset)
+    except Exception:  # Intentional: if read fails, there's nothing to restore
+        old_metadata = None
+
+    try:
         await storage_interface.delete_dataset(metadata_dataset)
         await storage_interface.write_data(metadata_dataset, metadata, metadata_names)
     except Exception as exc:
         logger.exception("Error writing tagged metadata for model=%s", model_id)
+        if old_metadata is not None:
+            try:
+                await storage_interface.write_data(
+                    metadata_dataset, old_metadata, metadata_names
+                )
+                logger.info("Restored original metadata for model=%s", model_id)
+            except Exception:  # Intentional: restoration is best-effort
+                logger.exception(
+                    "Failed to restore metadata for model=%s — data may be lost",
+                    model_id,
+                )
         raise HTTPException(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
             detail=f"Error persisting tags for model={model_id}",
