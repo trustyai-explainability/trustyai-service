@@ -34,11 +34,11 @@ from src.endpoints.metrics.drift.approx_ks_test import (
 from src.endpoints.metrics.drift.compare_means import (
     router as drift_comparemeans_router,
 )
-from src.endpoints.metrics.drift.fourier_mmd import router as drift_fouriermmd_router
 from src.endpoints.metrics.drift.jensen_shannon import (
     router as drift_jensenshannon_router,
 )
 from src.endpoints.metrics.drift.kolmogorov_smirnov import router as drift_kstest_router
+from src.endpoints.metrics.drift.mmd import router as drift_mmd_router
 from src.endpoints.metrics.fairness.group.dir import router as dir_router
 from src.endpoints.metrics.fairness.group.spd import router as spd_router
 from src.endpoints.metrics.metrics_info import router as metrics_info_router
@@ -163,14 +163,16 @@ app.include_router(
     ],
 )
 app.include_router(
+    drift_mmd_router,
+    tags=[
+        "Drift Metrics: MMD",
+    ],
+)
+app.include_router(
     drift_kstest_router,
     tags=[
         "Drift Metrics: KSTest",
     ],
-)
-app.include_router(
-    drift_fouriermmd_router,
-    tags=["Drift Metrics: FourierMMD"],
 )
 app.include_router(
     drift_approxkstest_router,

@@ -22,6 +22,7 @@ dependencies = [
     "cryptography>=48.0.1,<50",  # Security: Resolves CVE-2026-26007 (HIGH)
     "h5py>=3.13,<4",
     "isodate>=0.7,<0.8",
+    "goodpoints>=0.5.0",
 ]
 
 [dependency-groups]
