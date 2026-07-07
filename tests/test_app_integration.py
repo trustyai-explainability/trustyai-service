@@ -22,9 +22,13 @@ class TestAppCoreEndpoints:
         """Test health check endpoints are registered."""
         # Readiness probe - may fail if storage not available in test
         response = client.get("/q/health/ready")
-        assert response.status_code in [HTTPStatus.OK, HTTPStatus.SERVICE_UNAVAILABLE]
-        assert response.json()["status"] in ["ready", "not_ready"]
-        assert "checks" in response.json()
+        assert response.status_code in (HTTPStatus.OK, HTTPStatus.SERVICE_UNAVAILABLE)
+        payload = response.json()
+        assert "checks" in payload
+        if response.status_code == HTTPStatus.OK:
+            assert payload["status"] == "ready"
+        else:
+            assert payload["status"] == "not_ready"
 
         # Liveness probe - should always succeed
         response = client.get("/q/health/live")

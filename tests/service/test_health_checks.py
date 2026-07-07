@@ -219,25 +219,20 @@ class TestHealthCheckRegistry:
 
     def test_check_pvc_storage_not_writable(self, tmp_path) -> None:
         """Test PVC storage check fails when path is not writable."""
-        read_only_path = tmp_path / "readonly"
-        read_only_path.mkdir()
-        # Make directory read-only
-        read_only_path.chmod(0o444)
-
-        with patch.dict(
-            os.environ,
-            {
-                "SERVICE_STORAGE_FORMAT": "PVC",
-                "STORAGE_DATA_FOLDER": str(read_only_path),
-            },
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "SERVICE_STORAGE_FORMAT": "PVC",
+                    "STORAGE_DATA_FOLDER": str(tmp_path),
+                },
+            ),
+            patch("pathlib.Path.write_text", side_effect=PermissionError("read-only")),
         ):
             check = HealthCheckRegistry.check_storage_readiness()
             assert check.status == STATUS_ERROR
             assert check.name == "Storage readiness"
             assert "not writable" in check.data["error"]
-
-        # Clean up: restore write permission
-        read_only_path.chmod(0o755)
 
     @patch("src.service.health_checks.MARIADB_AVAILABLE", False)
     def test_check_maria_storage_library_not_installed(self) -> None:
