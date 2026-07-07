@@ -1080,24 +1080,19 @@ class TestGKPropertyBased:
         assert len(sketch.summary) == initial_len
 
     def test_compression_with_zero_threshold(self) -> None:
-        """Test compression band condition when threshold is 0 (very small n)."""
+        """Compression works when threshold is 0 (small n relative to epsilon)."""
         sketch = GreenwaldKhannaSketch(epsilon=EPSILON_HIGH)
 
-        # Insert just 1 value (n=1)
-        # With n=1, floor(2 * epsilon * n) = floor(0.2) = 0, triggering line 197
-        sketch.insert(1.0)
+        # With epsilon=0.1, compress_period=5. Insert exactly 5 elements
+        # to trigger compression. At n=1, threshold = floor(2*0.1*1) = 0,
+        # exercising the zero-threshold branch in _compress.
+        for i in range(5):
+            sketch.insert(float(i))
 
-        # Manually add more tuples to summary to trigger compression logic
-        # This simulates a state where we have tuples but threshold is 0
-        sketch.summary.append((2.0, 1, 0))
-        sketch.summary.append((3.0, 1, 0))
-        sketch.n = 1  # Keep n small so threshold stays 0
-
-        # Force compression with threshold = 0
-        sketch._compress()
-
-        # Should complete without error (line 197: band_condition = True)
-        assert len(sketch.summary) >= 1
+        check_gk_invariants(sketch)
+        assert sketch.n == 5
+        assert sketch.min() == 0.0
+        assert sketch.max() == 4.0
 
     def test_query_rank_edge_cases_direct(self) -> None:
         """Test quantile queries across a range of phi values."""
