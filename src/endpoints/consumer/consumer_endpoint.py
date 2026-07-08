@@ -346,12 +346,20 @@ async def reconcile_kserve(
     storage_interface = get_global_storage_interface()
     input_dataset = output_payload.model_name + INPUT_SUFFIX
     output_dataset = output_payload.model_name + OUTPUT_SUFFIX
-    await storage_interface.set_column_types(
-        input_dataset, [t.value for t in input_types]
-    )
-    await storage_interface.set_column_types(
-        output_dataset, [t.value for t in output_types]
-    )
+    try:
+        await storage_interface.set_column_types(
+            input_dataset, [t.value for t in input_types]
+        )
+        await storage_interface.set_column_types(
+            output_dataset, [t.value for t in output_types]
+        )
+    except (
+        Exception
+    ):  # Intentional: type metadata is non-critical; falls back to UNKNOWN on read
+        logger.exception(
+            "Failed to persist column types for model=%s",
+            output_payload.model_name,
+        )
 
 
 def reconcile_mismatching_shape_error(
