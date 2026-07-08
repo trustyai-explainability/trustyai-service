@@ -58,6 +58,17 @@ class StorageInterface(ABC):
     async def clear_name_mapping(self, dataset_name: str) -> None:
         """Clear all column name aliases from a dataset."""
 
+    async def set_column_types(
+        self, dataset_name: str, column_types: list[str]
+    ) -> None:
+        """Store column type information. Override in backends that support it."""
+        _ = dataset_name, column_types
+
+    async def get_column_types(self, dataset_name: str) -> list[str] | None:
+        """Read column type information. Returns None if backend doesn't support it."""
+        _ = dataset_name
+        return None
+
     @abstractmethod
     async def get_known_models(self) -> list[str]:
         """Get a list of all model IDs that have inference data stored."""
