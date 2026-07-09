@@ -7,7 +7,7 @@ from typing import Any, Literal, cast
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.metrics.drift.jensen_shannon import (
     DEFAULT_BINS,
@@ -55,7 +55,7 @@ class JensenShannonMetricRequest(BaseMetricRequest):
     model_config = ConfigDict(populate_by_name=True)
 
     model_id: str = Field(alias="modelId")
-    metric_name: str | None = Field(default=None, alias="metricName")
+    metric_name: str = Field(default=METRIC_NAME, alias="metricName")
     request_name: str | None = Field(default=None, alias="requestName")
     batch_size: int = Field(default=100, alias="batchSize")
 
@@ -77,13 +77,6 @@ class JensenShannonMetricRequest(BaseMetricRequest):
     )  # Number of bins for histogram method
     reference_tag: str | None = Field(default=None, alias="referenceTag")
     fit_columns: list[str] = Field(default_factory=list, alias="fitColumns")
-
-    @model_validator(mode="after")
-    def _set_default_metric_name(self) -> "JensenShannonMetricRequest":
-        """Automatically set metric_name to default if not provided."""
-        if self.metric_name is None:
-            self.metric_name = METRIC_NAME
-        return self
 
     def retrieve_tags(self) -> dict[str, str]:
         """Retrieve tags for this JensenShannon metric request."""
