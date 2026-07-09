@@ -185,7 +185,9 @@ def make_schedule_endpoint_test(
 
         # Mock data source (needed for KS test registration)
         mock_data_source = MagicMock()
-        mock_data_source.get_metadata = AsyncMock(return_value={"feature1": "type1"})
+        mock_sched_metadata = MagicMock()
+        mock_sched_metadata.input_schema.items.keys.return_value = ["feature1"]
+        mock_data_source.get_metadata = AsyncMock(return_value=mock_sched_metadata)
         mock_ds.return_value = mock_data_source
 
         # Send request
@@ -431,7 +433,9 @@ def make_schedule_endpoint_error_test(
 
         # Mock data source
         mock_data_source = MagicMock()
-        mock_data_source.get_metadata = AsyncMock(return_value={"feature1": "type1"})
+        mock_sched_metadata = MagicMock()
+        mock_sched_metadata.input_schema.items.keys.return_value = ["feature1"]
+        mock_data_source.get_metadata = AsyncMock(return_value=mock_sched_metadata)
         mock_ds.return_value = mock_data_source
 
         # Send request
