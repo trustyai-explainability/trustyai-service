@@ -19,7 +19,6 @@ if TYPE_CHECKING:
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from hypercorn.asyncio import serve
-from hypercorn.config import Config
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 # Endpoint routers
@@ -61,6 +60,7 @@ from src.service.health_checks import (
 from src.service.prometheus.shared_prometheus_scheduler import (
     get_shared_prometheus_scheduler,
 )
+from src.service.tls import PolicyAwareConfig
 
 # Valid storage formats (for environment variable validation)
 VALID_STORAGE_FORMATS = {"PVC", "MARIA"}
@@ -489,7 +489,6 @@ def get_tls_config() -> dict[str, Any] | None:
         return {
             "ssl_keyfile": str(key_path),
             "ssl_certfile": str(cert_path),
-            "ssl_version": 2,  # TLS v1.2+
         }
     logger.info("TLS certificates not found, running in HTTP mode")
     return None
@@ -507,7 +506,7 @@ async def run_server() -> None:
     ssl_port = int(os.getenv("SSL_PORT", "4443"))
 
     # Create hypercorn config
-    config = Config()
+    config = PolicyAwareConfig()
 
     # Configure for HTTP/1.1 compatibility and proper keep-alive
     config.h11_max_incomplete_size = 16 * 1024 * 1024  # 16MB for large requests
