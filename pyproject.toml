@@ -18,7 +18,6 @@ dependencies = [
     "prometheus-client>=0.22,<0.26",
     "pydantic>=2.13,<3",
     "hypercorn>=0.18,<0.19",
-    "protobuf>=7,<8",        # Security: Resolves CVE-2026-0994 (HIGH - Buffer overflow)
     "cryptography>=48.0.1,<50",  # Security: Resolves CVE-2026-26007 (HIGH)
     "h5py>=3.13,<4",
     "isodate>=0.7,<0.8",
@@ -60,7 +59,6 @@ eval = [
     "nltk>=3.9.4,<4",        # Security: Resolves CVE-2025-14009 (CRITICAL - Zip Slip), CVE-2026-33236, CVE-2026-33231 (HIGH), and 2 MEDIUM
     "sqlitedict>=2.1,<3",    # Security: Resolves CVE-2024-35515 (HIGH)
 ]
-# Note: grpcio/grpcio-tools removed - incompatible with protobuf v7, unused (protoc used instead)
 mariadb = ["mariadb>=1.1,<1.2", "javaobj-py3>=0.5,<0.6"]
 
 [tool.hatch.version]
@@ -85,8 +83,7 @@ requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [tool.ruff]
-# Exclude generated protobuf files from all ruff operations
-exclude = ["src/proto/grpc_predict_v2_pb2.py", "src/_version.py"]
+exclude = ["src/_version.py"]
 
 [tool.ruff.lint]
 select = ["ALL"]
@@ -105,7 +102,6 @@ ignore = [
 "src/core/metrics/fairness/group/*.py" = ["PLR0913"]
 "src/middleware/gzip_middleware.py" = ["C901", "PLR0911", "PLR0912", "PLR0913", "PLR0915"]
 "src/service/data/datasources/data_source.py" = ["BLE001", "C901", "PLR0912"]
-"src/service/data/modelmesh_parser.py" = ["PLR0913"]
 "src/service/data/storage/**/*.py" = ["SLF001", "BLE001", "PLR0913"]
 "src/service/data/storage/pvc.py" = ["C901", "PLR0912", "PLR0915", "ASYNC240", "PTH110"]
 "src/service/data/storage/maria/maria.py" = ["ASYNC240"]  # One-time startup PVC check via Path.exists/is_dir/glob (local mount, negligible blocking)
@@ -134,7 +130,6 @@ ignore = [
 "tests/endpoints/metrics/fairness/group/factory.py" = ["PLR0913", "PLC0415"]
 "tests/endpoints/test_upload_endpoint_maria.py" = ["S105"]
 "tests/endpoints/test_upload_endpoint_pvc.py" = ["PLR0913"]
-"tests/service/data/test_utils.py" = ["PLR0913", "UP037"]  # UP037: Keep quoted annotations for optional protobuf imports
 "tests/service/serialization/test_rows.py" = ["PLR2004"]
 "tests/service/test_health_checks.py" = ["S106", "ANN001", "PLR2004", "FBT003"]  # Health check test-specific ignores
 
@@ -152,7 +147,7 @@ skips = [
 ]
 
 [tool.pyrefly]
-project-excludes = ["**/proto/**", "src/proto/**", "src/proto/grpc_predict_v2_pb2.py", "src/_version.py"]
+project-excludes = ["src/_version.py"]
 disable-project-excludes-heuristics = true
 # Forward-looking: pyrefly uses this for type checking, not runtime
 python-version = "3.14.0"
@@ -172,8 +167,6 @@ ignore-missing-imports = [
     "pytest.*",
     "hypothesis.*",
     "matplotlib.*",
-    # Generated protobuf - excluded from analysis but imported optionally in tests
-    "src.proto.grpc_predict_v2_pb2.*",
 ]
 
 # Broad suppressions for pre-existing type issues.

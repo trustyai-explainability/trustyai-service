@@ -170,7 +170,7 @@ async def strip_trailing_slash(
 # Include all routers
 app.include_router(
     consumer_router,
-    tags=["{Internal Only} Inference Consumer", "{Internal Only} ModelMesh Consumer"],
+    tags=["{Internal Only} Inference Consumer"],
 )
 app.include_router(data_upload_router, tags=["Data Upload"])
 
