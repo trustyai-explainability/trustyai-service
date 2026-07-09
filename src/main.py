@@ -8,18 +8,15 @@ from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from http import HTTPStatus
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from fastapi import FastAPI, Request, Response
-
-from src import __version__
-
-if TYPE_CHECKING:
-    from fastapi import APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from hypercorn.asyncio import serve
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+
+from src import __version__
 
 # Middleware
 from src.endpoints import routes
@@ -65,14 +62,6 @@ from src.service.tls import PolicyAwareConfig
 
 # Valid storage formats (for environment variable validation)
 VALID_STORAGE_FORMATS = {"PVC", "MARIA"}
-
-lm_evaluation_harness_router: "APIRouter | None" = None
-try:
-    from src.endpoints.evaluation.lm_evaluation_harness import router
-
-    lm_evaluation_harness_router = router
-except ImportError:
-    pass
 
 logging.basicConfig(
     level=logging.INFO,  # Reduce default verbosity
@@ -246,10 +235,6 @@ app.include_router(batch_mean_router, tags=["Metrics: Batch Mean"])
 app.include_router(metadata_router, tags=["Service Metadata"])
 app.include_router(metrics_info_router, tags=["Metrics Information Endpoint"])
 
-if lm_evaluation_harness_router is not None:
-    app.include_router(
-        lm_evaluation_harness_router, tags=["LM Evaluation Harness Endpoint"]
-    )
 
 # Deprecated endpoints (gated by fairness group + individual flags)
 register_if_enabled_with_group(
