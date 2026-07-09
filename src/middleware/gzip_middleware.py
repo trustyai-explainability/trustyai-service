@@ -14,6 +14,8 @@ from io import BytesIO
 from prometheus_client import Counter, Histogram
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from src.endpoints import routes
+
 logger = logging.getLogger(__name__)
 
 # Chunk size for streaming decompression (64KB)
@@ -36,11 +38,11 @@ class GzipRequestMiddleware:
     removing the Content-Encoding header, and updating Content-Length.
     Includes protection against decompression bombs via max_size limit.
 
-    Defaults: paths=["*"] (all paths), max_size=16MB, fail_on_error=True
+    Defaults: paths=["/data/upload"], max_size=16MB, fail_on_error=True
     """
 
     # Default configuration constants
-    DEFAULT_PATHS = ("*",)  # All paths: Content-Encoding is a transport-level concern
+    DEFAULT_PATHS = (routes.DATA_UPLOAD,)
     DEFAULT_ALLOWED_CONTENT_TYPES = (
         "application/json",
         "application/cloudevents+json",
@@ -86,7 +88,7 @@ class GzipRequestMiddleware:
 
         Args:
             app: ASGI application
-            paths: Path patterns to apply (supports wildcards, default: ["*"] = all paths)
+            paths: Path patterns to apply (supports wildcards, default: ["/data/upload"])
             max_size: Max decompressed bytes (default: 16MB)
             fail_on_error: Return error on failure vs pass through (default: True)
             allowed_content_types: Eligible content types

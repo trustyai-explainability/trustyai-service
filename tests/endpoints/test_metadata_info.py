@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
 
+from src.endpoints import routes
 from src.endpoints.metadata import _build_readable_schema
 from src.main import app
 from src.service.payloads.service.schema import Schema
@@ -241,7 +242,7 @@ class TestGetInfoEndpoint:
         )
         mock_sched.return_value = None
 
-        response = client.get("/info")
+        response = client.get(routes.INFO)
 
         assert response.status_code == 200  # noqa: PLR2004
         data = response.json()["test-model"]["data"]

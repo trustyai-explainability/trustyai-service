@@ -5,15 +5,14 @@ import uuid
 from http import HTTPStatus
 from typing import Any
 
-import pandas as pd
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.metrics.drift.kolmogorov_smirnov import KolmogorovSmirnov
+from src.endpoints import routes
 from src.service.data.datasources.data_source import DataSource
 from src.service.data.shared_data_source import get_shared_data_source
 from src.service.payloads.metrics.base_metric_request import BaseMetricRequest
-from src.service.prometheus.metric_value_carrier import MetricValueCarrier
 from src.service.prometheus.prometheus_scheduler import PrometheusScheduler
 from src.service.prometheus.shared_prometheus_scheduler import (
     get_shared_prometheus_scheduler,
@@ -23,7 +22,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 # Metric name constant
-METRIC_NAME = "KSTEST"
+METRIC_NAME = "KSTest"
 
 
 def get_prometheus_scheduler() -> PrometheusScheduler:
@@ -49,7 +48,9 @@ class KSTestMetricRequest(BaseMetricRequest):
     model_config = ConfigDict(populate_by_name=True)
 
     model_id: str = Field(alias="modelId")
-    metric_name: str = Field(default=METRIC_NAME, alias="metricName")
+    metric_name: str | None = Field(
+        default=None, alias="metricName"
+    )  # Will be set by endpoint
     request_name: str | None = Field(default=None, alias="requestName")
     batch_size: int = Field(default=100, alias="batchSize")
 
@@ -70,7 +71,7 @@ class KSTestMetricRequest(BaseMetricRequest):
         return tags
 
 
-@router.post("/metrics/drift/kstest")
+@router.post(routes.DRIFT_KSTEST.compute)
 async def compute_kstest(
     request: KSTestMetricRequest,
 ) -> dict[str, float | bool | str | dict[str, dict[str, float]]]:
@@ -170,7 +171,7 @@ async def compute_kstest(
     }
 
 
-@router.get("/metrics/drift/kstest/definition")
+@router.get(routes.DRIFT_KSTEST.definition)
 async def get_kstest_definition() -> dict[str, str]:
     """Provide a general definition of KSTest metric."""
     description = """The two-sampled Kolmogorov-Smirnov test is a nonparametric statistical test.
@@ -187,7 +188,7 @@ async def get_kstest_definition() -> dict[str, str]:
     }
 
 
-@router.post("/metrics/drift/kstest/request")
+@router.post(routes.DRIFT_KSTEST.request)
 async def schedule_kstest(request: KSTestMetricRequest) -> dict[str, str]:
     """Schedule a recurring computation of KSTest metric."""
     if not request.fit_columns:
@@ -213,8 +214,8 @@ async def schedule_kstest(request: KSTestMetricRequest) -> dict[str, str]:
         request_id = uuid.uuid4()
         logger.info("Scheduling %s computation with ID: %s.", METRIC_NAME, request_id)
 
-        if not request.metric_name:
-            request.metric_name = METRIC_NAME
+        # Set metric name automatically
+        request.metric_name = METRIC_NAME
 
         # Register with the scheduler (this will reconcile the request and store it)
         await scheduler.register(request.metric_name, request_id, request)
@@ -232,10 +233,8 @@ async def schedule_kstest(request: KSTestMetricRequest) -> dict[str, str]:
         return {"requestId": str(request_id)}
 
 
-@router.delete("/metrics/drift/kstest/request")
-async def delete_kstest_schedule(
-    schedule: ScheduleId, metric_name: str = METRIC_NAME
-) -> dict[str, str]:
+@router.delete(routes.DRIFT_KSTEST.request)
+async def delete_kstest_schedule(schedule: ScheduleId) -> dict[str, str]:
     """Delete a recurring computation of KSTest metric."""
     # Get the scheduler and validate availability
     scheduler = get_prometheus_scheduler()
@@ -257,7 +256,7 @@ async def delete_kstest_schedule(
         logger.info("Deleting %s schedule: %s", METRIC_NAME, schedule.requestId)
 
         # Delete from scheduler
-        await scheduler.delete(metric_name, request_uuid)
+        await scheduler.delete(METRIC_NAME, request_uuid)
 
     except HTTPException:
         raise
@@ -279,10 +278,8 @@ async def delete_kstest_schedule(
         }
 
 
-@router.get("/metrics/drift/kstest/requests")
-async def list_kstest_requests(
-    metric_name: str = METRIC_NAME,
-) -> dict[str, list[dict[str, Any]]]:
+@router.get(routes.DRIFT_KSTEST.requests)
+async def list_kstest_requests() -> dict[str, list[dict[str, Any]]]:
     """List the currently scheduled computations of KSTest metric."""
     # Get the scheduler and validate availability
     scheduler = get_prometheus_scheduler()
@@ -294,7 +291,7 @@ async def list_kstest_requests(
 
     try:
         # Get all requests for KSTest
-        requests = scheduler.get_requests(metric_name)
+        requests = scheduler.get_requests(METRIC_NAME)
 
         # Convert to list format expected by client
         requests_list = []
@@ -308,7 +305,6 @@ async def list_kstest_requests(
             ):
                 requests_list.append(
                     {
-                        "id": str(request_id),  # deprecated: use requestId
                         "requestId": str(request_id),
                         "modelId": request.model_id,
                         "metricName": METRIC_NAME,
@@ -338,41 +334,3 @@ async def list_kstest_requests(
         ) from e
     else:
         return {"requests": requests_list}
-
-
-async def calculate_kstest_metric(
-    batch: pd.DataFrame,
-    request: BaseMetricRequest,
-) -> MetricValueCarrier:
-    """Calculate KSTest metric for the Prometheus scheduler."""
-    data_source = get_data_source()
-    reference_df = await data_source.get_dataframe_by_tag(
-        request.model_id, request.reference_tag
-    )
-    fit_columns = request.fit_columns or list(batch.columns)
-    alpha = getattr(request, "threshold_delta", 0.05)
-
-    named_values = {}
-    for feature_name in fit_columns:
-        if feature_name in reference_df.columns and feature_name in batch.columns:
-            result = KolmogorovSmirnov.kstest(
-                reference_data=reference_df[feature_name].to_numpy(),
-                current_data=batch[feature_name].to_numpy(),
-                alpha=alpha,
-            )
-            named_values[feature_name] = result["statistic"]
-    return MetricValueCarrier(named_values or 0.0)
-
-
-def _register_kstest_calculator() -> None:
-    """Register the KSTest calculator with the metrics directory."""
-    scheduler = get_prometheus_scheduler()
-    if scheduler and scheduler.metrics_directory:
-        scheduler.metrics_directory.register(METRIC_NAME, calculate_kstest_metric)
-        logger.info("%s calculator registered with metrics directory", METRIC_NAME)
-
-
-try:
-    _register_kstest_calculator()
-except (AttributeError, TypeError) as e:
-    logger.warning("Could not register %s calculator on import: %s", METRIC_NAME, e)

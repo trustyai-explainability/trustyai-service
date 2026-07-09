@@ -21,6 +21,9 @@ from fastapi.responses import JSONResponse
 from hypercorn.asyncio import serve
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
+# Middleware
+from src.endpoints import routes
+
 # Endpoint routers
 from src.endpoints.consumer.consumer_endpoint import router as consumer_router
 from src.endpoints.data.data_upload import router as data_upload_router
@@ -42,8 +45,6 @@ from src.endpoints.metrics.drift.mmd import router as drift_mmd_router
 from src.endpoints.metrics.fairness.group.dir import router as dir_router
 from src.endpoints.metrics.fairness.group.spd import router as spd_router
 from src.endpoints.metrics.metrics_info import router as metrics_info_router
-
-# Middleware
 from src.middleware.gzip_middleware import GzipRequestMiddleware
 from src.service.config.registry import register_if_enabled_with_group
 from src.service.data.storage.maria.pvc_migration import (
@@ -306,7 +307,7 @@ async def general_health() -> JSONResponse:
     return JSONResponse(content=response_body, status_code=status_code)
 
 
-@app.get("/q/metrics")
+@app.get(routes.PROMETHEUS_METRICS)
 async def metrics(_request: Request) -> Response:
     """Prometheus metrics endpoint.
 
@@ -346,7 +347,7 @@ def _handle_migration_status(status: str) -> JSONResponse | None:
 
 
 # Readiness probe
-@app.get("/q/health/ready")
+@app.get(routes.HEALTH_READY)
 async def readiness_probe() -> JSONResponse:
     """Kubernetes readiness probe endpoint.
 
@@ -454,7 +455,7 @@ async def readiness_probe() -> JSONResponse:
 
 
 # Liveness probe endpoint
-@app.get("/q/health/live")
+@app.get(routes.HEALTH_LIVE)
 async def liveness_probe() -> JSONResponse:
     """Kubernetes liveness probe endpoint.
 

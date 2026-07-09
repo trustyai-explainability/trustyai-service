@@ -5,9 +5,8 @@ import uuid
 from http import HTTPStatus
 from typing import Any
 
-import pandas as pd
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from src.core.metrics.drift.compare_means import (
     DEFAULT_ALPHA,
@@ -16,10 +15,10 @@ from src.core.metrics.drift.compare_means import (
     CompareMeans,
     NanPolicy,
 )
+from src.endpoints import routes
 from src.service.data.datasources.data_source import DataSource
 from src.service.data.shared_data_source import get_shared_data_source
 from src.service.payloads.metrics.base_metric_request import BaseMetricRequest
-from src.service.prometheus.metric_value_carrier import MetricValueCarrier
 from src.service.prometheus.prometheus_scheduler import PrometheusScheduler
 from src.service.prometheus.shared_prometheus_scheduler import (
     get_shared_prometheus_scheduler,
@@ -30,8 +29,8 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 # Metric name constants
-METRIC_NAME = "COMPAREMEANS"
-DEPRECATED_METRIC_NAME = "MEANSHIFT"
+METRIC_NAME = "CompareMeans"
+DEPRECATED_METRIC_NAME = "Meanshift"  # Legacy name for backwards compatibility
 
 # Default parameter values
 DEFAULT_BATCH_SIZE = 100
@@ -62,7 +61,9 @@ class CompareMeansMetricRequest(BaseMetricRequest):
     model_config = ConfigDict(populate_by_name=True)
 
     model_id: str = Field(alias="modelId")
-    metric_name: str = Field(default=METRIC_NAME, alias="metricName")
+    metric_name: str | None = Field(
+        default=None, alias="metricName"
+    )  # Will be set by endpoint
     request_name: str | None = Field(default=None, alias="requestName")
     batch_size: int = Field(default=DEFAULT_BATCH_SIZE, alias="batchSize", gt=0)
 
@@ -72,6 +73,13 @@ class CompareMeansMetricRequest(BaseMetricRequest):
     nan_policy: NanPolicy = Field(default=DEFAULT_NAN_POLICY, alias="nanPolicy")
     reference_tag: str | None = Field(default=None, alias="referenceTag")
     fit_columns: list[str] = Field(default_factory=list, alias="fitColumns")
+
+    @model_validator(mode="after")
+    def _set_default_metric_name(self) -> "CompareMeansMetricRequest":
+        """Automatically set metric_name to default if not provided."""
+        if self.metric_name is None:
+            self.metric_name = METRIC_NAME
+        return self
 
     def retrieve_tags(self) -> dict[str, str]:
         """Retrieve tags for this CompareMeans metric request."""
@@ -83,7 +91,7 @@ class CompareMeansMetricRequest(BaseMetricRequest):
         return tags
 
 
-@router.post("/metrics/drift/comparemeans")
+@router.post(routes.DRIFT_COMPARE_MEANS.compute)
 async def compute_compare_means(
     request: CompareMeansMetricRequest,
 ) -> dict[str, float | bool | str | dict[str, dict[str, float | bool]]]:
@@ -207,7 +215,7 @@ async def compute_compare_means(
     }
 
 
-@router.get("/metrics/drift/comparemeans/definition")
+@router.get(routes.DRIFT_COMPARE_MEANS.definition)
 async def get_compare_means_definition() -> dict[str, str]:
     """Provide a general definition of CompareMeans metric."""
     description = """The independent two-sample t-test is used to determine whether two independent samples
@@ -225,7 +233,7 @@ async def get_compare_means_definition() -> dict[str, str]:
     }
 
 
-@router.post("/metrics/drift/comparemeans/request")
+@router.post(routes.DRIFT_COMPARE_MEANS.request)
 async def schedule_compare_means(request: CompareMeansMetricRequest) -> dict[str, str]:
     """Schedule a recurring computation of CompareMeans metric."""
     # Get the scheduler and validate availability
@@ -274,8 +282,7 @@ async def schedule_compare_means(request: CompareMeansMetricRequest) -> dict[str
         logger.info("Scheduling %s computation with ID: %s.", METRIC_NAME, request_id)
 
         # Set metric name automatically
-        if not request.metric_name:
-            request.metric_name = METRIC_NAME
+        request.metric_name = METRIC_NAME
 
         # Register with the scheduler (this will reconcile the request and store it)
         await scheduler.register(request.metric_name, request_id, request)
@@ -295,10 +302,8 @@ async def schedule_compare_means(request: CompareMeansMetricRequest) -> dict[str
         return {"requestId": str(request_id)}
 
 
-@router.delete("/metrics/drift/comparemeans/request")
-async def delete_compare_means_schedule(
-    schedule: ScheduleId, metric_name: str = METRIC_NAME
-) -> dict[str, str]:
+@router.delete(routes.DRIFT_COMPARE_MEANS.request)
+async def delete_compare_means_schedule(schedule: ScheduleId) -> dict[str, str]:
     """Delete a recurring computation of CompareMeans metric."""
     # Get the scheduler and validate availability
     scheduler = get_prometheus_scheduler()
@@ -320,7 +325,7 @@ async def delete_compare_means_schedule(
         logger.info("Deleting %s schedule: %s", METRIC_NAME, schedule.requestId)
 
         # Delete from scheduler
-        await scheduler.delete(metric_name, request_uuid)
+        await scheduler.delete(METRIC_NAME, request_uuid)
 
     except HTTPException:
         raise
@@ -342,10 +347,8 @@ async def delete_compare_means_schedule(
         }
 
 
-@router.get("/metrics/drift/comparemeans/requests")
-async def list_compare_means_requests(
-    metric_name: str = METRIC_NAME,
-) -> dict[str, list[dict[str, Any]]]:
+@router.get(routes.DRIFT_COMPARE_MEANS.requests)
+async def list_compare_means_requests() -> dict[str, list[dict[str, Any]]]:
     """List the currently scheduled computations of CompareMeans metric."""
     # Get the scheduler and validate availability
     scheduler = get_prometheus_scheduler()
@@ -356,7 +359,8 @@ async def list_compare_means_requests(
         )
 
     try:
-        requests = scheduler.get_requests(metric_name)
+        # Get all requests for CompareMeans
+        requests = scheduler.get_requests(METRIC_NAME)
 
         # Convert to list format expected by client
         requests_list = []
@@ -370,7 +374,6 @@ async def list_compare_means_requests(
             ):
                 requests_list.append(
                     {
-                        "id": str(request_id),  # deprecated: use requestId
                         "requestId": str(request_id),
                         "modelId": request.model_id,
                         "metricName": METRIC_NAME,
@@ -424,7 +427,7 @@ class MeanshiftMetricRequest(CompareMeansMetricRequest):
     """
 
 
-@router.post("/metrics/drift/meanshift", deprecated=True)
+@router.post(routes.DRIFT_MEANSHIFT.compute, deprecated=True)
 async def compute_meanshift(
     request: MeanshiftMetricRequest,
 ) -> dict[str, float | bool | str | dict[str, dict[str, float | bool]]]:
@@ -442,7 +445,7 @@ async def compute_meanshift(
     return await compute_compare_means(compare_means_request)
 
 
-@router.get("/metrics/drift/meanshift/definition", deprecated=True)
+@router.get(routes.DRIFT_MEANSHIFT.definition, deprecated=True)
 async def get_meanshift_definition() -> dict[str, str]:
     """Provide a general definition of Meanshift metric (deprecated).
 
@@ -453,7 +456,7 @@ async def get_meanshift_definition() -> dict[str, str]:
     return await get_compare_means_definition()
 
 
-@router.post("/metrics/drift/meanshift/request", deprecated=True)
+@router.post(routes.DRIFT_MEANSHIFT.request, deprecated=True)
 async def schedule_meanshift(request: MeanshiftMetricRequest) -> dict[str, str]:
     """Schedule a recurring computation of Meanshift metric (deprecated).
 
@@ -466,11 +469,10 @@ async def schedule_meanshift(request: MeanshiftMetricRequest) -> dict[str, str]:
     compare_means_request = CompareMeansMetricRequest.model_validate(
         request.model_dump(exclude_none=True)
     )
-    compare_means_request.metric_name = DEPRECATED_METRIC_NAME
     return await schedule_compare_means(compare_means_request)
 
 
-@router.delete("/metrics/drift/meanshift/request", deprecated=True)
+@router.delete(routes.DRIFT_MEANSHIFT.request, deprecated=True)
 async def delete_meanshift_schedule(schedule: ScheduleId) -> dict[str, str]:
     """Delete a recurring computation of Meanshift metric (deprecated).
 
@@ -478,12 +480,10 @@ async def delete_meanshift_schedule(schedule: ScheduleId) -> dict[str, str]:
     /metrics/drift/comparemeans/request instead.
     """
     log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
-    return await delete_compare_means_schedule(
-        schedule, metric_name=DEPRECATED_METRIC_NAME
-    )
+    return await delete_compare_means_schedule(schedule)
 
 
-@router.get("/metrics/drift/meanshift/requests", deprecated=True)
+@router.get(routes.DRIFT_MEANSHIFT.requests, deprecated=True)
 async def list_meanshift_requests() -> dict[str, list[dict[str, Any]]]:
     """List the currently scheduled computations of Meanshift metric (deprecated).
 
@@ -491,51 +491,4 @@ async def list_meanshift_requests() -> dict[str, list[dict[str, Any]]]:
     /metrics/drift/comparemeans/requests instead.
     """
     log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
-    return await list_compare_means_requests(metric_name=DEPRECATED_METRIC_NAME)
-
-
-async def calculate_compare_means_metric(
-    batch: pd.DataFrame,
-    request: BaseMetricRequest,
-) -> MetricValueCarrier:
-    """Calculate CompareMeans metric for the Prometheus scheduler."""
-    data_source = get_data_source()
-    reference_df = await data_source.get_dataframe_by_tag(
-        request.model_id, request.reference_tag
-    )
-    fit_columns = request.fit_columns or list(batch.columns)
-    alpha = getattr(request, "alpha", DEFAULT_ALPHA)
-    equal_var = getattr(request, "equal_var", DEFAULT_EQUAL_VAR)
-    nan_policy = getattr(request, "nan_policy", DEFAULT_NAN_POLICY)
-
-    named_values = {}
-    for feature_name in fit_columns:
-        if feature_name in reference_df.columns and feature_name in batch.columns:
-            result = CompareMeans.ttest_ind(
-                reference_data=reference_df[feature_name].to_numpy(),
-                current_data=batch[feature_name].to_numpy(),
-                alpha=alpha,
-                equal_var=equal_var,
-                nan_policy=nan_policy,
-            )
-            named_values[feature_name] = result["statistic"]
-    return MetricValueCarrier(named_values or 0.0)
-
-
-def _register_compare_means_calculator() -> None:
-    """Register the CompareMeans calculator with the metrics directory."""
-    scheduler = get_prometheus_scheduler()
-    if scheduler and scheduler.metrics_directory:
-        scheduler.metrics_directory.register(
-            METRIC_NAME, calculate_compare_means_metric
-        )
-        scheduler.metrics_directory.register(
-            DEPRECATED_METRIC_NAME, calculate_compare_means_metric
-        )
-        logger.info("%s calculator registered with metrics directory", METRIC_NAME)
-
-
-try:
-    _register_compare_means_calculator()
-except (AttributeError, TypeError) as e:
-    logger.warning("Could not register %s calculator on import: %s", METRIC_NAME, e)
+    return await list_compare_means_requests()

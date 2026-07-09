@@ -1,23 +1,15 @@
 """Metadata endpoint for managing model metadata and schema information."""
 
 import logging
-from collections import Counter
 from http import HTTPStatus
-from typing import Annotated
+from typing import Never
 
-import numpy as np
-from fastapi import APIRouter, Body, HTTPException, Query
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from src.endpoints.data.data_upload import validate_data_tag
-from src.service.constants import (
-    INPUT_SUFFIX,
-    METADATA_SUFFIX,
-    OUTPUT_SUFFIX,
-    SYNTHETIC_TAG,
-)
+from src.endpoints import routes
+from src.service.constants import INPUT_SUFFIX, OUTPUT_SUFFIX
 from src.service.data.datasources.data_source import DataSource
-from src.service.data.model_data import ModelData
 from src.service.data.shared_data_source import get_shared_data_source
 from src.service.data.storage import get_storage_interface
 from src.service.payloads.service.schema import Schema
@@ -42,7 +34,6 @@ def _build_readable_schema(
     for name, item in schema.items.items():
         items[name] = {
             "type": item.type.value if hasattr(item.type, "value") else str(item.type),
-            "name": item.name,
             "index": item.column_index,
         }
     name_mapping = {
@@ -81,7 +72,13 @@ class DataTagging(BaseModel):
     dataTagging: dict[str, list[list[int]]] = {}
 
 
-@router.get("/info")
+class ModelIdRequest(BaseModel):
+    """Request payload containing a model identifier."""
+
+    modelId: str
+
+
+@router.get(routes.INFO)
 async def get_service_info() -> dict[str, dict]:
     """Get a comprehensive overview of the model inference datasets collected by TrustyAI.
 
@@ -103,6 +100,7 @@ async def get_service_info() -> dict[str, dict]:
                 # Get metadata for each model
                 model_metadata = await data_source.get_metadata(model_id)
                 num_observations = await data_source.get_num_observations(model_id)
+                has_inferences = await data_source.has_recorded_inferences(model_id)
 
                 # Get scheduled metrics for this model
                 scheduled_metadata = {}
@@ -156,6 +154,7 @@ async def get_service_info() -> dict[str, dict]:
                 service_metadata[model_id] = {
                     "data": {
                         "observations": num_observations,
+                        "hasRecordedInferences": has_inferences,
                         "inputTensorName": model_metadata.input_tensor_name
                         if model_metadata
                         else "input",
@@ -177,15 +176,14 @@ async def get_service_info() -> dict[str, dict]:
                         if model_metadata
                         else {"items": {}, "nameMapping": {}},
                     },
-                    "metrics": {
-                        "scheduledMetadata": {"metricCounts": scheduled_metadata},
-                    },
+                    "metrics": {"scheduledMetadata": scheduled_metadata},
                 }
 
                 logger.debug(
-                    "Retrieved metadata for model %s: observations=%s",
+                    "Retrieved metadata for model %s: observations=%s, hasInferences=%s",
                     model_id,
                     num_observations,
+                    has_inferences,
                 )
 
             except Exception as e:  # Intentional: per-model errors should not break entire info endpoint
@@ -196,14 +194,13 @@ async def get_service_info() -> dict[str, dict]:
                 service_metadata[model_id] = {
                     "data": {
                         "observations": 0,
+                        "hasRecordedInferences": False,
                         "inputTensorName": "input",
                         "outputTensorName": "output",
                         "inputSchema": {"items": {}, "nameMapping": {}},
                         "outputSchema": {"items": {}, "nameMapping": {}},
                     },
-                    "metrics": {
-                        "scheduledMetadata": {"metricCounts": {}},
-                    },
+                    "metrics": {"scheduledMetadata": {}},
                     "error": str(e),
                 }
 
@@ -222,110 +219,19 @@ async def get_service_info() -> dict[str, dict]:
         return service_metadata
 
 
-class InferenceIdItem(BaseModel):
-    """A single inference ID with its associated timestamp."""
-
-    id: str
-    timestamp: str
-
-
-class InferenceIdResponse(BaseModel):
-    """Paginated response containing inference IDs for a model."""
-
-    ids: list[InferenceIdItem]
-    total: int
-    limit: int
-    offset: int
-
-
-# Column indices within the metadata array
-METADATA_ID_COL = 0
-METADATA_TIMESTAMP_COL = 1
-METADATA_TAGS_COL = 3
-
-_VALID_INFERENCE_TYPES = frozenset({"all", "organic"})
-
-
-def _get_tags(cell: object) -> list[str]:
-    """Extract tag strings from a metadata cell value."""
-    if isinstance(cell, list):
-        return cell
-    if isinstance(cell, str):
-        return [cell]
-    return []
-
-
-@router.get("/info/inference/ids/{model}")
-async def get_inference_ids(
-    model: str,
-    inference_type: Annotated[str, Query(alias="type")] = "all",
-    limit: Annotated[int, Query(ge=1, le=10000)] = 100,
-    offset: Annotated[int, Query(ge=0)] = 0,
-) -> InferenceIdResponse:
-    """Get a list of all inference IDs within a particular model's stored data."""
-    normalized_type = inference_type.lower()
-    if normalized_type not in _VALID_INFERENCE_TYPES:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail=f"Invalid type parameter. Valid values must be in {sorted(_VALID_INFERENCE_TYPES)}.",
-        )
-
+@router.get(routes.INFO_INFERENCE_IDS, response_model=None)
+async def get_inference_ids(model: str, inference_type: str = "all") -> Never:
+    """Get a list of all inference ids within a particular model inference."""
     logger.info(
-        "Retrieving inference IDs for model=%s (type=%s, limit=%d, offset=%d)",
-        model,
-        normalized_type,
-        limit,
-        offset,
+        "Retrieving inference IDs for model: %s, type: %s", model, inference_type
     )
-
-    model_data = ModelData(model)
-    metadata_dataset = model + METADATA_SUFFIX
-
-    if not await storage_interface.dataset_exists(metadata_dataset):
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail=f"No metadata found for model={model}. "
-            "This can happen if TrustyAI has not yet logged any inferences from this model.",
-        )
-
-    try:
-        _, _, metadata = await model_data.data(get_input=False, get_output=False)
-    except (
-        Exception
-    ) as e:  # Broad catch intentional: storage errors should yield a clear HTTP error
-        logger.exception("Error reading metadata for model=%s", model)
-        raise HTTPException(
-            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
-            detail=f"Error reading metadata for model={model}: {e!s}",
-        ) from e
-
-    if metadata is None or len(metadata) == 0:
-        return InferenceIdResponse(ids=[], total=0, limit=limit, offset=offset)
-
-    if normalized_type == "organic":
-        metadata = [
-            row
-            for row in metadata
-            if SYNTHETIC_TAG not in _get_tags(row[METADATA_TAGS_COL])
-        ]
-
-    all_items = [
-        InferenceIdItem(
-            id=str(row[METADATA_ID_COL]),
-            timestamp=str(row[METADATA_TIMESTAMP_COL]),
-        )
-        for row in metadata
-    ]
-
-    total = len(all_items)
-    paginated_items = all_items[offset : offset + limit]
-
-    return InferenceIdResponse(
-        ids=paginated_items, total=total, limit=limit, offset=offset
+    raise HTTPException(
+        status_code=HTTPStatus.NOT_IMPLEMENTED,
+        detail="Inference ID retrieval is not yet implemented",
     )
 
 
-@router.get("/info/names")
+@router.get(routes.INFO_NAMES)
 async def get_column_names() -> dict[str, dict]:
     """Get the current name mappings for all models."""
     try:
@@ -450,7 +356,7 @@ async def get_column_names() -> dict[str, dict]:
         return name_mappings
 
 
-@router.post("/info/names")
+@router.post(routes.INFO_NAMES)
 async def apply_column_names(name_mapping: NameMapping) -> dict[str, str]:
     """Apply a set of human-readable column names to a particular inference."""
     logger.info("Applying column names for model: %s", name_mapping.modelId)
@@ -471,42 +377,32 @@ async def apply_column_names(name_mapping: NameMapping) -> dict[str, str]:
         )
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=error_msg)
 
-    # Validate column names before applying
-    if name_mapping.inputMapping and input_exists:
-        original_input = await storage_interface.get_original_column_names(
-            input_dataset_name
-        )
-        invalid = set(name_mapping.inputMapping.keys()) - set(original_input)
-        if invalid:
-            raise HTTPException(
-                status_code=HTTPStatus.BAD_REQUEST,
-                detail=f"No feature found with name={', '.join(sorted(invalid))}. "
-                f"Valid features: {original_input}",
-            )
-
-    if name_mapping.outputMapping and output_exists:
-        original_output = await storage_interface.get_original_column_names(
-            output_dataset_name
-        )
-        invalid = set(name_mapping.outputMapping.keys()) - set(original_output)
-        if invalid:
-            raise HTTPException(
-                status_code=HTTPStatus.BAD_REQUEST,
-                detail=f"No output found with name={', '.join(sorted(invalid))}. "
-                f"Valid outputs: {original_output}",
-            )
-
     try:
+        # Apply input mappings if provided and dataset exists
         if name_mapping.inputMapping and input_exists:
+            logger.info(
+                "Applying input mappings for model %s: %s",
+                model_id,
+                name_mapping.inputMapping,
+            )
             await storage_interface.apply_name_mapping(
                 input_dataset_name, name_mapping.inputMapping
             )
 
+        # Apply output mappings if provided and dataset exists
         if name_mapping.outputMapping and output_exists:
+            logger.info(
+                "Applying output mappings for model %s: %s",
+                model_id,
+                name_mapping.outputMapping,
+            )
             await storage_interface.apply_name_mapping(
                 output_dataset_name, name_mapping.outputMapping
             )
 
+    except HTTPException:
+        # Re-raise HTTP exceptions without wrapping
+        raise
     except Exception as e:  # Broad catch intentional: endpoint catch-all for unknown application errors
         logger.exception("Error applying column names")
         raise HTTPException(
@@ -518,11 +414,10 @@ async def apply_column_names(name_mapping: NameMapping) -> dict[str, str]:
         return {"message": "Feature and output name mapping successfully applied."}
 
 
-@router.delete("/info/names")
-async def remove_column_names(
-    model_id: Annotated[str, Body(embed=False)],
-) -> dict[str, str]:
+@router.delete(routes.INFO_NAMES)
+async def remove_column_names(request: ModelIdRequest) -> dict[str, str]:
     """Remove any column names that have been applied to a particular inference."""
+    model_id = request.modelId
     logger.info("Removing column names for model: %s", model_id)
 
     input_dataset_name = model_id + INPUT_SUFFIX
@@ -567,247 +462,20 @@ async def remove_column_names(
         return {"message": "Feature and output name mapping successfully cleared."}
 
 
-def _extract_tags(cell: object) -> list[str]:
-    """Extract a list of tag strings from a metadata cell value."""
-    if isinstance(cell, np.ndarray):
-        return cell.tolist()
-    if isinstance(cell, list):
-        return cell
-    if isinstance(cell, str):
-        return [cell]
-    return []
+@router.get(routes.INFO_TAGS, response_model=None)
+async def get_tags() -> Never:
+    """Retrieve the tags that have been applied to a particular model dataset, as well as a count of that tag's frequency within the dataset."""
+    raise HTTPException(
+        status_code=HTTPStatus.NOT_IMPLEMENTED,
+        detail="Tag retrieval is not yet implemented",
+    )
 
 
-def _find_tags_column(metadata_names: list[str]) -> int:
-    """Return the column index of the ``tags`` column, or -1 if absent."""
-    return list(metadata_names).index("tags") if "tags" in metadata_names else -1
-
-
-async def _read_metadata(
-    model_id: str,
-) -> tuple[np.ndarray | None, list[str]]:
-    """Read the metadata array and column names for a model."""
-    model_data = ModelData(model_id)
-    try:
-        _, _, metadata = await model_data.data(get_input=False, get_output=False)
-    except Exception as exc:
-        logger.exception("Error reading metadata for model=%s", model_id)
-        raise HTTPException(
-            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
-            detail=f"Error reading metadata for model={model_id}",
-        ) from exc
-    _, _, metadata_names = await model_data.column_names()
-    return metadata, list(metadata_names)
-
-
-async def _ensure_model_exists(
-    model_id: str,
-    data_source: DataSource,
-) -> None:
-    """Raise 404 if the model is not known to the data source."""
-    if not await data_source.has_metadata(model_id):
-        raise HTTPException(
-            status_code=HTTPStatus.NOT_FOUND,
-            detail=f"No model found with id={model_id}",
-        )
-
-
-def _parse_range(r: list[int]) -> tuple[int, int]:
-    """Parse a ``[start, end]`` or ``[index]`` range into ``(start, end)``."""
-    expected_pair_len = 2
-    if len(r) == 1:
-        return r[0], r[0] + 1
-    if len(r) == expected_pair_len:
-        return r[0], r[1]
-    msg = f"Each range must be [start, end] or [index], got {r}"
-    raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=msg)
-
-
-def _validate_range(start: int, end: int, total_rows: int) -> None:
-    """Raise 400 if the range is invalid or out of bounds."""
-    if start < 0 or end < 0:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail=f"Row indices must be non-negative, got [{start}, {end})",
-        )
-    if start >= end:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail=f"Range start must be less than end, got [{start}, {end})",
-        )
-    if end > total_rows:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail=(f"Range [{start}, {end}) exceeds dataset size ({total_rows} rows)"),
-        )
-
-
-@router.get("/info/tags")
-async def get_tags(
-    model_id: Annotated[str | None, Query(alias="modelId")] = None,
-) -> dict:
-    """Retrieve per-tag row counts for a model's dataset.
-
-    If ``modelId`` is provided, returns ``dict[str, int]`` for that model.
-    If omitted, returns ``dict[str, dict[str, int]]`` for every known model.
-    """
-    data_source = get_data_source()
-
-    if model_id is not None:
-        return await _get_tag_counts_for_model(model_id, data_source)
-
-    known_models = await data_source.get_verified_models()
-    result: dict[str, dict[str, int]] = {}
-    for mid in known_models:
-        try:
-            result[mid] = await _get_tag_counts_for_model(mid, data_source)
-        except HTTPException as exc:
-            if exc.status_code == HTTPStatus.NOT_FOUND:
-                continue
-            raise
-    return result
-
-
-async def _get_tag_counts_for_model(
-    model_id: str,
-    data_source: DataSource,
-) -> dict[str, int]:
-    """Return a Counter-style dict mapping tag name to row count."""
-    await _ensure_model_exists(model_id, data_source)
-
-    metadata, metadata_names = await _read_metadata(model_id)
-    if metadata is None or len(metadata) == 0:
-        return {}
-
-    tags_col = _find_tags_column(metadata_names)
-    if tags_col < 0:
-        return {}
-
-    counter: Counter[str] = Counter()
-    for row in metadata:
-        counter.update(_extract_tags(row[tags_col]))
-
-    return dict(counter)
-
-
-@router.post("/info/tags")
-async def apply_tags(data_tagging: DataTagging) -> dict:
-    """Apply per-row tags to a model dataset.
-
-    Tags are appended idempotently (a tag already present on a row is not
-    duplicated).  The ``_trustyai`` prefix is reserved for internal use.
-    """
-    model_id = data_tagging.modelId
-    logger.info("Applying tags for model: %s", model_id)
-
-    data_source = get_data_source()
-    await _ensure_model_exists(model_id, data_source)
-
-    if not data_tagging.dataTagging:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="dataTagging must contain at least one tag with ranges",
-        )
-
-    for tag_name in data_tagging.dataTagging:
-        if not tag_name:
-            raise HTTPException(
-                status_code=HTTPStatus.BAD_REQUEST,
-                detail="Tag names must be non-empty",
-            )
-        validation_msg = validate_data_tag(tag_name)
-        if validation_msg is not None:
-            raise HTTPException(
-                status_code=HTTPStatus.BAD_REQUEST,
-                detail=validation_msg,
-            )
-
-    metadata, metadata_names = await _read_metadata(model_id)
-    if metadata is None or len(metadata) == 0:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail=f"Model {model_id} has no observation data to tag",
-        )
-
-    tags_col = _find_tags_column(metadata_names)
-    if tags_col < 0:
-        raise HTTPException(
-            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
-            detail="Metadata dataset is missing the 'tags' column",
-        )
-
-    applied = _apply_tags_to_metadata(data_tagging.dataTagging, metadata, tags_col)
-
-    await _persist_metadata(model_id, metadata, metadata_names)
-
-    logger.info("Successfully applied tags to model=%s: %s", model_id, applied)
-    return {"message": "Datapoints successfully tagged.", "applied": applied}
-
-
-def _apply_tags_to_metadata(
-    tagging: dict[str, list[list[int]]],
-    metadata: np.ndarray,
-    tags_col: int,
-) -> dict[str, int]:
-    """Mutate *metadata* in place, appending tags idempotently.
-
-    Returns a dict mapping each tag name to the number of rows processed.
-    """
-    total_rows = len(metadata)
-    applied: dict[str, int] = {}
-
-    for tag_name, ranges in tagging.items():
-        rows_tagged = 0
-        for r in ranges:
-            start, end = _parse_range(r)
-            _validate_range(start, end, total_rows)
-            for idx in range(start, end):
-                existing = _extract_tags(metadata[idx][tags_col])
-                if tag_name not in existing:
-                    existing.append(tag_name)
-                    metadata[idx][tags_col] = existing
-                rows_tagged += 1
-        applied[tag_name] = rows_tagged
-
-    return applied
-
-
-async def _persist_metadata(
-    model_id: str,
-    metadata: np.ndarray,
-    metadata_names: list[str],
-) -> None:
-    """Replace the metadata dataset for a model.
-
-    Reads the old data first as a backup, then deletes and rewrites.
-    If the write fails, attempts to restore the original data to
-    prevent permanent data loss.
-
-    .. todo:: Read-modify-write is not atomic; concurrent tag requests may conflict.
-    """
-    metadata_dataset = model_id + METADATA_SUFFIX
-    try:
-        old_metadata = await storage_interface.read_data(metadata_dataset)
-    except Exception:  # Intentional: if read fails, there's nothing to restore
-        old_metadata = None
-
-    try:
-        await storage_interface.delete_dataset(metadata_dataset)
-        await storage_interface.write_data(metadata_dataset, metadata, metadata_names)
-    except Exception as exc:
-        logger.exception("Error writing tagged metadata for model=%s", model_id)
-        if old_metadata is not None:
-            try:
-                await storage_interface.write_data(
-                    metadata_dataset, old_metadata, metadata_names
-                )
-                logger.info("Restored original metadata for model=%s", model_id)
-            except Exception:  # Intentional: restoration is best-effort
-                logger.exception(
-                    "Failed to restore metadata for model=%s — data may be lost",
-                    model_id,
-                )
-        raise HTTPException(
-            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
-            detail=f"Error persisting tags for model={model_id}",
-        ) from exc
+@router.post(routes.INFO_TAGS, response_model=None)
+async def apply_tags(data_tagging: DataTagging) -> Never:
+    """Apply per-row tags to a particular inference model dataset, to label certain rows as training or drift reference data, etc."""
+    logger.info("Applying tags for model: %s", data_tagging.modelId)
+    raise HTTPException(
+        status_code=HTTPStatus.NOT_IMPLEMENTED,
+        detail="Tag application is not yet implemented",
+    )

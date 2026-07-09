@@ -9,6 +9,7 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException, Query
 
 from src.core.metrics.fairness.group.disparate_impact_ratio import DisparateImpactRatio
+from src.endpoints import routes
 from src.endpoints.metrics.fairness.group.utils import (
     GroupDefinitionRequest,
     GroupMetricRequest,
@@ -104,7 +105,7 @@ except (
 
 
 # Disparate Impact Ratio
-@router.post("/metrics/group/fairness/dir")
+@router.post(routes.FAIRNESS_DIR.compute)
 async def compute_dir(
     request: GroupMetricRequest,
     delta: Annotated[float | None, Query()] = None,
@@ -172,7 +173,7 @@ async def compute_dir(
         ) from e
 
 
-@router.get("/metrics/group/fairness/dir/definition")
+@router.get(routes.FAIRNESS_DIR.definition)
 async def get_dir_definition() -> dict[str, str]:
     """Provide a general definition of Disparate Impact Ratio metric."""
     return {
@@ -182,7 +183,7 @@ async def get_dir_definition() -> dict[str, str]:
     }
 
 
-@router.post("/metrics/group/fairness/dir/definition")
+@router.post(routes.FAIRNESS_DIR.definition)
 async def interpret_dir_value(request: GroupDefinitionRequest) -> dict[str, str]:
     """Provide a specific, plain-english interpretation of a specific value of DIR metric."""
     logger.info("Interpreting DIR value for model: %s", request.model_id)
@@ -192,7 +193,7 @@ async def interpret_dir_value(request: GroupDefinitionRequest) -> dict[str, str]
     )
 
 
-@router.post("/metrics/group/fairness/dir/request")
+@router.post(routes.FAIRNESS_DIR.request)
 async def schedule_dir(request: GroupMetricRequest) -> dict[str, str]:
     """Schedule a recurring computation of DIR metric."""
     # Get the scheduler and validate availability
@@ -225,7 +226,7 @@ async def schedule_dir(request: GroupMetricRequest) -> dict[str, str]:
         return {"requestId": str(request_id)}
 
 
-@router.delete("/metrics/group/fairness/dir/request")
+@router.delete(routes.FAIRNESS_DIR.request)
 async def delete_dir_schedule(schedule: ScheduleId) -> dict[str, str]:
     """Delete a recurring computation of DIR metric."""
     # Get the scheduler and validate availability
@@ -269,7 +270,7 @@ async def delete_dir_schedule(schedule: ScheduleId) -> dict[str, str]:
         }
 
 
-@router.get("/metrics/group/fairness/dir/requests")
+@router.get(routes.FAIRNESS_DIR.requests)
 async def list_dir_requests() -> dict[str, list[dict]]:
     """List the currently scheduled computations of DIR metric."""
     # Get the scheduler and validate availability
@@ -328,7 +329,7 @@ async def list_dir_requests() -> dict[str, list[dict]]:
 
 
 # Deprecated DIR endpoints
-@router.post("/dir", deprecated=True)
+@router.post(routes.LEGACY_DIR.compute, deprecated=True)
 async def compute_dir_deprecated(
     request: GroupMetricRequest,
     delta: Annotated[float | None, Query()] = None,
@@ -341,7 +342,7 @@ async def compute_dir_deprecated(
     return await compute_dir(request, delta)
 
 
-@router.get("/dir/definition", deprecated=True)
+@router.get(routes.LEGACY_DIR.definition, deprecated=True)
 async def get_dir_definition_deprecated() -> dict[str, str]:
     """Provide a general definition of Disparate Impact Ratio metric (deprecated).
 
@@ -351,7 +352,7 @@ async def get_dir_definition_deprecated() -> dict[str, str]:
     return await get_dir_definition()
 
 
-@router.post("/dir/definition", deprecated=True)
+@router.post(routes.LEGACY_DIR.definition, deprecated=True)
 async def interpret_dir_value_deprecated(
     request: GroupDefinitionRequest,
 ) -> dict[str, str]:
@@ -363,7 +364,7 @@ async def interpret_dir_value_deprecated(
     return await interpret_dir_value(request)
 
 
-@router.post("/dir/request", deprecated=True)
+@router.post(routes.LEGACY_DIR.request, deprecated=True)
 async def schedule_dir_deprecated(request: GroupMetricRequest) -> dict[str, str]:
     """Schedule a recurring computation of DIR metric (deprecated).
 
@@ -373,7 +374,7 @@ async def schedule_dir_deprecated(request: GroupMetricRequest) -> dict[str, str]
     return await schedule_dir(request)
 
 
-@router.delete("/dir/request", deprecated=True)
+@router.delete(routes.LEGACY_DIR.request, deprecated=True)
 async def delete_dir_schedule_deprecated(schedule: ScheduleId) -> dict[str, str]:
     """Delete a recurring computation of DIR metric (deprecated).
 
@@ -383,7 +384,7 @@ async def delete_dir_schedule_deprecated(schedule: ScheduleId) -> dict[str, str]
     return await delete_dir_schedule(schedule)
 
 
-@router.get("/dir/requests", deprecated=True)
+@router.get(routes.LEGACY_DIR.requests, deprecated=True)
 async def list_dir_requests_deprecated() -> dict[str, list[dict]]:
     """List the currently scheduled computations of DIR metric (deprecated).
 
