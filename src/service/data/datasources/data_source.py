@@ -10,6 +10,7 @@ from src.service.constants import (
     GROUND_TRUTH_SUFFIX,
     INTERNAL_DATA_FILENAME,
     METADATA_FILENAME,
+    SYNTHETIC_TAG,
     UNLABELED_TAG,
 )
 from src.service.data.exceptions import DataframeCreateError, StorageReadError
@@ -166,9 +167,17 @@ class DataSource:
         """
         df = await self.get_dataframe_with_batch_size(model_id, batch_size)
 
-        # Filter out any rows with the unlabeled tag (synthetic data)
-        if UNLABELED_TAG in df.columns:
-            df = df[~df[UNLABELED_TAG].fillna(value=False)]
+        if "tags" in df.columns:
+            synthetic_tags = {SYNTHETIC_TAG, "synthetic"}
+            mask = df["tags"].apply(
+                lambda tags: (
+                    not any(
+                        t in synthetic_tags
+                        for t in (tags if isinstance(tags, list) else [])
+                    )
+                )
+            )
+            df = df[mask]
 
         return df
 
@@ -185,8 +194,8 @@ class DataSource:
         """
         try:
             model_data = ModelData(model_id)
-            input_data, output_data, metadata = await model_data.data()
-            input_names, output_names, metadata_names = await model_data.column_names()
+            input_data, _, metadata = await model_data.data()
+            input_names, _, metadata_names = await model_data.column_names()
 
             if metadata is None or input_data is None:
                 return pd.DataFrame()
@@ -202,12 +211,21 @@ class DataSource:
                     return cell.tolist()
                 if isinstance(cell, list):
                     return cell
+                if isinstance(cell, str):
+                    return [cell]
                 return []
 
-            if len(metadata.shape) == 1:
-                mask = [tag in _extract_tags(cell) for cell in metadata]
-            else:
-                mask = [tag in _extract_tags(row[tags_col]) for row in metadata]
+            _legacy_aliases: dict[str, str] = {
+                UNLABELED_TAG: "unlabeled",
+                SYNTHETIC_TAG: "synthetic",
+            }
+            match_tags = {tag}
+            if tag in _legacy_aliases:
+                match_tags.add(_legacy_aliases[tag])
+
+            mask = [
+                bool(match_tags & set(_extract_tags(row[tags_col]))) for row in metadata
+            ]
             filtered_input = input_data[mask]
 
             df_data: dict[str, object] = {}
@@ -219,17 +237,6 @@ class DataSource:
                     df_data[col_name] = filtered_input[:, i]
                 elif len(filtered_input.shape) == 1 and i == 0:
                     df_data[col_name] = filtered_input
-
-            if output_data is not None:
-                filtered_output = output_data[mask]
-                for i, col_name in enumerate(output_names):
-                    if (
-                        len(filtered_output.shape) == ARRAY_DIM_2D
-                        and i < filtered_output.shape[1]
-                    ):
-                        df_data[col_name] = filtered_output[:, i]
-                    elif len(filtered_output.shape) == 1 and i == 0:
-                        df_data[col_name] = filtered_output
 
             return pd.DataFrame(df_data)
 

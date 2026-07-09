@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.service.constants import UNLABELED_TAG
+from src.service.constants import SYNTHETIC_TAG
 from src.service.data.datasources.data_source import DataSource
 from src.service.data.exceptions import DataframeCreateError, StorageReadError
 from src.service.data.metadata.storage_metadata import (
@@ -176,32 +176,36 @@ class TestDataSource:
 
     @patch("src.service.data.datasources.data_source.ModelData")
     @pytest.mark.asyncio
-    async def test_get_organic_dataframe_filters_unlabeled(
+    async def test_get_organic_dataframe_filters_synthetic(
         self,
         mock_model_data_class: Mock,
         data_source: DataSource,
         mock_model_data: Mock,
     ) -> None:
-        """Test that organic dataframe filters out unlabeled (synthetic) data."""
+        """Test that organic dataframe filters out synthetic data."""
         mock_model_data_class.return_value = mock_model_data
 
-        # Add unlabeled column to mock data
         mock_model_data.column_names.return_value = (
             ["feature1", "feature2"],
             ["target"],
-            [UNLABELED_TAG],
+            ["id", "iso_time", "unix_timestamp", "tags"],
         )
         mock_model_data.data.return_value = (
             np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]),
             np.array([[0.0], [1.0], [0.0]]),
-            np.array([[False], [True], [False]]),  # Second row is synthetic
+            np.array(
+                [
+                    ["id_0", "t0", 0.0, ["_trustyai_unlabeled"]],
+                    ["id_1", "t1", 1.0, [SYNTHETIC_TAG]],
+                    ["id_2", "t2", 2.0, ["_trustyai_unlabeled"]],
+                ],
+                dtype=object,
+            ),
         )
 
         df = await data_source.get_organic_dataframe("test_model", 100)
 
-        # Should filter out synthetic rows
         assert len(df) == EXPECTED_ORGANIC_ROWS
-        assert not df[UNLABELED_TAG].any()  # No True values should remain
 
     @patch("src.service.data.datasources.data_source.ModelData")
     @pytest.mark.asyncio
