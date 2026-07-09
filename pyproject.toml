@@ -108,6 +108,7 @@ ignore = [
 "src/service/data/modelmesh_parser.py" = ["PLR0913"]
 "src/service/data/storage/**/*.py" = ["SLF001", "BLE001", "PLR0913"]
 "src/service/data/storage/pvc.py" = ["C901", "PLR0912", "PLR0915", "ASYNC240", "PTH110"]
+"src/service/data/storage/maria/maria.py" = ["ASYNC240"]  # One-time startup PVC check via Path.exists/is_dir/glob (local mount, negligible blocking)
 "src/service/payloads/**/*.py" = ["SLF001"]
 "src/service/payloads/metrics/request_reconciler.py" = ["C901", "PLR0912", "PLR0915"]
 "src/service/prometheus/prometheus_publisher.py" = ["SLF001"]
@@ -127,6 +128,7 @@ ignore = [
 # === TEST FILES ===
 "tests/**" = ["S101", "PT019", "SLF001"]
 "tests/core/metrics/drift/test_greenwald_khanna_quantile_sketch.py" = ["PLR2004", "RUF001", "RUF002", "RUF003"]
+"tests/service/data/storage/maria/*.py" = ["ANN", "PLR2004", "ARG002"]  # Pytest style: no test method annotations, exact assertion values, setup-only fixtures
 "tests/core/metrics/test_fairness.py" = ["N803", "N806"]
 "tests/endpoints/metrics/drift/factory.py" = ["PLR0913", "C901", "PLR0915"]
 "tests/endpoints/test_upload_endpoint_maria.py" = ["S105"]
