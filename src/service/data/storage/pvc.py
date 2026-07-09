@@ -40,6 +40,7 @@ from .storage_interface import StorageInterface
 logger = logging.getLogger(__name__)
 COLUMN_NAMES_ATTRIBUTE = "column_names"
 COLUMN_ALIAS_ATTRIBUTE = "column_aliases"
+COLUMN_TYPES_ATTRIBUTE = "column_types"
 BYTES_ATTRIBUTE = "is_bytes"
 
 PARTIAL_INPUT_NAME = PROTECTED_DATASET_SUFFIX + PARTIAL_PAYLOAD_DATASET_NAME + "_inputs"
@@ -445,6 +446,35 @@ class PVCStorage(StorageInterface):
                         "but dataset was not found in the database.",
                         allocated_dataset_name,
                     )
+
+    async def set_column_types(
+        self, dataset_name: str, column_types: list[str]
+    ) -> None:
+        """Store column types as an HDF5 attribute."""
+        allocated_dataset_name = self.allocate_valid_dataset_name(dataset_name)
+        async with self.get_lock(allocated_dataset_name):
+            try:
+                with H5PYContext(self, dataset_name, "a") as db:
+                    if allocated_dataset_name in db:
+                        dataset = db[allocated_dataset_name]
+                        if COLUMN_TYPES_ATTRIBUTE not in dataset.attrs:
+                            dataset.attrs[COLUMN_TYPES_ATTRIBUTE] = column_types
+            except MissingH5PYDataError:
+                pass
+
+    async def get_column_types(self, dataset_name: str) -> list[str] | None:
+        """Read column types from HDF5 attribute. Returns None for old data."""
+        allocated_dataset_name = self.allocate_valid_dataset_name(dataset_name)
+        async with self.get_lock(allocated_dataset_name):
+            try:
+                with H5PYContext(self, dataset_name, "r") as db:
+                    if allocated_dataset_name in db:
+                        dataset = db[allocated_dataset_name]
+                        if COLUMN_TYPES_ATTRIBUTE in dataset.attrs:
+                            return list(dataset.attrs[COLUMN_TYPES_ATTRIBUTE])
+            except MissingH5PYDataError:
+                pass
+            return None
 
     async def get_known_models(self) -> list[str]:
         """Get a list of all model IDs that have inference data stored."""

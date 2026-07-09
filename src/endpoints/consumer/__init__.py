@@ -1,10 +1,27 @@
 """Inference payload consumer endpoints."""
 
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from src.service.payloads.values.data_type import DataType
+
+PartialKind = Literal["request", "response"]
+
+
+class InferencePartialPayload(BaseModel):
+    """Partial inference payload for KServe agent uploads.
+
+    Flat structure matching the Java TrustyAI service wire format.
+    """
+
+    id: str | None = None
+    kind: PartialKind | None = None
+    metadata: dict[str, str] = Field(default_factory=dict)
+    data: str | None = None
+    modelid: str | None = None
 
 
 class KServeDataType(StrEnum):
@@ -37,6 +54,22 @@ K_SERVE_NUMPY_DTYPES = {
     KServeDataType.FP16: np.float16,
     KServeDataType.FP32: np.float32,
     KServeDataType.FP64: np.float64,
+}
+
+KSERVE_TO_DATATYPE: dict[KServeDataType, DataType] = {
+    KServeDataType.BOOL: DataType.BOOL,
+    KServeDataType.INT8: DataType.INT32,
+    KServeDataType.INT16: DataType.INT32,
+    KServeDataType.INT32: DataType.INT32,
+    KServeDataType.INT64: DataType.INT64,
+    KServeDataType.UINT8: DataType.INT32,
+    KServeDataType.UINT16: DataType.INT32,
+    KServeDataType.UINT32: DataType.INT64,
+    KServeDataType.UINT64: DataType.INT64,
+    KServeDataType.FP16: DataType.FLOAT,
+    KServeDataType.FP32: DataType.FLOAT,
+    KServeDataType.FP64: DataType.DOUBLE,
+    KServeDataType.BYTES: DataType.STRING,
 }
 
 

@@ -15,6 +15,7 @@ from numpy import ndarray
 
 from src.endpoints import routes
 from src.endpoints.consumer import (
+    KSERVE_TO_DATATYPE,
     InferencePartialPayload,
     KServeData,
     KServeInferenceRequest,
@@ -22,12 +23,11 @@ from src.endpoints.consumer import (
 )
 from src.exceptions import ReconciliationError
 from src.service.data.datasources.data_source import DataSource
-
-# Import local dependencies
 from src.service.data.model_data import ModelData
 from src.service.data.modelmesh_parser import ModelMeshPayloadParser, PartialPayload
 from src.service.data.shared_data_source import get_shared_data_source
 from src.service.data.storage import get_global_storage_interface
+from src.service.payloads.values.data_type import DataType
 from src.service.utils import list_utils
 
 # Define constants locally to avoid import issues
@@ -317,8 +317,10 @@ async def reconcile_kserve(
     :param output_payload: KServe inference response containing outputs
     :param tag: Optional tag to associate with the data
     """
-    input_array, input_names = process_payload(input_payload, lambda p: p.inputs)
-    output_array, output_names = process_payload(
+    input_array, input_names, input_types = process_payload(
+        input_payload, lambda p: p.inputs
+    )
+    output_array, output_names, output_types = process_payload(
         output_payload, lambda p: p.outputs, input_array.shape[0]
     )
 
@@ -341,6 +343,24 @@ async def reconcile_kserve(
         tags=tags,
         id_=input_payload.id,
     )
+
+    storage_interface = get_global_storage_interface()
+    input_dataset = output_payload.model_name + INPUT_SUFFIX
+    output_dataset = output_payload.model_name + OUTPUT_SUFFIX
+    try:
+        await storage_interface.set_column_types(
+            input_dataset, [t.value for t in input_types]
+        )
+        await storage_interface.set_column_types(
+            output_dataset, [t.value for t in output_types]
+        )
+    except (
+        Exception
+    ):  # Intentional: type metadata is non-critical; falls back to UNKNOWN on read
+        logger.exception(
+            "Failed to persist column types for model=%s",
+            output_payload.model_name,
+        )
 
 
 def reconcile_mismatching_shape_error(
@@ -385,13 +405,13 @@ def process_payload(
     payload: KServeInferenceRequest | KServeInferenceResponse,
     get_data: Callable,
     enforced_first_shape: int | None = None,
-) -> tuple[np.ndarray, list[str]]:
-    """Process a KServe payload and extract data array and column names.
+) -> tuple[np.ndarray, list[str], list[DataType]]:
+    """Process a KServe payload and extract data array, column names, and column types.
 
     :param payload: KServe request or response payload
     :param get_data: Function to extract inputs or outputs from payload
     :param enforced_first_shape: Expected number of rows (for validation)
-    :return: Tuple of (data array, column names list)
+    :return: Tuple of (data array, column names list, column types list)
     :raises ReconciliationError: If shapes don't match expectations
     """
     if (
@@ -401,10 +421,14 @@ def process_payload(
         shapes = set()
         shape_tuples = []
         column_names = []
+        column_types = []
         for kserve_data in get_data(payload):
             data.append(kserve_data.data)
             shapes.add(tuple(kserve_data.shape))
             column_names.append(kserve_data.name)
+            column_types.append(
+                KSERVE_TO_DATATYPE.get(kserve_data.datatype, DataType.UNKNOWN)
+            )
             shape_tuples.append((kserve_data.name, kserve_data.shape))
         if len(shapes) == 1:
             row_count = next(iter(shapes))[0]
@@ -413,8 +437,8 @@ def process_payload(
                     payload.id, enforced_first_shape, row_count
                 )
             if list_utils.contains_non_numeric(data):
-                return np.array(data, dtype="O").T, column_names
-            return np.array(data).T, column_names
+                return np.array(data, dtype="O").T, column_names, column_types
+            return np.array(data).T, column_names, column_types
         reconcile_mismatching_shape_error(
             shape_tuples,
             "input" if enforced_first_shape is None else "output",
@@ -436,9 +460,11 @@ def process_payload(
             ]
         else:
             column_names = [kserve_data.name]
+        mapped_type = KSERVE_TO_DATATYPE.get(kserve_data.datatype, DataType.UNKNOWN)
+        column_types = [mapped_type] * len(column_names)
         if list_utils.contains_non_numeric(kserve_data.data):
-            return np.array(kserve_data.data, dtype="O"), column_names
-        return np.array(kserve_data.data), column_names
+            return np.array(kserve_data.data, dtype="O"), column_names, column_types
+        return np.array(kserve_data.data), column_names, column_types
 
 
 @router.post(routes.CONSUMER_ROOT)
