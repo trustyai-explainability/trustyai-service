@@ -1,5 +1,6 @@
 """Prometheus scheduler for periodic metric calculation and publishing."""
 
+import asyncio
 import logging
 import os
 import threading
@@ -608,7 +609,7 @@ class PrometheusScheduler:
             batch = df.tail(batch_size)
 
             metric_name = request.metric_name
-            value = self._calculate_metric(
+            value = await self._calculate_metric(
                 model_id, metric_name, batch, request, throw_errors=throw_errors
             )
             if value is None:
@@ -625,7 +626,7 @@ class PrometheusScheduler:
                 throw_errors=throw_errors,
             )
 
-    def _calculate_metric(
+    async def _calculate_metric(
         self,
         model_id: str,
         metric_name: str,
@@ -653,8 +654,9 @@ class PrometheusScheduler:
             return None
 
         try:
-            return calculator(batch, request)
-
+            result = calculator(batch, request)
+            if asyncio.iscoroutine(result):
+                result = await result
         except KeyError as e:
             self._handle_error(
                 e,
@@ -685,6 +687,8 @@ class PrometheusScheduler:
                 throw_errors=throw_errors,
             )
             return None
+        else:
+            return result
 
     def _publish_metric_value(
         self,
