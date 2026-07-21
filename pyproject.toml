@@ -45,7 +45,7 @@ test = [
     "pytest-xdist[psutil]>=3.8.0",
     "hypothesis>=6.151.12",
     "aif360>=0.6.1",
-    "pillow>=12.2.0",        # Security: Resolves CVE-2026-25990 (HIGH - Out-of-bounds write)
+    "pillow>=12.3.0",        # Security: Resolves CVE-2026-25990 (HIGH - Out-of-bounds write)
 ]
 notebook = [
     "ipykernel>=7.2.0",
