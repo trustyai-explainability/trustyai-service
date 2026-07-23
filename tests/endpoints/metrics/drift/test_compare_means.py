@@ -8,8 +8,11 @@ import pandas as pd
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.core.metrics.drift.compare_means import DEFAULT_ALPHA
-from src.endpoints.metrics.drift.compare_means import CompareMeansMetricRequest, router
+from trustyai_service.core.metrics.drift.compare_means import DEFAULT_ALPHA
+from trustyai_service.endpoints.metrics.drift.compare_means import (
+    CompareMeansMetricRequest,
+    router,
+)
 
 from . import factory
 
@@ -25,7 +28,7 @@ class TestCompareMeansEndpoints:
     # Pandas DataFrame tests
     test_compute_endpoint_pandas = factory.make_compute_endpoint_test(
         metric_name="CompareMeans",
-        module_path="src.endpoints.metrics.drift.compare_means",
+        module_path="trustyai_service.endpoints.metrics.drift.compare_means",
         endpoint_path="/metrics/drift/comparemeans",
         client=client,
         request_payload={
@@ -50,7 +53,7 @@ class TestCompareMeansEndpoints:
     # Polars DataFrame tests
     test_compute_endpoint_polars = factory.make_compute_endpoint_test(
         metric_name="CompareMeans",
-        module_path="src.endpoints.metrics.drift.compare_means",
+        module_path="trustyai_service.endpoints.metrics.drift.compare_means",
         endpoint_path="/metrics/drift/comparemeans",
         client=client,
         request_payload={
@@ -81,7 +84,7 @@ class TestCompareMeansEndpoints:
 
     test_schedule_endpoint = factory.make_schedule_endpoint_test(
         metric_name="CompareMeans",
-        module_path="src.endpoints.metrics.drift.compare_means",
+        module_path="trustyai_service.endpoints.metrics.drift.compare_means",
         endpoint_path="/metrics/drift/comparemeans/request",
         client=client,
         request_payload={
@@ -94,14 +97,14 @@ class TestCompareMeansEndpoints:
 
     test_delete_schedule_endpoint = factory.make_delete_schedule_endpoint_test(
         metric_name="CompareMeans",
-        module_path="src.endpoints.metrics.drift.compare_means",
+        module_path="trustyai_service.endpoints.metrics.drift.compare_means",
         endpoint_path="/metrics/drift/comparemeans/request",
         client=client,
     )
 
     test_list_requests_endpoint = factory.make_list_requests_endpoint_test(
         metric_name="CompareMeans",
-        module_path="src.endpoints.metrics.drift.compare_means",
+        module_path="trustyai_service.endpoints.metrics.drift.compare_means",
         endpoint_path="/metrics/drift/comparemeans/requests",
         client=client,
     )
@@ -151,7 +154,7 @@ class TestCompareMeansEndpoints:
         )
 
         with patch(
-            "src.endpoints.metrics.drift.compare_means.get_data_source",
+            "trustyai_service.endpoints.metrics.drift.compare_means.get_data_source",
         ) as mock_ds:
             mock_data_source = MagicMock()
             mock_data_source.get_dataframe_by_tag = AsyncMock(return_value=reference_df)
@@ -230,7 +233,7 @@ class TestCompareMeansEndpoints:
         current_df = pd.DataFrame({"featureA": cur_a, "featureB": cur_b})
 
         with patch(
-            "src.endpoints.metrics.drift.compare_means.get_data_source",
+            "trustyai_service.endpoints.metrics.drift.compare_means.get_data_source",
         ) as mock_ds:
             mock_data_source = MagicMock()
             mock_data_source.get_dataframe_by_tag = AsyncMock(return_value=reference_df)
@@ -280,7 +283,7 @@ class TestCompareMeansEndpoints:
     # Compute endpoint errors
     test_compute_missing_reference_tag = factory.make_compute_endpoint_error_test(
         metric_name="CompareMeans",
-        module_path="src.endpoints.metrics.drift.compare_means",
+        module_path="trustyai_service.endpoints.metrics.drift.compare_means",
         endpoint_path="/metrics/drift/comparemeans",
         client=client,
         request_payload={
@@ -295,7 +298,7 @@ class TestCompareMeansEndpoints:
     test_compute_missing_fit_columns_derives_from_metadata = (
         factory.make_compute_endpoint_test(
             metric_name="CompareMeans",
-            module_path="src.endpoints.metrics.drift.compare_means",
+            module_path="trustyai_service.endpoints.metrics.drift.compare_means",
             endpoint_path="/metrics/drift/comparemeans",
             client=client,
             request_payload={
@@ -308,7 +311,7 @@ class TestCompareMeansEndpoints:
 
     test_compute_invalid_feature = factory.make_compute_endpoint_error_test(
         metric_name="CompareMeans",
-        module_path="src.endpoints.metrics.drift.compare_means",
+        module_path="trustyai_service.endpoints.metrics.drift.compare_means",
         endpoint_path="/metrics/drift/comparemeans",
         client=client,
         request_payload={
@@ -323,7 +326,7 @@ class TestCompareMeansEndpoints:
     # Delete endpoint errors
     test_delete_invalid_uuid = factory.make_delete_endpoint_error_test(
         metric_name="CompareMeans",
-        module_path="src.endpoints.metrics.drift.compare_means",
+        module_path="trustyai_service.endpoints.metrics.drift.compare_means",
         endpoint_path="/metrics/drift/comparemeans/request",
         client=client,
         request_id="not-a-valid-uuid",
@@ -334,7 +337,7 @@ class TestCompareMeansEndpoints:
     # List endpoint with multiple requests
     test_list_requests_with_data = factory.make_list_requests_with_data_test(
         metric_name="CompareMeans",
-        module_path="src.endpoints.metrics.drift.compare_means",
+        module_path="trustyai_service.endpoints.metrics.drift.compare_means",
         endpoint_path="/metrics/drift/comparemeans/requests",
         client=client,
         num_requests=3,
@@ -344,7 +347,7 @@ class TestCompareMeansEndpoints:
     test_list_requests_filters_malformed = (
         factory.make_list_requests_with_malformed_data_test(
             metric_name="CompareMeans",
-            module_path="src.endpoints.metrics.drift.compare_means",
+            module_path="trustyai_service.endpoints.metrics.drift.compare_means",
             endpoint_path="/metrics/drift/comparemeans/requests",
             client=client,
             num_valid_requests=2,
@@ -355,7 +358,7 @@ class TestCompareMeansEndpoints:
     # Empty data tests
     test_compute_empty_reference_data = factory.make_compute_empty_reference_data_test(
         metric_name="CompareMeans",
-        module_path="src.endpoints.metrics.drift.compare_means",
+        module_path="trustyai_service.endpoints.metrics.drift.compare_means",
         endpoint_path="/metrics/drift/comparemeans",
         client=client,
         request_payload={
@@ -367,7 +370,7 @@ class TestCompareMeansEndpoints:
 
     test_compute_empty_current_data = factory.make_compute_empty_current_data_test(
         metric_name="CompareMeans",
-        module_path="src.endpoints.metrics.drift.compare_means",
+        module_path="trustyai_service.endpoints.metrics.drift.compare_means",
         endpoint_path="/metrics/drift/comparemeans",
         client=client,
         request_payload={
@@ -381,7 +384,7 @@ class TestCompareMeansEndpoints:
     test_list_scheduler_unavailable = (
         factory.make_list_endpoint_scheduler_unavailable_test(
             metric_name="CompareMeans",
-            module_path="src.endpoints.metrics.drift.compare_means",
+            module_path="trustyai_service.endpoints.metrics.drift.compare_means",
             endpoint_path="/metrics/drift/comparemeans/requests",
             client=client,
         )
@@ -389,7 +392,7 @@ class TestCompareMeansEndpoints:
 
     test_list_exception = factory.make_list_endpoint_exception_test(
         metric_name="CompareMeans",
-        module_path="src.endpoints.metrics.drift.compare_means",
+        module_path="trustyai_service.endpoints.metrics.drift.compare_means",
         endpoint_path="/metrics/drift/comparemeans/requests",
         client=client,
     )
@@ -397,7 +400,7 @@ class TestCompareMeansEndpoints:
     # Generic exception in compute endpoint
     test_compute_generic_exception = factory.make_compute_generic_exception_test(
         metric_name="CompareMeans",
-        module_path="src.endpoints.metrics.drift.compare_means",
+        module_path="trustyai_service.endpoints.metrics.drift.compare_means",
         endpoint_path="/metrics/drift/comparemeans",
         client=client,
         request_payload={
@@ -413,7 +416,7 @@ class TestCompareMeansEndpoints:
 
     test_schedule_scheduler_unavailable = factory.make_schedule_endpoint_error_test(
         metric_name="CompareMeans",
-        module_path="src.endpoints.metrics.drift.compare_means",
+        module_path="trustyai_service.endpoints.metrics.drift.compare_means",
         endpoint_path="/metrics/drift/comparemeans/request",
         client=client,
         request_payload={
@@ -428,7 +431,7 @@ class TestCompareMeansEndpoints:
 
     test_schedule_register_exception = factory.make_schedule_endpoint_error_test(
         metric_name="CompareMeans",
-        module_path="src.endpoints.metrics.drift.compare_means",
+        module_path="trustyai_service.endpoints.metrics.drift.compare_means",
         endpoint_path="/metrics/drift/comparemeans/request",
         client=client,
         request_payload={
@@ -443,7 +446,7 @@ class TestCompareMeansEndpoints:
 
     test_delete_scheduler_unavailable = factory.make_delete_endpoint_error_test(
         metric_name="CompareMeans",
-        module_path="src.endpoints.metrics.drift.compare_means",
+        module_path="trustyai_service.endpoints.metrics.drift.compare_means",
         endpoint_path="/metrics/drift/comparemeans/request",
         client=client,
         request_id="123e4567-e89b-12d3-a456-426614174000",
@@ -454,7 +457,7 @@ class TestCompareMeansEndpoints:
 
     test_delete_exception = factory.make_delete_endpoint_error_test(
         metric_name="CompareMeans",
-        module_path="src.endpoints.metrics.drift.compare_means",
+        module_path="trustyai_service.endpoints.metrics.drift.compare_means",
         endpoint_path="/metrics/drift/comparemeans/request",
         client=client,
         request_id="123e4567-e89b-12d3-a456-426614174000",
@@ -472,7 +475,7 @@ class TestCompareMeansEndpoints:
         deprecated_endpoint_path="/metrics/drift/meanshift",
         client=client,
         endpoint_type="compute",
-        module_path="src.endpoints.metrics.drift.compare_means",
+        module_path="trustyai_service.endpoints.metrics.drift.compare_means",
         request_payload={
             "modelId": "test-model",
             "referenceTag": "baseline",
@@ -504,7 +507,7 @@ class TestCompareMeansEndpoints:
         deprecated_endpoint_path="/metrics/drift/meanshift/request",
         client=client,
         endpoint_type="schedule",
-        module_path="src.endpoints.metrics.drift.compare_means",
+        module_path="trustyai_service.endpoints.metrics.drift.compare_means",
         request_payload={
             "modelId": "test-model",
             "referenceTag": "baseline",
@@ -518,7 +521,7 @@ class TestCompareMeansEndpoints:
         deprecated_endpoint_path="/metrics/drift/meanshift/request",
         client=client,
         endpoint_type="delete",
-        module_path="src.endpoints.metrics.drift.compare_means",
+        module_path="trustyai_service.endpoints.metrics.drift.compare_means",
     )
 
     test_deprecated_list_requests_endpoint = factory.make_deprecated_endpoint_test(
@@ -526,7 +529,7 @@ class TestCompareMeansEndpoints:
         deprecated_endpoint_path="/metrics/drift/meanshift/requests",
         client=client,
         endpoint_type="list",
-        module_path="src.endpoints.metrics.drift.compare_means",
+        module_path="trustyai_service.endpoints.metrics.drift.compare_means",
     )
 
     def test_deprecated_compute_endpoint_with_omitted_optional_fields(self) -> None:
@@ -546,7 +549,7 @@ class TestCompareMeansEndpoints:
         )
 
         with patch(
-            "src.endpoints.metrics.drift.compare_means.get_data_source",
+            "trustyai_service.endpoints.metrics.drift.compare_means.get_data_source",
         ) as mock_ds:
             mock_data_source = MagicMock()
             mock_data_source.get_dataframe_by_tag = AsyncMock(return_value=sample_df)
@@ -584,7 +587,7 @@ class TestCompareMeansEndpoints:
     def test_deprecated_schedule_endpoint_with_omitted_optional_fields(self) -> None:
         """Test that deprecated Meanshift schedule endpoint works with omitted optional fields."""
         with patch(
-            "src.endpoints.metrics.drift.compare_means.get_prometheus_scheduler",
+            "trustyai_service.endpoints.metrics.drift.compare_means.get_prometheus_scheduler",
         ) as mock_sched_fn:
             mock_sched = MagicMock()
             mock_sched.register = AsyncMock(return_value=None)

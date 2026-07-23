@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.endpoints.evaluation._env_security import (
+from trustyai_service.endpoints.evaluation._env_security import (
     ALLOWED_ENV_EXACT,
     ALLOWED_ENV_PREFIXES,
     BLOCKED_ENV_VARS,

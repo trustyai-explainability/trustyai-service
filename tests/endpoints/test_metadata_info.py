@@ -5,11 +5,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from src.endpoints.metadata import _build_readable_schema
-from src.main import app
-from src.service.payloads.service.schema import Schema
-from src.service.payloads.service.schema_item import SchemaItem
-from src.service.payloads.values.data_type import DataType
+from trustyai_service.endpoints.metadata import _build_readable_schema
+from trustyai_service.main import app
+from trustyai_service.service.payloads.service.schema import Schema
+from trustyai_service.service.payloads.service.schema_item import SchemaItem
+from trustyai_service.service.payloads.values.data_type import DataType
 
 client = TestClient(app)
 
@@ -51,8 +51,8 @@ class TestBuildReadableSchema:
 class TestInfoEndpointSchema:
     """Tests for /info endpoint inputSchema/outputSchema fields."""
 
-    @patch("src.endpoints.metadata.storage_interface")
-    @patch("src.endpoints.metadata.get_data_source")
+    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_data_source")
     @pytest.mark.asyncio
     async def test_info_includes_schemas(
         self, mock_get_ds: MagicMock, mock_storage: MagicMock

@@ -8,10 +8,12 @@ import pytest
 from prometheus_client import CollectorRegistry, Gauge
 from pydantic import ValidationError
 
-from src.service.constants import PROMETHEUS_METRIC_PREFIX
-from src.service.payloads.metrics.base_metric_request import BaseMetricRequest
-from src.service.prometheus.gauge_config import GaugeConfig
-from src.service.prometheus.prometheus_publisher import PrometheusPublisher
+from trustyai_service.service.constants import PROMETHEUS_METRIC_PREFIX
+from trustyai_service.service.payloads.metrics.base_metric_request import (
+    BaseMetricRequest,
+)
+from trustyai_service.service.prometheus.gauge_config import GaugeConfig
+from trustyai_service.service.prometheus.prometheus_publisher import PrometheusPublisher
 
 # Test constants
 TEST_METRIC_VALUE_1 = 0.5  # First test metric value

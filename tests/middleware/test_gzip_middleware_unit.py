@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from src.middleware.gzip_middleware import GzipRequestMiddleware
+from trustyai_service.middleware.gzip_middleware import GzipRequestMiddleware
 
 # Test constants for call counts
 EXPECTED_SEND_CALLS_ERROR = 2  # Start + body for error responses

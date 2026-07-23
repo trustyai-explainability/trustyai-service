@@ -39,7 +39,7 @@ COPY pyproject.toml README.md ./
 
 ENV SETUPTOOLS_SCM_PRETEND_VERSION="0.0.0.dev0"
 
-RUN mkdir -p src && \
+RUN mkdir -p src/trustyai_service && \
     pip install --no-cache-dir --upgrade pip==26.1.1 uv==0.11.22 && \
     uv pip install --no-cache ".[$EXTRAS]" && \
     pip uninstall -y uv && \
@@ -99,11 +99,11 @@ COPY --from=builder /opt/app-root/lib/python3.14/site-packages /opt/app-root/lib
 COPY --from=builder /opt/app-root/lib64/python3.14/site-packages /opt/app-root/lib64/python3.14/site-packages
 COPY --from=builder /opt/app-root/bin /opt/app-root/bin
 
-COPY src src
+COPY src/trustyai_service trustyai_service
 COPY pyproject.toml README.md ./
 
-RUN printf '__version__ = version = "%s"\n' "${VERSION}" > src/_version.py && \
-    chown 1001:0 src/_version.py
+RUN printf '__version__ = version = "%s"\n' "${VERSION}" > trustyai_service/_version.py && \
+    chown 1001:0 trustyai_service/_version.py
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -127,4 +127,4 @@ LABEL org.opencontainers.image.title="TrustyAI Service" \
       io.trustyai.fips.compatible="true" \
       org.opencontainers.image.base.name="registry.redhat.io/ubi10/python-314-minimal"
 
-CMD ["python", "-m", "src.main"]
+CMD ["python", "-m", "trustyai_service.main"]

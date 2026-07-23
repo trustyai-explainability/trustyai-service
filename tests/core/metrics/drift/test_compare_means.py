@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from scipy.stats import ttest_ind
 
-from src.core.metrics.drift.compare_means import CompareMeans
+from trustyai_service.core.metrics.drift.compare_means import CompareMeans
 
 from . import factory
 

@@ -1,7 +1,7 @@
 """Tests for TypedValue."""
 
-from src.service.payloads.values.data_type import DataType
-from src.service.payloads.values.typed_value import TypedValue
+from trustyai_service.service.payloads.values.data_type import DataType
+from trustyai_service.service.payloads.values.typed_value import TypedValue
 
 
 class TestTypedValue:

@@ -1,7 +1,11 @@
 """Tests for ReconcilableFeature."""
 
-from src.service.payloads.values.reconcilable_feature import ReconcilableFeature
-from src.service.payloads.values.reconcilable_field import ReconcilableField
+from trustyai_service.service.payloads.values.reconcilable_feature import (
+    ReconcilableFeature,
+)
+from trustyai_service.service.payloads.values.reconcilable_field import (
+    ReconcilableField,
+)
 
 
 class TestReconcilableFeature:

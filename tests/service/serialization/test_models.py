@@ -9,7 +9,7 @@ import json
 import pytest
 from pydantic import BaseModel
 
-from src.service.serialization import deserialize_model, serialize_model
+from trustyai_service.service.serialization import deserialize_model, serialize_model
 
 # --- Test constants ---
 EXPECTED_VALUE = 42

@@ -6,17 +6,20 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.service.constants import UNLABELED_TAG
-from src.service.data.datasources.data_source import DataSource
-from src.service.data.exceptions import DataframeCreateError, StorageReadError
-from src.service.data.metadata.storage_metadata import (
+from trustyai_service.service.constants import UNLABELED_TAG
+from trustyai_service.service.data.datasources.data_source import DataSource
+from trustyai_service.service.data.exceptions import (
+    DataframeCreateError,
+    StorageReadError,
+)
+from trustyai_service.service.data.metadata.storage_metadata import (
     StorageMetadata,
     StorageMetadataConfig,
 )
-from src.service.data.model_data import ModelData
-from src.service.payloads.service.schema import Schema
-from src.service.payloads.service.schema_item import SchemaItem
-from src.service.payloads.values.data_type import DataType
+from trustyai_service.service.data.model_data import ModelData
+from trustyai_service.service.payloads.service.schema import Schema
+from trustyai_service.service.payloads.service.schema_item import SchemaItem
+from trustyai_service.service.payloads.values.data_type import DataType
 
 # Test constants
 EXPECTED_ORGANIC_ROWS = 2  # Expected rows after filtering synthetic data
@@ -102,7 +105,7 @@ class TestDataSource:
         known.add("new_model")
         assert "new_model" not in data_source.known_models
 
-    @patch("src.service.data.datasources.data_source.ModelData")
+    @patch("trustyai_service.service.data.datasources.data_source.ModelData")
     @pytest.mark.asyncio
     async def test_get_dataframe_with_batch_size_success(
         self,
@@ -133,7 +136,7 @@ class TestDataSource:
         mock_model_data.column_names.assert_called_once()
         mock_model_data.data.assert_called_once()
 
-    @patch("src.service.data.datasources.data_source.ModelData")
+    @patch("trustyai_service.service.data.datasources.data_source.ModelData")
     @pytest.mark.asyncio
     async def test_get_dataframe_default_batch_size(
         self,
@@ -156,7 +159,7 @@ class TestDataSource:
         assert isinstance(df, pd.DataFrame)
         mock_model_data.data.assert_called_once()
 
-    @patch("src.service.data.datasources.data_source.ModelData")
+    @patch("trustyai_service.service.data.datasources.data_source.ModelData")
     @pytest.mark.asyncio
     async def test_get_dataframe_handles_exceptions(
         self,
@@ -174,7 +177,7 @@ class TestDataSource:
         ):
             await data_source.get_dataframe("test_model")
 
-    @patch("src.service.data.datasources.data_source.ModelData")
+    @patch("trustyai_service.service.data.datasources.data_source.ModelData")
     @pytest.mark.asyncio
     async def test_get_organic_dataframe_filters_unlabeled(
         self,
@@ -203,7 +206,7 @@ class TestDataSource:
         assert len(df) == EXPECTED_ORGANIC_ROWS
         assert not df[UNLABELED_TAG].any()  # No True values should remain
 
-    @patch("src.service.data.datasources.data_source.ModelData")
+    @patch("trustyai_service.service.data.datasources.data_source.ModelData")
     @pytest.mark.asyncio
     async def test_get_metadata_creates_and_caches(
         self,
@@ -224,7 +227,7 @@ class TestDataSource:
         metadata2 = await data_source.get_metadata("test_model")
         assert metadata2 is metadata  # Same object from cache
 
-    @patch("src.service.data.datasources.data_source.ModelData")
+    @patch("trustyai_service.service.data.datasources.data_source.ModelData")
     @pytest.mark.asyncio
     async def test_get_metadata_handles_exceptions(
         self,
@@ -253,7 +256,7 @@ class TestDataSource:
 
         assert await data_source.has_metadata("test_model") is True
 
-    @patch("src.service.data.datasources.data_source.ModelData")
+    @patch("trustyai_service.service.data.datasources.data_source.ModelData")
     @pytest.mark.asyncio
     async def test_has_metadata_false(
         self,
@@ -308,7 +311,7 @@ class TestDataSource:
         assert len(verified) == 1
 
     @patch.dict("os.environ", {"TEST_MODEL_ID": "discovered_model"})
-    @patch("src.service.data.datasources.data_source.ModelData")
+    @patch("trustyai_service.service.data.datasources.data_source.ModelData")
     @pytest.mark.asyncio
     async def test_get_verified_models_discovers_from_storage(
         self,
@@ -353,7 +356,7 @@ class TestDataSource:
         has_gt_missing = await data_source.has_ground_truths("missing_model")
         assert has_gt_missing is False
 
-    @patch("src.service.data.datasources.data_source.ModelData")
+    @patch("trustyai_service.service.data.datasources.data_source.ModelData")
     @pytest.mark.asyncio
     async def test_get_ground_truths(
         self,
@@ -399,7 +402,7 @@ class TestDataSource:
         assert "test_model" in data_source.metadata_cache
         assert data_source.metadata_cache["test_model"] == sample_metadata
 
-    @patch("src.service.data.datasources.data_source.ModelData")
+    @patch("trustyai_service.service.data.datasources.data_source.ModelData")
     @pytest.mark.asyncio
     async def test_batch_size_calculation_with_limited_data(
         self,
