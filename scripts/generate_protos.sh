@@ -4,7 +4,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROTO_DIR="${SCRIPT_DIR}/../src/proto"
+PROTO_DIR="${SCRIPT_DIR}/../src/trustyai_service/proto"
 
 echo "Generating Python protobuf stubs..."
 cd "${PROTO_DIR}"

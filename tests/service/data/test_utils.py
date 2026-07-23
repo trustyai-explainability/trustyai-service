@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 with contextlib.suppress(ImportError):
-    from src.proto.grpc_predict_v2_pb2 import (
+    from trustyai_service.proto.grpc_predict_v2_pb2 import (
         InferParameter,
         InferTensorContents,
         ModelInferRequest,

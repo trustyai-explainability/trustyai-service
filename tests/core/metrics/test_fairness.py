@@ -20,17 +20,19 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 
-from src.core.metrics.fairness.group.disparate_impact_ratio import DisparateImpactRatio
-from src.core.metrics.fairness.group.group_average_odds_difference import (
+from trustyai_service.core.metrics.fairness.group.disparate_impact_ratio import (
+    DisparateImpactRatio,
+)
+from trustyai_service.core.metrics.fairness.group.group_average_odds_difference import (
     GroupAverageOddsDifference,
 )
-from src.core.metrics.fairness.group.group_average_predictive_value_difference import (
+from trustyai_service.core.metrics.fairness.group.group_average_predictive_value_difference import (
     GroupAveragePredictiveValueDifference,
 )
-from src.core.metrics.fairness.group.group_statistical_parity_difference import (
+from trustyai_service.core.metrics.fairness.group.group_statistical_parity_difference import (
     GroupStatisticalParityDifference,
 )
-from src.core.metrics.fairness.individual.individual_consistency import (
+from trustyai_service.core.metrics.fairness.individual.individual_consistency import (
     IndividualConsistency,
 )
 

@@ -7,7 +7,7 @@ import gzip
 
 import pytest
 
-from src.service.serialization.detection import (
+from trustyai_service.service.serialization.detection import (
     GZIP_MAGIC,
     detect_format,
     is_gzip,

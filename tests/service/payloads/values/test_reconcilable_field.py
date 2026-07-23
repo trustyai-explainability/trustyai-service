@@ -2,9 +2,11 @@
 
 import pytest
 
-from src.service.payloads.values.data_type import DataType
-from src.service.payloads.values.reconcilable_field import ReconcilableField
-from src.service.payloads.values.typed_value import TypedValue
+from trustyai_service.service.payloads.values.data_type import DataType
+from trustyai_service.service.payloads.values.reconcilable_field import (
+    ReconcilableField,
+)
+from trustyai_service.service.payloads.values.typed_value import TypedValue
 
 # Test constants
 EXPECTED_NODE_COUNT = 2  # Expected number of value nodes in multi-valued tests

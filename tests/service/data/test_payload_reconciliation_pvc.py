@@ -19,14 +19,17 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.service.data.modelmesh_parser import ModelMeshPayloadParser, PartialPayload
-from src.service.data.storage.exceptions import DeserializationError
-from src.service.data.storage.pvc import (
+from tests.service.data.test_utils import ModelMeshTestData
+from trustyai_service.service.data.modelmesh_parser import (
+    ModelMeshPayloadParser,
+    PartialPayload,
+)
+from trustyai_service.service.data.storage.exceptions import DeserializationError
+from trustyai_service.service.data.storage.pvc import (
     MAX_VOID_TYPE_LENGTH,
     PARTIAL_INPUT_NAME,
     PVCStorage,
 )
-from tests.service.data.test_utils import ModelMeshTestData
 
 # --- Test constants ---
 EXPECTED_ROW_COUNT = 5

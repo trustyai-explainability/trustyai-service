@@ -2,7 +2,9 @@
 
 import pytest
 
-from src.service.payloads.values.reconciler_matcher import ReconcilerMatcher
+from trustyai_service.service.payloads.values.reconciler_matcher import (
+    ReconcilerMatcher,
+)
 
 
 class TestReconcilerMatcher:

@@ -33,9 +33,11 @@ import polars as pl
 from fastapi.testclient import TestClient
 from prometheus_client import CollectorRegistry
 
-from src.service.payloads.metrics.base_metric_request import BaseMetricRequest
-from src.service.prometheus.gauge_config import GaugeConfig
-from src.service.prometheus.prometheus_publisher import PrometheusPublisher
+from trustyai_service.service.payloads.metrics.base_metric_request import (
+    BaseMetricRequest,
+)
+from trustyai_service.service.prometheus.gauge_config import GaugeConfig
+from trustyai_service.service.prometheus.prometheus_publisher import PrometheusPublisher
 
 # TypeVar for metric request classes
 TMetricRequest = TypeVar("TMetricRequest", bound=BaseMetricRequest)
@@ -59,7 +61,7 @@ def make_compute_endpoint_test(
 
     :param metric_name: Name of the metric for logging
     :param module_path: Module path for patching (e.g.,
-        "src.endpoints.metrics.drift.kolmogorov_smirnov")
+        "trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov")
     :param endpoint_path: API endpoint path (e.g.,
         "/metrics/drift/kstest")
     :param client: TestClient instance for making requests
@@ -166,7 +168,7 @@ def make_schedule_endpoint_test(
 
     :param metric_name: Name of the metric for logging
     :param module_path: Module path for patching (e.g.,
-        "src.endpoints.metrics.drift.kolmogorov_smirnov")
+        "trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov")
     :param endpoint_path: API endpoint path (e.g.,
         "/metrics/drift/kstest/request")
     :param client: TestClient instance for making requests
@@ -223,7 +225,7 @@ def make_delete_schedule_endpoint_test(
 
     :param metric_name: Name of the metric for logging
     :param module_path: Module path for patching (e.g.,
-        "src.endpoints.metrics.drift.kolmogorov_smirnov")
+        "trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov")
     :param endpoint_path: API endpoint path (e.g.,
         "/metrics/drift/kstest/request")
     :param client: TestClient instance for making requests
@@ -270,7 +272,7 @@ def make_list_requests_endpoint_test(
 
     :param metric_name: Name of the metric for logging
     :param module_path: Module path for patching (e.g.,
-        "src.endpoints.metrics.drift.kolmogorov_smirnov")
+        "trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov")
     :param endpoint_path: API endpoint path (e.g.,
         "/metrics/drift/kstest/requests")
     :param client: TestClient instance for making requests
@@ -1310,7 +1312,7 @@ def make_deprecated_endpoint_test(
     :param endpoint_type: Type of endpoint ("compute", "definition",
         "schedule", "delete", "list")
     :param module_path: Module path for patching (e.g.,
-        "src.endpoints.metrics.drift.compare_means")
+        "trustyai_service.endpoints.metrics.drift.compare_means")
         Required for compute, schedule, delete, and list endpoints
     :param request_payload: Request payload dictionary (required for
         compute/schedule)
@@ -1324,7 +1326,7 @@ def make_deprecated_endpoint_test(
         # Test deprecated compute endpoint
         test_func = make_deprecated_endpoint_test(
             metric_name="Meanshift",
-            module_path="src.endpoints.metrics.drift.compare_means",
+            module_path="trustyai_service.endpoints.metrics.drift.compare_means",
             deprecated_endpoint_path="/metrics/drift/meanshift",
             client=client,
             endpoint_type="compute",
@@ -1335,7 +1337,7 @@ def make_deprecated_endpoint_test(
         # Test deprecated definition endpoint
         test_func = make_deprecated_endpoint_test(
             metric_name="Meanshift",
-            module_path="src.endpoints.metrics.drift.compare_means",
+            module_path="trustyai_service.endpoints.metrics.drift.compare_means",
             deprecated_endpoint_path="/metrics/drift/meanshift/definition",
             client=client,
             endpoint_type="definition",
@@ -1345,7 +1347,7 @@ def make_deprecated_endpoint_test(
         # Test deprecated list endpoint
         test_func = make_deprecated_endpoint_test(
             metric_name="Meanshift",
-            module_path="src.endpoints.metrics.drift.compare_means",
+            module_path="trustyai_service.endpoints.metrics.drift.compare_means",
             deprecated_endpoint_path="/metrics/drift/meanshift/requests",
             client=client,
             endpoint_type="list"

@@ -5,7 +5,10 @@ from http import HTTPStatus
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.endpoints.metrics.drift.kolmogorov_smirnov import KSTestMetricRequest, router
+from trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov import (
+    KSTestMetricRequest,
+    router,
+)
 
 from . import factory
 
@@ -21,7 +24,7 @@ class TestKSTestEndpoints:
     # Pandas DataFrame tests
     test_compute_endpoint_pandas = factory.make_compute_endpoint_test(
         metric_name="KSTest",
-        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+        module_path="trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov",
         endpoint_path="/metrics/drift/kstest",
         client=client,
         request_payload={
@@ -43,7 +46,7 @@ class TestKSTestEndpoints:
     # Polars DataFrame tests
     test_compute_endpoint_polars = factory.make_compute_endpoint_test(
         metric_name="KSTest",
-        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+        module_path="trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov",
         endpoint_path="/metrics/drift/kstest",
         client=client,
         request_payload={
@@ -71,7 +74,7 @@ class TestKSTestEndpoints:
 
     test_schedule_endpoint = factory.make_schedule_endpoint_test(
         metric_name="KSTest",
-        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+        module_path="trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov",
         endpoint_path="/metrics/drift/kstest/request",
         client=client,
         request_payload={
@@ -83,14 +86,14 @@ class TestKSTestEndpoints:
 
     test_delete_schedule_endpoint = factory.make_delete_schedule_endpoint_test(
         metric_name="KSTest",
-        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+        module_path="trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov",
         endpoint_path="/metrics/drift/kstest/request",
         client=client,
     )
 
     test_list_requests_endpoint = factory.make_list_requests_endpoint_test(
         metric_name="KSTest",
-        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+        module_path="trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov",
         endpoint_path="/metrics/drift/kstest/requests",
         client=client,
     )
@@ -102,7 +105,7 @@ class TestKSTestEndpoints:
     # Compute endpoint errors
     test_compute_missing_reference_tag = factory.make_compute_endpoint_error_test(
         metric_name="KSTest",
-        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+        module_path="trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov",
         endpoint_path="/metrics/drift/kstest",
         client=client,
         request_payload={
@@ -117,7 +120,7 @@ class TestKSTestEndpoints:
     test_compute_missing_fit_columns_derives_from_metadata = (
         factory.make_compute_endpoint_test(
             metric_name="KSTest",
-            module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+            module_path="trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov",
             endpoint_path="/metrics/drift/kstest",
             client=client,
             request_payload={
@@ -130,7 +133,7 @@ class TestKSTestEndpoints:
 
     test_compute_invalid_feature = factory.make_compute_endpoint_error_test(
         metric_name="KSTest",
-        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+        module_path="trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov",
         endpoint_path="/metrics/drift/kstest",
         client=client,
         request_payload={
@@ -145,7 +148,7 @@ class TestKSTestEndpoints:
     # Delete endpoint errors
     test_delete_invalid_uuid = factory.make_delete_endpoint_error_test(
         metric_name="KSTest",
-        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+        module_path="trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov",
         endpoint_path="/metrics/drift/kstest/request",
         client=client,
         request_id="not-a-valid-uuid",
@@ -156,7 +159,7 @@ class TestKSTestEndpoints:
     # List endpoint with multiple requests
     test_list_requests_with_data = factory.make_list_requests_with_data_test(
         metric_name="KSTest",
-        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+        module_path="trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov",
         endpoint_path="/metrics/drift/kstest/requests",
         client=client,
         num_requests=3,
@@ -166,7 +169,7 @@ class TestKSTestEndpoints:
     test_list_requests_filters_malformed = (
         factory.make_list_requests_with_malformed_data_test(
             metric_name="KSTest",
-            module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+            module_path="trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov",
             endpoint_path="/metrics/drift/kstest/requests",
             client=client,
             num_valid_requests=2,
@@ -181,7 +184,7 @@ class TestKSTestEndpoints:
     # Schedule endpoint scheduler exceptions
     test_schedule_connection_error = factory.make_schedule_endpoint_error_test(
         metric_name="KSTest",
-        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+        module_path="trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov",
         endpoint_path="/metrics/drift/kstest/request",
         client=client,
         request_payload={
@@ -197,7 +200,7 @@ class TestKSTestEndpoints:
 
     test_schedule_timeout_error = factory.make_schedule_endpoint_error_test(
         metric_name="KSTest",
-        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+        module_path="trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov",
         endpoint_path="/metrics/drift/kstest/request",
         client=client,
         request_payload={
@@ -213,7 +216,7 @@ class TestKSTestEndpoints:
 
     test_schedule_runtime_error = factory.make_schedule_endpoint_error_test(
         metric_name="KSTest",
-        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+        module_path="trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov",
         endpoint_path="/metrics/drift/kstest/request",
         client=client,
         request_payload={
@@ -230,7 +233,7 @@ class TestKSTestEndpoints:
     # Delete endpoint scheduler exceptions
     test_delete_connection_error = factory.make_delete_endpoint_error_test(
         metric_name="KSTest",
-        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+        module_path="trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov",
         endpoint_path="/metrics/drift/kstest/request",
         client=client,
         request_id="123e4567-e89b-12d3-a456-426614174000",
@@ -242,7 +245,7 @@ class TestKSTestEndpoints:
 
     test_delete_runtime_error = factory.make_delete_endpoint_error_test(
         metric_name="KSTest",
-        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+        module_path="trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov",
         endpoint_path="/metrics/drift/kstest/request",
         client=client,
         request_id="123e4567-e89b-12d3-a456-426614174000",
@@ -258,7 +261,7 @@ class TestKSTestEndpoints:
     # (Service Unavailable) in a future update
     test_schedule_scheduler_unavailable = factory.make_schedule_endpoint_error_test(
         metric_name="KSTest",
-        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+        module_path="trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov",
         endpoint_path="/metrics/drift/kstest/request",
         client=client,
         request_payload={
@@ -274,7 +277,7 @@ class TestKSTestEndpoints:
 
     test_delete_scheduler_unavailable = factory.make_delete_endpoint_error_test(
         metric_name="KSTest",
-        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+        module_path="trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov",
         endpoint_path="/metrics/drift/kstest/request",
         client=client,
         request_id="123e4567-e89b-12d3-a456-426614174000",
@@ -290,7 +293,7 @@ class TestKSTestEndpoints:
 
     test_compute_empty_reference_data = factory.make_compute_empty_reference_data_test(
         metric_name="KSTest",
-        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+        module_path="trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov",
         endpoint_path="/metrics/drift/kstest",
         client=client,
         request_payload={
@@ -302,7 +305,7 @@ class TestKSTestEndpoints:
 
     test_compute_empty_current_data = factory.make_compute_empty_current_data_test(
         metric_name="KSTest",
-        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+        module_path="trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov",
         endpoint_path="/metrics/drift/kstest",
         client=client,
         request_payload={
@@ -319,7 +322,7 @@ class TestKSTestEndpoints:
     test_list_scheduler_unavailable = (
         factory.make_list_endpoint_scheduler_unavailable_test(
             metric_name="KSTest",
-            module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+            module_path="trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov",
             endpoint_path="/metrics/drift/kstest/requests",
             client=client,
         )
@@ -327,7 +330,7 @@ class TestKSTestEndpoints:
 
     test_list_exception_handling = factory.make_list_endpoint_exception_test(
         metric_name="KSTest",
-        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+        module_path="trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov",
         endpoint_path="/metrics/drift/kstest/requests",
         client=client,
     )
@@ -338,7 +341,7 @@ class TestKSTestEndpoints:
 
     test_compute_generic_exception = factory.make_compute_generic_exception_test(
         metric_name="KSTest",
-        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+        module_path="trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov",
         endpoint_path="/metrics/drift/kstest",
         client=client,
         request_payload={
@@ -355,7 +358,7 @@ class TestKSTestEndpoints:
     # Test with custom threshold_delta (covers line 84: custom alpha)
     test_compute_custom_threshold = factory.make_compute_endpoint_test(
         metric_name="KSTest",
-        module_path="src.endpoints.metrics.drift.kolmogorov_smirnov",
+        module_path="trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov",
         endpoint_path="/metrics/drift/kstest",
         client=client,
         request_payload={

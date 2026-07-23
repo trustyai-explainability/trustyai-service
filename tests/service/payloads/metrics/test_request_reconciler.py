@@ -4,20 +4,28 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from src.service.data.datasources.data_source import DataSource
-from src.service.data.metadata.storage_metadata import StorageMetadata
-from src.service.payloads.metrics.base_metric_request import BaseMetricRequest
-from src.service.payloads.metrics.request_reconciler import (
+from trustyai_service.service.data.datasources.data_source import DataSource
+from trustyai_service.service.data.metadata.storage_metadata import StorageMetadata
+from trustyai_service.service.payloads.metrics.base_metric_request import (
+    BaseMetricRequest,
+)
+from trustyai_service.service.payloads.metrics.request_reconciler import (
     IllegalArgumentError,
     RequestReconciler,
 )
-from src.service.payloads.service.schema import Schema
-from src.service.payloads.service.schema_item import SchemaItem
-from src.service.payloads.values.data_type import DataType
-from src.service.payloads.values.reconcilable_feature import ReconcilableFeature
-from src.service.payloads.values.reconcilable_output import ReconcilableOutput
-from src.service.payloads.values.reconciler_matcher import ReconcilerMatcher
-from src.service.payloads.values.typed_value import TypedValue
+from trustyai_service.service.payloads.service.schema import Schema
+from trustyai_service.service.payloads.service.schema_item import SchemaItem
+from trustyai_service.service.payloads.values.data_type import DataType
+from trustyai_service.service.payloads.values.reconcilable_feature import (
+    ReconcilableFeature,
+)
+from trustyai_service.service.payloads.values.reconcilable_output import (
+    ReconcilableOutput,
+)
+from trustyai_service.service.payloads.values.reconciler_matcher import (
+    ReconcilerMatcher,
+)
+from trustyai_service.service.payloads.values.typed_value import TypedValue
 
 # Test constants
 EXPECTED_RECONCILED_COUNT = 2  # Expected number of reconciled values
@@ -299,7 +307,7 @@ class TestRequestReconciler:
         mock_data_source.get_metadata.return_value = mock_storage_metadata
 
         with patch(
-            "src.service.payloads.metrics.request_reconciler.logger",
+            "trustyai_service.service.payloads.metrics.request_reconciler.logger",
         ) as mock_logger:
             await RequestReconciler.reconcile(mock_request, mock_data_source)
 

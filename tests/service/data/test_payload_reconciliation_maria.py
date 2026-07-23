@@ -7,10 +7,10 @@ import uuid
 import pytest
 
 pytest.importorskip("mariadb")
-from src.service.data.modelmesh_parser import PartialPayload
-from src.service.data.storage.maria.maria import MariaDBStorage
 from tests.service.data.test_payload_reconciliation_pvc import TestPayloadReconciliation
 from tests.service.data.test_utils import ModelMeshTestData
+from trustyai_service.service.data.modelmesh_parser import PartialPayload
+from trustyai_service.service.data.storage.maria.maria import MariaDBStorage
 
 
 @pytest.mark.xdist_group("mariadb")

@@ -15,11 +15,11 @@ from typing import Any
 from fastapi.testclient import TestClient
 from httpx import Response
 
-import src.main
-from src.service.constants import (
+import trustyai_service.main
+from trustyai_service.service.constants import (
     TRUSTYAI_TAG_PREFIX,
 )
-from src.service.data.model_data import ModelData
+from trustyai_service.service.data.model_data import ModelData
 
 # Test constants
 MIN_INPUT_COLUMNS = 2  # Minimum expected input columns in test data
@@ -250,15 +250,15 @@ class TestUploadEndpointPVC(unittest.TestCase):
         self.addCleanup(restore_environment)
 
         # Force reload of the global storage interface to use the new temp dir
-        from src.service.data import (  # noqa: PLC0415  # re-import after reload for test isolation
+        from trustyai_service.service.data import (  # noqa: PLC0415  # re-import after reload for test isolation
             storage,
         )
 
         storage.get_global_storage_interface(force_reload=True)
 
         # Re-create the FastAPI app to ensure it uses the new storage interface
-        reload(src.main)
-        from src.main import (  # noqa: PLC0415  # re-import after reload for test isolation
+        reload(trustyai_service.main)
+        from trustyai_service.main import (  # noqa: PLC0415  # re-import after reload for test isolation
             app,
         )
 

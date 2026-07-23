@@ -4,7 +4,7 @@ import unittest
 
 import pytest
 
-from src.endpoints.consumer import KServeData
+from trustyai_service.endpoints.consumer import KServeData
 
 
 class TestKServeDataShapeValidation(unittest.TestCase):

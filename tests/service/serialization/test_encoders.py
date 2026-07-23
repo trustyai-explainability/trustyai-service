@@ -10,7 +10,10 @@ import json
 import numpy as np
 import pytest
 
-from src.service.serialization.encoders import json_decoder_hook, json_encoder
+from trustyai_service.service.serialization.encoders import (
+    json_decoder_hook,
+    json_encoder,
+)
 
 # --- Test constants ---
 EXPECTED_INT = 42

@@ -8,11 +8,13 @@ import pandas as pd
 import pytest
 from prometheus_client import CollectorRegistry, generate_latest
 
-from src.service.data.datasources.data_source import DataSource
-from src.service.payloads.metrics.base_metric_request import BaseMetricRequest
-from src.service.prometheus.metric_value_carrier import MetricValueCarrier
-from src.service.prometheus.prometheus_publisher import PrometheusPublisher
-from src.service.prometheus.prometheus_scheduler import PrometheusScheduler
+from trustyai_service.service.data.datasources.data_source import DataSource
+from trustyai_service.service.payloads.metrics.base_metric_request import (
+    BaseMetricRequest,
+)
+from trustyai_service.service.prometheus.metric_value_carrier import MetricValueCarrier
+from trustyai_service.service.prometheus.prometheus_publisher import PrometheusPublisher
+from trustyai_service.service.prometheus.prometheus_scheduler import PrometheusScheduler
 
 # Time interval constants (in seconds)
 SECONDS_15 = 15

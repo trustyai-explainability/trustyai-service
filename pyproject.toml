@@ -71,13 +71,13 @@ version_scheme = "no-guess-dev"
 local_scheme = "dirty-tag"
 
 [tool.hatch.build.targets.sdist]
-include = ["src"]
+packages = ["src/trustyai_service"]
 
 [tool.hatch.build.targets.wheel]
-include = ["src"]
+packages = ["src/trustyai_service"]
 
 [tool.hatch.build.hooks.vcs]
-version-file = "src/_version.py"
+version-file = "src/trustyai_service/_version.py"
 
 [build-system]
 requires = ["hatchling", "hatch-vcs"]
@@ -85,7 +85,7 @@ build-backend = "hatchling.build"
 
 [tool.ruff]
 # Exclude generated protobuf files from all ruff operations
-exclude = ["src/proto/grpc_predict_v2_pb2.py", "src/_version.py"]
+exclude = ["src/trustyai_service/proto/grpc_predict_v2_pb2.py", "src/trustyai_service/_version.py"]
 
 [tool.ruff.lint]
 select = ["ALL"]
@@ -98,27 +98,27 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 # === SRC FILES ===
-"src/core/metrics/drift/jensen_shannon.py" = ["PLR0913"]
-"src/core/metrics/fairness/group/*.py" = ["PLR0913"]
-"src/middleware/gzip_middleware.py" = ["C901", "PLR0911", "PLR0912", "PLR0913", "PLR0915"]
-"src/service/data/datasources/data_source.py" = ["BLE001", "C901", "PLR0912"]
-"src/service/data/modelmesh_parser.py" = ["PLR0913"]
-"src/service/data/storage/**/*.py" = ["SLF001", "BLE001", "PLR0913"]
-"src/service/data/storage/pvc.py" = ["C901", "PLR0912", "PLR0915", "ASYNC240", "PTH110"]
-"src/service/payloads/**/*.py" = ["SLF001"]
-"src/service/payloads/metrics/request_reconciler.py" = ["C901", "PLR0912", "PLR0915"]
-"src/service/prometheus/prometheus_publisher.py" = ["SLF001"]
-"src/service/prometheus/prometheus_scheduler.py" = ["BLE001"]
-"src/endpoints/consumer/*.py" = ["N815"]
-"src/endpoints/consumer/__init__.py" = ["C901"]
-"src/endpoints/consumer/consumer_endpoint.py" = ["BLE001", "C901", "PLR0912", "PLR0913", "PLR0915"]
-"src/endpoints/evaluation/lm_evaluation_harness.py" = ["SLF001"]
-"src/endpoints/explainers/*.py" = ["N815"]
-"src/endpoints/metadata.py" = ["N815", "BLE001", "C901"]
-"src/endpoints/metrics/**/*.py" = ["N815"]
-"src/endpoints/metrics/fairness/group/*.py" = ["BLE001", "TRY300", "TRY301"]
-"src/endpoints/metrics/drift/jensen_shannon.py" = ["TRY300", "TRY301"]
-"src/endpoints/metrics/drift/compare_means.py" = ["C901", "TRY301"]
+"src/trustyai_service/core/metrics/drift/jensen_shannon.py" = ["PLR0913"]
+"src/trustyai_service/core/metrics/fairness/group/*.py" = ["PLR0913"]
+"src/trustyai_service/middleware/gzip_middleware.py" = ["C901", "PLR0911", "PLR0912", "PLR0913", "PLR0915"]
+"src/trustyai_service/service/data/datasources/data_source.py" = ["BLE001", "C901", "PLR0912"]
+"src/trustyai_service/service/data/modelmesh_parser.py" = ["PLR0913"]
+"src/trustyai_service/service/data/storage/**/*.py" = ["SLF001", "BLE001", "PLR0913"]
+"src/trustyai_service/service/data/storage/pvc.py" = ["C901", "PLR0912", "PLR0915", "ASYNC240", "PTH110"]
+"src/trustyai_service/service/payloads/**/*.py" = ["SLF001"]
+"src/trustyai_service/service/payloads/metrics/request_reconciler.py" = ["C901", "PLR0912", "PLR0915"]
+"src/trustyai_service/service/prometheus/prometheus_publisher.py" = ["SLF001"]
+"src/trustyai_service/service/prometheus/prometheus_scheduler.py" = ["BLE001"]
+"src/trustyai_service/endpoints/consumer/*.py" = ["N815"]
+"src/trustyai_service/endpoints/consumer/__init__.py" = ["C901"]
+"src/trustyai_service/endpoints/consumer/consumer_endpoint.py" = ["BLE001", "C901", "PLR0912", "PLR0913", "PLR0915"]
+"src/trustyai_service/endpoints/evaluation/lm_evaluation_harness.py" = ["SLF001"]
+"src/trustyai_service/endpoints/explainers/*.py" = ["N815"]
+"src/trustyai_service/endpoints/metadata.py" = ["N815", "BLE001", "C901"]
+"src/trustyai_service/endpoints/metrics/**/*.py" = ["N815"]
+"src/trustyai_service/endpoints/metrics/fairness/group/*.py" = ["BLE001", "TRY300", "TRY301"]
+"src/trustyai_service/endpoints/metrics/drift/jensen_shannon.py" = ["TRY300", "TRY301"]
+"src/trustyai_service/endpoints/metrics/drift/compare_means.py" = ["C901", "TRY301"]
 # === TEST FILES ===
 "tests/**" = ["S101", "PT019", "SLF001"]
 "tests/core/metrics/test_fairness.py" = ["N803", "N806"]
@@ -136,13 +136,14 @@ addopts = "--dist=loadgroup -n 4"
 [tool.bandit]
 exclude_dirs = ["tests/"]
 skips = [
-    "B104",  # hardcoded_bind_all_interfaces - intentional for service binding (src/main.py)
-    "B108",  # hardcoded_tmp_directory - system temp dir usage (src/service/data/storage/__init__.py)
+    "B104",  # hardcoded_bind_all_interfaces - intentional for service binding (src/trustyai_service/main.py)
+    "B108",  # hardcoded_tmp_directory - system temp dir usage (src/trustyai_service/service/data/storage/__init__.py)
     "B608",  # hardcoded_sql_expressions - false positives from table name construction in MariaDB storage (uses parameterized queries for actual data)
 ]
 
 [tool.pyrefly]
-project-excludes = ["**/proto/**", "src/proto/**", "src/proto/grpc_predict_v2_pb2.py", "src/_version.py"]
+search-path = ["."]
+project-excludes = ["**/proto/**", "src/trustyai_service/proto/**", "src/trustyai_service/proto/grpc_predict_v2_pb2.py", "src/trustyai_service/_version.py"]
 disable-project-excludes-heuristics = true
 # Forward-looking: pyrefly uses this for type checking, not runtime
 python-version = "3.14.0"
@@ -163,13 +164,13 @@ ignore-missing-imports = [
     "hypothesis.*",
     "matplotlib.*",
     # Generated protobuf - excluded from analysis but imported optionally in tests
-    "src.proto.grpc_predict_v2_pb2.*",
+    "trustyai_service.proto.grpc_predict_v2_pb2.*",
 ]
 
 # Broad suppressions for pre-existing type issues.
 # Will be tightened as code PRs fix root causes.
 [[tool.pyrefly.sub-config]]
-matches = "src/**/*.py"
+matches = "src/trustyai_service/**/*.py"
 
 [tool.pyrefly.sub-config.errors]
 bad-argument-type = "ignore"
@@ -206,7 +207,7 @@ unsupported-operation = "ignore"
 
 # Suppress sklearn mixin false positives in fairness metrics
 [[tool.pyrefly.sub-config]]
-matches = "src/core/metrics/fairness/**"
+matches = "src/trustyai_service/core/metrics/fairness/**"
 
 [tool.pyrefly.sub-config.errors]
 missing-attribute = "ignore"
@@ -228,7 +229,7 @@ missing-attribute = "ignore"
 no-access = "ignore"
 
 [[tool.pyrefly.sub-config]]
-matches = "src/service/payloads/metrics/request_reconciler.py"  # Schema_item validated before use (false positive)
+matches = "src/trustyai_service/service/payloads/metrics/request_reconciler.py"  # Schema_item validated before use (false positive)
 
 [tool.pyrefly.sub-config.errors]
 missing-attribute = "ignore"
@@ -242,7 +243,7 @@ bad-argument-type = "ignore"
 
 # Suppress Pydantic Field() default overrides in metric requests
 [[tool.pyrefly.sub-config]]
-matches = "src/endpoints/metrics/**/*.py"
+matches = "src/trustyai_service/endpoints/metrics/**/*.py"
 
 [tool.pyrefly.sub-config.errors]
 bad-override = "ignore"
@@ -252,7 +253,7 @@ missing-attribute = "ignore"
 
 # Suppress storage interface implementation signature differences
 [[tool.pyrefly.sub-config]]
-matches = "src/service/data/storage/**/*.py"
+matches = "src/trustyai_service/service/data/storage/**/*.py"
 
 [tool.pyrefly.sub-config.errors]
 bad-override = "ignore"
@@ -265,7 +266,7 @@ not-iterable = "ignore"
 
 # Suppress h5py/numpy type issues in PVC storage
 [[tool.pyrefly.sub-config]]
-matches = "src/service/data/storage/pvc.py"
+matches = "src/trustyai_service/service/data/storage/pvc.py"
 
 [tool.pyrefly.sub-config.errors]
 unsupported-operation = "ignore"
@@ -278,7 +279,7 @@ bad-param-name-override = "ignore"
 
 # Suppress evaluation harness dynamic model issues
 [[tool.pyrefly.sub-config]]
-matches = "src/endpoints/evaluation/lm_evaluation_harness.py"
+matches = "src/trustyai_service/endpoints/evaluation/lm_evaluation_harness.py"
 
 [tool.pyrefly.sub-config.errors]
 no-matching-overload = "ignore"
@@ -288,7 +289,7 @@ missing-attribute = "ignore"
 # Suppress consumer endpoint union type validation issues
 # Runtime validation narrows union types before calling functions
 [[tool.pyrefly.sub-config]]
-matches = "src/endpoints/consumer/consumer_endpoint.py"
+matches = "src/trustyai_service/endpoints/consumer/consumer_endpoint.py"
 
 [tool.pyrefly.sub-config.errors]
 bad-argument-type = "ignore"
@@ -302,7 +303,7 @@ missing-attribute = "ignore"
 
 # Suppress subprocess and config dict issues in main
 [[tool.pyrefly.sub-config]]
-matches = "src/main.py"
+matches = "src/trustyai_service/main.py"
 
 [tool.pyrefly.sub-config.errors]
 missing-attribute = "ignore"
@@ -310,35 +311,35 @@ unsupported-operation = "ignore"
 
 # Suppress metadata endpoint config issues
 [[tool.pyrefly.sub-config]]
-matches = "src/endpoints/metadata.py"
+matches = "src/trustyai_service/endpoints/metadata.py"
 
 [tool.pyrefly.sub-config.errors]
 unsupported-operation = "ignore"
 
 # Suppress model data tuple return type issues
 [[tool.pyrefly.sub-config]]
-matches = "src/service/data/model_data.py"
+matches = "src/trustyai_service/service/data/model_data.py"
 
 [tool.pyrefly.sub-config.errors]
 bad-return = "ignore"
 
 # Suppress legacy maria reader pandas Index issues
 [[tool.pyrefly.sub-config]]
-matches = "src/service/data/storage/maria/legacy_maria_reader.py"
+matches = "src/trustyai_service/service/data/storage/maria/legacy_maria_reader.py"
 
 [tool.pyrefly.sub-config.errors]
 bad-argument-type = "ignore"
 
 # Suppress storage init int conversion issues
 [[tool.pyrefly.sub-config]]
-matches = "src/service/data/storage/__init__.py"
+matches = "src/trustyai_service/service/data/storage/__init__.py"
 
 [tool.pyrefly.sub-config.errors]
 bad-argument-type = "ignore"
 
 # Suppress typed value optional return types
 [[tool.pyrefly.sub-config]]
-matches = "src/service/payloads/values/typed_value.py"
+matches = "src/trustyai_service/service/payloads/values/typed_value.py"
 
 [tool.pyrefly.sub-config.errors]
 bad-return = "ignore"
