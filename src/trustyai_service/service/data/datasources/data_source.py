@@ -7,8 +7,10 @@ import pandas as pd
 
 from trustyai_service.service.constants import (
     GROUND_TRUTH_SUFFIX,
+    INPUT_SUFFIX,
     INTERNAL_DATA_FILENAME,
     METADATA_FILENAME,
+    OUTPUT_SUFFIX,
     UNLABELED_TAG,
 )
 from trustyai_service.service.data.exceptions import (
@@ -26,6 +28,17 @@ from trustyai_service.service.payloads.service.schema_item import SchemaItem
 from trustyai_service.service.payloads.values.data_type import DataType
 
 logger: logging.Logger = logging.getLogger(__name__)
+
+
+def _safe_datatype(types: list[str] | None, index: int) -> DataType:
+    """Look up a DataType from a stored types list, defaulting to UNKNOWN."""
+    if types is None or index >= len(types):
+        return DataType.UNKNOWN
+    try:
+        return DataType(types[index])
+    except ValueError:
+        return DataType.UNKNOWN
+
 
 # Array dimensionality constants for NumPy shape checks
 ARRAY_DIM_2D = 2
@@ -198,15 +211,20 @@ class DataSource:
             input_rows, output_rows, metadata_rows = await model_data.row_counts()
             input_names, output_names, metadata_names = await model_data.column_names()
 
+            input_dataset = model_id + INPUT_SUFFIX
+            input_types = await self.storage_interface.get_column_types(input_dataset)
             input_items = {}
             for i, name in enumerate(input_names):
-                # Default to STRING type - in a real implementation this would be determined from the data
-                input_items[name] = SchemaItem(DataType.STRING, name, i)
+                dtype = _safe_datatype(input_types, i)
+                input_items[name] = SchemaItem(dtype, name, i)
             input_schema = Schema(input_items)
 
+            output_dataset = model_id + OUTPUT_SUFFIX
+            output_types = await self.storage_interface.get_column_types(output_dataset)
             output_items = {}
             for i, name in enumerate(output_names):
-                output_items[name] = SchemaItem(DataType.STRING, name, i)
+                dtype = _safe_datatype(output_types, i)
+                output_items[name] = SchemaItem(dtype, name, i)
             output_schema = Schema(output_items)
 
             metadata = StorageMetadata(
