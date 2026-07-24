@@ -222,7 +222,9 @@ class HealthCheckRegistry:
             )
 
         try:
-            from trustyai_service.service.data.storage import MariaDBConfig  # noqa: PLC0415
+            from trustyai_service.service.data.storage import (
+                MariaDBConfig,
+            )
             from trustyai_service.service.data.storage.maria.utils import (  # noqa: PLC0415
                 MariaConnectionManager,
             )

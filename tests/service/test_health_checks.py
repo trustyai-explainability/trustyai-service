@@ -249,7 +249,9 @@ class TestHealthCheckRegistry:
             assert "not installed" in check.data["error"]
 
     @patch("trustyai_service.service.health_checks.MARIADB_AVAILABLE", True)
-    @patch("trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__enter__")
+    @patch(
+        "trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__enter__"
+    )
     @patch(
         "trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__exit__",
         return_value=False,
@@ -292,7 +294,9 @@ class TestHealthCheckRegistry:
         )
 
     @patch("trustyai_service.service.health_checks.MARIADB_AVAILABLE", True)
-    @patch("trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__enter__")
+    @patch(
+        "trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__enter__"
+    )
     @patch(
         "trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__exit__",
         return_value=False,
@@ -317,7 +321,9 @@ class TestHealthCheckRegistry:
             assert "Connection refused" in check.data["error"]
 
     @patch("trustyai_service.service.health_checks.MARIADB_AVAILABLE", True)
-    @patch("trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__enter__")
+    @patch(
+        "trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__enter__"
+    )
     @patch(
         "trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__exit__",
         return_value=False,
@@ -342,7 +348,9 @@ class TestHealthCheckRegistry:
             assert "Network unreachable" in check.data["error"]
 
     @patch("trustyai_service.service.health_checks.MARIADB_AVAILABLE", True)
-    @patch("trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__enter__")
+    @patch(
+        "trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__enter__"
+    )
     @patch(
         "trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__exit__",
         return_value=False,
@@ -393,8 +401,6 @@ class TestHealthCheckRegistry:
             # Need to reload module to pick up new ENVIRONMENT value
             import importlib  # noqa: PLC0415
 
-            import trustyai_service.service.health_checks  # noqa: PLC0415
-
             # Save original module state for restoration
             original_module = sys.modules.get("trustyai_service.service.health_checks")
 
@@ -413,7 +419,9 @@ class TestHealthCheckRegistry:
             finally:
                 # Restore original module to prevent state leakage
                 if original_module is not None:
-                    sys.modules["trustyai_service.service.health_checks"] = original_module
+                    sys.modules["trustyai_service.service.health_checks"] = (
+                        original_module
+                    )
                 else:
                     sys.modules.pop("trustyai_service.service.health_checks", None)
 
@@ -490,10 +498,10 @@ class TestHealthEndpoints:
                 HTTPStatus.SERVICE_UNAVAILABLE,
             ]
             assert data["status"] in ["ready", "not_ready"]
-            assert len(data["details"]) == 2
+            assert len(data["checks"]) == 2
             # At least one check should report (structure test)
             assert all(
-                "name" in check and "status" in check for check in data["details"]
+                "name" in check and "status" in check for check in data["checks"]
             )
 
     def test_readiness_endpoint_failure(self, client) -> None:
@@ -506,7 +514,7 @@ class TestHealthEndpoints:
             assert response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
             data = response.json()
             assert data["status"] == "not_ready"
-            assert len(data["details"]) == 2
+            assert len(data["checks"]) == 2
 
     def test_liveness_endpoint(self, client) -> None:
         """Test /q/health/live endpoint."""
@@ -514,8 +522,8 @@ class TestHealthEndpoints:
         assert response.status_code == HTTPStatus.OK
         data = response.json()
         assert data["status"] == "alive"
-        assert len(data["details"]) == 1
-        assert data["details"][0]["name"] == "Application"
+        assert len(data["checks"]) == 1
+        assert data["checks"][0]["name"] == "Application"
 
     def test_general_health_endpoint_success(self, client, tmp_path) -> None:
         """Test /q/health endpoint returns correct format.

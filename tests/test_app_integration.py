@@ -24,13 +24,13 @@ class TestAppCoreEndpoints:
         response = client.get("/q/health/ready")
         assert response.status_code in [HTTPStatus.OK, HTTPStatus.SERVICE_UNAVAILABLE]
         assert response.json()["status"] in ["ready", "not_ready"]
-        assert "details" in response.json()
+        assert "checks" in response.json()
 
         # Liveness probe - should always succeed
         response = client.get("/q/health/live")
         assert response.status_code == HTTPStatus.OK
         assert response.json()["status"] == "alive"
-        assert "details" in response.json()
+        assert "checks" in response.json()
 
     def test_openapi_docs_accessible(self) -> None:
         """Test that OpenAPI documentation is accessible."""
