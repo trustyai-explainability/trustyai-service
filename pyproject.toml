@@ -12,12 +12,12 @@ dependencies = [
     "pandas>=3.0,<4",
     "polars>=1.2,<2",
     "fastapi>=0.116,<0.140",
-    "fastapi-utils>=0.8,<0.9",
     "uvicorn>=0.38,<1",
     "typing-inspect>=0.9,<1",
     "prometheus-client>=0.22,<0.26",
     "pydantic>=2.13,<3",
     "hypercorn>=0.18,<0.19",
+    "protobuf>=7,<8",        # Security: Resolves CVE-2026-0994 (HIGH - Buffer overflow)
     "cryptography>=48.0.1,<50",  # Security: Resolves CVE-2026-26007 (HIGH)
     "h5py>=3.13,<4",
     "isodate>=0.7,<0.8",
@@ -58,6 +58,7 @@ eval = [
     "nltk>=3.10.0,<4",        # Security: Resolves CVE-2025-14009 (CRITICAL - Zip Slip), CVE-2026-33236, CVE-2026-33231 (HIGH), and 2 MEDIUM
     "sqlitedict>=2.1,<3",    # Security: Resolves CVE-2024-35515 (HIGH)
 ]
+# Note: grpcio/grpcio-tools removed - incompatible with protobuf v7, unused (protoc used instead)
 mariadb = ["mariadb>=1.1,<1.2", "javaobj-py3>=0.5,<0.6"]
 
 [tool.hatch.version]
@@ -82,6 +83,7 @@ requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [tool.ruff]
+# Exclude generated protobuf files from all ruff operations
 exclude = ["src/trustyai_service/proto/grpc_predict_v2_pb2.py", "src/trustyai_service/_version.py"]
 
 [tool.ruff.lint]
@@ -123,9 +125,9 @@ ignore = [
 "tests/endpoints/metrics/drift/factory.py" = ["PLR0913", "C901", "PLR0915"]
 "tests/endpoints/test_upload_endpoint_maria.py" = ["S105"]
 "tests/endpoints/test_upload_endpoint_pvc.py" = ["PLR0913"]
+"tests/service/data/test_utils.py" = ["PLR0913", "UP037"]  # UP037: Keep quoted annotations for optional protobuf imports
 "tests/service/serialization/test_rows.py" = ["PLR2004"]
 "tests/service/data/storage/maria/*.py" = ["ANN", "PLR2004", "ARG002"]  # Pytest style: no test method annotations, exact assertion values, setup-only fixtures
-"tests/service/data/test_utils.py" = ["PLR0913", "UP037"]  # UP037: Keep quoted annotations for optional protobuf imports
 
 [tool.pytest.ini_options]
 asyncio_mode = "strict"
@@ -149,7 +151,6 @@ python-version = "3.14.0"
 ignore-missing-imports = [
     "aif360.*",
     "fastapi.*",
-    "fastapi_utils.*",
     "hypercorn.*",
     "isodate.*",
     "javaobj.*",
@@ -162,6 +163,8 @@ ignore-missing-imports = [
     "pytest.*",
     "hypothesis.*",
     "matplotlib.*",
+    # Generated protobuf - excluded from analysis but imported optionally in tests
+    "trustyai_service.proto.grpc_predict_v2_pb2.*",
 ]
 
 # Broad suppressions for pre-existing type issues.
