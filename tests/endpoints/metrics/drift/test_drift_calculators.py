@@ -91,7 +91,9 @@ class TestCompareMeansCalculator:
 class TestKSTestCalculator:
     """Tests for calculate_kstest_metric."""
 
-    @patch("trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov.get_data_source")
+    @patch(
+        "trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov.get_data_source"
+    )
     @pytest.mark.asyncio
     async def test_returns_named_values(self, mock_get_ds: MagicMock) -> None:
         """Calculator returns per-feature KS statistics."""

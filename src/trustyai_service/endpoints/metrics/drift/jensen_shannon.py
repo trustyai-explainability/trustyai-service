@@ -17,8 +17,13 @@ from trustyai_service.core.metrics.drift.jensen_shannon import (
     DEFAULT_THRESHOLD,
     JensenShannon,
 )
-from trustyai_service.service.data.shared_data_source import DataSource, get_shared_data_source
-from trustyai_service.service.payloads.metrics.base_metric_request import BaseMetricRequest
+from trustyai_service.service.data.shared_data_source import (
+    DataSource,
+    get_shared_data_source,
+)
+from trustyai_service.service.payloads.metrics.base_metric_request import (
+    BaseMetricRequest,
+)
 from trustyai_service.service.prometheus.metric_value_carrier import MetricValueCarrier
 from trustyai_service.service.prometheus.prometheus_scheduler import PrometheusScheduler
 from trustyai_service.service.prometheus.shared_prometheus_scheduler import (

@@ -12,7 +12,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from trustyai_service.core.metrics.drift.kolmogorov_smirnov import KolmogorovSmirnov
 from trustyai_service.service.data.datasources.data_source import DataSource
 from trustyai_service.service.data.shared_data_source import get_shared_data_source
-from trustyai_service.service.payloads.metrics.base_metric_request import BaseMetricRequest
+from trustyai_service.service.payloads.metrics.base_metric_request import (
+    BaseMetricRequest,
+)
 from trustyai_service.service.prometheus.metric_value_carrier import MetricValueCarrier
 from trustyai_service.service.prometheus.prometheus_scheduler import PrometheusScheduler
 from trustyai_service.service.prometheus.shared_prometheus_scheduler import (
