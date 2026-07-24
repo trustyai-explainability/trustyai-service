@@ -641,13 +641,13 @@ class TestCompareMeansEndpoints:
     test_retrieve_default_tags_with_none_metric_name = (
         factory.make_retrieve_default_tags_with_none_metric_name_test(
             request_class=CompareMeansMetricRequest,
-            expected_metric_name="CompareMeans",
+            expected_metric_name="COMPAREMEANS",
         )
     )
 
     test_retrieve_default_tags_called_directly_by_prometheus_publisher = (
         factory.make_retrieve_default_tags_called_directly_by_prometheus_publisher_test(
             request_class=CompareMeansMetricRequest,
-            expected_metric_name="CompareMeans",
+            expected_metric_name="COMPAREMEANS",
         )
     )
