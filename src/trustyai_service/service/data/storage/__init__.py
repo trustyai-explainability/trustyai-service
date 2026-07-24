@@ -65,7 +65,12 @@ class MariaDBConfig:
         self.database = os.environ.get("DATABASE_DATABASE") or os.environ.get(
             "DATABASE_NAME"
         )
-        self.port = int(os.environ.get("DATABASE_PORT", "3306"))
+        port_str = os.environ.get("DATABASE_PORT", "3306")
+        try:
+            self.port = int(port_str)
+        except ValueError as e:
+            msg = f"Invalid DATABASE_PORT value '{port_str}': must be a valid integer"
+            raise ValueError(msg) from e
 
         ssl_ca_path = os.environ.get("DATABASE_TLS_CA_CERT", "/etc/tls/db/ca.crt")
         self.ssl_ca = ssl_ca_path if Path(ssl_ca_path).exists() else None
