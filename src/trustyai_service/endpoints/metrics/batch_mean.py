@@ -17,6 +17,7 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from trustyai_service.endpoints.paths import BATCH_MEAN, IDENTITY
 from trustyai_service.service.data.datasources.data_source import DataSource
 from trustyai_service.service.data.shared_data_source import get_shared_data_source
 from trustyai_service.service.payloads.metrics.base_metric_request import (
@@ -135,7 +136,7 @@ except (AttributeError, TypeError) as e:
 # ============================================================================
 
 
-@router.post("/metrics/batchmean")
+@router.post(BATCH_MEAN.compute)
 async def compute_batch_mean(request: BatchMeanRequest) -> dict:
     """Compute the mean of a column's last N values."""
     logger.info(
@@ -189,7 +190,7 @@ async def compute_batch_mean(request: BatchMeanRequest) -> dict:
     return response
 
 
-@router.get("/metrics/batchmean/definition")
+@router.get(BATCH_MEAN.definition)
 async def get_batch_mean_definition() -> dict:
     """Provide a general definition of the Batch Mean metric."""
     return {
@@ -201,7 +202,7 @@ async def get_batch_mean_definition() -> dict:
     }
 
 
-@router.post("/metrics/batchmean/definition")
+@router.post(BATCH_MEAN.definition)
 async def interpret_batch_mean_value(request: BatchMeanRequest) -> dict:
     """Provide a specific, plain-english interpretation of a Batch Mean value."""
     return {
@@ -213,7 +214,7 @@ async def interpret_batch_mean_value(request: BatchMeanRequest) -> dict:
     }
 
 
-@router.post("/metrics/batchmean/request")
+@router.post(BATCH_MEAN.request)
 async def schedule_batch_mean(request: BatchMeanRequest) -> dict:
     """Schedule a recurring computation of Batch Mean metric."""
     request_id = uuid.uuid4()
@@ -226,7 +227,7 @@ async def schedule_batch_mean(request: BatchMeanRequest) -> dict:
     return {"requestId": str(request_id)}
 
 
-@router.delete("/metrics/batchmean/request")
+@router.delete(BATCH_MEAN.request)
 async def delete_batch_mean_schedule(schedule: ScheduleId) -> dict:
     """Delete a recurring computation of Batch Mean metric."""
     logger.info("Deleting BatchMean schedule: %s", schedule.requestId)
@@ -249,7 +250,7 @@ async def delete_batch_mean_schedule(schedule: ScheduleId) -> dict:
     }
 
 
-@router.get("/metrics/batchmean/requests")
+@router.get(BATCH_MEAN.requests)
 async def list_batch_mean_requests() -> dict:
     """List the currently scheduled computations of Batch Mean metric."""
     scheduler = get_prometheus_scheduler()
@@ -287,42 +288,42 @@ class IdentityMetricRequest(BatchMeanRequest):
     """Deprecated: Use BatchMeanRequest instead."""
 
 
-@router.post("/metrics/identity", deprecated=True)
+@router.post(IDENTITY.compute, deprecated=True)
 async def compute_identity_metric(request: IdentityMetricRequest) -> dict:
     """Compute identity metric (deprecated). Use /metrics/batchmean instead."""
     log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
     return await compute_batch_mean(request)
 
 
-@router.get("/metrics/identity/definition", deprecated=True)
+@router.get(IDENTITY.definition, deprecated=True)
 async def get_identity_definition() -> dict:
     """Get identity metric definition (deprecated). Use /metrics/batchmean/definition instead."""
     log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
     return await get_batch_mean_definition()
 
 
-@router.post("/metrics/identity/definition", deprecated=True)
+@router.post(IDENTITY.definition, deprecated=True)
 async def interpret_identity_value(request: IdentityMetricRequest) -> dict:
     """Interpret identity metric value (deprecated). Use /metrics/batchmean/definition instead."""
     log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
     return await interpret_batch_mean_value(request)
 
 
-@router.post("/metrics/identity/request", deprecated=True)
+@router.post(IDENTITY.request, deprecated=True)
 async def schedule_identity(request: IdentityMetricRequest) -> dict:
     """Schedule identity metric (deprecated). Use /metrics/batchmean/request instead."""
     log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
     return await schedule_batch_mean(request)
 
 
-@router.delete("/metrics/identity/request", deprecated=True)
+@router.delete(IDENTITY.request, deprecated=True)
 async def delete_identity_schedule(schedule: ScheduleId) -> dict:
     """Delete identity metric schedule (deprecated). Use /metrics/batchmean/request instead."""
     log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
     return await delete_batch_mean_schedule(schedule)
 
 
-@router.get("/metrics/identity/requests", deprecated=True)
+@router.get(IDENTITY.requests, deprecated=True)
 async def list_identity_requests() -> dict:
     """List identity metric schedules (deprecated). Use /metrics/batchmean/requests instead."""
     log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)

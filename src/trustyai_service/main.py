@@ -56,6 +56,11 @@ from trustyai_service.endpoints.metrics.metrics_info import (
 )
 
 # Middleware
+from trustyai_service.endpoints.paths import (
+    HEALTH_LIVE,
+    HEALTH_READY,
+    PROMETHEUS_METRICS,
+)
 from trustyai_service.middleware.gzip_middleware import GzipRequestMiddleware
 from trustyai_service.service.prometheus.shared_prometheus_scheduler import (
     get_shared_prometheus_scheduler,
@@ -230,7 +235,7 @@ async def root() -> dict[str, str]:
     return {"message": "Welcome to TrustyAI Explainability Service"}
 
 
-@app.get("/q/metrics")
+@app.get(PROMETHEUS_METRICS)
 async def metrics(_request: Request) -> Response:
     """Prometheus metrics endpoint.
 
@@ -241,7 +246,7 @@ async def metrics(_request: Request) -> Response:
 
 
 # Readiness probe
-@app.get("/q/health/ready")
+@app.get(HEALTH_READY)
 async def readiness_probe() -> JSONResponse:
     """Kubernetes readiness probe endpoint.
 
@@ -251,7 +256,7 @@ async def readiness_probe() -> JSONResponse:
 
 
 # Liveness probe endpoint
-@app.get("/q/health/live")
+@app.get(HEALTH_LIVE)
 async def liveness_probe() -> JSONResponse:
     """Kubernetes liveness probe endpoint.
 

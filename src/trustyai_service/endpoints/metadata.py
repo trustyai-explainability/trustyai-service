@@ -7,6 +7,12 @@ from typing import Never
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from trustyai_service.endpoints.paths import (
+    INFO,
+    INFO_INFERENCE_IDS,
+    INFO_NAMES,
+    INFO_TAGS,
+)
 from trustyai_service.service.constants import INPUT_SUFFIX, OUTPUT_SUFFIX
 from trustyai_service.service.data.datasources.data_source import DataSource
 from trustyai_service.service.data.shared_data_source import get_shared_data_source
@@ -77,7 +83,7 @@ class ModelIdRequest(BaseModel):
     modelId: str
 
 
-@router.get("/info")
+@router.get(INFO)
 async def get_service_info() -> dict[str, dict]:
     """Get a comprehensive overview of the model inference datasets collected by TrustyAI.
 
@@ -218,7 +224,7 @@ async def get_service_info() -> dict[str, dict]:
         return service_metadata
 
 
-@router.get("/info/inference/ids/{model}", response_model=None)
+@router.get(INFO_INFERENCE_IDS, response_model=None)
 async def get_inference_ids(model: str, inference_type: str = "all") -> Never:
     """Get a list of all inference ids within a particular model inference."""
     logger.info(
@@ -230,7 +236,7 @@ async def get_inference_ids(model: str, inference_type: str = "all") -> Never:
     )
 
 
-@router.get("/info/names")
+@router.get(INFO_NAMES)
 async def get_column_names() -> dict[str, dict]:
     """Get the current name mappings for all models."""
     try:
@@ -355,7 +361,7 @@ async def get_column_names() -> dict[str, dict]:
         return name_mappings
 
 
-@router.post("/info/names")
+@router.post(INFO_NAMES)
 async def apply_column_names(name_mapping: NameMapping) -> dict[str, str]:
     """Apply a set of human-readable column names to a particular inference."""
     logger.info("Applying column names for model: %s", name_mapping.modelId)
@@ -413,7 +419,7 @@ async def apply_column_names(name_mapping: NameMapping) -> dict[str, str]:
         return {"message": "Feature and output name mapping successfully applied."}
 
 
-@router.delete("/info/names")
+@router.delete(INFO_NAMES)
 async def remove_column_names(request: ModelIdRequest) -> dict[str, str]:
     """Remove any column names that have been applied to a particular inference."""
     model_id = request.modelId
@@ -461,7 +467,7 @@ async def remove_column_names(request: ModelIdRequest) -> dict[str, str]:
         return {"message": "Feature and output name mapping successfully cleared."}
 
 
-@router.get("/info/tags", response_model=None)
+@router.get(INFO_TAGS, response_model=None)
 async def get_tags() -> Never:
     """Retrieve the tags that have been applied to a particular model dataset, as well as a count of that tag's frequency within the dataset."""
     raise HTTPException(
@@ -470,7 +476,7 @@ async def get_tags() -> Never:
     )
 
 
-@router.post("/info/tags", response_model=None)
+@router.post(INFO_TAGS, response_model=None)
 async def apply_tags(data_tagging: DataTagging) -> Never:
     """Apply per-row tags to a particular inference model dataset, to label certain rows as training or drift reference data, etc."""
     logger.info("Applying tags for model: %s", data_tagging.modelId)
