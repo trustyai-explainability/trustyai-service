@@ -297,7 +297,9 @@ async def schedule_compare_means(request: CompareMeansMetricRequest) -> dict[str
 
 
 @router.delete("/metrics/drift/comparemeans/request")
-async def delete_compare_means_schedule(schedule: ScheduleId) -> dict[str, str]:
+async def delete_compare_means_schedule(
+    schedule: ScheduleId, metric_name: str = METRIC_NAME
+) -> dict[str, str]:
     """Delete a recurring computation of CompareMeans metric."""
     # Get the scheduler and validate availability
     scheduler = get_prometheus_scheduler()
@@ -319,7 +321,7 @@ async def delete_compare_means_schedule(schedule: ScheduleId) -> dict[str, str]:
         logger.info("Deleting %s schedule: %s", METRIC_NAME, schedule.requestId)
 
         # Delete from scheduler
-        await scheduler.delete(METRIC_NAME, request_uuid)
+        await scheduler.delete(metric_name, request_uuid)
 
     except HTTPException:
         raise
@@ -342,7 +344,9 @@ async def delete_compare_means_schedule(schedule: ScheduleId) -> dict[str, str]:
 
 
 @router.get("/metrics/drift/comparemeans/requests")
-async def list_compare_means_requests() -> dict[str, list[dict[str, Any]]]:
+async def list_compare_means_requests(
+    metric_name: str = METRIC_NAME,
+) -> dict[str, list[dict[str, Any]]]:
     """List the currently scheduled computations of CompareMeans metric."""
     # Get the scheduler and validate availability
     scheduler = get_prometheus_scheduler()
@@ -353,8 +357,7 @@ async def list_compare_means_requests() -> dict[str, list[dict[str, Any]]]:
         )
 
     try:
-        # Get all requests for CompareMeans
-        requests = scheduler.get_requests(METRIC_NAME)
+        requests = scheduler.get_requests(metric_name)
 
         # Convert to list format expected by client
         requests_list = []
@@ -475,7 +478,9 @@ async def delete_meanshift_schedule(schedule: ScheduleId) -> dict[str, str]:
     /metrics/drift/comparemeans/request instead.
     """
     log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
-    return await delete_compare_means_schedule(schedule)
+    return await delete_compare_means_schedule(
+        schedule, metric_name=DEPRECATED_METRIC_NAME
+    )
 
 
 @router.get("/metrics/drift/meanshift/requests", deprecated=True)
@@ -486,7 +491,7 @@ async def list_meanshift_requests() -> dict[str, list[dict[str, Any]]]:
     /metrics/drift/comparemeans/requests instead.
     """
     log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
-    return await list_compare_means_requests()
+    return await list_compare_means_requests(metric_name=DEPRECATED_METRIC_NAME)
 
 
 async def calculate_compare_means_metric(
