@@ -9,17 +9,18 @@ from http import HTTPStatus
 from typing import Any
 from unittest import mock
 
+import numpy as np
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from tests.service.data.test_utils import ModelMeshTestData
 from trustyai_service.endpoints.consumer.consumer_endpoint import (
     router as consumer_router,
 )
-from trustyai_service.service.data.modelmesh_parser import (
-    ModelMeshPayloadParser,
-    PartialPayload,
+from trustyai_service.endpoints.consumer.consumer_endpoint import (
+    write_reconciled_data,
 )
+from trustyai_service.service.data.modelmesh_parser import ModelMeshPayloadParser, PartialPayload
+from tests.service.data.test_utils import ModelMeshTestData
 
 
 class TestConsumerEndpointReconciliation(unittest.TestCase):
@@ -345,6 +346,57 @@ class TestConsumerEndpointValidation(unittest.TestCase):
         response = self.client.post("/consumer/kserve/v2", json=payload)
         assert response.status_code == HTTPStatus.BAD_REQUEST
         assert "id" in response.json()["detail"]
+
+
+class TestWriteReconciledDataObservationCount(unittest.TestCase):
+    """Test that write_reconciled_data increments the observation count."""
+
+    async def _test_observation_count_incremented(self) -> None:
+        """Reconciliation increments cached observation count by batch size."""
+        mock_storage = mock.AsyncMock()
+        mock_metadata = mock.MagicMock()
+        mock_data_source = mock.AsyncMock()
+        mock_data_source.get_metadata = mock.AsyncMock(return_value=mock_metadata)
+
+        input_array = np.zeros((5, 3))
+        output_array = np.zeros((5, 1))
+
+        with (
+            mock.patch(
+                "trustyai_service.endpoints.consumer.consumer_endpoint.get_global_storage_interface",
+                return_value=mock_storage,
+            ),
+            mock.patch(
+                "trustyai_service.endpoints.consumer.consumer_endpoint.ModelData",
+            ) as mock_model_data,
+            mock.patch(
+                "trustyai_service.endpoints.consumer.consumer_endpoint.get_data_source",
+                return_value=mock_data_source,
+            ),
+        ):
+            mock_model_data.return_value.shapes = mock.AsyncMock(
+                return_value=[(5, 3), (5, 1), (5, 4)]
+            )
+
+            await write_reconciled_data(
+                input_array=input_array,
+                input_names=["a", "b", "c"],
+                output_array=output_array,
+                output_names=["out"],
+                model_id="test-model",
+                tags=["tag1"],
+                id_="req-123",
+            )
+
+        mock_metadata.set_recorded_inferences.assert_called_once_with(
+            recorded_inferences=True,
+        )
+        mock_metadata.increment_observations.assert_called_once_with(5)
+
+
+TestWriteReconciledDataObservationCount.test_observation_count_incremented = (  # type: ignore[attr-defined]
+    lambda self: run_async_test(self._test_observation_count_incremented())
+)
 
 
 if __name__ == "__main__":
