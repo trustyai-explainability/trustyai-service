@@ -57,15 +57,14 @@ podman build -t $IMAGE_NAME --build-arg EXTRAS="$EXTRAS" .
 ```
 
 ### Available Extras
-Pass these extras as a comma separated list, e.g., `"mariadb,protobuf"`
-* `protobuf`: To process model inference data from ModelMesh models, you can install with `protobuf` support. Otherwise, only KServe models will be supported.
+Pass these extras as a comma separated list, e.g., `"mariadb,eval"`
 * `eval`: To enable the Language Model Evaluation servers, install with `eval` support.
 * `mariadb` (If installing locally, install the [MariaDB Connector/C](https://mariadb.com/docs/server/connect/programming-languages/c/install/) first.)
 
 ### Examples
 ```bash
-uv pip install ".[mariadb,protobuf,eval]"
-podman build -t $IMAGE_NAME --build-arg EXTRAS="mariadb,protobuf,eval" .
+uv pip install ".[mariadb,eval]"
+podman build -t $IMAGE_NAME --build-arg EXTRAS="mariadb,eval" .
 ```
 
 ## 🏃Running 🏃‍♀️
@@ -113,26 +112,6 @@ python -m pytest -v
 To run tests with coverage reporting:
 ```bash
 python -m pytest --cov=src
-```
-
----
-## 🔄 Protobuf Support 🔄
-To process model inference data from ModelMesh models, you can install protobuf support. Otherwise, only KServe models will be supported.
-
-### Generating Protobuf Code
-After installing dependencies, generate Python code from the protobuf definitions:
-
-```bash
-# From the project root
-bash scripts/generate_protos.sh
-```
-
-### Testing Protobuf Functionality
-Run the tests for the protobuf implementation:
-
-```bash
-# From the project root
-python -m pytest tests/service/data/test_modelmesh_parser.py -v
 ```
 
 ---

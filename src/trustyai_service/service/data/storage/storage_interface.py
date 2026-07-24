@@ -9,7 +9,6 @@ from trustyai_service.endpoints.consumer import (
     KServeInferenceResponse,
 )
 from trustyai_service.service.data.metadata.storage_metadata import StorageMetadata
-from trustyai_service.service.data.modelmesh_parser import PartialPayload
 
 
 class StorageInterface(ABC):
@@ -79,7 +78,7 @@ class StorageInterface(ABC):
     @abstractmethod
     async def persist_partial_payload(
         self,
-        payload: PartialPayload | KServeInferenceRequest | KServeInferenceResponse,
+        payload: KServeInferenceRequest | KServeInferenceResponse,
         payload_id: str,
         *,
         is_input: bool,
@@ -88,8 +87,8 @@ class StorageInterface(ABC):
 
     @abstractmethod
     async def get_partial_payload(
-        self, payload_id: str, *, is_input: bool, is_modelmesh: bool
-    ) -> PartialPayload | KServeInferenceRequest | KServeInferenceResponse | None:
+        self, payload_id: str, *, is_input: bool
+    ) -> KServeInferenceRequest | KServeInferenceResponse | None:
         """Retrieve a stored partial payload."""
 
     @abstractmethod
@@ -98,46 +97,6 @@ class StorageInterface(ABC):
 
         Args:
             payload_id: The unique identifier for the inference request
-            is_input: Whether to delete an input payload (True) or output payload (False)
-
-        """
-
-    @abstractmethod
-    async def persist_modelmesh_payload(
-        self, payload: PartialPayload, request_id: str, *, is_input: bool
-    ) -> None:
-        """Store a ModelMesh partial payload (either input or output) for later reconciliation.
-
-        Args:
-            payload: The partial payload to store
-            request_id: A unique identifier for this inference request
-            is_input: Whether this is an input payload (True) or output payload (False)
-
-        """
-
-    @abstractmethod
-    async def get_modelmesh_payload(
-        self, request_id: str, *, is_input: bool
-    ) -> PartialPayload | None:
-        """Retrieve a stored ModelMesh payload by request ID.
-
-        Args:
-            request_id: The unique identifier for the inference request
-            is_input: Whether to retrieve an input payload (True) or output payload (False)
-
-        Returns:
-            The retrieved payload, or None if not found
-
-        """
-
-    @abstractmethod
-    async def delete_modelmesh_payload(
-        self, request_id: str, *, is_input: bool
-    ) -> None:
-        """Delete a stored ModelMesh payload.
-
-        Args:
-            request_id: The unique identifier for the inference request
             is_input: Whether to delete an input payload (True) or output payload (False)
 
         """

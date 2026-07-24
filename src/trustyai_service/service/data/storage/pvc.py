@@ -26,7 +26,6 @@ from trustyai_service.service.constants import (
 )
 from trustyai_service.service.data.exceptions import StorageReadError
 from trustyai_service.service.data.metadata.storage_metadata import StorageMetadata
-from trustyai_service.service.data.modelmesh_parser import PartialPayload
 from trustyai_service.service.data.storage.exceptions import DeserializationError
 from trustyai_service.service.payloads.service.schema import Schema
 from trustyai_service.service.payloads.service.schema_item import SchemaItem
@@ -689,15 +688,14 @@ class PVCStorage(StorageInterface):
 
     async def persist_partial_payload(
         self,
-        payload: PartialPayload | KServeInferenceRequest | KServeInferenceResponse,
+        payload: KServeInferenceRequest | KServeInferenceResponse,
         payload_id: str,
         *,
         is_input: bool,
     ) -> None:
-        """Save a KServe or ModelMesh payload to disk using secure JSON + gzip serialization."""
+        """Save a KServe payload to disk using secure JSON + gzip serialization."""
         dataset_name = PARTIAL_INPUT_NAME if is_input else PARTIAL_OUTPUT_NAME
         serialized_data = serialize_model(payload)
-        is_modelmesh = isinstance(payload, PartialPayload)
 
         async with self.get_lock(dataset_name):
             try:
@@ -711,21 +709,17 @@ class PVCStorage(StorageInterface):
                     dataset.attrs[payload_id] = np.void(serialized_data)
 
                 logger.debug(
-                    "Stored %s %s payload for request ID: %s",
-                    "ModelMesh" if is_modelmesh else "KServe",
+                    "Stored KServe %s payload for request ID: %s",
                     "input" if is_input else "output",
                     payload_id,
                 )
             except Exception:
-                logger.exception(
-                    "Error storing %s payload",
-                    "ModelMesh" if is_modelmesh else "KServe",
-                )
+                logger.exception("Error storing KServe payload")
                 raise
 
     async def get_partial_payload(
-        self, payload_id: str, *, is_input: bool, is_modelmesh: bool
-    ) -> PartialPayload | KServeInferenceRequest | KServeInferenceResponse | None:
+        self, payload_id: str, *, is_input: bool
+    ) -> KServeInferenceRequest | KServeInferenceResponse | None:
         """Retrieve a partial payload from HDF5 storage.
 
         Uses JSON + gzip deserialization.
@@ -752,28 +746,24 @@ class PVCStorage(StorageInterface):
                             serialized_data = bytes(serialized_data)
 
                         # Determine target class based on payload type
-                        if is_modelmesh:
-                            target_class = PartialPayload
-                        elif is_input:  # kserve input
+                        if is_input:
                             target_class = KServeInferenceRequest
-                        else:  # kserve output
+                        else:
                             target_class = KServeInferenceResponse
 
                         return deserialize_model(serialized_data, target_class)
                     except Exception as e:
                         # Deserialization failure indicates data corruption or format issue
                         # This is distinct from "not found" and should be raised to caller
-                        logger.exception(
-                            "Deserialization failed for payload '%s' (%s, %s)",
-                            payload_id,
-                            "ModelMesh" if is_modelmesh else "KServe",
-                            "input" if is_input else "output",
-                        )
-                        payload_type = "ModelMesh" if is_modelmesh else "KServe"
                         direction = "input" if is_input else "output"
+                        logger.exception(
+                            "Deserialization failed for payload '%s' (KServe, %s)",
+                            payload_id,
+                            direction,
+                        )
                         raise DeserializationError(
                             payload_id=payload_id,
-                            reason=f"Failed to deserialize {payload_type} "
+                            reason=f"Failed to deserialize KServe "
                             f"{direction} payload from HDF5 storage",
                             original_exception=e,
                         ) from e
@@ -786,8 +776,7 @@ class PVCStorage(StorageInterface):
         except Exception:
             # Unexpected storage errors (file system, permissions, etc.)
             logger.exception(
-                "Unexpected error retrieving %s payload '%s'",
-                "ModelMesh" if is_modelmesh else "KServe",
+                "Unexpected error retrieving KServe payload '%s'",
                 payload_id,
             )
             raise
@@ -827,23 +816,3 @@ class PVCStorage(StorageInterface):
             return
         except Exception:
             logger.exception("Error deleting payload")
-
-    async def persist_modelmesh_payload(
-        self, payload: PartialPayload, request_id: str, *, is_input: bool
-    ) -> None:
-        """Persist a ModelMesh payload to storage."""
-        await self.persist_partial_payload(payload, request_id, is_input=is_input)
-
-    async def get_modelmesh_payload(
-        self, request_id: str, *, is_input: bool
-    ) -> PartialPayload | None:
-        """Retrieve a ModelMesh payload from storage."""
-        return await self.get_partial_payload(
-            request_id, is_input=is_input, is_modelmesh=True
-        )
-
-    async def delete_modelmesh_payload(
-        self, request_id: str, *, is_input: bool
-    ) -> None:
-        """Delete a ModelMesh payload from storage."""
-        await self.delete_partial_payload(request_id, is_input=is_input)
