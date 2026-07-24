@@ -4,6 +4,10 @@ Disabled endpoints are excluded from the FastAPI router registry at startup.
 Each flag can be overridden at deployment time via the environment variable
 ``TRUSTYAI_ENABLE_<FLAG_NAME>`` (upper-cased), e.g.
 ``TRUSTYAI_ENABLE_DRIFT=false`` disables the entire drift group.
+
+``ENDPOINTS`` is evaluated once at import time. Environment variable changes
+after process start have no effect. Tests should ``patch.dict`` the
+``ENDPOINTS`` dict directly rather than mutating ``os.environ``.
 """
 
 import logging
@@ -40,6 +44,7 @@ ENDPOINTS: dict[str, bool] = {
     "drift_ks_test": _flag("drift_ks_test", default=True),
     "drift_jensen_shannon": _flag("drift_jensen_shannon", default=True),
     "drift_compare_means": _flag("drift_compare_means", default=True),
+    # Explainers default to disabled: experimental, computationally expensive
     "explainer": _flag("explainer", default=False),
     "explainer_local": _flag("explainer_local", default=False),
     "explainer_global": _flag("explainer_global", default=False),

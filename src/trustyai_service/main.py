@@ -20,10 +20,16 @@ from hypercorn.config import Config
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 # Endpoint routers
-from trustyai_service.endpoints.consumer.consumer_endpoint import router as consumer_router
+from trustyai_service.endpoints.consumer.consumer_endpoint import (
+    router as consumer_router,
+)
 from trustyai_service.endpoints.data.data_upload import router as data_upload_router
-from trustyai_service.endpoints.explainers.global_explainer import router as explainers_global_router
-from trustyai_service.endpoints.explainers.local_explainer import router as explainers_local_router
+from trustyai_service.endpoints.explainers.global_explainer import (
+    router as explainers_global_router,
+)
+from trustyai_service.endpoints.explainers.local_explainer import (
+    router as explainers_local_router,
+)
 from trustyai_service.endpoints.metadata import router as metadata_router
 from trustyai_service.endpoints.metrics.batch_mean import router as batch_mean_router
 from trustyai_service.endpoints.metrics.drift.compare_means import (
@@ -32,10 +38,14 @@ from trustyai_service.endpoints.metrics.drift.compare_means import (
 from trustyai_service.endpoints.metrics.drift.jensen_shannon import (
     router as drift_jensenshannon_router,
 )
-from trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov import router as drift_kstest_router
+from trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov import (
+    router as drift_kstest_router,
+)
 from trustyai_service.endpoints.metrics.fairness.group.dir import router as dir_router
 from trustyai_service.endpoints.metrics.fairness.group.spd import router as spd_router
-from trustyai_service.endpoints.metrics.metrics_info import router as metrics_info_router
+from trustyai_service.endpoints.metrics.metrics_info import (
+    router as metrics_info_router,
+)
 
 # Middleware
 from trustyai_service.middleware.gzip_middleware import GzipRequestMiddleware
@@ -67,7 +77,9 @@ logging.getLogger("hypercorn.protocol").setLevel(logging.INFO)
 logging.getLogger("hypercorn.access").setLevel(logging.INFO)
 
 # Ensure scheduler debug logging
-scheduler_logger = logging.getLogger("trustyai_service.service.prometheus.prometheus_scheduler")
+scheduler_logger = logging.getLogger(
+    "trustyai_service.service.prometheus.prometheus_scheduler"
+)
 scheduler_logger.setLevel(logging.DEBUG)
 logger = logging.getLogger(__name__)
 

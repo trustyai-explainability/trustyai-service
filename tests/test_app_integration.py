@@ -257,7 +257,9 @@ def _build_app_with_flags(overrides: dict[str, bool]) -> FastAPI:
     test_app = FastAPI()
     patched = {**ENDPOINTS, **overrides}
 
-    with patch.dict("trustyai_service.service.config.registry.ENDPOINTS", patched, clear=True):
+    with patch.dict(
+        "trustyai_service.service.config.registry.ENDPOINTS", patched, clear=True
+    ):
         register_if_enabled_with_group(
             test_app,
             dir_router,
@@ -326,7 +328,7 @@ class TestFeatureFlagGating:
         paths = response.json()["paths"]
 
         fairness_paths = [
-            p for p in paths if "/fairness/" in p or "/dir" in p or "/spd" in p
+            p for p in paths if p.startswith(("/dir", "/spd")) or "/fairness/" in p
         ]
         assert fairness_paths == []
 

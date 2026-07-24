@@ -10,7 +10,10 @@ logger = logging.getLogger(__name__)
 
 
 def _is_enabled(flag: str) -> bool:
-    return ENDPOINTS.get(flag, False)
+    if flag not in ENDPOINTS:
+        logger.warning("Unknown feature flag '%s' queried; treating as disabled", flag)
+        return False
+    return ENDPOINTS[flag]
 
 
 def _include_router(
@@ -19,12 +22,14 @@ def _include_router(
     tag: str | None = None,
     prefix: str | None = None,
 ) -> None:
-    kwargs: dict[str, str | list[str]] = {}
-    if tag:
-        kwargs["tags"] = [tag]
-    if prefix:
-        kwargs["prefix"] = prefix
-    app.include_router(router, **kwargs)  # type: ignore[arg-type]
+    if tag and prefix:
+        app.include_router(router, tags=[tag], prefix=prefix)
+    elif tag:
+        app.include_router(router, tags=[tag])
+    elif prefix:
+        app.include_router(router, prefix=prefix)
+    else:
+        app.include_router(router)
 
 
 def register_if_enabled(
