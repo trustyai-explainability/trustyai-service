@@ -12,7 +12,10 @@ from pathlib import Path
 import mariadb
 import numpy as np
 
-from trustyai_service.endpoints.consumer import KServeInferenceRequest, KServeInferenceResponse
+from trustyai_service.endpoints.consumer import (
+    KServeInferenceRequest,
+    KServeInferenceResponse,
+)
 from trustyai_service.service.data.modelmesh_parser import PartialPayload
 from trustyai_service.service.data.storage.exceptions import DeserializationError
 from trustyai_service.service.data.storage.maria.legacy_maria_reader import (
@@ -27,7 +30,10 @@ from trustyai_service.service.data.storage.maria.utils import (
 from trustyai_service.service.data.storage.storage_interface import StorageInterface
 from trustyai_service.service.serialization import deserialize_model, serialize_model
 from trustyai_service.service.serialization.detection import safe_gzip_decompress
-from trustyai_service.service.serialization.encoders import json_decoder_hook, json_encoder
+from trustyai_service.service.serialization.encoders import (
+    json_decoder_hook,
+    json_encoder,
+)
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.StreamHandler())
