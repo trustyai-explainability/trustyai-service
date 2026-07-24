@@ -3,8 +3,9 @@
 from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import narwhals.stable.v2 as nw
 import numpy as np
-import pandas as pd
+import polars as pl
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -25,8 +26,7 @@ client = TestClient(app)
 class TestCompareMeansEndpoints:
     """Unified endpoint tests for CompareMeans metric."""
 
-    # Pandas DataFrame tests
-    test_compute_endpoint_pandas = factory.make_compute_endpoint_test(
+    test_compute_endpoint = factory.make_compute_endpoint_test(
         metric_name="CompareMeans",
         module_path="trustyai_service.endpoints.metrics.drift.compare_means",
         endpoint_path="/metrics/drift/comparemeans",
@@ -47,32 +47,6 @@ class TestCompareMeansEndpoints:
             "p_value",
             "alpha",
         ],
-        df_type="Pandas",
-    )
-
-    # Polars DataFrame tests
-    test_compute_endpoint_polars = factory.make_compute_endpoint_test(
-        metric_name="CompareMeans",
-        module_path="trustyai_service.endpoints.metrics.drift.compare_means",
-        endpoint_path="/metrics/drift/comparemeans",
-        client=client,
-        request_payload={
-            "modelId": "test-model",
-            "referenceTag": "baseline",
-            "fitColumns": ["feature1", "feature2"],
-            "batchSize": 100,
-            "alpha": 0.05,
-            "equalVar": False,
-            "nanPolicy": "omit",
-        },
-        expected_response_keys=[
-            "status",
-            "value",
-            "drift_detected",
-            "p_value",
-            "alpha",
-        ],
-        df_type="Polars",
     )
 
     test_definition_endpoint = factory.make_definition_endpoint_test(
@@ -140,17 +114,23 @@ class TestCompareMeansEndpoints:
         ref_b = rng.normal(0, 1, 100)
         cur_b = rng.normal(0.5, 1, 100)  # Larger mean shift, same variance
 
-        reference_df = pd.DataFrame(
-            {
-                "featureA": ref_a,
-                "featureB": ref_b,
-            },
+        reference_df = nw.from_native(
+            pl.DataFrame(
+                {
+                    "featureA": ref_a,
+                    "featureB": ref_b,
+                },
+            ),
+            eager_only=True,
         )
-        current_df = pd.DataFrame(
-            {
-                "featureA": cur_a,
-                "featureB": cur_b,
-            },
+        current_df = nw.from_native(
+            pl.DataFrame(
+                {
+                    "featureA": cur_a,
+                    "featureB": cur_b,
+                },
+            ),
+            eager_only=True,
         )
 
         with patch(
@@ -229,8 +209,12 @@ class TestCompareMeansEndpoints:
             50,
         )  # Large shift, same variance -> low p-value
 
-        reference_df = pd.DataFrame({"featureA": ref_a, "featureB": ref_b})
-        current_df = pd.DataFrame({"featureA": cur_a, "featureB": cur_b})
+        reference_df = nw.from_native(
+            pl.DataFrame({"featureA": ref_a, "featureB": ref_b}), eager_only=True
+        )
+        current_df = nw.from_native(
+            pl.DataFrame({"featureA": cur_a, "featureB": cur_b}), eager_only=True
+        )
 
         with patch(
             "trustyai_service.endpoints.metrics.drift.compare_means.get_data_source",
@@ -295,18 +279,18 @@ class TestCompareMeansEndpoints:
         expected_error_substring="referenceTag is required",
     )
 
-    test_compute_missing_fit_columns_derives_from_metadata = (
-        factory.make_compute_endpoint_test(
-            metric_name="CompareMeans",
-            module_path="trustyai_service.endpoints.metrics.drift.compare_means",
-            endpoint_path="/metrics/drift/comparemeans",
-            client=client,
-            request_payload={
-                "modelId": "test-model",
-                "referenceTag": "baseline",
-            },
-            expected_response_keys=["status", "value", "drift_detected"],
-        )
+    test_compute_missing_fit_columns = factory.make_compute_endpoint_error_test(
+        metric_name="CompareMeans",
+        module_path="trustyai_service.endpoints.metrics.drift.compare_means",
+        endpoint_path="/metrics/drift/comparemeans",
+        client=client,
+        request_payload={
+            "modelId": "test-model",
+            "referenceTag": "baseline",
+            # Missing fitColumns
+        },
+        expected_status_code=HTTPStatus.BAD_REQUEST,
+        expected_error_substring="fitColumns is required",
     )
 
     test_compute_invalid_feature = factory.make_compute_endpoint_error_test(
@@ -541,11 +525,14 @@ class TestCompareMeansEndpoints:
         exclude_none=True.
         """
         # Create sample dataframes
-        sample_df = pd.DataFrame(
-            {
-                "feature1": [1.0, 2.0, 3.0, 4.0, 5.0],
-                "feature2": [10.0, 20.0, 30.0, 40.0, 50.0],
-            },
+        sample_df = nw.from_native(
+            pl.DataFrame(
+                {
+                    "feature1": [1.0, 2.0, 3.0, 4.0, 5.0],
+                    "feature2": [10.0, 20.0, 30.0, 40.0, 50.0],
+                },
+            ),
+            eager_only=True,
         )
 
         with patch(

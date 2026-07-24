@@ -4,8 +4,9 @@ from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
+import narwhals.stable.v2 as nw
 import numpy as np
-import pandas as pd
+import polars as pl
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -19,15 +20,18 @@ client = TestClient(app)
 MODULE = "trustyai_service.endpoints.metrics.batch_mean"
 
 
-def _make_dataframe(n: int = 100, seed: int = 42) -> pd.DataFrame:
+def _make_dataframe(n: int = 100, seed: int = 42) -> nw.DataFrame:
     """Create a reproducible test dataframe with numeric columns."""
     rng = np.random.default_rng(seed)
-    return pd.DataFrame(
-        {
-            "feature1": rng.standard_normal(n),
-            "feature2": rng.uniform(0, 10, n),
-            "output": rng.integers(0, 2, n).astype(float),
-        }
+    return nw.from_native(
+        pl.DataFrame(
+            {
+                "feature1": rng.standard_normal(n),
+                "feature2": rng.uniform(0, 10, n),
+                "output": rng.integers(0, 2, n).astype(float),
+            }
+        ),
+        eager_only=True,
     )
 
 
@@ -66,7 +70,9 @@ class TestBatchMeanCompute:
     @patch(f"{MODULE}.get_data_source")
     def test_compute_correct_mean(self, mock_ds: MagicMock) -> None:
         """Mean of [2, 4, 6, 8, 10] is 6.0."""
-        df = pd.DataFrame({"col": [2.0, 4.0, 6.0, 8.0, 10.0]})
+        df = nw.from_native(
+            pl.DataFrame({"col": [2.0, 4.0, 6.0, 8.0, 10.0]}), eager_only=True
+        )
         mock_data_source = MagicMock()
         mock_data_source.get_organic_dataframe = AsyncMock(return_value=df)
         mock_ds.return_value = mock_data_source
@@ -81,7 +87,7 @@ class TestBatchMeanCompute:
     @patch(f"{MODULE}.get_data_source")
     def test_compute_with_thresholds_inside(self, mock_ds: MagicMock) -> None:
         """Value within threshold bounds reports outsideBounds=False."""
-        df = pd.DataFrame({"col": [5.0, 5.0, 5.0]})
+        df = nw.from_native(pl.DataFrame({"col": [5.0, 5.0, 5.0]}), eager_only=True)
         mock_data_source = MagicMock()
         mock_data_source.get_organic_dataframe = AsyncMock(return_value=df)
         mock_ds.return_value = mock_data_source
@@ -101,7 +107,7 @@ class TestBatchMeanCompute:
     @patch(f"{MODULE}.get_data_source")
     def test_compute_with_thresholds_outside(self, mock_ds: MagicMock) -> None:
         """Value outside threshold bounds reports outsideBounds=True."""
-        df = pd.DataFrame({"col": [100.0, 100.0]})
+        df = nw.from_native(pl.DataFrame({"col": [100.0, 100.0]}), eager_only=True)
         mock_data_source = MagicMock()
         mock_data_source.get_organic_dataframe = AsyncMock(return_value=df)
         mock_ds.return_value = mock_data_source
@@ -134,7 +140,9 @@ class TestBatchMeanCompute:
     def test_compute_empty_data_returns_404(self, mock_ds: MagicMock) -> None:
         """Empty dataframe returns 404."""
         mock_data_source = MagicMock()
-        mock_data_source.get_organic_dataframe = AsyncMock(return_value=pd.DataFrame())
+        mock_data_source.get_organic_dataframe = AsyncMock(
+            return_value=nw.from_native(pl.DataFrame(), eager_only=True)
+        )
         mock_ds.return_value = mock_data_source
 
         response = client.post("/metrics/batchmean", json=_base_payload())
@@ -143,7 +151,7 @@ class TestBatchMeanCompute:
     @patch(f"{MODULE}.get_data_source")
     def test_compute_missing_column_raises(self, mock_ds: MagicMock) -> None:
         """Requesting a non-existent column raises ValueError."""
-        df = pd.DataFrame({"other_col": [1.0, 2.0]})
+        df = nw.from_native(pl.DataFrame({"other_col": [1.0, 2.0]}), eager_only=True)
         mock_data_source = MagicMock()
         mock_data_source.get_organic_dataframe = AsyncMock(return_value=df)
         mock_ds.return_value = mock_data_source
@@ -300,7 +308,9 @@ class TestDeprecatedIdentityEndpoints:
     @patch(f"{MODULE}.get_data_source")
     def test_deprecated_compute(self, mock_ds: MagicMock) -> None:
         """Deprecated compute forwards to BatchMean and returns correct value."""
-        df = pd.DataFrame({"feature1": [1.0, 2.0, 3.0]})
+        df = nw.from_native(
+            pl.DataFrame({"feature1": [1.0, 2.0, 3.0]}), eager_only=True
+        )
         mock_data_source = MagicMock()
         mock_data_source.get_organic_dataframe = AsyncMock(return_value=df)
         mock_ds.return_value = mock_data_source

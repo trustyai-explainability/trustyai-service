@@ -21,8 +21,7 @@ client = TestClient(app)
 class TestKSTestEndpoints:
     """Unified endpoint tests for KS Test metric."""
 
-    # Pandas DataFrame tests
-    test_compute_endpoint_pandas = factory.make_compute_endpoint_test(
+    test_compute_endpoint = factory.make_compute_endpoint_test(
         metric_name="KSTest",
         module_path="trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov",
         endpoint_path="/metrics/drift/kstest",
@@ -40,29 +39,6 @@ class TestKSTestEndpoints:
             "p_value",
             "alpha",
         ],
-        df_type="Pandas",
-    )
-
-    # Polars DataFrame tests
-    test_compute_endpoint_polars = factory.make_compute_endpoint_test(
-        metric_name="KSTest",
-        module_path="trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov",
-        endpoint_path="/metrics/drift/kstest",
-        client=client,
-        request_payload={
-            "modelId": "test-model",
-            "referenceTag": "baseline",
-            "fitColumns": ["feature1", "feature2"],
-            "batchSize": 100,
-        },
-        expected_response_keys=[
-            "status",
-            "value",
-            "drift_detected",
-            "p_value",
-            "alpha",
-        ],
-        df_type="Polars",
     )
 
     test_definition_endpoint = factory.make_definition_endpoint_test(
@@ -117,18 +93,18 @@ class TestKSTestEndpoints:
         expected_error_substring="referenceTag is required",
     )
 
-    test_compute_missing_fit_columns_derives_from_metadata = (
-        factory.make_compute_endpoint_test(
-            metric_name="KSTest",
-            module_path="trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov",
-            endpoint_path="/metrics/drift/kstest",
-            client=client,
-            request_payload={
-                "modelId": "test-model",
-                "referenceTag": "baseline",
-            },
-            expected_response_keys=["status", "value", "drift_detected"],
-        )
+    test_compute_missing_fit_columns = factory.make_compute_endpoint_error_test(
+        metric_name="KSTest",
+        module_path="trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov",
+        endpoint_path="/metrics/drift/kstest",
+        client=client,
+        request_payload={
+            "modelId": "test-model",
+            "referenceTag": "baseline",
+            # Missing fitColumns
+        },
+        expected_status_code=HTTPStatus.BAD_REQUEST,
+        expected_error_substring="fitColumns is required",
     )
 
     test_compute_invalid_feature = factory.make_compute_endpoint_error_test(
@@ -375,7 +351,6 @@ class TestKSTestEndpoints:
             "p_value",
             "alpha",
         ],
-        df_type="Polars",
     )
 
     # ========================================================================

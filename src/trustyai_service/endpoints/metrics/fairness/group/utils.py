@@ -3,8 +3,8 @@
 import logging
 from typing import Any
 
+import narwhals.stable.v2 as nw
 import numpy as np
-import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field
 
 from trustyai_service.service.data.datasources.data_source import DataSource
@@ -159,8 +159,8 @@ def _extract_values(
 
 
 def prepare_fairness_data(
-    dataframe: pd.DataFrame, request: GroupMetricRequest
-) -> tuple[pd.DataFrame, pd.DataFrame, str, np.ndarray]:
+    dataframe: nw.DataFrame, request: GroupMetricRequest
+) -> tuple[nw.DataFrame, nw.DataFrame, str, np.ndarray]:
     """Prepare data for fairness metric calculation by filtering into privileged and unprivileged groups.
 
     This function separates the input dataframe into two demographic groups based on a protected attribute
@@ -222,10 +222,9 @@ def prepare_fairness_data(
         raise ValueError(msg)
 
     # Filter the dataframe into privileged and unprivileged groups
-    privileged_mask = dataframe[protected_attr].isin(privileged_values)
-    unprivileged_mask = dataframe[protected_attr].isin(unprivileged_values)
-
-    privileged_data = dataframe[privileged_mask]
-    unprivileged_data = dataframe[unprivileged_mask]
+    privileged_data = dataframe.filter(nw.col(protected_attr).is_in(privileged_values))
+    unprivileged_data = dataframe.filter(
+        nw.col(protected_attr).is_in(unprivileged_values)
+    )
 
     return privileged_data, unprivileged_data, outcome_name, np.array(favorable_values)

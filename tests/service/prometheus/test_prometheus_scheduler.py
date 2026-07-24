@@ -4,7 +4,8 @@ import asyncio
 import uuid
 from unittest.mock import AsyncMock, Mock, patch
 
-import pandas as pd
+import narwhals.stable.v2 as nw
+import polars as pl
 import pytest
 from prometheus_client import CollectorRegistry, generate_latest
 
@@ -80,7 +81,10 @@ class TestPrometheusScheduler:
         mock.get_num_observations = AsyncMock(return_value=1000)
         mock.has_recorded_inferences = AsyncMock(return_value=True)
         mock.get_organic_dataframe = AsyncMock(
-            return_value=pd.DataFrame({"feature": [1, 2, 3], "target": [0, 1, 0]}),
+            return_value=nw.from_native(
+                pl.DataFrame({"feature": [1, 2, 3], "target": [0, 1, 0]}),
+                eager_only=True,
+            ),
         )
         return mock
 
@@ -525,7 +529,7 @@ class TestPrometheusScheduler:
         """Test calculate with multiple requests for the same metric type."""
 
         def mock_spd_calculator(
-            _df: pd.DataFrame,
+            _df: nw.DataFrame,
             request: MockMetricRequest,
         ) -> MetricValueCarrier:
             # Return different values based on model
