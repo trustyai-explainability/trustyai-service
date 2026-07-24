@@ -36,11 +36,11 @@ class GzipRequestMiddleware:
     removing the Content-Encoding header, and updating Content-Length.
     Includes protection against decompression bombs via max_size limit.
 
-    Defaults: paths=["/data/upload"], max_size=16MB, fail_on_error=True
+    Defaults: paths=["*"] (all paths), max_size=16MB, fail_on_error=True
     """
 
     # Default configuration constants
-    DEFAULT_PATHS = ("/data/upload",)  # Tuple to avoid mutable default
+    DEFAULT_PATHS = ("*",)  # All paths: Content-Encoding is a transport-level concern
     DEFAULT_ALLOWED_CONTENT_TYPES = (
         "application/json",
         "application/cloudevents+json",
@@ -86,7 +86,7 @@ class GzipRequestMiddleware:
 
         Args:
             app: ASGI application
-            paths: Path patterns to apply (supports wildcards, default: ["/data/upload"])
+            paths: Path patterns to apply (supports wildcards, default: ["*"] = all paths)
             max_size: Max decompressed bytes (default: 16MB)
             fail_on_error: Return error on failure vs pass through (default: True)
             allowed_content_types: Eligible content types
