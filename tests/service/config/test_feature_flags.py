@@ -27,7 +27,6 @@ class TestEndpointFlags:
             "explainer",
             "explainer_local",
             "explainer_global",
-            "data_download",
         }
         assert set(ENDPOINTS.keys()) == expected
 
