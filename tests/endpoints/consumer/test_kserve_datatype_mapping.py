@@ -1,5 +1,8 @@
 """Tests for KServe datatype → internal DataType mapping."""
 
+from pathlib import Path
+from unittest.mock import patch
+
 import pytest
 
 from trustyai_service.endpoints.consumer import (
@@ -9,8 +12,14 @@ from trustyai_service.endpoints.consumer import (
     KServeInferenceRequest,
     KServeInferenceResponse,
 )
-from trustyai_service.endpoints.consumer.consumer_endpoint import process_payload
-from trustyai_service.service.data.datasources.data_source import _safe_datatype
+from trustyai_service.endpoints.consumer.consumer_endpoint import (
+    process_payload,
+)
+from trustyai_service.service.data.datasources.data_source import (
+    DataSource,
+    _safe_datatype,
+)
+from trustyai_service.service.data.storage.pvc import PVCStorage
 from trustyai_service.service.payloads.values.data_type import DataType
 
 
@@ -192,3 +201,90 @@ class TestSafeDataTypeFallback:
         assert _safe_datatype(["DOUBLE", "INT32", "FLOAT"], 0) == DataType.DOUBLE
         assert _safe_datatype(["DOUBLE", "INT32", "FLOAT"], 1) == DataType.INT32
         assert _safe_datatype(["DOUBLE", "INT32", "FLOAT"], 2) == DataType.FLOAT
+
+
+_STORAGE_PATCH = "trustyai_service.service.data.model_data.get_global_storage_interface"
+
+
+class TestDataTypeRoundTrip:
+    """Verify data types survive the full round-trip through PVC storage and get_metadata().
+
+    Tests the chain: set_column_types() → HDF5 attribute → get_column_types() → get_metadata() schema.
+    """
+
+    @pytest.fixture
+    def pvc_storage(self, tmp_path: Path) -> PVCStorage:
+        """Create a temporary PVC storage backend."""
+        return PVCStorage(str(tmp_path), data_file="test.hdf5")
+
+    @pytest.mark.asyncio
+    async def test_fp64_roundtrip(self, pvc_storage: PVCStorage) -> None:
+        """FP64 inputs + FP32 output persist as DOUBLE/FLOAT in get_metadata() schema."""
+        await pvc_storage.write_data(
+            "m_inputs", [[25.0, 50000.0], [30.0, 60000.0]], ["age", "income"]
+        )
+        await pvc_storage.write_data("m_outputs", [[0.95], [0.42]], ["score"])
+        await pvc_storage.write_data("m_metadata", [["t"], ["t"]], ["tags"])
+        await pvc_storage.set_column_types("m_inputs", ["DOUBLE", "DOUBLE"])
+        await pvc_storage.set_column_types("m_outputs", ["FLOAT"])
+
+        with patch(_STORAGE_PATCH, return_value=pvc_storage):
+            data_source = DataSource()
+            data_source.storage_interface = pvc_storage
+            metadata = await data_source.get_metadata("m")
+
+        assert metadata.input_schema.items["age"].type == DataType.DOUBLE
+        assert metadata.input_schema.items["income"].type == DataType.DOUBLE
+        assert metadata.output_schema.items["score"].type == DataType.FLOAT
+
+    @pytest.mark.asyncio
+    async def test_mixed_types_roundtrip(self, pvc_storage: PVCStorage) -> None:
+        """INT32 + BOOL inputs persist with correct types, not STRING."""
+        await pvc_storage.write_data(
+            "mx_inputs", [[10, True], [20, False]], ["count", "flag"]
+        )
+        await pvc_storage.write_data("mx_outputs", [[1], [0]], ["pred"])
+        await pvc_storage.write_data("mx_metadata", [["t"], ["t"]], ["tags"])
+        await pvc_storage.set_column_types("mx_inputs", ["INT32", "BOOL"])
+        await pvc_storage.set_column_types("mx_outputs", ["INT64"])
+
+        with patch(_STORAGE_PATCH, return_value=pvc_storage):
+            data_source = DataSource()
+            data_source.storage_interface = pvc_storage
+            metadata = await data_source.get_metadata("mx")
+
+        assert metadata.input_schema.items["count"].type == DataType.INT32
+        assert metadata.input_schema.items["flag"].type == DataType.BOOL
+        assert metadata.output_schema.items["pred"].type == DataType.INT64
+
+    @pytest.mark.asyncio
+    async def test_old_data_without_types_returns_unknown(
+        self, pvc_storage: PVCStorage
+    ) -> None:
+        """Data written without set_column_types falls back to UNKNOWN, not STRING."""
+        await pvc_storage.write_data("legacy_inputs", [[1.0, 2.0]], ["f1", "f2"])
+        await pvc_storage.write_data("legacy_outputs", [[0.5]], ["out"])
+        await pvc_storage.write_data("legacy_metadata", [["tag"]], ["tags"])
+
+        with patch(_STORAGE_PATCH, return_value=pvc_storage):
+            data_source = DataSource()
+            data_source.storage_interface = pvc_storage
+            metadata = await data_source.get_metadata("legacy")
+
+        assert metadata.input_schema.items["f1"].type == DataType.UNKNOWN
+        assert metadata.output_schema.items["out"].type == DataType.UNKNOWN
+
+    def test_process_payload_types_match_storage_values(self) -> None:
+        """Types from process_payload() are valid DataType.value strings for set_column_types()."""
+        request = KServeInferenceRequest(
+            id="chain-test",
+            inputs=[
+                KServeData(name="x", shape=[1], datatype="FP64", data=[1.0]),
+                KServeData(name="y", shape=[1], datatype="INT32", data=[42]),
+            ],
+        )
+        _, _, types = process_payload(request, lambda p: p.inputs)
+
+        for dt in types:
+            assert isinstance(dt, DataType)
+            assert dt.value == DataType(dt.value).value
