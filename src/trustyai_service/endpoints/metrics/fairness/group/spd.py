@@ -5,7 +5,7 @@ import uuid
 from http import HTTPStatus
 from typing import Annotated
 
-import pandas as pd
+import narwhals.stable.v2 as nw
 from fastapi import APIRouter, HTTPException, Query
 
 from trustyai_service.core.metrics.fairness.group.group_statistical_parity_difference import (
@@ -33,7 +33,7 @@ SPD_FAIRNESS_TARGET = 0  # Perfect fairness target for SPD (difference of 0.0)
 
 
 def calculate_spd_metric(
-    dataframe: pd.DataFrame,
+    dataframe: nw.DataFrame,
     request: GroupMetricRequest,
 ) -> MetricValueCarrier:
     """Calculate the Statistical Parity Difference metric for the given dataframe and request.
@@ -75,8 +75,8 @@ def calculate_spd_metric(
         raise ValueError(msg)
 
     # Prepare data in the format expected by GroupStatisticalParityDifference
-    privileged_array = privileged_data[[outcome_name]].to_numpy()
-    unprivileged_array = unprivileged_data[[outcome_name]].to_numpy()
+    privileged_array = privileged_data.select(outcome_name).to_numpy()
+    unprivileged_array = unprivileged_data.select(outcome_name).to_numpy()
 
     # Calculate SPD using the core implementation
     spd_value = GroupStatisticalParityDifference.calculate(
@@ -138,7 +138,7 @@ async def compute_spd(
         ) from e
 
     # Validate data availability (moved outside try block to avoid TRY301)
-    if dataframe.empty:
+    if dataframe.is_empty():
         raise HTTPException(
             status_code=HTTPStatus.NOT_FOUND,
             detail=f"No data found for model: {request.model_id}",

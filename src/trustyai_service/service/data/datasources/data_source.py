@@ -3,7 +3,9 @@
 import logging
 import os
 
+import narwhals.stable.v2 as nw
 import pandas as pd
+from pandas.errors import DataError
 
 from trustyai_service.service.constants import (
     GROUND_TRUTH_SUFFIX,
@@ -56,36 +58,30 @@ class DataSource:
 
     # DATAFRAME READS
 
-    async def get_dataframe(self, model_id: str) -> pd.DataFrame:
+    async def get_dataframe(self, model_id: str) -> nw.DataFrame:
         """Get a dataframe for the given model ID using the default batch size.
 
         Args:
             model_id: The model ID
 
         Returns:
-            A pandas DataFrame with the model data
+            A Narwhals DataFrame with the model data
 
         Raises:
             DataframeCreateError: If the dataframe cannot be created
 
         """
         batch_size = int(os.environ.get("SERVICE_BATCH_SIZE", "100"))
-        return await self.get_dataframe_with_batch_size(model_id, batch_size)
+        native_df = await self._get_native_dataframe(model_id, batch_size)
+        return nw.from_native(native_df, eager_only=True)
 
-    async def get_dataframe_with_batch_size(
+    async def _get_native_dataframe(
         self, model_id: str, batch_size: int
     ) -> pd.DataFrame:
-        """Get a dataframe consisting of the last `batch_size` rows of data from the corresponding model.
+        """Build a native pandas DataFrame from the last `batch_size` rows of stored data.
 
-        Args:
-            model_id: The model ID
-            batch_size: The number of rows to include
-
-        Returns:
-            A pandas DataFrame with the model data
-
-        Raises:
-            DataframeCreateError: If the dataframe cannot be created
+        This is an internal method. Public callers should use get_dataframe() or
+        get_organic_dataframe(), which wrap the result as a Narwhals DataFrame.
 
         """
         try:
@@ -152,7 +148,7 @@ class DataSource:
 
     async def get_organic_dataframe(
         self, model_id: str, batch_size: int
-    ) -> pd.DataFrame:
+    ) -> nw.DataFrame:
         """Get a dataframe with only organic data (not synthetic).
 
         Args:
@@ -160,19 +156,24 @@ class DataSource:
             batch_size: The number of rows to include
 
         Returns:
-            A pandas DataFrame with organic model data
+            A Narwhals DataFrame with organic model data
 
         Raises:
             DataframeCreateError: If the dataframe cannot be created
 
         """
-        df = await self.get_dataframe_with_batch_size(model_id, batch_size)
+        try:
+            df = await self._get_native_dataframe(model_id, batch_size)
 
-        # Filter out any rows with the unlabeled tag (synthetic data)
-        if UNLABELED_TAG in df.columns:
-            df = df[~df[UNLABELED_TAG].fillna(value=False)]
+            # Filter out any rows with the unlabeled tag (synthetic data)
+            if UNLABELED_TAG in df.columns:
+                df = df[~df[UNLABELED_TAG].fillna(value=False)]
 
-        return df
+        except DataError as e:
+            msg = f"Data error filtering organic data for model={model_id}: {e!s}"
+            raise DataframeCreateError(msg) from e
+
+        return nw.from_native(df, eager_only=True)
 
     # METADATA READS
 
@@ -346,14 +347,14 @@ class DataSource:
         """
         return await self.has_metadata(self.get_ground_truth_name(model_id))
 
-    async def get_ground_truths(self, model_id: str) -> pd.DataFrame:
+    async def get_ground_truths(self, model_id: str) -> nw.DataFrame:
         """Get ground-truth dataframe for this particular model.
 
         Args:
             model_id: The model ID for which these ground truths apply
 
         Returns:
-            The ground-truth dataframe
+            The ground-truth Narwhals dataframe
 
         """
         return await self.get_dataframe(self.get_ground_truth_name(model_id))
