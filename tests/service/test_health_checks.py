@@ -23,13 +23,28 @@ from trustyai_service.service.health_checks import (
     perform_readiness_checks,
 )
 
-# Create a fake mariadb module for tests when mariadb extra is not installed
-# This allows @patch("mariadb.connect") to work even without the package
-if "mariadb" not in sys.modules:
-    fake_mariadb = ModuleType("mariadb")
-    fake_mariadb.Error = type("Error", (Exception,), {})  # type: ignore[attr-defined]
-    fake_mariadb.connect = MagicMock()  # type: ignore[attr-defined]
-    sys.modules["mariadb"] = fake_mariadb
+
+@pytest.fixture(autouse=True)
+def _fake_mariadb_module() -> Generator[None, None, None]:
+    """Provide a temporary mariadb module for patching in tests.
+
+    Creates a fake mariadb module when the mariadb extra is not installed,
+    allowing @patch("mariadb.connect") to work. Restores original state
+    after the test to prevent contamination across the test session.
+    """
+    original = sys.modules.get("mariadb")
+    if original is None:
+        fake_mariadb = ModuleType("mariadb")
+        fake_mariadb.Error = type("Error", (Exception,), {})  # type: ignore[attr-defined]
+        fake_mariadb.connect = MagicMock()  # type: ignore[attr-defined]
+        sys.modules["mariadb"] = fake_mariadb
+    try:
+        yield
+    finally:
+        if original is None:
+            sys.modules.pop("mariadb", None)
+        else:
+            sys.modules["mariadb"] = original
 
 
 @pytest.fixture(autouse=True)
