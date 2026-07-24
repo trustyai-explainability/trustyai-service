@@ -15,7 +15,7 @@ from http import HTTPStatus
 import numpy as np
 import pandas as pd
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from trustyai_service.service.data.datasources.data_source import DataSource
 from trustyai_service.service.data.shared_data_source import get_shared_data_source
@@ -59,19 +59,13 @@ class BatchMeanRequest(BaseMetricRequest):
     model_config = ConfigDict(populate_by_name=True)
 
     model_id: str = Field(alias="modelId")
-    metric_name: str | None = Field(default=None, alias="metricName")
+    metric_name: str = Field(default=METRIC_NAME, alias="metricName")
     request_name: str | None = Field(default=None, alias="requestName")
     batch_size: int = Field(default=DEFAULT_BATCH_SIZE, ge=1, alias="batchSize")
 
     column_name: str = Field(alias="columnName")
     lower_threshold: float | None = Field(default=None, alias="lowerThreshold")
     upper_threshold: float | None = Field(default=None, alias="upperThreshold")
-
-    @model_validator(mode="after")
-    def _set_default_metric_name(self) -> "BatchMeanRequest":
-        if self.metric_name is None:
-            self.metric_name = METRIC_NAME
-        return self
 
     def retrieve_tags(self) -> dict[str, str]:
         """Return Prometheus labels for this metric request."""
