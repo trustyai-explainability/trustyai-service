@@ -5,6 +5,7 @@ import uuid
 from http import HTTPStatus
 from typing import Any, Literal, cast
 
+import pandas as pd
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -16,13 +17,9 @@ from trustyai_service.core.metrics.drift.jensen_shannon import (
     DEFAULT_THRESHOLD,
     JensenShannon,
 )
-from trustyai_service.service.data.shared_data_source import (
-    DataSource,
-    get_shared_data_source,
-)
-from trustyai_service.service.payloads.metrics.base_metric_request import (
-    BaseMetricRequest,
-)
+from trustyai_service.service.data.shared_data_source import DataSource, get_shared_data_source
+from trustyai_service.service.payloads.metrics.base_metric_request import BaseMetricRequest
+from trustyai_service.service.prometheus.metric_value_carrier import MetricValueCarrier
 from trustyai_service.service.prometheus.prometheus_scheduler import PrometheusScheduler
 from trustyai_service.service.prometheus.shared_prometheus_scheduler import (
     get_shared_prometheus_scheduler,
@@ -111,13 +108,9 @@ async def compute_jensenshannon(
         )
 
     if not request.fit_columns:
-        data_source = get_data_source()
-        metadata = await data_source.get_metadata(request.model_id)
-        request.fit_columns = list(metadata.input_schema.items.keys())
-        logger.info(
-            "fitColumns not specified, using all input columns for model %s: %s",
-            request.model_id,
-            request.fit_columns,
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail="fitColumns is required - specify which features to test for drift",
         )
 
     try:
@@ -240,13 +233,9 @@ async def schedule_jensenshannon(request: JensenShannonMetricRequest) -> dict[st
         )
 
     if not request.fit_columns:
-        data_source = get_data_source()
-        metadata = await data_source.get_metadata(request.model_id)
-        request.fit_columns = list(metadata.input_schema.items.keys())
-        logger.info(
-            "fitColumns not specified, using all input columns for model %s: %s",
-            request.model_id,
-            request.fit_columns,
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail="fitColumns is required - specify which features to test for drift",
         )
 
     # Get the scheduler and validate availability
@@ -387,3 +376,51 @@ async def list_jensenshannon_requests() -> dict[str, list[dict[str, Any]]]:
         ) from e
     else:
         return {"requests": requests_list}
+
+
+async def calculate_jensenshannon_metric(
+    batch: pd.DataFrame,
+    request: BaseMetricRequest,
+) -> MetricValueCarrier:
+    """Calculate JensenShannon metric for the Prometheus scheduler."""
+    data_source = get_data_source()
+    reference_df = await data_source.get_dataframe_by_tag(
+        request.model_id, request.reference_tag
+    )
+    fit_columns = request.fit_columns or list(batch.columns)
+    statistic = getattr(request, "statistic", DEFAULT_STATISTIC)
+    threshold = getattr(request, "threshold", DEFAULT_THRESHOLD)
+    method = getattr(request, "method", DEFAULT_METHOD)
+    grid_points = getattr(request, "grid_points", DEFAULT_GRID_POINTS)
+    bins = getattr(request, "bins", DEFAULT_BINS)
+
+    named_values = {}
+    for feature_name in fit_columns:
+        if feature_name in reference_df.columns and feature_name in batch.columns:
+            result = JensenShannon.jensenshannon(
+                data_ref=reference_df[feature_name].to_numpy(),
+                data_cur=batch[feature_name].to_numpy(),
+                statistic=cast("Literal['distance', 'divergence']", statistic),
+                threshold=threshold,
+                method=cast("Literal['kde', 'hist']", method),
+                grid_points=grid_points,
+                bins=bins,
+            )
+            named_values[feature_name] = result["Jensen-Shannon_distance"]
+    return MetricValueCarrier(named_values or 0.0)
+
+
+def _register_jensenshannon_calculator() -> None:
+    """Register the JensenShannon calculator with the metrics directory."""
+    scheduler = get_prometheus_scheduler()
+    if scheduler and scheduler.metrics_directory:
+        scheduler.metrics_directory.register(
+            METRIC_NAME, calculate_jensenshannon_metric
+        )
+        logger.info("%s calculator registered with metrics directory", METRIC_NAME)
+
+
+try:
+    _register_jensenshannon_calculator()
+except (AttributeError, TypeError) as e:
+    logger.warning("Could not register %s calculator on import: %s", METRIC_NAME, e)

@@ -5,15 +5,15 @@ import uuid
 from http import HTTPStatus
 from typing import Any
 
+import pandas as pd
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from trustyai_service.core.metrics.drift.kolmogorov_smirnov import KolmogorovSmirnov
 from trustyai_service.service.data.datasources.data_source import DataSource
 from trustyai_service.service.data.shared_data_source import get_shared_data_source
-from trustyai_service.service.payloads.metrics.base_metric_request import (
-    BaseMetricRequest,
-)
+from trustyai_service.service.payloads.metrics.base_metric_request import BaseMetricRequest
+from trustyai_service.service.prometheus.metric_value_carrier import MetricValueCarrier
 from trustyai_service.service.prometheus.prometheus_scheduler import PrometheusScheduler
 from trustyai_service.service.prometheus.shared_prometheus_scheduler import (
     get_shared_prometheus_scheduler,
@@ -85,13 +85,9 @@ async def compute_kstest(
         )
 
     if not request.fit_columns:
-        data_source = get_data_source()
-        metadata = await data_source.get_metadata(request.model_id)
-        request.fit_columns = list(metadata.input_schema.items.keys())
-        logger.info(
-            "fitColumns not specified, using all input columns for model %s: %s",
-            request.model_id,
-            request.fit_columns,
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail="fitColumns is required - specify which features to test for drift",
         )
 
     try:
@@ -192,16 +188,6 @@ async def get_kstest_definition() -> dict[str, str]:
 @router.post("/metrics/drift/kstest/request")
 async def schedule_kstest(request: KSTestMetricRequest) -> dict[str, str]:
     """Schedule a recurring computation of KSTest metric."""
-    if not request.fit_columns:
-        data_source = get_data_source()
-        metadata = await data_source.get_metadata(request.model_id)
-        request.fit_columns = list(metadata.input_schema.items.keys())
-        logger.info(
-            "fitColumns not specified, using all input columns for model %s: %s",
-            request.model_id,
-            request.fit_columns,
-        )
-
     # Get the scheduler and validate availability
     scheduler = get_prometheus_scheduler()
     if not scheduler:
@@ -335,3 +321,41 @@ async def list_kstest_requests() -> dict[str, list[dict[str, Any]]]:
         ) from e
     else:
         return {"requests": requests_list}
+
+
+async def calculate_kstest_metric(
+    batch: pd.DataFrame,
+    request: BaseMetricRequest,
+) -> MetricValueCarrier:
+    """Calculate KSTest metric for the Prometheus scheduler."""
+    data_source = get_data_source()
+    reference_df = await data_source.get_dataframe_by_tag(
+        request.model_id, request.reference_tag
+    )
+    fit_columns = request.fit_columns or list(batch.columns)
+    alpha = getattr(request, "threshold_delta", 0.05)
+
+    named_values = {}
+    for feature_name in fit_columns:
+        if feature_name in reference_df.columns and feature_name in batch.columns:
+            result = KolmogorovSmirnov.kstest(
+                reference_data=reference_df[feature_name].to_numpy(),
+                current_data=batch[feature_name].to_numpy(),
+                alpha=alpha,
+            )
+            named_values[feature_name] = result["statistic"]
+    return MetricValueCarrier(named_values or 0.0)
+
+
+def _register_kstest_calculator() -> None:
+    """Register the KSTest calculator with the metrics directory."""
+    scheduler = get_prometheus_scheduler()
+    if scheduler and scheduler.metrics_directory:
+        scheduler.metrics_directory.register(METRIC_NAME, calculate_kstest_metric)
+        logger.info("%s calculator registered with metrics directory", METRIC_NAME)
+
+
+try:
+    _register_kstest_calculator()
+except (AttributeError, TypeError) as e:
+    logger.warning("Could not register %s calculator on import: %s", METRIC_NAME, e)
