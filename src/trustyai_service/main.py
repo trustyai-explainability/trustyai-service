@@ -11,8 +11,6 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI, Request, Response
 
-from trustyai_service import __version__
-
 if TYPE_CHECKING:
     from fastapi import APIRouter
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,41 +20,27 @@ from hypercorn.config import Config
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 # Endpoint routers
-from trustyai_service.endpoints.consumer.consumer_endpoint import (
-    router as consumer_router,
-)
+from trustyai_service.endpoints.consumer.consumer_endpoint import router as consumer_router
 from trustyai_service.endpoints.data.data_upload import router as data_upload_router
-from trustyai_service.endpoints.explainers.global_explainer import (
-    router as explainers_global_router,
-)
-from trustyai_service.endpoints.explainers.local_explainer import (
-    router as explainers_local_router,
-)
+from trustyai_service.endpoints.explainers.global_explainer import router as explainers_global_router
+from trustyai_service.endpoints.explainers.local_explainer import router as explainers_local_router
 from trustyai_service.endpoints.metadata import router as metadata_router
 from trustyai_service.endpoints.metrics.batch_mean import router as batch_mean_router
-from trustyai_service.endpoints.metrics.drift.approx_ks_test import (
-    router as drift_approxkstest_router,
-)
 from trustyai_service.endpoints.metrics.drift.compare_means import (
     router as drift_comparemeans_router,
 )
-from trustyai_service.endpoints.metrics.drift.fourier_mmd import (
-    router as drift_fouriermmd_router,
-)
-from trustyai_service.endpoints.metrics.drift.jensen_shannon import (
-    router as drift_jensenshannon_router,
-)
-from trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov import (
-    router as drift_kstest_router,
-)
+from trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov import router as drift_kstest_router
 from trustyai_service.endpoints.metrics.fairness.group.dir import router as dir_router
 from trustyai_service.endpoints.metrics.fairness.group.spd import router as spd_router
-from trustyai_service.endpoints.metrics.metrics_info import (
-    router as metrics_info_router,
-)
+from trustyai_service.endpoints.metrics.metrics_info import router as metrics_info_router
 
 # Middleware
 from trustyai_service.middleware.gzip_middleware import GzipRequestMiddleware
+from trustyai_service.service.health_checks import (
+    STATUS_OK,
+    perform_liveness_checks,
+    perform_readiness_checks,
+)
 from trustyai_service.service.prometheus.shared_prometheus_scheduler import (
     get_shared_prometheus_scheduler,
 )
@@ -86,9 +70,7 @@ logging.getLogger("hypercorn.protocol").setLevel(logging.INFO)
 logging.getLogger("hypercorn.access").setLevel(logging.INFO)
 
 # Ensure scheduler debug logging
-scheduler_logger = logging.getLogger(
-    "trustyai_service.service.prometheus.prometheus_scheduler"
-)
+scheduler_logger = logging.getLogger("trustyai_service.service.prometheus.prometheus_scheduler")
 scheduler_logger.setLevel(logging.DEBUG)
 logger = logging.getLogger(__name__)
 
@@ -132,7 +114,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
 
 app = FastAPI(
     title="TrustyAI Service API",
-    version=__version__,
+    version="1.0.0rc0",
     description="TrustyAI Service API",
     lifespan=lifespan,
 )
@@ -182,18 +164,6 @@ app.include_router(
         "Drift Metrics: KSTest",
     ],
 )
-app.include_router(
-    drift_fouriermmd_router,
-    tags=["Drift Metrics: FourierMMD"],
-)
-app.include_router(
-    drift_approxkstest_router,
-    tags=["Drift Metrics: ApproxKSTest"],
-)
-app.include_router(
-    drift_jensenshannon_router,
-    tags=["Drift Metrics: JensenShannon"],
-)
 
 app.include_router(explainers_global_router, tags=["Explainers: Global"])
 app.include_router(explainers_local_router, tags=["Explainers: Local"])
@@ -230,6 +200,34 @@ async def root() -> dict[str, str]:
     return {"message": "Welcome to TrustyAI Explainability Service"}
 
 
+@app.get("/q/health")
+async def general_health() -> JSONResponse:
+    """General health endpoint (optional).
+
+    Combines readiness and liveness checks for comprehensive health status.
+    Useful for debugging and manual health checks.
+
+    :return: JSON response with status ("healthy" or "unhealthy")
+             HTTP 200 if healthy, HTTP 503 if unhealthy
+    """
+    readiness_status, readiness_checks = perform_readiness_checks()
+    liveness_status, liveness_checks = perform_liveness_checks()
+
+    # Overall status is healthy only if both readiness and liveness pass
+    is_healthy = readiness_status == STATUS_OK and liveness_status == STATUS_OK
+
+    response_body = {
+        "status": "healthy" if is_healthy else "unhealthy",
+        "checks": {
+            "readiness": readiness_checks,
+            "liveness": liveness_checks,
+        },
+    }
+
+    status_code = HTTPStatus.OK if is_healthy else HTTPStatus.SERVICE_UNAVAILABLE
+    return JSONResponse(content=response_body, status_code=status_code)
+
+
 @app.get("/q/metrics")
 async def metrics(_request: Request) -> Response:
     """Prometheus metrics endpoint.
@@ -245,9 +243,16 @@ async def metrics(_request: Request) -> Response:
 async def readiness_probe() -> JSONResponse:
     """Kubernetes readiness probe endpoint.
 
-    :return: JSON response indicating service is ready
+    :return: JSON response with status ("ready" or "not_ready")
+             HTTP 200 if ready, HTTP 503 if not ready
     """
-    return JSONResponse(content={"status": "ready"}, status_code=HTTPStatus.OK)
+    status, checks = perform_readiness_checks()
+    is_ready = status == STATUS_OK
+
+    response_body = {"status": "ready" if is_ready else "not_ready", "details": checks}
+
+    status_code = HTTPStatus.OK if is_ready else HTTPStatus.SERVICE_UNAVAILABLE
+    return JSONResponse(content=response_body, status_code=status_code)
 
 
 # Liveness probe endpoint
@@ -255,9 +260,18 @@ async def readiness_probe() -> JSONResponse:
 async def liveness_probe() -> JSONResponse:
     """Kubernetes liveness probe endpoint.
 
-    :return: JSON response indicating service is alive
+    Lightweight check - if we can respond, we're alive.
+
+    :return: JSON response with status ("alive")
+             HTTP 200 if alive
     """
-    return JSONResponse(content={"status": "live"}, status_code=HTTPStatus.OK)
+    status, checks = perform_liveness_checks()
+    is_alive = status == STATUS_OK
+
+    response_body = {"status": "alive" if is_alive else "dead", "details": checks}
+
+    status_code = HTTPStatus.OK if is_alive else HTTPStatus.SERVICE_UNAVAILABLE
+    return JSONResponse(content=response_body, status_code=status_code)
 
 
 def get_tls_config() -> dict[str, Any] | None:
@@ -299,22 +313,25 @@ async def run_server() -> None:
     # Create hypercorn config
     config = Config()
 
-    # HTTP for kube-rbac-proxy (plain HTTP on insecure_bind)
-    config.insecure_bind = [f"{host_http}:{http_port}"]
-    logger.info("Binding HTTP on %s:%s for kube-rbac-proxy", host_http, http_port)
-
     # Configure for HTTP/1.1 compatibility and proper keep-alive
     config.h11_max_incomplete_size = 16 * 1024 * 1024  # 16MB for large requests
     config.keep_alive_timeout = float(os.getenv("KEEP_ALIVE", "75"))
 
     # Optional HTTPS (direct access on bind)
     if tls_config:
+        # HTTPS on bind (external access)
         config.bind = [f"{host_https}:{ssl_port}"]
         config.certfile = tls_config["ssl_certfile"]
         config.keyfile = tls_config["ssl_keyfile"]
+        # HTTP on insecure_bind (kube-rbac-proxy)
+        config.insecure_bind = [f"{host_http}:{http_port}"]
         logger.info("Binding HTTPS on %s:%s for direct access", host_https, ssl_port)
+        logger.info("Binding HTTP on %s:%s for kube-rbac-proxy", host_http, http_port)
         logger.info("TrustyAI service running with dual HTTP/HTTPS protocol support")
     else:
+        # HTTP only on bind (no TLS available)
+        config.bind = [f"{host_http}:{http_port}"]
+        logger.info("Binding HTTP on %s:%s for kube-rbac-proxy", host_http, http_port)
         logger.info("TLS certificates not found - running HTTP only")
 
     # Configure logging
