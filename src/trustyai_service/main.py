@@ -33,8 +33,17 @@ from trustyai_service.endpoints.explainers.local_explainer import (
 )
 from trustyai_service.endpoints.metadata import router as metadata_router
 from trustyai_service.endpoints.metrics.batch_mean import router as batch_mean_router
+from trustyai_service.endpoints.metrics.drift.approx_ks_test import (
+    router as drift_approxkstest_router,
+)
 from trustyai_service.endpoints.metrics.drift.compare_means import (
     router as drift_comparemeans_router,
+)
+from trustyai_service.endpoints.metrics.drift.fourier_mmd import (
+    router as drift_fouriermmd_router,
+)
+from trustyai_service.endpoints.metrics.drift.jensen_shannon import (
+    router as drift_jensenshannon_router,
 )
 from trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov import (
     router as drift_kstest_router,
@@ -180,6 +189,18 @@ app.include_router(
     tags=[
         "Drift Metrics: CompareMeans",
     ],
+)
+app.include_router(
+    drift_fouriermmd_router,
+    tags=["Drift Metrics: FourierMMD"],
+)
+app.include_router(
+    drift_approxkstest_router,
+    tags=["Drift Metrics: ApproxKSTest"],
+)
+app.include_router(
+    drift_jensenshannon_router,
+    tags=["Drift Metrics: JensenShannon"],
 )
 app.include_router(
     drift_kstest_router,
