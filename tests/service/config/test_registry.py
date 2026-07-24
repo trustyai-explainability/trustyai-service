@@ -9,54 +9,85 @@ from trustyai_service.service.config.registry import (
 
 
 class TestRegisterIfEnabled:
-    def test_registers_router_when_flag_enabled(self):
+    """Tests for single-flag router registration."""
+
+    def test_registers_router_when_flag_enabled(self) -> None:
+        """Router is included when its flag is True."""
         app = MagicMock()
         router = MagicMock()
 
-        with patch.dict("trustyai_service.service.config.registry.ENDPOINTS", {"fairness": True, "other": False}, clear=True):
+        with patch.dict(
+            "trustyai_service.service.config.registry.ENDPOINTS",
+            {"fairness": True, "other": False},
+            clear=True,
+        ):
             register_if_enabled(app, router, "fairness", "Test Tag")
 
         app.include_router.assert_called_once_with(router, tags=["Test Tag"])
 
-    def test_skips_router_when_flag_disabled(self):
+    def test_skips_router_when_flag_disabled(self) -> None:
+        """Router is skipped when its flag is False."""
         app = MagicMock()
         router = MagicMock()
 
-        with patch.dict("trustyai_service.service.config.registry.ENDPOINTS", {"fairness": False, "other": True}, clear=True):
+        with patch.dict(
+            "trustyai_service.service.config.registry.ENDPOINTS",
+            {"fairness": False, "other": True},
+            clear=True,
+        ):
             register_if_enabled(app, router, "fairness", "Test Tag")
 
         app.include_router.assert_not_called()
 
-    def test_registers_with_prefix(self):
+    def test_registers_with_prefix(self) -> None:
+        """Router receives prefix kwarg when specified."""
         app = MagicMock()
         router = MagicMock()
 
-        with patch.dict("trustyai_service.service.config.registry.ENDPOINTS", {"fairness": True}, clear=True):
+        with patch.dict(
+            "trustyai_service.service.config.registry.ENDPOINTS",
+            {"fairness": True},
+            clear=True,
+        ):
             register_if_enabled(app, router, "fairness", prefix="/metrics")
 
         app.include_router.assert_called_once_with(router, prefix="/metrics")
 
-    def test_registers_with_tag_and_prefix(self):
+    def test_registers_with_tag_and_prefix(self) -> None:
+        """Router receives both tag and prefix kwargs."""
         app = MagicMock()
         router = MagicMock()
 
-        with patch.dict("trustyai_service.service.config.registry.ENDPOINTS", {"fairness": True}, clear=True):
+        with patch.dict(
+            "trustyai_service.service.config.registry.ENDPOINTS",
+            {"fairness": True},
+            clear=True,
+        ):
             register_if_enabled(app, router, "fairness", "Test Tag", prefix="/metrics")
 
-        app.include_router.assert_called_once_with(router, tags=["Test Tag"], prefix="/metrics")
+        app.include_router.assert_called_once_with(
+            router, tags=["Test Tag"], prefix="/metrics"
+        )
 
-    def test_no_tag_no_prefix(self):
+    def test_no_tag_no_prefix(self) -> None:
+        """Router is registered with no extra kwargs when tag and prefix are omitted."""
         app = MagicMock()
         router = MagicMock()
 
-        with patch.dict("trustyai_service.service.config.registry.ENDPOINTS", {"drift": True}, clear=True):
+        with patch.dict(
+            "trustyai_service.service.config.registry.ENDPOINTS",
+            {"drift": True},
+            clear=True,
+        ):
             register_if_enabled(app, router, "drift")
 
         app.include_router.assert_called_once_with(router)
 
 
 class TestRegisterIfEnabledWithGroup:
-    def test_registers_when_both_flags_enabled(self):
+    """Tests for group-gated router registration."""
+
+    def test_registers_when_both_flags_enabled(self) -> None:
         """Both group and metric flag enabled -> registers."""
         app = MagicMock()
         router = MagicMock()
@@ -76,7 +107,7 @@ class TestRegisterIfEnabledWithGroup:
 
         app.include_router.assert_called_once()
 
-    def test_skips_when_group_flag_disabled(self):
+    def test_skips_when_group_flag_disabled(self) -> None:
         """Group disabled -> skips regardless of metric flag."""
         app = MagicMock()
         router = MagicMock()
@@ -96,7 +127,7 @@ class TestRegisterIfEnabledWithGroup:
 
         app.include_router.assert_not_called()
 
-    def test_skips_when_metric_flag_disabled(self):
+    def test_skips_when_metric_flag_disabled(self) -> None:
         """Group enabled but metric flag disabled -> skips just that metric."""
         app = MagicMock()
         router = MagicMock()
@@ -116,7 +147,7 @@ class TestRegisterIfEnabledWithGroup:
 
         app.include_router.assert_not_called()
 
-    def test_other_metrics_still_register_when_one_is_disabled(self):
+    def test_other_metrics_still_register_when_one_is_disabled(self) -> None:
         """Disabling one metric doesn't affect other metrics in the same group."""
         app = MagicMock()
         ks_router = MagicMock()
@@ -142,12 +173,11 @@ class TestRegisterIfEnabledWithGroup:
                 "Drift Metrics: JensenShannon",
             )
 
-        # KS-Test registered
         app.include_router.assert_any_call(ks_router, tags=["Drift Metrics: KSTest"])
-        # Jensen-Shannon skipped (called once for KS-Test only)
         assert app.include_router.call_count == 1
 
-    def test_registers_with_prefix(self):
+    def test_registers_with_prefix(self) -> None:
+        """Router receives prefix kwarg when specified."""
         app = MagicMock()
         router = MagicMock()
 
@@ -166,7 +196,8 @@ class TestRegisterIfEnabledWithGroup:
 
         app.include_router.assert_called_once_with(router, prefix="/metrics")
 
-    def test_registers_with_tag_and_prefix(self):
+    def test_registers_with_tag_and_prefix(self) -> None:
+        """Router receives both tag and prefix when specified."""
         app = MagicMock()
         router = MagicMock()
 
@@ -190,7 +221,7 @@ class TestRegisterIfEnabledWithGroup:
             prefix="/metrics",
         )
 
-    def test_explainer_group_gates_individual_metrics(self):
+    def test_explainer_group_gates_individual_metrics(self) -> None:
         """Group disabled -> explainers skipped regardless of individual flags."""
         app = MagicMock()
         router = MagicMock()
@@ -210,7 +241,7 @@ class TestRegisterIfEnabledWithGroup:
 
         app.include_router.assert_not_called()
 
-    def test_explainer_individual_flag_gates_specific_explainer(self):
+    def test_explainer_individual_flag_gates_specific_explainer(self) -> None:
         """Group enabled but individual flag disabled -> skips just that explainer."""
         app = MagicMock()
         local_router = MagicMock()
@@ -236,7 +267,5 @@ class TestRegisterIfEnabledWithGroup:
                 "Explainers: Global",
             )
 
-        # Global registered
         app.include_router.assert_any_call(global_router, tags=["Explainers: Global"])
-        # Local skipped (called once for Global only)
         assert app.include_router.call_count == 1
