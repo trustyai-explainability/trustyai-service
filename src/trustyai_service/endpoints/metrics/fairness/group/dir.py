@@ -187,7 +187,7 @@ async def get_dir_definition() -> dict[str, str]:
 @router.post("/metrics/group/fairness/dir/definition")
 async def interpret_dir_value(request: GroupDefinitionRequest) -> dict[str, str]:
     """Provide a specific, plain-english interpretation of a specific value of DIR metric."""
-    logger.info("Interpreting DIR value for model: %s", request.modelId)
+    logger.info("Interpreting DIR value for model: %s", request.model_id)
     raise HTTPException(
         status_code=HTTPStatus.NOT_IMPLEMENTED,
         detail="DIR value interpretation is not yet implemented",
