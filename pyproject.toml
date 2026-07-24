@@ -12,7 +12,6 @@ dependencies = [
     "pandas>=3.0,<4",
     "polars>=1.2,<2",
     "fastapi>=0.116,<0.140",
-    "fastapi-utils>=0.8,<0.9",
     "uvicorn>=0.38,<1",
     "typing-inspect>=0.9,<1",
     "prometheus-client>=0.22,<0.26",
@@ -105,6 +104,7 @@ ignore = [
 "src/trustyai_service/service/data/modelmesh_parser.py" = ["PLR0913"]
 "src/trustyai_service/service/data/storage/**/*.py" = ["SLF001", "BLE001", "PLR0913"]
 "src/trustyai_service/service/data/storage/pvc.py" = ["C901", "PLR0912", "PLR0915", "ASYNC240", "PTH110"]
+"src/trustyai_service/service/data/storage/maria/maria.py" = ["ASYNC240"]  # One-time startup PVC check via Path.exists/is_dir/glob (local mount, negligible blocking)
 "src/trustyai_service/service/payloads/**/*.py" = ["SLF001"]
 "src/trustyai_service/service/payloads/metrics/request_reconciler.py" = ["C901", "PLR0912", "PLR0915"]
 "src/trustyai_service/service/prometheus/prometheus_publisher.py" = ["SLF001"]
@@ -127,6 +127,7 @@ ignore = [
 "tests/endpoints/test_upload_endpoint_pvc.py" = ["PLR0913"]
 "tests/service/data/test_utils.py" = ["PLR0913", "UP037"]  # UP037: Keep quoted annotations for optional protobuf imports
 "tests/service/serialization/test_rows.py" = ["PLR2004"]
+"tests/service/data/storage/maria/*.py" = ["ANN", "PLR2004", "ARG002"]  # Pytest style: no test method annotations, exact assertion values, setup-only fixtures
 
 [tool.pytest.ini_options]
 asyncio_mode = "strict"
@@ -150,7 +151,6 @@ python-version = "3.14.0"
 ignore-missing-imports = [
     "aif360.*",
     "fastapi.*",
-    "fastapi_utils.*",
     "hypercorn.*",
     "isodate.*",
     "javaobj.*",
@@ -267,6 +267,7 @@ not-iterable = "ignore"
 # Suppress h5py/numpy type issues in PVC storage
 [[tool.pyrefly.sub-config]]
 matches = "src/trustyai_service/service/data/storage/pvc.py"
+"src/trustyai_service/service/data/storage/maria/maria.py" = ["ASYNC240"]  # One-time startup PVC check via Path.exists/is_dir/glob (local mount, negligible blocking)
 
 [tool.pyrefly.sub-config.errors]
 unsupported-operation = "ignore"
