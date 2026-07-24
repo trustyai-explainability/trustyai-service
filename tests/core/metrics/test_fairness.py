@@ -556,3 +556,22 @@ def test_individual_consistency_imperfect() -> None:
     )
 
     assert consistency == pytest.approx(cs_score, abs=0.2)
+
+
+def test_individual_consistency_rejects_multi_prediction_model() -> None:
+    """Model returning multiple predictions per sample is rejected."""
+    X_sample = get_processed_data(sample_size=5)
+
+    class MultiPredictionModel:
+        """Model that incorrectly returns multiple predictions per sample."""
+
+        def predict(self, _x: np.ndarray) -> list[list[int]]:
+            """Return 2 predictions for any input."""
+            return [[1], [2]]
+
+    with pytest.raises(ValueError, match="Expected 1 prediction per sample"):
+        IndividualConsistency.calculate(
+            proximity_function=get_k_neighbors_function(3),
+            samples=X_sample,
+            model=MultiPredictionModel(),
+        )
