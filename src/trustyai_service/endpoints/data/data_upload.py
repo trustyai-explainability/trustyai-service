@@ -12,6 +12,7 @@ from trustyai_service.endpoints.consumer import (
     KServeInferenceResponse,
 )
 from trustyai_service.endpoints.consumer.consumer_endpoint import consume_cloud_event
+from trustyai_service.endpoints.paths import DATA_UPLOAD
 from trustyai_service.exceptions import ReconciliationError
 from trustyai_service.service.constants import TRUSTYAI_TAG_PREFIX
 from trustyai_service.service.data.model_data import ModelData
@@ -44,7 +45,7 @@ def validate_data_tag(tag: str | None) -> str | None:
     return None
 
 
-@router.post("/data/upload")
+@router.post(DATA_UPLOAD)
 async def upload(payload: UploadPayload) -> dict[str, str]:
     """Upload model data."""
     # validate tag
