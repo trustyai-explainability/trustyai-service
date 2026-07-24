@@ -13,6 +13,7 @@ import numpy as np
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests.service.data.test_utils import ModelMeshTestData
 from trustyai_service.endpoints.consumer.consumer_endpoint import (
     router as consumer_router,
 )
@@ -23,9 +24,11 @@ from trustyai_service.service.data.metadata.storage_metadata import (
     StorageMetadata,
     StorageMetadataConfig,
 )
-from trustyai_service.service.data.modelmesh_parser import ModelMeshPayloadParser, PartialPayload
+from trustyai_service.service.data.modelmesh_parser import (
+    ModelMeshPayloadParser,
+    PartialPayload,
+)
 from trustyai_service.service.payloads.service.schema import Schema
-from tests.service.data.test_utils import ModelMeshTestData
 
 
 class TestConsumerEndpointReconciliation(unittest.TestCase):
@@ -354,52 +357,10 @@ class TestConsumerEndpointValidation(unittest.TestCase):
 
 
 class TestWriteReconciledDataMetadata(unittest.TestCase):
-    """Test that write_reconciled_data marks recorded inferences."""
+    """Test observation count behavior on cache miss vs cache hit."""
 
-    async def _test_recorded_inferences_flag_set(self) -> None:
-        """Reconciliation sets recorded_inferences flag without incrementing observations."""
-        mock_storage = mock.AsyncMock()
-        mock_metadata = mock.MagicMock()
-        mock_data_source = mock.AsyncMock()
-        mock_data_source.get_metadata = mock.AsyncMock(return_value=mock_metadata)
-
-        input_array = np.zeros((5, 3))
-        output_array = np.zeros((5, 1))
-
-        with (
-            mock.patch(
-                "trustyai_service.endpoints.consumer.consumer_endpoint.get_global_storage_interface",
-                return_value=mock_storage,
-            ),
-            mock.patch(
-                "trustyai_service.endpoints.consumer.consumer_endpoint.ModelData",
-            ) as mock_model_data,
-            mock.patch(
-                "trustyai_service.endpoints.consumer.consumer_endpoint.get_data_source",
-                return_value=mock_data_source,
-            ),
-        ):
-            mock_model_data.return_value.shapes = mock.AsyncMock(
-                return_value=[(5, 3), (5, 1), (5, 4)]
-            )
-
-            await write_reconciled_data(
-                input_array=input_array,
-                input_names=["a", "b", "c"],
-                output_array=output_array,
-                output_names=["out"],
-                model_id="test-model",
-                tags=["tag1"],
-                id_="req-123",
-            )
-
-        mock_metadata.set_recorded_inferences.assert_called_once_with(
-            recorded_inferences=True,
-        )
-        mock_metadata.increment_observations.assert_not_called()
-
-    async def _test_observation_count_not_doubled(self) -> None:
-        """Observation count must not double after write + get_metadata."""
+    async def _test_cache_miss_no_double_count(self) -> None:
+        """First reconciliation (cache miss): observations come from storage, no increment."""
         mock_storage = mock.AsyncMock()
 
         real_metadata = StorageMetadata(
@@ -414,6 +375,7 @@ class TestWriteReconciledDataMetadata(unittest.TestCase):
 
         mock_data_source = mock.AsyncMock()
         mock_data_source.get_metadata = mock.AsyncMock(return_value=real_metadata)
+        mock_data_source.metadata_cache = {}
 
         input_array = np.zeros((5, 3))
         output_array = np.zeros((5, 1))
@@ -447,12 +409,62 @@ class TestWriteReconciledDataMetadata(unittest.TestCase):
 
         assert real_metadata.get_observations() == 5  # noqa: PLR2004
 
+    async def _test_cache_hit_increments(self) -> None:
+        """Subsequent reconciliation (cache hit): observations increment correctly."""
+        mock_storage = mock.AsyncMock()
 
-TestWriteReconciledDataMetadata.test_recorded_inferences_flag_set = (  # type: ignore[attr-defined]
-    lambda self: run_async_test(self._test_recorded_inferences_flag_set())
+        real_metadata = StorageMetadata(
+            StorageMetadataConfig(
+                model_id="test-model",
+                input_schema=Schema(),
+                output_schema=Schema(),
+                observations=5,
+                recorded_inferences=True,
+            )
+        )
+
+        mock_data_source = mock.AsyncMock()
+        mock_data_source.get_metadata = mock.AsyncMock(return_value=real_metadata)
+        mock_data_source.metadata_cache = {"test-model": real_metadata}
+
+        input_array = np.zeros((5, 3))
+        output_array = np.zeros((5, 1))
+
+        with (
+            mock.patch(
+                "trustyai_service.endpoints.consumer.consumer_endpoint.get_global_storage_interface",
+                return_value=mock_storage,
+            ),
+            mock.patch(
+                "trustyai_service.endpoints.consumer.consumer_endpoint.ModelData",
+            ) as mock_model_data,
+            mock.patch(
+                "trustyai_service.endpoints.consumer.consumer_endpoint.get_data_source",
+                return_value=mock_data_source,
+            ),
+        ):
+            mock_model_data.return_value.shapes = mock.AsyncMock(
+                return_value=[(10, 3), (10, 1), (10, 4)]
+            )
+
+            await write_reconciled_data(
+                input_array=input_array,
+                input_names=["a", "b", "c"],
+                output_array=output_array,
+                output_names=["out"],
+                model_id="test-model",
+                tags=["tag1"],
+                id_="req-456",
+            )
+
+        assert real_metadata.get_observations() == 10  # noqa: PLR2004
+
+
+TestWriteReconciledDataMetadata.test_cache_miss_no_double_count = (  # type: ignore[attr-defined]
+    lambda self: run_async_test(self._test_cache_miss_no_double_count())
 )
-TestWriteReconciledDataMetadata.test_observation_count_not_doubled = (  # type: ignore[attr-defined]
-    lambda self: run_async_test(self._test_observation_count_not_doubled())
+TestWriteReconciledDataMetadata.test_cache_hit_increments = (  # type: ignore[attr-defined]
+    lambda self: run_async_test(self._test_cache_hit_increments())
 )
 
 
