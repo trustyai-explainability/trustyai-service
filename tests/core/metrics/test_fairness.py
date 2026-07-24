@@ -317,6 +317,32 @@ class TestDisparateImpactRatio:
             f"unprivileged group. Actual score {score}"
         )
 
+    def test_dir_zero_favorable_privileged(self) -> None:
+        """DIR returns inf when privileged group has zero favorable outcomes."""
+        privileged = np.array([[0, 0], [1, 0]])
+        unprivileged = np.array([[0, 1], [1, 1]])
+
+        score = DisparateImpactRatio.calculate(
+            privileged=privileged,
+            unprivileged=unprivileged,
+            favorable_outputs=np.array([1]),
+        )
+
+        assert score == np.inf
+
+    def test_dir_zero_favorable_both_groups(self) -> None:
+        """DIR returns nan when both groups have zero favorable outcomes."""
+        privileged = np.array([[0, 0], [1, 0]])
+        unprivileged = np.array([[0, 0], [1, 0]])
+
+        score = DisparateImpactRatio.calculate(
+            privileged=privileged,
+            unprivileged=unprivileged,
+            favorable_outputs=np.array([1]),
+        )
+
+        assert np.isnan(score)
+
     def test_dir_equal_favorable_rates(self) -> None:
         """Test to check that the result of DIR calculation is 1.0 when favorable outcome rates are equal between groups."""
         df = pd.DataFrame(generate_data())
