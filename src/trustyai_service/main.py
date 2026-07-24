@@ -304,9 +304,7 @@ async def run_server() -> None:
 
     # Configure server settings
     host_https = "0.0.0.0"  # noqa: S104  # intentional: Kubernetes service binding
-    host_http = (
-        "127.0.0.1"  # Keep loopback-only for security (kube-rbac-proxy forwards here)
-    )
+    host_http = "0.0.0.0"  # noqa: S104  # intentional: Kubernetes health probes
     http_port = int(os.getenv("HTTP_PORT", "8080"))
     ssl_port = int(os.getenv("SSL_PORT", "4443"))
 
@@ -323,15 +321,15 @@ async def run_server() -> None:
         config.bind = [f"{host_https}:{ssl_port}"]
         config.certfile = tls_config["ssl_certfile"]
         config.keyfile = tls_config["ssl_keyfile"]
-        # HTTP on insecure_bind (kube-rbac-proxy)
+        # HTTP on insecure_bind (health probes and kube-rbac-proxy)
         config.insecure_bind = [f"{host_http}:{http_port}"]
         logger.info("Binding HTTPS on %s:%s for direct access", host_https, ssl_port)
-        logger.info("Binding HTTP on %s:%s for kube-rbac-proxy", host_http, http_port)
+        logger.info("Binding HTTP on %s:%s for health probes", host_http, http_port)
         logger.info("TrustyAI service running with dual HTTP/HTTPS protocol support")
     else:
         # HTTP only on bind (no TLS available)
         config.bind = [f"{host_http}:{http_port}"]
-        logger.info("Binding HTTP on %s:%s for kube-rbac-proxy", host_http, http_port)
+        logger.info("Binding HTTP on %s:%s for health probes", host_http, http_port)
         logger.info("TLS certificates not found - running HTTP only")
 
     # Configure logging
