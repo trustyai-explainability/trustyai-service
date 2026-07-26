@@ -151,6 +151,7 @@ python-version = "3.14.0"
 ignore-missing-imports = [
     "aif360.*",
     "fastapi.*",
+    "fastapi_utils.*",
     "hypercorn.*",
     "isodate.*",
     "javaobj.*",
