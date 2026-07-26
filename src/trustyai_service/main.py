@@ -11,8 +11,6 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI, Request, Response
 
-from trustyai_service import __version__
-
 if TYPE_CHECKING:
     from fastapi import APIRouter
 from fastapi.middleware.cors import CORSMiddleware
@@ -34,14 +32,8 @@ from trustyai_service.endpoints.explainers.local_explainer import (
 )
 from trustyai_service.endpoints.metadata import router as metadata_router
 from trustyai_service.endpoints.metrics.batch_mean import router as batch_mean_router
-from trustyai_service.endpoints.metrics.drift.approx_ks_test import (
-    router as drift_approxkstest_router,
-)
 from trustyai_service.endpoints.metrics.drift.compare_means import (
     router as drift_comparemeans_router,
-)
-from trustyai_service.endpoints.metrics.drift.fourier_mmd import (
-    router as drift_fouriermmd_router,
 )
 from trustyai_service.endpoints.metrics.drift.jensen_shannon import (
     router as drift_jensenshannon_router,
@@ -57,6 +49,7 @@ from trustyai_service.endpoints.metrics.metrics_info import (
 
 # Middleware
 from trustyai_service.middleware.gzip_middleware import GzipRequestMiddleware
+from trustyai_service.service.config.registry import register_if_enabled_with_group
 from trustyai_service.service.prometheus.shared_prometheus_scheduler import (
     get_shared_prometheus_scheduler,
 )
@@ -67,8 +60,6 @@ try:
 
     lm_evaluation_harness_router = router
 except ImportError:
-    # LM evaluation harness requires optional 'eval' extra dependencies
-    # ImportError (not ModuleNotFoundError) because the module may exist but fail to import
     pass
 
 logging.basicConfig(
@@ -132,7 +123,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
 
 app = FastAPI(
     title="TrustyAI Service API",
-    version=__version__,
+    version="1.0.0rc0",
     description="TrustyAI Service API",
     lifespan=lifespan,
 )
@@ -166,41 +157,63 @@ app.include_router(
     consumer_router,
     tags=["{Internal Only} Inference Consumer", "{Internal Only} ModelMesh Consumer"],
 )
-app.include_router(dir_router, tags=["Fairness Metrics: Group: Disparate Impact Ratio"])
 app.include_router(data_upload_router, tags=["Data Upload"])
 
-#   Drift metrics
-app.include_router(
-    drift_comparemeans_router,
-    tags=[
-        "Drift Metrics: CompareMeans",
-    ],
+# Fairness metrics (gated by "fairness" group + individual flags)
+register_if_enabled_with_group(
+    app,
+    dir_router,
+    "fairness",
+    "fairness_dir",
+    "Fairness Metrics: Group: Disparate Impact Ratio",
 )
-app.include_router(
-    drift_kstest_router,
-    tags=[
-        "Drift Metrics: KSTest",
-    ],
-)
-app.include_router(
-    drift_fouriermmd_router,
-    tags=["Drift Metrics: FourierMMD"],
-)
-app.include_router(
-    drift_approxkstest_router,
-    tags=["Drift Metrics: ApproxKSTest"],
-)
-app.include_router(
-    drift_jensenshannon_router,
-    tags=["Drift Metrics: JensenShannon"],
+register_if_enabled_with_group(
+    app,
+    spd_router,
+    "fairness",
+    "fairness_spd",
+    "Fairness Metrics: Group: Statistical Parity Difference",
 )
 
-app.include_router(explainers_global_router, tags=["Explainers: Global"])
-app.include_router(explainers_local_router, tags=["Explainers: Local"])
-app.include_router(
-    spd_router,
-    tags=["Fairness Metrics: Group: Statistical Parity Difference"],
+# Drift metrics (gated by "drift" group + individual flags)
+register_if_enabled_with_group(
+    app,
+    drift_comparemeans_router,
+    "drift",
+    "drift_compare_means",
+    "Drift Metrics: CompareMeans",
 )
+register_if_enabled_with_group(
+    app,
+    drift_kstest_router,
+    "drift",
+    "drift_ks_test",
+    "Drift Metrics: KSTest",
+)
+register_if_enabled_with_group(
+    app,
+    drift_jensenshannon_router,
+    "drift",
+    "drift_jensen_shannon",
+    "Drift Metrics: JensenShannon",
+)
+
+# Explainer endpoints (gated by "explainer" group + individual flags)
+register_if_enabled_with_group(
+    app,
+    explainers_local_router,
+    "explainer",
+    "explainer_local",
+    "Explainers: Local",
+)
+register_if_enabled_with_group(
+    app,
+    explainers_global_router,
+    "explainer",
+    "explainer_global",
+    "Explainers: Global",
+)
+
 app.include_router(batch_mean_router, tags=["Metrics: Batch Mean"])
 app.include_router(metadata_router, tags=["Service Metadata"])
 app.include_router(metrics_info_router, tags=["Metrics Information Endpoint"])
@@ -210,14 +223,22 @@ if lm_evaluation_harness_router is not None:
         lm_evaluation_harness_router, tags=["LM Evaluation Harness Endpoint"]
     )
 
-# Deprecated endpoints
-app.include_router(
-    dir_router, prefix="/metrics", tags=["{Legacy}: Disparate Impact Ratio"]
-)
-app.include_router(
-    spd_router,
+# Deprecated endpoints (gated by fairness group + individual flags)
+register_if_enabled_with_group(
+    app,
+    dir_router,
+    "fairness",
+    "fairness_dir",
     prefix="/metrics",
-    tags=["{Legacy}: Statistical Parity Difference"],
+    tag="{Legacy}: Disparate Impact Ratio",
+)
+register_if_enabled_with_group(
+    app,
+    spd_router,
+    "fairness",
+    "fairness_spd",
+    prefix="/metrics",
+    tag="{Legacy}: Statistical Parity Difference",
 )
 
 
