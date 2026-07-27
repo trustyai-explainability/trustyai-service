@@ -8,7 +8,7 @@ from importlib import reload
 import pytest
 from fastapi.testclient import TestClient
 
-import src.main
+import trustyai_service.main
 from tests.endpoints.test_upload_endpoint_pvc import TestUploadEndpointPVC
 
 
@@ -47,15 +47,15 @@ class TestUploadEndpointMaria(TestUploadEndpointPVC):
         os.environ["DATABASE_DATABASE"] = "trustyai-database"
 
         # Force reload of the global storage interface to use the new temp dir
-        from src.service.data import (  # noqa: PLC0415  # re-import after reload for test isolation
+        from trustyai_service.service.data import (  # noqa: PLC0415  # re-import after reload for test isolation
             storage,
         )
 
         self.storage_interface = storage.get_global_storage_interface(force_reload=True)
 
         # Re-create the FastAPI app to ensure it uses the new storage interface
-        reload(src.main)
-        from src.main import (  # noqa: PLC0415  # re-import after reload for test isolation
+        reload(trustyai_service.main)
+        from trustyai_service.main import (  # noqa: PLC0415  # re-import after reload for test isolation
             app,
         )
 
