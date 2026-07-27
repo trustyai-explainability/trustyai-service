@@ -13,6 +13,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from tests.service.data.test_utils import ModelMeshTestData
+from trustyai_service.endpoints import routes
 from trustyai_service.endpoints.consumer.consumer_endpoint import (
     router as consumer_router,
 )
@@ -113,7 +114,7 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
             "kind": "request",
         }
 
-        response = self.client.post("/consumer/kserve/v2", json=inference_payload)
+        response = self.client.post(routes.CONSUMER_KSERVE_V2, json=inference_payload)
 
         assert response.status_code == HTTPStatus.OK
         assert response.json() == {
@@ -140,7 +141,7 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
             "kind": "response",
         }
 
-        response = self.client.post("/consumer/kserve/v2", json=inference_payload)
+        response = self.client.post(routes.CONSUMER_KSERVE_V2, json=inference_payload)
 
         assert response.status_code == HTTPStatus.OK
         assert response.json() == {
@@ -201,7 +202,7 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
             }
 
             response_input = self.client.post(
-                "/consumer/kserve/v2",
+                routes.CONSUMER_KSERVE_V2,
                 json=input_inference_payload,
             )
 
@@ -230,7 +231,7 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
             }
 
             response_output = self.client.post(
-                "/consumer/kserve/v2",
+                routes.CONSUMER_KSERVE_V2,
                 json=output_inference_payload,
             )
 
@@ -301,7 +302,7 @@ class TestConsumerEndpointValidation(unittest.TestCase):
         """Payload without 'id' field is rejected with 400."""
         payload = {**self.valid_payload}
         del payload["id"]
-        response = self.client.post("/consumer/kserve/v2", json=payload)
+        response = self.client.post(routes.CONSUMER_KSERVE_V2, json=payload)
         assert response.status_code == HTTPStatus.BAD_REQUEST
         assert "id" in response.json()["detail"]
 
@@ -309,7 +310,7 @@ class TestConsumerEndpointValidation(unittest.TestCase):
         """Payload without 'kind' field is rejected with 400."""
         payload = {**self.valid_payload}
         del payload["kind"]
-        response = self.client.post("/consumer/kserve/v2", json=payload)
+        response = self.client.post(routes.CONSUMER_KSERVE_V2, json=payload)
         assert response.status_code == HTTPStatus.BAD_REQUEST
         assert "kind" in response.json()["detail"]
 
@@ -317,7 +318,7 @@ class TestConsumerEndpointValidation(unittest.TestCase):
         """Payload without 'modelid' field is rejected with 400."""
         payload = {**self.valid_payload}
         del payload["modelid"]
-        response = self.client.post("/consumer/kserve/v2", json=payload)
+        response = self.client.post(routes.CONSUMER_KSERVE_V2, json=payload)
         assert response.status_code == HTTPStatus.BAD_REQUEST
         assert "modelid" in response.json()["detail"]
 
@@ -325,14 +326,14 @@ class TestConsumerEndpointValidation(unittest.TestCase):
         """Payload without 'data' field is rejected with 400."""
         payload = {**self.valid_payload}
         del payload["data"]
-        response = self.client.post("/consumer/kserve/v2", json=payload)
+        response = self.client.post(routes.CONSUMER_KSERVE_V2, json=payload)
         assert response.status_code == HTTPStatus.BAD_REQUEST
         assert "data" in response.json()["detail"]
 
     def test_invalid_kind_returns_422(self) -> None:
         """Invalid kind value is rejected by Pydantic with 422."""
         payload = {**self.valid_payload, "kind": "prediction"}
-        response = self.client.post("/consumer/kserve/v2", json=payload)
+        response = self.client.post(routes.CONSUMER_KSERVE_V2, json=payload)
         assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
 
     def test_nested_format_returns_400(self) -> None:
@@ -342,7 +343,7 @@ class TestConsumerEndpointValidation(unittest.TestCase):
             "modelid": "test-model",
             "data": "dGVzdA==",
         }
-        response = self.client.post("/consumer/kserve/v2", json=payload)
+        response = self.client.post(routes.CONSUMER_KSERVE_V2, json=payload)
         assert response.status_code == HTTPStatus.BAD_REQUEST
         assert "id" in response.json()["detail"]
 

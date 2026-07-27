@@ -16,6 +16,8 @@ from fastapi.responses import JSONResponse
 from hypercorn.asyncio import serve
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
+from trustyai_service.endpoints import routes
+
 # Endpoint routers
 from trustyai_service.endpoints.consumer.consumer_endpoint import (
     router as consumer_router,
@@ -227,7 +229,7 @@ async def root() -> dict[str, str]:
     return {"message": "Welcome to TrustyAI Explainability Service"}
 
 
-@app.get("/q/metrics")
+@app.get(routes.PROMETHEUS_METRICS)
 async def metrics(_request: Request) -> Response:
     """Prometheus metrics endpoint.
 
@@ -267,7 +269,7 @@ def _handle_migration_status(status: str) -> JSONResponse | None:
 
 
 # Readiness probe
-@app.get("/q/health/ready")
+@app.get(routes.HEALTH_READY)
 async def readiness_probe() -> JSONResponse:
     """Kubernetes readiness probe endpoint.
 
@@ -375,7 +377,7 @@ async def readiness_probe() -> JSONResponse:
 
 
 # Liveness probe endpoint
-@app.get("/q/health/live")
+@app.get(routes.HEALTH_LIVE)
 async def liveness_probe() -> JSONResponse:
     """Kubernetes liveness probe endpoint.
 
