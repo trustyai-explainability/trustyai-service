@@ -14,6 +14,7 @@ from fastapi import APIRouter, Header, HTTPException, Request
 from numpy import ndarray
 from pydantic import TypeAdapter, ValidationError
 
+from trustyai_service.endpoints import routes
 from trustyai_service.endpoints.consumer import (
     InferencePartialPayload,
     KServeData,
@@ -68,7 +69,7 @@ def _validate_payload_type(payload: object, expected_type: type) -> None:
         )
 
 
-@router.post("/consumer/kserve/v2")
+@router.post(routes.CONSUMER_KSERVE_V2)
 async def consume_inference_payload(
     payload: InferencePartialPayload,
 ) -> dict[str, str]:
@@ -549,7 +550,7 @@ async def process_cloud_event(
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=str(e)) from e
 
 
-@router.post("/")
+@router.post(routes.CONSUMER_ROOT)
 async def consume_cloud_event(
     http_request: Request,
     ce_id: Annotated[str | None, Header()] = None,
