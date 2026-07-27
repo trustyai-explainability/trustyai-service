@@ -253,7 +253,6 @@ not-iterable = "ignore"
 # Suppress h5py/numpy type issues in PVC storage
 [[tool.pyrefly.sub-config]]
 matches = "src/trustyai_service/service/data/storage/pvc.py"
-"src/trustyai_service/service/data/storage/maria/maria.py" = ["ASYNC240"]  # One-time startup PVC check via Path.exists/is_dir/glob (local mount, negligible blocking)
 
 [tool.pyrefly.sub-config.errors]
 unsupported-operation = "ignore"
