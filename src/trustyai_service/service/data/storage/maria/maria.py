@@ -6,6 +6,8 @@ import asyncio
 import gzip
 import json
 import logging
+import os
+from pathlib import Path
 
 import mariadb
 import numpy as np
@@ -19,6 +21,7 @@ from trustyai_service.service.data.storage.exceptions import DeserializationErro
 from trustyai_service.service.data.storage.maria.legacy_maria_reader import (
     LegacyMariaDBStorageReader,
 )
+from trustyai_service.service.data.storage.maria.pvc_migration import PVCToDBMigrator
 from trustyai_service.service.data.storage.maria.utils import (
     MariaConnectionManager,
     get_clean_column_names,
@@ -137,11 +140,11 @@ class MariaDBStorage(StorageInterface):
             # Attempt to schedule migration to run asynchronously if event loop is available
             try:
                 loop = asyncio.get_running_loop()
-                self._migration_task = loop.create_task(self._migrate_from_legacy_db())
+                self._migration_task = loop.create_task(self._run_migration())
                 self._migration_task.add_done_callback(self._on_migration_done)
             except RuntimeError:
                 # No event loop running - run migration synchronously
-                asyncio.run(self._migrate_from_legacy_db())
+                asyncio.run(self._run_migration())
 
     @staticmethod
     def _on_migration_done(task: asyncio.Task[None]) -> None:
@@ -149,10 +152,47 @@ class MariaDBStorage(StorageInterface):
             return
         exc = task.exception()
         if exc is not None:
-            logger.exception("Legacy TrustyAI v1 migration failed.", exc_info=exc)
+            logger.exception("Migration failed.", exc_info=exc)
 
     # === MIGRATORS ================================================================================
+    async def _run_migration(self) -> None:
+        """Determine which migration to run: PVC-to-DB or legacy DB schema upgrade.
+
+        Migration priority:
+        1. PVC-to-DB migration if HDF5 files exist in PVC folder
+        2. Legacy DB schema v1->v2 migration if legacy tables exist
+        3. No migration if neither condition is met
+        """
+        # Check for PVC data first (higher priority)
+        pvc_folder = os.environ.get("STORAGE_DATA_FOLDER", "/inputs")
+        pvc_path = Path(pvc_folder)
+
+        if pvc_path.exists() and pvc_path.is_dir():
+            # Check if any HDF5 files exist
+            hdf5_files = list(pvc_path.glob("*.hdf5"))
+            if hdf5_files:
+                logger.info(
+                    "Detected %d HDF5 files in %s, starting PVC-to-DB migration",
+                    len(hdf5_files),
+                    pvc_folder,
+                )
+                await self._migrate_from_pvc()
+                return
+
+        # No PVC data found, check for legacy DB schema migration
+        logger.info("No PVC data found, checking for legacy DB schema migration")
+        await self._migrate_from_legacy_db()
+
+    async def _migrate_from_pvc(self) -> None:
+        """Execute PVC-to-DB migration using PVCToDBMigrator."""
+        migrator = PVCToDBMigrator(
+            maria_storage=self,
+            pvc_folder=os.environ.get("STORAGE_DATA_FOLDER"),
+        )
+        await migrator.migrate()
+
     async def _migrate_from_legacy_db(self) -> None:
+        """Execute legacy DB schema v1->v2 migration."""
         legacy_reader = LegacyMariaDBStorageReader(
             user=self.user,
             password=self.password,
