@@ -63,7 +63,7 @@ def make_compute_endpoint_test(
     :param module_path: Module path for patching (e.g.,
         "trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov")
     :param endpoint_path: API endpoint path (e.g.,
-        "/metrics/drift/kstest")
+        routes.DRIFT_KSTEST.compute)
     :param client: TestClient instance for making requests
     :param request_payload: Request payload dictionary
     :param expected_response_keys: Keys expected in successful response
@@ -122,7 +122,7 @@ def make_definition_endpoint_test(
 
     :param metric_name: Name of the metric for logging
     :param endpoint_path: API endpoint path (e.g.,
-        "/metrics/drift/kstest/definition")
+        routes.DRIFT_KSTEST.definition)
     :param client: TestClient instance for making requests
     :param expected_name: Expected metric name in response
     :return: Test function
@@ -170,7 +170,7 @@ def make_schedule_endpoint_test(
     :param module_path: Module path for patching (e.g.,
         "trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov")
     :param endpoint_path: API endpoint path (e.g.,
-        "/metrics/drift/kstest/request")
+        routes.DRIFT_KSTEST.request)
     :param client: TestClient instance for making requests
     :param request_payload: Request payload dictionary
     :return: Test function
@@ -227,7 +227,7 @@ def make_delete_schedule_endpoint_test(
     :param module_path: Module path for patching (e.g.,
         "trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov")
     :param endpoint_path: API endpoint path (e.g.,
-        "/metrics/drift/kstest/request")
+        routes.DRIFT_KSTEST.request)
     :param client: TestClient instance for making requests
     :return: Test function
     """
@@ -274,7 +274,7 @@ def make_list_requests_endpoint_test(
     :param module_path: Module path for patching (e.g.,
         "trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov")
     :param endpoint_path: API endpoint path (e.g.,
-        "/metrics/drift/kstest/requests")
+        routes.DRIFT_KSTEST.requests)
     :param client: TestClient instance for making requests
     :return: Test function
     """
@@ -1311,7 +1311,7 @@ def make_deprecated_endpoint_test(
 
     :param metric_name: Name of the metric for logging
     :param deprecated_endpoint_path: Deprecated API endpoint path (e.g.,
-        "/metrics/drift/meanshift")
+        routes.DRIFT_MEANSHIFT.compute)
     :param client: TestClient instance for making requests
     :param endpoint_type: Type of endpoint ("compute", "definition",
         "schedule", "delete", "list")
@@ -1331,7 +1331,7 @@ def make_deprecated_endpoint_test(
         test_func = make_deprecated_endpoint_test(
             metric_name="Meanshift",
             module_path="trustyai_service.endpoints.metrics.drift.compare_means",
-            deprecated_endpoint_path="/metrics/drift/meanshift",
+            deprecated_endpoint_path=routes.DRIFT_MEANSHIFT.compute,
             client=client,
             endpoint_type="compute",
             request_payload={"modelId": "test", "fitColumns": ["f1"]},
@@ -1342,7 +1342,7 @@ def make_deprecated_endpoint_test(
         test_func = make_deprecated_endpoint_test(
             metric_name="Meanshift",
             module_path="trustyai_service.endpoints.metrics.drift.compare_means",
-            deprecated_endpoint_path="/metrics/drift/meanshift/definition",
+            deprecated_endpoint_path=routes.DRIFT_MEANSHIFT.definition,
             client=client,
             endpoint_type="definition",
             expected_name_substring="T-Test"
@@ -1352,7 +1352,7 @@ def make_deprecated_endpoint_test(
         test_func = make_deprecated_endpoint_test(
             metric_name="Meanshift",
             module_path="trustyai_service.endpoints.metrics.drift.compare_means",
-            deprecated_endpoint_path="/metrics/drift/meanshift/requests",
+            deprecated_endpoint_path=routes.DRIFT_MEANSHIFT.requests,
             client=client,
             endpoint_type="list"
         )
