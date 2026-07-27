@@ -42,6 +42,7 @@ class MariaConnectionManager:
         port: int,
         database: str | None,
         ssl_ca: str | None = None,
+        connect_timeout: int | None = None,
     ) -> None:
         """Initialize connection manager with database credentials.
 
@@ -51,6 +52,7 @@ class MariaConnectionManager:
         :param port: Database port
         :param database: Database name
         :param ssl_ca: Path to CA certificate for TLS connection
+        :param connect_timeout: Connection timeout in seconds (None = driver default)
         """
         self.user = user
         self.password = password
@@ -58,6 +60,7 @@ class MariaConnectionManager:
         self.port = port
         self.database = database
         self.ssl_ca = ssl_ca
+        self.connect_timeout = connect_timeout
 
     def __enter__(self) -> tuple[mariadb.Connection, mariadb.Cursor]:
         """Enter context manager and establish database connection."""
@@ -71,6 +74,8 @@ class MariaConnectionManager:
         if self.ssl_ca:
             connect_kwargs["ssl_ca"] = self.ssl_ca
             connect_kwargs["ssl_verify_cert"] = True
+        if self.connect_timeout is not None:
+            connect_kwargs["connect_timeout"] = self.connect_timeout
         self.conn = mariadb.connect(**connect_kwargs)
         return self.conn, self.conn.cursor()
 
