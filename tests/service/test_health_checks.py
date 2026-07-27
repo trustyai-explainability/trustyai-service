@@ -383,6 +383,79 @@ class TestHealthCheckRegistry:
             assert check.name == "Storage readiness"
             assert "Unknown storage format" in check.data["error"]
 
+    def test_check_migration_not_configured(self) -> None:
+        """Test migration check returns OK when not configured."""
+        with patch.dict(os.environ, {"SERVICE_STORAGE_FORMAT": "PVC"}):
+            check = HealthCheckRegistry.check_migration_readiness()
+            assert check.status == STATUS_OK
+            assert check.name == "Migration"
+
+    @patch(
+        "trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__enter__"
+    )
+    @patch(
+        "trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__exit__",
+        return_value=False,
+    )
+    @patch(
+        "trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__init__",
+        return_value=None,
+    )
+    def test_check_migration_complete(self, _mock_init, _mock_exit, mock_enter) -> None:
+        """Test migration check returns OK when migration is COMPLETE."""
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = ("COMPLETE",)
+        mock_enter.return_value = (MagicMock(), mock_cursor)
+
+        with patch.dict(
+            os.environ,
+            {
+                "SERVICE_STORAGE_FORMAT": "MARIA",
+                "DATABASE_ATTEMPT_MIGRATION": "true",
+                "DATABASE_HOST": "localhost",
+                "DATABASE_USERNAME": "user",
+                "DATABASE_PASSWORD": "pass",  # pragma: allowlist secret
+                "DATABASE_DATABASE": "db",
+            },
+        ):
+            check = HealthCheckRegistry.check_migration_readiness()
+            assert check.status == STATUS_OK
+            assert check.name == "Migration"
+
+    @patch(
+        "trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__enter__"
+    )
+    @patch(
+        "trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__exit__",
+        return_value=False,
+    )
+    @patch(
+        "trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__init__",
+        return_value=None,
+    )
+    def test_check_migration_in_progress(
+        self, _mock_init, _mock_exit, mock_enter
+    ) -> None:
+        """Test migration check returns ERROR when migration is IN_PROGRESS."""
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = ("IN_PROGRESS",)
+        mock_enter.return_value = (MagicMock(), mock_cursor)
+
+        with patch.dict(
+            os.environ,
+            {
+                "SERVICE_STORAGE_FORMAT": "MARIA",
+                "DATABASE_ATTEMPT_MIGRATION": "1",
+                "DATABASE_HOST": "localhost",
+                "DATABASE_USERNAME": "user",
+                "DATABASE_PASSWORD": "pass",  # pragma: allowlist secret
+                "DATABASE_DATABASE": "db",
+            },
+        ):
+            check = HealthCheckRegistry.check_migration_readiness()
+            assert check.status == STATUS_ERROR
+            assert "in progress" in check.data["error"]
+
     def test_check_pvc_storage_production_mode(self) -> None:
         """Test PVC storage check redacts paths in production mode."""
         with patch.dict(
@@ -439,7 +512,7 @@ class TestHealthCheckFunctions:
             _health_cache.cache.clear()  # Clear cache to pick up new env vars
             status, checks = perform_readiness_checks()
             assert status in [STATUS_OK, STATUS_ERROR]
-            assert len(checks) == 2
+            assert len(checks) == 3
             # Verify all checks have required fields
             assert all("name" in check and "status" in check for check in checks)
 
@@ -451,7 +524,7 @@ class TestHealthCheckFunctions:
         ):
             status, checks = perform_readiness_checks()
             assert status == STATUS_ERROR
-            assert len(checks) == 2
+            assert len(checks) == 3
             # Storage check should be DOWN
             storage_check = next(c for c in checks if c["name"] == "Storage readiness")
             assert storage_check["status"] == STATUS_ERROR
@@ -495,7 +568,7 @@ class TestHealthEndpoints:
                 HTTPStatus.SERVICE_UNAVAILABLE,
             ]
             assert data["status"] in ["ready", "not_ready"]
-            assert len(data["checks"]) == 2
+            assert len(data["checks"]) == 3
             # At least one check should report (structure test)
             assert all(
                 "name" in check and "status" in check for check in data["checks"]
@@ -511,7 +584,7 @@ class TestHealthEndpoints:
             assert response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
             data = response.json()
             assert data["status"] == "not_ready"
-            assert len(data["checks"]) == 2
+            assert len(data["checks"]) == 3
 
     def test_liveness_endpoint(self, client) -> None:
         """Test /q/health/live endpoint."""

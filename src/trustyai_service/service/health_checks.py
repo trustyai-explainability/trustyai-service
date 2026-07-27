@@ -278,6 +278,88 @@ class HealthCheckRegistry:
             )
 
     @staticmethod
+    def check_migration_readiness() -> HealthCheck:
+        """Check if PVC-to-MariaDB migration is complete.
+
+        Only relevant when SERVICE_STORAGE_FORMAT is MARIA/DATABASE and
+        DATABASE_ATTEMPT_MIGRATION is enabled. Returns OK when migration
+        is not configured, complete, or partially complete.
+
+        :return: HealthCheck indicating migration readiness
+        """
+        storage_format = os.getenv("SERVICE_STORAGE_FORMAT", "PVC")
+        migration_enabled = os.getenv("DATABASE_ATTEMPT_MIGRATION", "0").lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+
+        if storage_format not in ("MARIA", "DATABASE") or not migration_enabled:
+            return HealthCheck("Migration", STATUS_OK)
+
+        try:
+            from trustyai_service.service.data.storage import (  # noqa: PLC0415
+                MariaDBConfig,
+            )
+            from trustyai_service.service.data.storage.maria.utils import (  # noqa: PLC0415
+                MariaConnectionManager,
+            )
+
+            config = MariaDBConfig()
+            mgr = MariaConnectionManager(
+                user=config.user,
+                password=config.password,
+                host=config.host,
+                port=config.port,
+                database=config.database,
+                ssl_ca=config.ssl_ca,
+                connect_timeout=2,
+            )
+
+            with mgr as (_conn, cursor):
+                cursor.execute(
+                    "SELECT status FROM trustyai_migration_status "
+                    "WHERE migration_type IN ('PVC_TO_DB', 'LEGACY_DB') "
+                    "ORDER BY started_at DESC LIMIT 1"
+                )
+                result = cursor.fetchone()
+
+            if result is None:
+                return HealthCheck(
+                    "Migration",
+                    STATUS_ERROR,
+                    {"error": "Migration not started yet"},
+                )
+
+            migration_status = result[0]
+            if migration_status == "IN_PROGRESS":
+                return HealthCheck(
+                    "Migration",
+                    STATUS_ERROR,
+                    {"error": "Data migration in progress"},
+                )
+            if migration_status == "FAILED":
+                return HealthCheck(
+                    "Migration",
+                    STATUS_ERROR,
+                    {"error": "Data migration failed"},
+                )
+            if migration_status == "PARTIAL":
+                logger.warning(
+                    "Service ready with partial migration - some files failed"
+                )
+            return HealthCheck("Migration", STATUS_OK)
+
+        except Exception:
+            logger.exception("Failed to check migration status")
+            return HealthCheck(
+                "Migration",
+                STATUS_ERROR,
+                {"error": "Unable to verify migration status"},
+            )
+
+    @staticmethod
     def check_http_server() -> HealthCheck:
         """Check if HTTP server is running.
 
@@ -317,6 +399,12 @@ def perform_readiness_checks() -> tuple[str, list[dict[str, Any]]]:
     # Storage check
     storage_check = HealthCheckRegistry.check_storage_readiness()
     checks.append(storage_check.to_dict())
+
+    # Migration check (only active when MARIA + DATABASE_ATTEMPT_MIGRATION)
+    migration_check = _health_cache.get_or_compute(
+        "migration", HealthCheckRegistry.check_migration_readiness
+    )
+    checks.append(migration_check.to_dict())
 
     # HTTP server check
     http_check = HealthCheckRegistry.check_http_server()
