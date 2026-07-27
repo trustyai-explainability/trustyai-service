@@ -246,6 +246,8 @@ _VALID_INFERENCE_TYPES = frozenset({"all", "organic"})
 
 def _get_tags(cell: object) -> list[str]:
     """Extract tag strings from a metadata cell value."""
+    if hasattr(cell, "tolist"):
+        cell = cell.tolist()
     if isinstance(cell, list):
         return cell
     if isinstance(cell, str):
