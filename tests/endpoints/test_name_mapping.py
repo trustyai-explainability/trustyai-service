@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
+from trustyai_service.endpoints import routes
 from trustyai_service.main import app
 
 client = TestClient(app)
@@ -24,7 +25,7 @@ class TestApplyColumnNames:
         mock_storage.apply_name_mapping = AsyncMock()
 
         response = client.post(
-            "/info/names",
+            routes.INFO_NAMES,
             json={
                 "modelId": "test-model",
                 "inputMapping": {"f1": "Feature One"},
@@ -44,7 +45,7 @@ class TestApplyColumnNames:
         mock_storage.get_original_column_names = AsyncMock(return_value=["f1", "f2"])
 
         response = client.post(
-            "/info/names",
+            routes.INFO_NAMES,
             json={
                 "modelId": "test-model",
                 "inputMapping": {"nonexistent": "Friendly"},
@@ -66,7 +67,7 @@ class TestApplyColumnNames:
         )
 
         response = client.post(
-            "/info/names",
+            routes.INFO_NAMES,
             json={
                 "modelId": "test-model",
                 "outputMapping": {"bad_col": "Friendly"},
@@ -84,7 +85,7 @@ class TestApplyColumnNames:
         mock_storage.dataset_exists = AsyncMock(return_value=False)
 
         response = client.post(
-            "/info/names",
+            routes.INFO_NAMES,
             json={
                 "modelId": "unknown-model",
                 "inputMapping": {"f1": "Friendly"},
@@ -107,7 +108,7 @@ class TestRemoveColumnNames:
 
         response = client.request(
             "DELETE",
-            "/info/names",
+            routes.INFO_NAMES,
             content='"test-model"',
             headers={"Content-Type": "application/json"},
         )
@@ -124,7 +125,7 @@ class TestRemoveColumnNames:
 
         response = client.request(
             "DELETE",
-            "/info/names",
+            routes.INFO_NAMES,
             content='"unknown-model"',
             headers={"Content-Type": "application/json"},
         )
