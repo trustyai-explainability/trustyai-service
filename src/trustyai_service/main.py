@@ -382,7 +382,7 @@ async def readiness_probe() -> JSONResponse:
                 return JSONResponse(
                     content={
                         "status": "not_ready",
-                        "reason": f"Unable to verify migration status: {e}",
+                        "reason": f"Unable to verify migration status: {type(e).__name__}",
                     },
                     status_code=HTTPStatus.SERVICE_UNAVAILABLE,
                 )
