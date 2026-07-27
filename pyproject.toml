@@ -127,6 +127,7 @@ ignore = [
 "tests/endpoints/test_upload_endpoint_pvc.py" = ["PLR0913"]
 "tests/service/data/test_utils.py" = ["PLR0913", "UP037"]  # UP037: Keep quoted annotations for optional protobuf imports
 "tests/service/serialization/test_rows.py" = ["PLR2004"]
+"tests/service/data/storage/test_pvc_storage.py" = ["PLC0415", "PLR2004"]
 "tests/service/data/storage/maria/*.py" = ["ANN", "PLR2004", "ARG002"]  # Pytest style: no test method annotations, exact assertion values, setup-only fixtures
 
 [tool.pytest.ini_options]
