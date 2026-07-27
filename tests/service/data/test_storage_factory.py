@@ -5,8 +5,8 @@ from unittest.mock import patch
 
 import pytest
 
-from src.service.data.storage import get_storage_interface
-from src.service.data.storage.pvc import PVCStorage
+from trustyai_service.service.data.storage import get_storage_interface
+from trustyai_service.service.data.storage.pvc import PVCStorage
 
 
 class TestGetStorageInterface:
@@ -37,12 +37,14 @@ class TestGetStorageInterfaceMariaDB:
     """Tests for MariaDB storage format routing (requires mariadb package)."""
 
     @patch(
-        "src.service.data.storage.maria.maria.MariaDBStorage.__init__",
+        "trustyai_service.service.data.storage.maria.maria.MariaDBStorage.__init__",
         return_value=None,
     )
     def test_maria_format_creates_mariadb(self, _mock_init: object) -> None:
         """MARIA format returns MariaDBStorage."""
-        from src.service.data.storage.maria.maria import MariaDBStorage  # noqa: PLC0415
+        from trustyai_service.service.data.storage.maria.maria import (  # noqa: PLC0415
+            MariaDBStorage,
+        )
 
         env = {
             "SERVICE_STORAGE_FORMAT": "MARIA",
@@ -57,12 +59,14 @@ class TestGetStorageInterfaceMariaDB:
             assert isinstance(storage, MariaDBStorage)
 
     @patch(
-        "src.service.data.storage.maria.maria.MariaDBStorage.__init__",
+        "trustyai_service.service.data.storage.maria.maria.MariaDBStorage.__init__",
         return_value=None,
     )
     def test_database_format_creates_mariadb(self, _mock_init: object) -> None:
         """DATABASE format is accepted as alias for MARIA."""
-        from src.service.data.storage.maria.maria import MariaDBStorage  # noqa: PLC0415
+        from trustyai_service.service.data.storage.maria.maria import (  # noqa: PLC0415
+            MariaDBStorage,
+        )
 
         env = {
             "SERVICE_STORAGE_FORMAT": "DATABASE",

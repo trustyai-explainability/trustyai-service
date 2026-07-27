@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.service.data.storage import get_storage_interface
-from src.service.data.storage.pvc import PVCStorage
+from trustyai_service.service.data.storage import get_storage_interface
+from trustyai_service.service.data.storage.pvc import PVCStorage
 
 # Test constants
 DEFAULT_MARIADB_PORT = 3306
@@ -42,7 +42,7 @@ class TestStorageInterfaceEnvVars:
             assert storage.data_file == "test.hdf5"
 
     @pytest.mark.skipif(not HAS_MARIADB, reason="mariadb extra not installed")
-    @patch("src.service.data.storage.maria.maria.MariaDBStorage")
+    @patch("trustyai_service.service.data.storage.maria.maria.MariaDBStorage")
     def test_mariadb_with_database_host_and_database(
         self, mock_storage: MagicMock
     ) -> None:
@@ -73,7 +73,7 @@ class TestStorageInterfaceEnvVars:
             )
 
     @pytest.mark.skipif(not HAS_MARIADB, reason="mariadb extra not installed")
-    @patch("src.service.data.storage.maria.maria.MariaDBStorage")
+    @patch("trustyai_service.service.data.storage.maria.maria.MariaDBStorage")
     def test_mariadb_with_database_service_and_name(
         self, mock_storage: MagicMock
     ) -> None:
@@ -104,7 +104,7 @@ class TestStorageInterfaceEnvVars:
             )
 
     @pytest.mark.skipif(not HAS_MARIADB, reason="mariadb extra not installed")
-    @patch("src.service.data.storage.maria.maria.MariaDBStorage")
+    @patch("trustyai_service.service.data.storage.maria.maria.MariaDBStorage")
     def test_mariadb_fallback_priority(self, mock_storage: MagicMock) -> None:
         """Test that DATABASE_HOST takes priority over DATABASE_SERVICE when both present."""
         with patch.dict(
@@ -135,7 +135,7 @@ class TestStorageInterfaceEnvVars:
             )
 
     @pytest.mark.skipif(not HAS_MARIADB, reason="mariadb extra not installed")
-    @patch("src.service.data.storage.maria.maria.MariaDBStorage")
+    @patch("trustyai_service.service.data.storage.maria.maria.MariaDBStorage")
     def test_mariadb_mixed_conventions(self, mock_storage: MagicMock) -> None:
         """Test MariaDB with mixed env var conventions (DATABASE_HOST + DATABASE_NAME)."""
         with patch.dict(
@@ -164,7 +164,7 @@ class TestStorageInterfaceEnvVars:
             )
 
     @pytest.mark.skipif(not HAS_MARIADB, reason="mariadb extra not installed")
-    @patch("src.service.data.storage.maria.maria.MariaDBStorage")
+    @patch("trustyai_service.service.data.storage.maria.maria.MariaDBStorage")
     def test_mariadb_with_database_format(self, mock_storage: MagicMock) -> None:
         """Test MariaDB with SERVICE_STORAGE_FORMAT=DATABASE (operator convention)."""
         with patch.dict(
@@ -193,7 +193,7 @@ class TestStorageInterfaceEnvVars:
             )
 
     @pytest.mark.skipif(not HAS_MARIADB, reason="mariadb extra not installed")
-    @patch("src.service.data.storage.maria.maria.MariaDBStorage")
+    @patch("trustyai_service.service.data.storage.maria.maria.MariaDBStorage")
     def test_mariadb_with_quarkus_credentials(self, mock_storage: MagicMock) -> None:
         """Test MariaDB with QUARKUS_DATASOURCE_USERNAME/PASSWORD (operator convention)."""
         with patch.dict(
@@ -224,7 +224,7 @@ class TestStorageInterfaceEnvVars:
             )
 
     @pytest.mark.skipif(not HAS_MARIADB, reason="mariadb extra not installed")
-    @patch("src.service.data.storage.maria.maria.MariaDBStorage")
+    @patch("trustyai_service.service.data.storage.maria.maria.MariaDBStorage")
     def test_mariadb_credentials_fallback_priority(
         self, mock_storage: MagicMock
     ) -> None:
@@ -257,7 +257,7 @@ class TestStorageInterfaceEnvVars:
             )
 
     @pytest.mark.skipif(not HAS_MARIADB, reason="mariadb extra not installed")
-    @patch("src.service.data.storage.maria.maria.MariaDBStorage")
+    @patch("trustyai_service.service.data.storage.maria.maria.MariaDBStorage")
     def test_mariadb_ssl_ca_passed_when_file_exists(
         self, mock_storage: MagicMock
     ) -> None:
@@ -291,7 +291,7 @@ class TestStorageInterfaceEnvVars:
             )
 
     @pytest.mark.skipif(not HAS_MARIADB, reason="mariadb extra not installed")
-    @patch("src.service.data.storage.maria.maria.MariaDBStorage")
+    @patch("trustyai_service.service.data.storage.maria.maria.MariaDBStorage")
     def test_mariadb_ssl_ca_none_when_file_missing(
         self, mock_storage: MagicMock
     ) -> None:

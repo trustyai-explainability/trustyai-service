@@ -20,17 +20,19 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 
-from src.core.metrics.fairness.group.disparate_impact_ratio import DisparateImpactRatio
-from src.core.metrics.fairness.group.group_average_odds_difference import (
+from trustyai_service.core.metrics.fairness.group.disparate_impact_ratio import (
+    DisparateImpactRatio,
+)
+from trustyai_service.core.metrics.fairness.group.group_average_odds_difference import (
     GroupAverageOddsDifference,
 )
-from src.core.metrics.fairness.group.group_average_predictive_value_difference import (
+from trustyai_service.core.metrics.fairness.group.group_average_predictive_value_difference import (
     GroupAveragePredictiveValueDifference,
 )
-from src.core.metrics.fairness.group.group_statistical_parity_difference import (
+from trustyai_service.core.metrics.fairness.group.group_statistical_parity_difference import (
     GroupStatisticalParityDifference,
 )
-from src.core.metrics.fairness.individual.individual_consistency import (
+from trustyai_service.core.metrics.fairness.individual.individual_consistency import (
     IndividualConsistency,
 )
 
@@ -315,6 +317,32 @@ class TestDisparateImpactRatio:
             f"unprivileged group. Actual score {score}"
         )
 
+    def test_dir_zero_favorable_privileged(self) -> None:
+        """DIR returns inf when privileged group has zero favorable outcomes."""
+        privileged = np.array([[0, 0], [1, 0]])
+        unprivileged = np.array([[0, 1], [1, 1]])
+
+        score = DisparateImpactRatio.calculate(
+            privileged=privileged,
+            unprivileged=unprivileged,
+            favorable_outputs=np.array([1]),
+        )
+
+        assert score == np.inf
+
+    def test_dir_zero_favorable_both_groups(self) -> None:
+        """DIR returns nan when both groups have zero favorable outcomes."""
+        privileged = np.array([[0, 0], [1, 0]])
+        unprivileged = np.array([[0, 0], [1, 0]])
+
+        score = DisparateImpactRatio.calculate(
+            privileged=privileged,
+            unprivileged=unprivileged,
+            favorable_outputs=np.array([1]),
+        )
+
+        assert np.isnan(score)
+
     def test_dir_equal_favorable_rates(self) -> None:
         """Test to check that the result of DIR calculation is 1.0 when favorable outcome rates are equal between groups."""
         df = pd.DataFrame(generate_data())
@@ -554,3 +582,22 @@ def test_individual_consistency_imperfect() -> None:
     )
 
     assert consistency == pytest.approx(cs_score, abs=0.2)
+
+
+def test_individual_consistency_rejects_multi_prediction_model() -> None:
+    """Model returning multiple predictions per sample is rejected."""
+    X_sample = get_processed_data(sample_size=5)
+
+    class MultiPredictionModel:
+        """Model that incorrectly returns multiple predictions per sample."""
+
+        def predict(self, _x: np.ndarray) -> list[list[int]]:
+            """Return 2 predictions for any input."""
+            return [[1], [2]]
+
+    with pytest.raises(ValueError, match="Expected 1 prediction per sample"):
+        IndividualConsistency.calculate(
+            proximity_function=get_k_neighbors_function(3),
+            samples=X_sample,
+            model=MultiPredictionModel(),
+        )

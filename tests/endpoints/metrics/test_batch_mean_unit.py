@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 from pydantic import ValidationError
 
-from src.endpoints.metrics.batch_mean import (
+from trustyai_service.endpoints.metrics.batch_mean import (
     BatchMeanRequest,
     calculate_batch_mean_metric,
 )

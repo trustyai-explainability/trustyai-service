@@ -14,127 +14,131 @@
 [![CodeRabbit](https://img.shields.io/badge/CodeRabbit-AI%20Reviews-orange?logo=coderabbit)](https://coderabbit.ai)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/trustyai-explainability/trustyai-service/badge)](https://scorecard.dev/viewer/?uri=github.com/trustyai-explainability/trustyai-service)
 
-👋 The TrustyAI Service is intended to be a hub for all kinds of Responsible AI workflows, such as
-explainability, drift, and Large Language Model (LLM) evaluation. Designed as a REST server wrapping
-a core Python library, the TrustyAI service is intended to be a tool that can operate in a local
-environment, a Jupyter Notebook, or in Kubernetes.
+The TrustyAI Service is a REST API for Responsible AI workflows:
+drift detection, fairness monitoring, and model explainability.
+Built on FastAPI + Hypercorn, it consumes inference data from
+KServe, stores it, and computes metrics on a schedule via
+Prometheus.
+
+Part of [Red Hat OpenShift AI](https://www.redhat.com/en/technologies/cloud-computing/openshift/openshift-ai)
+and [Open Data Hub](https://opendatahub.io/).
+
+**[Documentation](https://trustyai.org/docs/main/main)**
+· **[API Reference](https://trustyai.org/docs/main/trustyai-service-api-reference)**
 
 ---
-## Native Algorithms
-### 📈Drift  📉
-- Fourier Maximum Mean Discrepancy (FourierMMD)
-- Jensen-Shannon
-- Approximate Kolmogorov–Smirnov Test
-- Kolmogorov–Smirnov Test (KS-Test)
-- Meanshift
 
-### ⚖️ Fairness ⚖️
-- Statistical Parity Difference
-- Disparate Impact Ratio
-- Average Odds Ratio (WIP)
-- Average Predictive Value Difference (WIP)
-- Individual Consistency (WIP)
+## Key Features
+
+- **Real-time drift detection** on live inference streams
+- **Automatic Prometheus metric publishing** on a configurable
+  schedule
+- **KServe-native** — consumes inference payloads directly via
+  CloudEvents
+- **Dual storage backends** — PVC (HDF5) or MariaDB
+- **Runs anywhere** — locally, in Jupyter, or on Kubernetes
 
 ---
-## Imported Algorithms/Libraries
-### 🔬Explainability 🔬
-- [LIME](https://github.com/marcotcr/lime) (WIP)
-- [SHAP](https://github.com/shap/shap) (WIP)
 
-### 📋 LLM Evaluation  📋
-- [LM-Evaluation-Harness](https://github.com/EleutherAI/lm-evaluation-harness/tree/main)
+## Metrics
+
+### Drift Detection
+
+- Compare Means
+  ([Welch's t-test](https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.ttest_ind.html))
+- Kolmogorov–Smirnov Test
+  ([scipy.stats.ks_2samp](https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.ks_2samp.html))
+- Streaming Kolmogorov–Smirnov Test
+  ([Lall 2015](https://ieeexplore.ieee.org/document/7363746/))
+  using the Greenwald–Khanna quantile sketch
+  ([Greenwald & Khanna 2001](https://dl.acm.org/doi/10.1145/375663.375670))
+- Jensen–Shannon Divergence
+  ([scipy.spatial.distance](https://docs.scipy.org/doc/scipy/reference/generated/scipy.spatial.distance.jensenshannon.html))
+- Maximum Mean Discrepancy
+  ([Domingo-Enrich et al. 2023](https://proceedings.mlr.press/v206/domingo-enrich23a/domingo-enrich23a.pdf))
+  with CTT, RFF, and ACTT methods via
+  [goodpoints](https://github.com/microsoft/goodpoints)
+
+### Fairness
+
+- Statistical Parity Difference (SPD)
+- Disparate Impact Ratio (DIR)
 
 ---
-## 📦 Building 📦
-### Locally
+
+## Quickstart
+
 ```bash
-uv pip install ".[$EXTRAS]"
+# Install
+uv sync --all-groups
+
+# Run
+uv run python -m src.main
 ```
 
-### Container
+Once running, the API is available at `http://localhost:8080`.
+Interactive OpenAPI documentation is at
+`http://localhost:8080/docs`.
+
+---
+
+## Container
+
 ```bash
-podman build -t $IMAGE_NAME --build-arg EXTRAS="$EXTRAS" .
-```
+# Minimal (PVC storage only)
+podman build -t trustyai:latest .
 
-### Available Extras
-Pass these extras as a comma separated list, e.g., `"mariadb,protobuf"`
-* `protobuf`: To process model inference data from ModelMesh models, you can install with `protobuf` support. Otherwise, only KServe models will be supported.
-* `eval`: To enable the Language Model Evaluation servers, install with `eval` support.
-* `mariadb` (If installing locally, install the [MariaDB Connector/C](https://mariadb.com/docs/server/connect/programming-languages/c/install/) first.)
+# With MariaDB support
+podman build -t trustyai:latest --build-arg EXTRAS="mariadb" .
 
-### Examples
-```bash
-uv pip install ".[mariadb,protobuf,eval]"
-podman build -t $IMAGE_NAME --build-arg EXTRAS="mariadb,protobuf,eval" .
-```
-
-## 🏃Running 🏃‍♀️
-### Locally
-```bash
-uv run uvicorn src.main:app --host 0.0.0.0 --port 8080
-```
-
-### Container
-```bash
-podman run -t $IMAGE_NAME -p 8080:8080 .
-```
-
-### 🔐 TLS Support
-The service supports TLS encryption and automatically detects certificates at startup:
-
-- **With TLS certificates**: Runs on port 4443 (HTTPS)
-- **Without TLS certificates**: Runs on port 8080 (HTTP)
-
-**Certificate locations** (configurable via environment variables):
-- Certificate: `/etc/tls/internal/tls.crt` (or `TLS_CERT_FILE`)
-- Private key: `/etc/tls/internal/tls.key` (or `TLS_KEY_FILE`)
-
-**Environment variables**:
-- `TLS_CERT_FILE`: Path to TLS certificate file
-- `TLS_KEY_FILE`: Path to TLS private key file
-- `SSL_PORT`: HTTPS port (default: 4443)
-- `HTTP_PORT`: HTTP port (default: 8080)
-
-The TLS implementation is fully compatible with the TrustyAI operator for seamless Kubernetes deployment.
-
-## 🧪 Testing 🧪
-### Running All Tests
-To run all tests in the project:
-```bash
-python -m pytest
-```
-
-Or with more verbose output:
-```bash
-python -m pytest -v
-```
-
-### Running with Coverage
-To run tests with coverage reporting:
-```bash
-python -m pytest --cov=src
+# Run
+podman run -p 8080:8080 trustyai:latest
 ```
 
 ---
-## 🔄 Protobuf Support 🔄
-To process model inference data from ModelMesh models, you can install protobuf support. Otherwise, only KServe models will be supported.
 
-### Generating Protobuf Code
-After installing dependencies, generate Python code from the protobuf definitions:
+## Configuration
+
+| Environment Variable | Default | Description |
+| -------- | ------- | ----------- |
+| `SERVICE_STORAGE_FORMAT` | `PVC` | Storage backend (`PVC` or `MARIA`) |
+| `SERVICE_METRICS_SCHEDULE` | `30` | Seconds between scheduled computations |
+| `HTTP_PORT` | `8080` | HTTP listener port |
+| `SSL_PORT` | `4443` | HTTPS listener port |
+| `TLS_CERT_FILE` | `/etc/tls/internal/tls.crt` | TLS certificate path |
+| `TLS_KEY_FILE` | `/etc/tls/internal/tls.key` | TLS private key path |
+| `DATABASE_HOST` | — | MariaDB hostname |
+| `DATABASE_PORT` | `3306` | MariaDB port |
+| `DATABASE_USERNAME` | — | MariaDB username |
+| `DATABASE_PASSWORD` | — | MariaDB password |
+| `DATABASE_DATABASE` | — | MariaDB database name |
+
+TLS is enabled automatically when both the certificate and key
+files are present.
+
+---
+
+## Testing
 
 ```bash
-# From the project root
-bash scripts/generate_protos.sh
-```
-
-### Testing Protobuf Functionality
-Run the tests for the protobuf implementation:
-
-```bash
-# From the project root
-python -m pytest tests/service/data/test_modelmesh_parser.py -v
+uv run pytest tests/ -v
+uv run pytest tests/ -v --cov=src --cov-report=xml  # with coverage
 ```
 
 ---
-## ☎️ API ☎️
-When the service is running, visit `localhost:8080/docs` to see the OpenAPI documentation!
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup,
+coding standards, and the pull request process.
+
+Please report security vulnerabilities via
+[GitHub Security Advisories](https://github.com/trustyai-explainability/trustyai-service/security/advisories/new),
+not public issues.
+See [SECURITY.md](SECURITY.md) for details.
+
+---
+
+## License
+
+[Apache License 2.0](LICENSE)

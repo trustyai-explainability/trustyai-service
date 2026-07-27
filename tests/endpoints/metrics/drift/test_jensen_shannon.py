@@ -5,7 +5,7 @@ from http import HTTPStatus
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.endpoints.metrics.drift.jensen_shannon import (
+from trustyai_service.endpoints.metrics.drift.jensen_shannon import (
     get_data_source,
     get_prometheus_scheduler,
     router,
@@ -25,7 +25,7 @@ class TestJensenShannonEndpoints:
     # Pandas DataFrame tests
     test_compute_endpoint_pandas = factory.make_compute_endpoint_test(
         metric_name="JensenShannon",
-        module_path="src.endpoints.metrics.drift.jensen_shannon",
+        module_path="trustyai_service.endpoints.metrics.drift.jensen_shannon",
         endpoint_path="/metrics/drift/jensenshannon",
         client=client,
         request_payload={
@@ -52,7 +52,7 @@ class TestJensenShannonEndpoints:
     # Polars DataFrame tests
     test_compute_endpoint_polars = factory.make_compute_endpoint_test(
         metric_name="JensenShannon",
-        module_path="src.endpoints.metrics.drift.jensen_shannon",
+        module_path="trustyai_service.endpoints.metrics.drift.jensen_shannon",
         endpoint_path="/metrics/drift/jensenshannon",
         client=client,
         request_payload={
@@ -85,7 +85,7 @@ class TestJensenShannonEndpoints:
 
     test_schedule_endpoint = factory.make_schedule_endpoint_test(
         metric_name="JensenShannon",
-        module_path="src.endpoints.metrics.drift.jensen_shannon",
+        module_path="trustyai_service.endpoints.metrics.drift.jensen_shannon",
         endpoint_path="/metrics/drift/jensenshannon/request",
         client=client,
         request_payload={
@@ -98,14 +98,14 @@ class TestJensenShannonEndpoints:
 
     test_delete_schedule_endpoint = factory.make_delete_schedule_endpoint_test(
         metric_name="JensenShannon",
-        module_path="src.endpoints.metrics.drift.jensen_shannon",
+        module_path="trustyai_service.endpoints.metrics.drift.jensen_shannon",
         endpoint_path="/metrics/drift/jensenshannon/request",
         client=client,
     )
 
     test_list_requests_endpoint = factory.make_list_requests_endpoint_test(
         metric_name="JensenShannon",
-        module_path="src.endpoints.metrics.drift.jensen_shannon",
+        module_path="trustyai_service.endpoints.metrics.drift.jensen_shannon",
         endpoint_path="/metrics/drift/jensenshannon/requests",
         client=client,
     )
@@ -117,7 +117,7 @@ class TestJensenShannonEndpoints:
     # Compute endpoint errors
     test_compute_missing_reference_tag = factory.make_compute_endpoint_error_test(
         metric_name="JensenShannon",
-        module_path="src.endpoints.metrics.drift.jensen_shannon",
+        module_path="trustyai_service.endpoints.metrics.drift.jensen_shannon",
         endpoint_path="/metrics/drift/jensenshannon",
         client=client,
         request_payload={
@@ -132,7 +132,7 @@ class TestJensenShannonEndpoints:
     test_compute_missing_fit_columns_derives_from_metadata = (
         factory.make_compute_endpoint_test(
             metric_name="JensenShannon",
-            module_path="src.endpoints.metrics.drift.jensen_shannon",
+            module_path="trustyai_service.endpoints.metrics.drift.jensen_shannon",
             endpoint_path="/metrics/drift/jensenshannon",
             client=client,
             request_payload={
@@ -145,7 +145,7 @@ class TestJensenShannonEndpoints:
 
     test_compute_invalid_feature = factory.make_compute_endpoint_error_test(
         metric_name="JensenShannon",
-        module_path="src.endpoints.metrics.drift.jensen_shannon",
+        module_path="trustyai_service.endpoints.metrics.drift.jensen_shannon",
         endpoint_path="/metrics/drift/jensenshannon",
         client=client,
         request_payload={
@@ -160,7 +160,7 @@ class TestJensenShannonEndpoints:
     # Delete endpoint errors
     test_delete_invalid_uuid = factory.make_delete_endpoint_error_test(
         metric_name="JensenShannon",
-        module_path="src.endpoints.metrics.drift.jensen_shannon",
+        module_path="trustyai_service.endpoints.metrics.drift.jensen_shannon",
         endpoint_path="/metrics/drift/jensenshannon/request",
         client=client,
         request_id="not-a-valid-uuid",
@@ -172,7 +172,7 @@ class TestJensenShannonEndpoints:
     # List endpoint with multiple requests
     test_list_requests_with_data = factory.make_list_requests_with_data_test(
         metric_name="JensenShannon",
-        module_path="src.endpoints.metrics.drift.jensen_shannon",
+        module_path="trustyai_service.endpoints.metrics.drift.jensen_shannon",
         endpoint_path="/metrics/drift/jensenshannon/requests",
         client=client,
         num_requests=3,
@@ -182,7 +182,7 @@ class TestJensenShannonEndpoints:
     test_list_requests_filters_malformed = (
         factory.make_list_requests_with_malformed_data_test(
             metric_name="JensenShannon",
-            module_path="src.endpoints.metrics.drift.jensen_shannon",
+            module_path="trustyai_service.endpoints.metrics.drift.jensen_shannon",
             endpoint_path="/metrics/drift/jensenshannon/requests",
             client=client,
             num_valid_requests=2,
@@ -193,7 +193,7 @@ class TestJensenShannonEndpoints:
     # Empty data tests
     test_compute_empty_reference_data = factory.make_compute_empty_reference_data_test(
         metric_name="JensenShannon",
-        module_path="src.endpoints.metrics.drift.jensen_shannon",
+        module_path="trustyai_service.endpoints.metrics.drift.jensen_shannon",
         endpoint_path="/metrics/drift/jensenshannon",
         client=client,
         request_payload={
@@ -205,7 +205,7 @@ class TestJensenShannonEndpoints:
 
     test_compute_empty_current_data = factory.make_compute_empty_current_data_test(
         metric_name="JensenShannon",
-        module_path="src.endpoints.metrics.drift.jensen_shannon",
+        module_path="trustyai_service.endpoints.metrics.drift.jensen_shannon",
         endpoint_path="/metrics/drift/jensenshannon",
         client=client,
         request_payload={
@@ -219,7 +219,7 @@ class TestJensenShannonEndpoints:
     test_list_scheduler_unavailable = (
         factory.make_list_endpoint_scheduler_unavailable_test(
             metric_name="JensenShannon",
-            module_path="src.endpoints.metrics.drift.jensen_shannon",
+            module_path="trustyai_service.endpoints.metrics.drift.jensen_shannon",
             endpoint_path="/metrics/drift/jensenshannon/requests",
             client=client,
         )
@@ -227,7 +227,7 @@ class TestJensenShannonEndpoints:
 
     test_list_exception = factory.make_list_endpoint_exception_test(
         metric_name="JensenShannon",
-        module_path="src.endpoints.metrics.drift.jensen_shannon",
+        module_path="trustyai_service.endpoints.metrics.drift.jensen_shannon",
         endpoint_path="/metrics/drift/jensenshannon/requests",
         client=client,
     )
@@ -235,7 +235,7 @@ class TestJensenShannonEndpoints:
     # Generic exception in compute endpoint
     test_compute_generic_exception = factory.make_compute_generic_exception_test(
         metric_name="JensenShannon",
-        module_path="src.endpoints.metrics.drift.jensen_shannon",
+        module_path="trustyai_service.endpoints.metrics.drift.jensen_shannon",
         endpoint_path="/metrics/drift/jensenshannon",
         client=client,
         request_payload={
@@ -251,7 +251,7 @@ class TestJensenShannonEndpoints:
 
     test_schedule_scheduler_unavailable = factory.make_schedule_endpoint_error_test(
         metric_name="JensenShannon",
-        module_path="src.endpoints.metrics.drift.jensen_shannon",
+        module_path="trustyai_service.endpoints.metrics.drift.jensen_shannon",
         endpoint_path="/metrics/drift/jensenshannon/request",
         client=client,
         request_payload={
@@ -266,7 +266,7 @@ class TestJensenShannonEndpoints:
 
     test_schedule_connection_error = factory.make_schedule_endpoint_error_test(
         metric_name="JensenShannon",
-        module_path="src.endpoints.metrics.drift.jensen_shannon",
+        module_path="trustyai_service.endpoints.metrics.drift.jensen_shannon",
         endpoint_path="/metrics/drift/jensenshannon/request",
         client=client,
         request_payload={
@@ -281,7 +281,7 @@ class TestJensenShannonEndpoints:
 
     test_delete_scheduler_unavailable = factory.make_delete_endpoint_error_test(
         metric_name="JensenShannon",
-        module_path="src.endpoints.metrics.drift.jensen_shannon",
+        module_path="trustyai_service.endpoints.metrics.drift.jensen_shannon",
         endpoint_path="/metrics/drift/jensenshannon/request",
         client=client,
         request_id="123e4567-e89b-12d3-a456-426614174000",
@@ -292,7 +292,7 @@ class TestJensenShannonEndpoints:
 
     test_delete_exception = factory.make_delete_endpoint_error_test(
         metric_name="JensenShannon",
-        module_path="src.endpoints.metrics.drift.jensen_shannon",
+        module_path="trustyai_service.endpoints.metrics.drift.jensen_shannon",
         endpoint_path="/metrics/drift/jensenshannon/request",
         client=client,
         request_id="123e4567-e89b-12d3-a456-426614174000",
@@ -308,7 +308,7 @@ class TestJensenShannonEndpoints:
     test_retrieve_tags_with_all_fields = (
         factory.make_retrieve_tags_with_all_fields_test(
             request_class=__import__(
-                "src.endpoints.metrics.drift.jensen_shannon",
+                "trustyai_service.endpoints.metrics.drift.jensen_shannon",
                 fromlist=["JensenShannonMetricRequest"],
             ).JensenShannonMetricRequest,
         )
@@ -317,7 +317,7 @@ class TestJensenShannonEndpoints:
     test_retrieve_tags_without_reference_tag = (
         factory.make_retrieve_tags_without_reference_tag_test(
             request_class=__import__(
-                "src.endpoints.metrics.drift.jensen_shannon",
+                "trustyai_service.endpoints.metrics.drift.jensen_shannon",
                 fromlist=["JensenShannonMetricRequest"],
             ).JensenShannonMetricRequest,
         )
@@ -326,7 +326,7 @@ class TestJensenShannonEndpoints:
     test_retrieve_tags_without_fit_columns = (
         factory.make_retrieve_tags_without_fit_columns_test(
             request_class=__import__(
-                "src.endpoints.metrics.drift.jensen_shannon",
+                "trustyai_service.endpoints.metrics.drift.jensen_shannon",
                 fromlist=["JensenShannonMetricRequest"],
             ).JensenShannonMetricRequest,
         )
@@ -335,7 +335,7 @@ class TestJensenShannonEndpoints:
     test_retrieve_tags_with_empty_fit_columns = (
         factory.make_retrieve_tags_with_empty_fit_columns_test(
             request_class=__import__(
-                "src.endpoints.metrics.drift.jensen_shannon",
+                "trustyai_service.endpoints.metrics.drift.jensen_shannon",
                 fromlist=["JensenShannonMetricRequest"],
             ).JensenShannonMetricRequest,
         )
@@ -344,7 +344,7 @@ class TestJensenShannonEndpoints:
     test_retrieve_default_tags_with_none_metric_name = (
         factory.make_retrieve_default_tags_with_none_metric_name_test(
             request_class=__import__(
-                "src.endpoints.metrics.drift.jensen_shannon",
+                "trustyai_service.endpoints.metrics.drift.jensen_shannon",
                 fromlist=["JensenShannonMetricRequest"],
             ).JensenShannonMetricRequest,
             expected_metric_name="JensenShannon",
@@ -354,7 +354,7 @@ class TestJensenShannonEndpoints:
     test_retrieve_default_tags_called_directly_by_prometheus_publisher = (
         factory.make_retrieve_default_tags_called_directly_by_prometheus_publisher_test(
             request_class=__import__(
-                "src.endpoints.metrics.drift.jensen_shannon",
+                "trustyai_service.endpoints.metrics.drift.jensen_shannon",
                 fromlist=["JensenShannonMetricRequest"],
             ).JensenShannonMetricRequest,
             expected_metric_name="JensenShannon",

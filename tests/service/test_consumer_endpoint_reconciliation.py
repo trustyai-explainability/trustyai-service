@@ -12,9 +12,14 @@ from unittest import mock
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.endpoints.consumer.consumer_endpoint import router as consumer_router
-from src.service.data.modelmesh_parser import ModelMeshPayloadParser, PartialPayload
 from tests.service.data.test_utils import ModelMeshTestData
+from trustyai_service.endpoints.consumer.consumer_endpoint import (
+    router as consumer_router,
+)
+from trustyai_service.service.data.modelmesh_parser import (
+    ModelMeshPayloadParser,
+    PartialPayload,
+)
 
 
 class TestConsumerEndpointReconciliation(unittest.TestCase):
@@ -25,7 +30,7 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
 
         self.storage_patch = mock.patch(
-            "src.endpoints.consumer.consumer_endpoint.get_global_storage_interface",
+            "trustyai_service.endpoints.consumer.consumer_endpoint.get_global_storage_interface",
         )
         self.mock_get_storage = self.storage_patch.start()
         self.mock_storage = mock.AsyncMock()
@@ -50,7 +55,7 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
         self.mock_to_dataframe = self.parser_dataframe_patch.start()
 
         self.model_data_patch = mock.patch(
-            "src.endpoints.consumer.consumer_endpoint.ModelData",
+            "trustyai_service.endpoints.consumer.consumer_endpoint.ModelData",
         )
         self.mock_model_data = self.model_data_patch.start()
         self.mock_model_data.return_value.shapes.return_value = [
@@ -163,22 +168,22 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
 
         with (
             mock.patch(
-                "src.endpoints.consumer.consumer_endpoint.ModelMeshPayloadParser.parse_input_payload",
+                "trustyai_service.endpoints.consumer.consumer_endpoint.ModelMeshPayloadParser.parse_input_payload",
                 side_effect=lambda _x: True,
             ) as mock_parse_input,
             mock.patch(
-                "src.endpoints.consumer.consumer_endpoint.ModelMeshPayloadParser.parse_output_payload",
+                "trustyai_service.endpoints.consumer.consumer_endpoint.ModelMeshPayloadParser.parse_output_payload",
                 side_effect=ValueError("Not an output"),
             ) as mock_parse_output,
             mock.patch(
-                "src.endpoints.consumer.consumer_endpoint.ModelMeshPayloadParser.payloads_to_dataframe",
+                "trustyai_service.endpoints.consumer.consumer_endpoint.ModelMeshPayloadParser.payloads_to_dataframe",
                 return_value=self.mock_df,
             ) as _mock_df,
             mock.patch(
-                "src.endpoints.consumer.consumer_endpoint.asyncio.gather",
+                "trustyai_service.endpoints.consumer.consumer_endpoint.asyncio.gather",
             ) as mock_gather,
             mock.patch(
-                "src.endpoints.consumer.consumer_endpoint.reconcile_modelmesh_payloads",
+                "trustyai_service.endpoints.consumer.consumer_endpoint.reconcile_modelmesh_payloads",
                 new=mock.AsyncMock(),
             ) as mock_reconcile,
         ):
@@ -272,7 +277,7 @@ class TestConsumerEndpointValidation(unittest.TestCase):
     def setUp(self) -> None:
         """Set up test client with mocked storage."""
         self.storage_patch = mock.patch(
-            "src.endpoints.consumer.consumer_endpoint.get_global_storage_interface",
+            "trustyai_service.endpoints.consumer.consumer_endpoint.get_global_storage_interface",
         )
         self.mock_get_storage = self.storage_patch.start()
         self.mock_get_storage.return_value = mock.AsyncMock()

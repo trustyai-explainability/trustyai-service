@@ -30,7 +30,7 @@ repos:
   # === CODE FORMATTING & LINTING ===
   # Check first (auto-fix lint issues), then format
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.20
+    rev: v0.15.22
     hooks:
       - id: ruff-check
       - id: ruff-format

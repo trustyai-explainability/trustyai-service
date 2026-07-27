@@ -10,13 +10,13 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.endpoints.metrics.batch_mean import BatchMeanRequest, router
+from trustyai_service.endpoints.metrics.batch_mean import BatchMeanRequest, router
 
 app = FastAPI()
 app.include_router(router)
 client = TestClient(app)
 
-MODULE = "src.endpoints.metrics.batch_mean"
+MODULE = "trustyai_service.endpoints.metrics.batch_mean"
 
 
 def _make_dataframe(n: int = 100, seed: int = 42) -> pd.DataFrame:
@@ -356,8 +356,8 @@ class TestDeprecatedIdentityEndpoints:
 class TestBatchMeanRequest:
     """Tests for BatchMeanRequest model validation."""
 
-    def test_model_validator_sets_metric_name(self) -> None:
-        """Default metric_name is set to BatchMean by model validator."""
+    def test_default_metric_name(self) -> None:
+        """Default metric_name is set to BatchMean via field default."""
         request = BatchMeanRequest(modelId="test", columnName="col")
         assert request.metric_name == "BatchMean"
 
