@@ -19,6 +19,7 @@ from trustyai_service.endpoints.metrics.fairness.group.utils import (
     get_prometheus_scheduler,
     prepare_fairness_data,
 )
+from trustyai_service.endpoints.paths import FAIRNESS_SPD, LEGACY_SPD
 from trustyai_service.service.prometheus.metric_value_carrier import MetricValueCarrier
 
 router = APIRouter()
@@ -108,7 +109,7 @@ except (
 
 
 # Statistical Parity Difference
-@router.post("/metrics/group/fairness/spd")
+@router.post(FAIRNESS_SPD.compute)
 async def compute_spd(
     request: GroupMetricRequest,
     delta: Annotated[float | None, Query()] = None,
@@ -168,7 +169,7 @@ async def compute_spd(
     }
 
 
-@router.get("/metrics/group/fairness/spd/definition")
+@router.get(FAIRNESS_SPD.definition)
 async def get_spd_definition() -> dict[str, str]:
     """Provide a general definition of Statistical Parity Difference metric."""
     return {
@@ -179,7 +180,7 @@ async def get_spd_definition() -> dict[str, str]:
     }
 
 
-@router.post("/metrics/group/fairness/spd/definition")
+@router.post(FAIRNESS_SPD.definition)
 async def interpret_spd_value(request: GroupDefinitionRequest) -> dict[str, str]:
     """Provide a specific, plain-english interpretation of a specific value of SPD metric."""
     logger.info("Interpreting SPD value for model: %s", request.modelId)
@@ -189,7 +190,7 @@ async def interpret_spd_value(request: GroupDefinitionRequest) -> dict[str, str]
     )
 
 
-@router.post("/metrics/group/fairness/spd/request")
+@router.post(FAIRNESS_SPD.request)
 async def schedule_spd(request: GroupMetricRequest) -> dict[str, str]:
     """Schedule a recurring computation of SPD metric."""
     # Get the scheduler and validate availability
@@ -222,7 +223,7 @@ async def schedule_spd(request: GroupMetricRequest) -> dict[str, str]:
         return {"requestId": str(request_id)}
 
 
-@router.delete("/metrics/group/fairness/spd/request")
+@router.delete(FAIRNESS_SPD.request)
 async def delete_spd_schedule(schedule: ScheduleId) -> dict[str, str]:
     """Delete a recurring computation of SPD metric."""
     # Get the scheduler and validate availability
@@ -266,7 +267,7 @@ async def delete_spd_schedule(schedule: ScheduleId) -> dict[str, str]:
         }
 
 
-@router.get("/metrics/group/fairness/spd/requests")
+@router.get(FAIRNESS_SPD.requests)
 async def list_spd_requests() -> dict[str, list[dict]]:
     """List the currently scheduled computations of SPD metric."""
     # Get the scheduler and validate availability
@@ -324,7 +325,7 @@ async def list_spd_requests() -> dict[str, list[dict]]:
 
 
 # Deprecated SPD endpoints
-@router.post("/spd", deprecated=True)
+@router.post(LEGACY_SPD.compute, deprecated=True)
 async def compute_spd_deprecated(
     request: GroupMetricRequest,
     delta: Annotated[float | None, Query()] = None,
@@ -337,7 +338,7 @@ async def compute_spd_deprecated(
     return await compute_spd(request, delta)
 
 
-@router.get("/spd/definition", deprecated=True)
+@router.get(LEGACY_SPD.definition, deprecated=True)
 async def get_spd_definition_deprecated() -> dict[str, str]:
     """Provide a general definition of Statistical Parity Difference metric (deprecated).
 
@@ -347,7 +348,7 @@ async def get_spd_definition_deprecated() -> dict[str, str]:
     return await get_spd_definition()
 
 
-@router.post("/spd/definition", deprecated=True)
+@router.post(LEGACY_SPD.definition, deprecated=True)
 async def interpret_spd_value_deprecated(
     request: GroupDefinitionRequest,
 ) -> dict[str, str]:
@@ -359,7 +360,7 @@ async def interpret_spd_value_deprecated(
     return await interpret_spd_value(request)
 
 
-@router.post("/spd/request", deprecated=True)
+@router.post(LEGACY_SPD.request, deprecated=True)
 async def schedule_spd_deprecated(request: GroupMetricRequest) -> dict[str, str]:
     """Schedule a recurring computation of SPD metric (deprecated).
 
@@ -369,7 +370,7 @@ async def schedule_spd_deprecated(request: GroupMetricRequest) -> dict[str, str]
     return await schedule_spd(request)
 
 
-@router.delete("/spd/request", deprecated=True)
+@router.delete(LEGACY_SPD.request, deprecated=True)
 async def delete_spd_schedule_deprecated(schedule: ScheduleId) -> dict[str, str]:
     """Delete a recurring computation of SPD metric (deprecated).
 
@@ -379,7 +380,7 @@ async def delete_spd_schedule_deprecated(schedule: ScheduleId) -> dict[str, str]
     return await delete_spd_schedule(schedule)
 
 
-@router.get("/spd/requests", deprecated=True)
+@router.get(LEGACY_SPD.requests, deprecated=True)
 async def list_spd_requests_deprecated() -> dict[str, list[dict]]:
     """List the currently scheduled computations of SPD metric (deprecated).
 

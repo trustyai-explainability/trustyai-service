@@ -16,6 +16,7 @@ from trustyai_service.core.metrics.drift.jensen_shannon import (
     DEFAULT_THRESHOLD,
     JensenShannon,
 )
+from trustyai_service.endpoints.paths import DRIFT_JENSEN_SHANNON
 from trustyai_service.service.data.shared_data_source import (
     DataSource,
     get_shared_data_source,
@@ -98,7 +99,7 @@ class JensenShannonMetricRequest(BaseMetricRequest):
         return tags
 
 
-@router.post("/metrics/drift/jensenshannon")
+@router.post(DRIFT_JENSEN_SHANNON.compute)
 async def compute_jensenshannon(
     request: JensenShannonMetricRequest,
 ) -> dict[str, float | bool | str | dict[str, dict[str, float | bool]]]:
@@ -209,7 +210,7 @@ async def compute_jensenshannon(
         ) from e
 
 
-@router.get("/metrics/drift/jensenshannon/definition")
+@router.get(DRIFT_JENSEN_SHANNON.definition)
 async def get_jensenshannon_definition() -> dict[str, str]:
     """Provide a general definition of Jensen-Shannon metric."""
     description = """The Jensen-Shannon divergence is a symmetric
@@ -229,7 +230,7 @@ async def get_jensenshannon_definition() -> dict[str, str]:
     }
 
 
-@router.post("/metrics/drift/jensenshannon/request")
+@router.post(DRIFT_JENSEN_SHANNON.request)
 async def schedule_jensenshannon(request: JensenShannonMetricRequest) -> dict[str, str]:
     """Schedule a recurring computation of Jensen-Shannon metric."""
     # Validate inputs before scheduling
@@ -281,7 +282,7 @@ async def schedule_jensenshannon(request: JensenShannonMetricRequest) -> dict[st
         return {"requestId": str(request_id)}
 
 
-@router.delete("/metrics/drift/jensenshannon/request")
+@router.delete(DRIFT_JENSEN_SHANNON.request)
 async def delete_jensenshannon_schedule(schedule: ScheduleId) -> dict[str, str]:
     """Delete a recurring computation of Jensen-Shannon metric."""
     # Get the scheduler and validate availability
@@ -326,7 +327,7 @@ async def delete_jensenshannon_schedule(schedule: ScheduleId) -> dict[str, str]:
         }
 
 
-@router.get("/metrics/drift/jensenshannon/requests")
+@router.get(DRIFT_JENSEN_SHANNON.requests)
 async def list_jensenshannon_requests() -> dict[str, list[dict[str, Any]]]:
     """List the currently scheduled computations of Jensen-Shannon metric."""
     # Get the scheduler and validate availability
