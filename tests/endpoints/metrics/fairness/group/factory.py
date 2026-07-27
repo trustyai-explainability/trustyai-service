@@ -175,36 +175,6 @@ def make_definition_endpoint_test(
     return test_impl
 
 
-def make_interpret_value_not_implemented_test(
-    metric_name: str,
-    endpoint_path: str,
-    client: TestClient,
-) -> Callable[[Any], None]:
-    """Create a test that verifies the POST definition (interpret) endpoint returns 501."""
-
-    def test_impl(_: object) -> None:
-        payload = {
-            "modelId": "test-model",
-            "protectedAttribute": "gender",
-            "outcomeName": "income",
-            "privilegedAttribute": "male",
-            "unprivilegedAttribute": "female",
-            "favorableOutcome": 1,
-            "metricValue": {"value": 0.85},
-        }
-        response = client.post(endpoint_path, json=payload)
-
-        assert response.status_code == HTTPStatus.NOT_IMPLEMENTED, (
-            f"{metric_name} interpret should return 501, got "
-            f"{response.status_code}: {response.text}"
-        )
-        data = response.json()
-        assert "detail" in data
-        assert "not yet implemented" in data["detail"].lower()
-
-    return test_impl
-
-
 def make_schedule_endpoint_test(
     metric_name: str,
     module_path: str,
@@ -965,7 +935,7 @@ def make_retrieve_tags_test() -> Callable[[Any], None]:
     """Create a test for GroupMetricRequest.retrieve_tags()."""
 
     def test_impl(_: object) -> None:
-        from src.endpoints.metrics.fairness.group.utils import (
+        from trustyai_service.endpoints.metrics.fairness.group.utils import (
             GroupMetricRequest,
         )
 

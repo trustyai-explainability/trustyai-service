@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from scipy.stats import ks_2samp
 
-from src.core.metrics.drift.kolmogorov_smirnov import KolmogorovSmirnov
+from trustyai_service.core.metrics.drift.kolmogorov_smirnov import KolmogorovSmirnov
 
 from . import factory
 

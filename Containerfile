@@ -2,7 +2,7 @@
 # FIPS crypto policy support included.
 
 ARG EXTRAS=""
-ARG VERSION="1.0.0rc0"
+ARG VERSION="0.0.0.dev0"
 ARG BUILD_DATE
 ARG VCS_REF
 ARG ENABLE_FIPS_POLICY="true"
@@ -37,9 +37,13 @@ USER 1001
 
 COPY pyproject.toml README.md ./
 
-RUN pip install --no-cache-dir --upgrade pip==26.1.1 uv==0.11.1 && \
+ENV SETUPTOOLS_SCM_PRETEND_VERSION="0.0.0.dev0"
+
+RUN mkdir -p src/trustyai_service && \
+    pip install --no-cache-dir --upgrade pip==26.1.1 uv==0.11.22 && \
     uv pip install --no-cache ".[$EXTRAS]" && \
     pip uninstall -y uv && \
+    rm -f /opt/app-root/bin/uv /opt/app-root/bin/uvx && \
     rm -rf /root/.cache /tmp/*
 
 # =============================================================================
@@ -95,8 +99,11 @@ COPY --from=builder /opt/app-root/lib/python3.14/site-packages /opt/app-root/lib
 COPY --from=builder /opt/app-root/lib64/python3.14/site-packages /opt/app-root/lib64/python3.14/site-packages
 COPY --from=builder /opt/app-root/bin /opt/app-root/bin
 
-COPY src src
+COPY src/trustyai_service trustyai_service
 COPY pyproject.toml README.md ./
+
+RUN printf '__version__ = version = "%s"\n' "${VERSION}" > trustyai_service/_version.py && \
+    chown 1001:0 trustyai_service/_version.py
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -120,4 +127,4 @@ LABEL org.opencontainers.image.title="TrustyAI Service" \
       io.trustyai.fips.compatible="true" \
       org.opencontainers.image.base.name="registry.redhat.io/ubi10/python-314-minimal"
 
-CMD ["python", "-m", "src.main"]
+CMD ["python", "-m", "trustyai_service.main"]

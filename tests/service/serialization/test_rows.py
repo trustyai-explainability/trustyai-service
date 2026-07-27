@@ -10,9 +10,9 @@ import random
 import numpy as np
 import pytest
 
-from src.service.data.storage.pvc import MAX_VOID_TYPE_LENGTH
-from src.service.serialization.encoders import json_encoder
-from src.service.serialization.rows import deserialize_rows, serialize_rows
+from trustyai_service.service.data.storage.pvc import MAX_VOID_TYPE_LENGTH
+from trustyai_service.service.serialization.encoders import json_encoder
+from trustyai_service.service.serialization.rows import deserialize_rows, serialize_rows
 
 
 class TestSerializeRows:

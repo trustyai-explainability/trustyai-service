@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from src.core.metrics.drift import utils
+from trustyai_service.core.metrics.drift import utils
 
 # Test constants for histogram and KDE bin/grid sizes
 HIST_BINS_10 = 10

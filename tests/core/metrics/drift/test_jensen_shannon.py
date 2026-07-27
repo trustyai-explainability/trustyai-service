@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 from scipy.spatial.distance import jensenshannon
 
-from src.core.metrics.drift import utils
-from src.core.metrics.drift.jensen_shannon import JensenShannon
+from trustyai_service.core.metrics.drift import utils
+from trustyai_service.core.metrics.drift.jensen_shannon import JensenShannon
 
 from . import factory
 
