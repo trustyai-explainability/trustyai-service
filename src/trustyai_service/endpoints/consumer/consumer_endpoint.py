@@ -483,11 +483,13 @@ async def process_cloud_event(
                 )
                 raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=msg)
             logger.info("KServe Inference Input %s received.", payload.id)
+            # If a match is found, the partial payload is auto-deleted from storage
             partial_output = await storage_interface.get_partial_payload(
                 payload.id, is_input=False, is_modelmesh=False
             )
             if partial_output is not None:
                 if not isinstance(partial_output, KServeInferenceResponse):
+                    # Should never happen — indicates storage interface error
                     raise HTTPException(
                         status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
                         detail="Invalid payload type from storage",
@@ -514,11 +516,13 @@ async def process_cloud_event(
                 payload.id,
                 payload.model_name,
             )
+            # If a match is found, the partial payload is auto-deleted from storage
             partial_input = await storage_interface.get_partial_payload(
                 payload.id, is_input=True, is_modelmesh=False
             )
             if partial_input is not None:
                 if not isinstance(partial_input, KServeInferenceRequest):
+                    # Should never happen — indicates storage interface error
                     raise HTTPException(
                         status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
                         detail="Invalid payload type from storage",
@@ -534,6 +538,7 @@ async def process_cloud_event(
                 "message": f"Output payload {payload.id} processed successfully",
             }
 
+        # Unreachable due to type annotation, but explicit fallback for type safety
         raise HTTPException(
             status_code=HTTPStatus.BAD_REQUEST,
             detail="Payload must be either KServeInferenceRequest or KServeInferenceResponse",
