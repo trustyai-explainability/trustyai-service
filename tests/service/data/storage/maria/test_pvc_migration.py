@@ -501,7 +501,16 @@ class TestFullMigration:
     ):
         """Test successful migration with HDF5 files."""
         mock_conn_mgr, mock_cursor = mock_connection_manager()
-        mock_cursor.fetchone = MagicMock(return_value=None)
+
+        def _query_aware_fetchone() -> tuple[int] | None:
+            """Return validation row count when queried, None otherwise."""
+            if mock_cursor.execute.call_args:
+                query = mock_cursor.execute.call_args[0][0]
+                if "trustyai_v2_table_reference" in query:
+                    return (2,)  # matches sample_hdf5_file's 2 rows
+            return None
+
+        mock_cursor.fetchone = MagicMock(side_effect=_query_aware_fetchone)
         mock_cursor.lastrowid = 1
         mock_maria_storage.connection_manager = mock_conn_mgr
 
@@ -511,6 +520,16 @@ class TestFullMigration:
 
         # Verify data was written
         assert mock_maria_storage.write_data.await_count > 0
+
+        # Verify migration completed successfully (not marked failed/partial)
+        complete_calls = [
+            call
+            for call in mock_cursor.execute.call_args_list
+            if len(call[0]) >= 2
+            and "UPDATE trustyai_migration_status" in call[0][0]
+            and "COMPLETE" in str(call[0][1])
+        ]
+        assert len(complete_calls) > 0, "Migration should have been marked COMPLETE"
 
 
 class TestErrorHandling:
@@ -693,13 +712,14 @@ class TestErrorHandling:
         migrator._mark_migration_failed("error")
         migrator._mark_file_migrated("test.hdf5", "dataset", 10)
         migrator._mark_file_failed("test.hdf5", "error")
-        result = migrator._is_file_already_migrated("test.hdf5")
 
-        # Verify no SQL was executed
+        # Tracking methods guard on _migration_id — no SQL executed yet
         assert mock_cursor.execute.call_count == 0
-        assert (
-            result is False
-        )  # _is_file_already_migrated returns False when no migration_id
+
+        # _is_file_already_migrated queries across ALL runs (no migration_id filter)
+        result = migrator._is_file_already_migrated("test.hdf5")
+        assert mock_cursor.execute.call_count == 1
+        assert result is False
 
 
 class TestBatchedProcessing:
