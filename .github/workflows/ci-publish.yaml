@@ -103,7 +103,7 @@ jobs:
           body-includes: PR image build and manifest generation completed successfully
 
       - name: Post success comment
-        uses: peter-evans/create-or-update-comment@71345be0265236311c031f5c7866368bd1eff043 # v4
+        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
         env:
           IMAGE: quay.io/trustyai/trustyai-service-python-ci
           TAG: ${{ steps.meta.outputs.pr-sha }}
@@ -144,7 +144,7 @@ jobs:
 
       - name: Update Security tab
         if: always()
-        uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
+        uses: github/codeql-action/upload-sarif@e0647621c2984b5ed2f768cb892365bf2a616ad1 # v3
         with:
           sarif_file: 'trivy-results.sarif'
           category: 'trivy-ci-scan'

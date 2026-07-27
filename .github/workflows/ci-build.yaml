@@ -23,7 +23,7 @@ jobs:
       contents: read
       pull-requests: read
     steps:
-      - uses: mheap/github-action-required-labels@0ac283b4e65c1fb28ce6079dea5546ceca98ccbe # v5.5.2
+      - uses: mheap/github-action-required-labels@23e10fde7e062233401931a0eece796cd9bf3177 # v5.6.0
         with:
           mode: minimum
           count: 1
@@ -48,7 +48,7 @@ jobs:
           echo "${{ github.event.pull_request.head.sha }}" > /tmp/pr-sha.txt
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ci-build
           path: |

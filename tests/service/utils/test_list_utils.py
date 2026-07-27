@@ -6,9 +6,12 @@ Comprehensive row serialization tests are in tests/service/serialization/test_ro
 
 import numpy as np
 
-from src.service.data.storage.pvc import MAX_VOID_TYPE_LENGTH
-from src.service.serialization import deserialize_rows, serialize_rows
-from src.service.utils.list_utils import contains_non_numeric, get_list_shape
+from trustyai_service.service.data.storage.pvc import MAX_VOID_TYPE_LENGTH
+from trustyai_service.service.serialization import deserialize_rows, serialize_rows
+from trustyai_service.service.utils.list_utils import (
+    contains_non_numeric,
+    get_list_shape,
+)
 
 # --- Test constants ---
 EXPECTED_DESERIALIZED_ROW_COUNT = 2

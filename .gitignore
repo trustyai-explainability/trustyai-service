@@ -4,7 +4,7 @@ __pycache__/
 *$py.class
 
 # hatch-vcs auto-generated version file
-src/_version.py
+src/trustyai_service/_version.py
 
 # C extensions
 *.so

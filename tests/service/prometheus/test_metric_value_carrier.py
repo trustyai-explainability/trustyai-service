@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.service.prometheus.metric_value_carrier import (
+from trustyai_service.service.prometheus.metric_value_carrier import (
     MetricValueCarrier,
     UnsupportedOperationError,
 )

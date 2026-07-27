@@ -7,8 +7,8 @@ from collections.abc import Callable, Iterator
 import pytest
 
 CLASSES = [
-    ("src.service.data.storage.maria.maria", "MariaDBStorage"),
-    ("src.service.data.storage.pvc", "PVCStorage"),
+    ("trustyai_service.service.data.storage.maria.maria", "MariaDBStorage"),
+    ("trustyai_service.service.data.storage.pvc", "PVCStorage"),
 ]
 
 SYNC_ALLOWED = {

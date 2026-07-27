@@ -4,8 +4,11 @@ import unittest
 
 import pandas as pd
 
-from src.service.data.modelmesh_parser import ModelMeshPayloadParser, PartialPayload
 from tests.service.data.test_utils import ModelMeshTestData
+from trustyai_service.service.data.modelmesh_parser import (
+    ModelMeshPayloadParser,
+    PartialPayload,
+)
 
 
 class TestModelMeshParser(unittest.TestCase):
