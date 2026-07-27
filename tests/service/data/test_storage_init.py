@@ -460,3 +460,25 @@ class TestStorageInterfaceEnvVars:
             ),
         ):
             get_storage_interface()
+
+    @pytest.mark.skipif(not HAS_MARIADB, reason="mariadb extra not installed")
+    def test_mariadb_invalid_port(self) -> None:
+        """Test that non-numeric DATABASE_PORT raises ValueError with descriptive message."""
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "SERVICE_STORAGE_FORMAT": "MARIA",
+                    "DATABASE_USERNAME": "test_user",
+                    "DATABASE_PASSWORD": "test_pass",  # pragma: allowlist secret
+                    "DATABASE_HOST": "localhost",
+                    "DATABASE_PORT": "not_a_number",
+                    "DATABASE_DATABASE": "test_db",
+                },
+                clear=True,
+            ),
+            pytest.raises(
+                ValueError, match="Invalid DATABASE_PORT value 'not_a_number'"
+            ),
+        ):
+            get_storage_interface()

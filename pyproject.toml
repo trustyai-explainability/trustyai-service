@@ -106,6 +106,7 @@ ignore = [
 "src/trustyai_service/endpoints/metrics/drift/compare_means.py" = ["C901", "TRY301"]
 # === TEST FILES ===
 "tests/**" = ["S101", "PT019", "SLF001"]
+"tests/service/test_health_checks.py" = ["S106", "ANN001", "PLR2004", "FBT003"]
 "tests/core/metrics/test_fairness.py" = ["N803", "N806"]
 "tests/endpoints/metrics/drift/factory.py" = ["PLR0913", "C901", "PLR0915"]
 "tests/endpoints/test_upload_endpoint_maria.py" = ["S105"]

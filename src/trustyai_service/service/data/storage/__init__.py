@@ -45,6 +45,54 @@ def get_global_storage_interface(
     return GlobalStorageInterface.get(force_reload=force_reload)
 
 
+class MariaDBConfig:
+    """MariaDB connection configuration read from environment variables.
+
+    Supports both operator (Quarkus) and direct deployment env vars.
+    """
+
+    def __init__(self) -> None:
+        """Read MariaDB connection parameters from environment variables."""
+        self.user = os.environ.get("DATABASE_USERNAME") or os.environ.get(
+            "QUARKUS_DATASOURCE_USERNAME"
+        )
+        self.password = os.environ.get("DATABASE_PASSWORD") or os.environ.get(
+            "QUARKUS_DATASOURCE_PASSWORD"
+        )
+        self.host = os.environ.get("DATABASE_HOST") or os.environ.get(
+            "DATABASE_SERVICE"
+        )
+        self.database = os.environ.get("DATABASE_DATABASE") or os.environ.get(
+            "DATABASE_NAME"
+        )
+        port_str = os.environ.get("DATABASE_PORT", "3306")
+        try:
+            self.port = int(port_str)
+        except ValueError as e:
+            msg = f"Invalid DATABASE_PORT value '{port_str}': must be a valid integer"
+            raise ValueError(msg) from e
+
+        ssl_ca_path = os.environ.get("DATABASE_TLS_CA_CERT", "/etc/tls/db/ca.crt")
+        self.ssl_ca = ssl_ca_path if Path(ssl_ca_path).exists() else None
+
+    def validate(self) -> None:
+        """Raise ValueError if required env vars are missing."""
+        missing = []
+        if not self.user:
+            missing.append("DATABASE_USERNAME or QUARKUS_DATASOURCE_USERNAME")
+        if not self.password:
+            missing.append("DATABASE_PASSWORD or QUARKUS_DATASOURCE_PASSWORD")
+        if not self.host:
+            missing.append("DATABASE_HOST or DATABASE_SERVICE")
+        if not self.database:
+            missing.append("DATABASE_DATABASE or DATABASE_NAME")
+        if missing:
+            msg = (
+                f"MariaDB storage requires environment variables: {', '.join(missing)}"
+            )
+            raise ValueError(msg)
+
+
 def get_storage_interface() -> MariaDBStorage | PVCStorage:
     """Create a new storage interface based on environment configuration.
 
@@ -64,47 +112,19 @@ def get_storage_interface() -> MariaDBStorage | PVCStorage:
                 MariaDBStorage,
             )
 
-            # Parse DATABASE_ATTEMPT_MIGRATION with tolerance for boolean strings
             migration_str = os.environ.get("DATABASE_ATTEMPT_MIGRATION", "0").lower()
             attempt_migration = migration_str in ("1", "true", "yes", "on")
 
-            # Support both operator env vars and direct deployment env vars
-            # Operator (Quarkus-based): QUARKUS_DATASOURCE_USERNAME/PASSWORD, DATABASE_SERVICE/NAME
-            # Direct deployment: DATABASE_USERNAME/PASSWORD, DATABASE_HOST/DATABASE
-            user = os.environ.get("DATABASE_USERNAME") or os.environ.get(
-                "QUARKUS_DATASOURCE_USERNAME"
-            )
-            password = os.environ.get("DATABASE_PASSWORD") or os.environ.get(
-                "QUARKUS_DATASOURCE_PASSWORD"
-            )
-            host = os.environ.get("DATABASE_HOST") or os.environ.get("DATABASE_SERVICE")
-            database = os.environ.get("DATABASE_DATABASE") or os.environ.get(
-                "DATABASE_NAME"
-            )
-
-            # Validate required parameters before constructing MariaDBStorage
-            missing = []
-            if not user:
-                missing.append("DATABASE_USERNAME or QUARKUS_DATASOURCE_USERNAME")
-            if not password:
-                missing.append("DATABASE_PASSWORD or QUARKUS_DATASOURCE_PASSWORD")
-            if not host:
-                missing.append("DATABASE_HOST or DATABASE_SERVICE")
-            if not database:
-                missing.append("DATABASE_DATABASE or DATABASE_NAME")
-            if missing:
-                msg = f"MariaDB storage requires environment variables: {', '.join(missing)}"
-                raise ValueError(msg)
-
-            ssl_ca = os.environ.get("DATABASE_TLS_CA_CERT", "/etc/tls/db/ca.crt")
+            config = MariaDBConfig()
+            config.validate()
 
             return MariaDBStorage(
-                user=user,
-                password=password,
-                host=host,
-                port=int(os.environ.get("DATABASE_PORT", "3306")),
-                database=database,
-                ssl_ca=ssl_ca if Path(ssl_ca).exists() else None,
+                user=config.user,
+                password=config.password,
+                host=config.host,
+                port=config.port,
+                database=config.database,
+                ssl_ca=config.ssl_ca,
                 attempt_migration=attempt_migration,
             )
         except ImportError as e:
