@@ -773,20 +773,6 @@ wheels = [
 ]
 
 [[package]]
-name = "fastapi-utils"
-version = "0.8.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "fastapi" },
-    { name = "psutil" },
-    { name = "pydantic" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/dd/af/57c949675176acf389d94fbccd369b486579a952637fc6fb104f1bc3d0c3/fastapi_utils-0.8.0.tar.gz", hash = "sha256:eca834e80c09f85df30004fe5e861981262b296f60c93d5a1a1416fe4c784140", size = 16496, upload-time = "2024-11-11T08:30:03.852Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/43/8b/cef8cfed7ed77d52fc772b1c7b966ba019a3f50b65a2b3625a0f3b7f6f53/fastapi_utils-0.8.0-py3-none-any.whl", hash = "sha256:6c4d507a76bab9a016cee0c4fa3a4638c636b2b2689e39c62254b1b2e4e81825", size = 18495, upload-time = "2024-11-11T08:30:01.914Z" },
-]
-
-[[package]]
 name = "filelock"
 version = "3.29.4"
 source = { registry = "https://pypi.org/simple" }
@@ -3281,12 +3267,10 @@ wheels = [
 
 [[package]]
 name = "trustyai-service"
-version = "1.0.0rc0"
 source = { editable = "." }
 dependencies = [
     { name = "cryptography" },
     { name = "fastapi" },
-    { name = "fastapi-utils" },
     { name = "h5py" },
     { name = "hypercorn" },
     { name = "isodate" },
@@ -3345,15 +3329,14 @@ types = [
 [package.metadata]
 requires-dist = [
     { name = "cryptography", specifier = ">=48.0.1,<50" },
-    { name = "fastapi", specifier = ">=0.116,<0.138" },
-    { name = "fastapi-utils", specifier = ">=0.8,<0.9" },
+    { name = "fastapi", specifier = ">=0.116,<0.140" },
     { name = "h5py", specifier = ">=3.13,<4" },
     { name = "hypercorn", specifier = ">=0.18,<0.19" },
     { name = "isodate", specifier = ">=0.7,<0.8" },
     { name = "javaobj-py3", marker = "extra == 'mariadb'", specifier = ">=0.5,<0.6" },
     { name = "lm-eval", extras = ["api"], marker = "extra == 'eval'", specifier = ">=0.4,<0.5" },
     { name = "mariadb", marker = "extra == 'mariadb'", specifier = ">=1.1,<1.2" },
-    { name = "nltk", marker = "extra == 'eval'", specifier = ">=3.9.4,<4" },
+    { name = "nltk", marker = "extra == 'eval'", specifier = ">=3.10.0,<4" },
     { name = "numpy", specifier = ">=2.0,<3" },
     { name = "pandas", specifier = ">=3.0,<4" },
     { name = "polars", specifier = ">=1.2,<2" },
@@ -3384,7 +3367,7 @@ notebook = [
 test = [
     { name = "aif360", specifier = ">=0.6.1" },
     { name = "hypothesis", specifier = ">=6.151.12" },
-    { name = "pillow", specifier = ">=12.2.0" },
+    { name = "pillow", specifier = ">=12.3.0" },
     { name = "pytest", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", specifier = ">=1.3.0" },
     { name = "pytest-cov", specifier = ">=7.1.0" },
