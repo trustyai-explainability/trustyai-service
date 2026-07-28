@@ -22,7 +22,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "ruff>=0.15.10,<0.16",
+    "ruff>=0.15.10,<0.17",
     "pyrefly>=0.61",
     "bandit[toml]>=1.9.4",
     "bandit-sarif-formatter>=1.1.1",
