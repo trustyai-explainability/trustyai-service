@@ -228,7 +228,7 @@ class PrometheusScheduler:
             The original exception if throw_errors is True.
 
         """
-        logger.exception(context)
+        logger.error(context, exc_info=error)
         if throw_errors:
             raise error
 
