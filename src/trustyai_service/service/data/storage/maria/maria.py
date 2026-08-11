@@ -152,7 +152,7 @@ class MariaDBStorage(StorageInterface):
             return
         exc = task.exception()
         if exc is not None:
-            logger.exception("Migration failed.", exc_info=exc)
+            logger.error("Migration failed.", exc_info=exc)
 
     # === MIGRATORS ================================================================================
     async def _run_migration(self) -> None:

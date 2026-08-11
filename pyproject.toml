@@ -75,10 +75,12 @@ exclude = ["src/trustyai_service/proto/grpc_predict_v2_pb2.py", "src/trustyai_se
 [tool.ruff.lint]
 select = ["ALL"]
 ignore = [
-    "D203",   # one-blank-line-before-class (conflicts with D211)
-    "D213",   # multi-line-summary-second-line (conflicts with D212)
-    "E501",   # line-too-long (handled by formatter)
-    "COM812", # trailing commas (conflicts with formatter)
+    "CPY001",  # missing-copyright-notice (no copyright headers in this project)
+    "D203",    # one-blank-line-before-class (conflicts with D211)
+    "D213",    # multi-line-summary-second-line (conflicts with D212)
+    "E501",    # line-too-long (handled by formatter)
+    "COM812",  # trailing commas (conflicts with formatter)
+    "PLR0917", # too-many-positional-params (covered by per-file PLR0913 ignores)
 ]
 
 [tool.ruff.lint.per-file-ignores]
