@@ -17,6 +17,10 @@ updates:
       - trustyai-explainability/reviewers
     reviewers:
       - trustyai-explainability/reviewers
+    groups:
+      codeql-action:
+        patterns:
+          - "github/codeql-action/*"
 
   - package-ecosystem: "docker"
     directory: "/"
