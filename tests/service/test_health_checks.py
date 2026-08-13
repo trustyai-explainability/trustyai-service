@@ -458,42 +458,21 @@ class TestHealthCheckRegistry:
 
     def test_check_pvc_storage_production_mode(self) -> None:
         """Test PVC storage check redacts paths in production mode."""
-        with patch.dict(
-            os.environ,
-            {
-                "SERVICE_STORAGE_FORMAT": "PVC",
-                "STORAGE_DATA_FOLDER": "/nonexistent/path",
-                "ENVIRONMENT": "production",
-            },
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "SERVICE_STORAGE_FORMAT": "PVC",
+                    "STORAGE_DATA_FOLDER": "/nonexistent/path",
+                },
+            ),
+            patch("trustyai_service.service.health_checks._is_production", True),
         ):
-            # Need to reload module to pick up new ENVIRONMENT value
-            import importlib  # noqa: PLC0415
-
-            import trustyai_service.service.health_checks  # noqa: PLC0415
-
-            # Save original module state for restoration
-            original_module = sys.modules.get("trustyai_service.service.health_checks")
-
-            try:
-                importlib.reload(trustyai_service.service.health_checks)
-                from trustyai_service.service.health_checks import (  # noqa: PLC0415
-                    HealthCheckRegistry,
-                )
-
-                check = HealthCheckRegistry.check_storage_readiness()
-                assert check.status == STATUS_ERROR
-                assert check.name == "Storage readiness"
-                # Should NOT contain the full path in production
-                assert "/nonexistent/path" not in check.data["error"]
-                assert "not accessible" in check.data["error"]
-            finally:
-                # Restore original module to prevent state leakage
-                if original_module is not None:
-                    sys.modules["trustyai_service.service.health_checks"] = (
-                        original_module
-                    )
-                else:
-                    sys.modules.pop("trustyai_service.service.health_checks", None)
+            check = HealthCheckRegistry.check_storage_readiness()
+            assert check.status == STATUS_ERROR
+            assert check.name == "Storage readiness"
+            assert "/nonexistent/path" not in check.data["error"]
+            assert "not accessible" in check.data["error"]
 
 
 class TestHealthCheckFunctions:

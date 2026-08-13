@@ -229,7 +229,7 @@ async def metrics(_request: Request) -> Response:
 
 
 @app.get("/q/health")
-async def general_health() -> JSONResponse:
+def general_health() -> JSONResponse:
     """General health endpoint combining readiness and liveness checks.
 
     :return: JSON response with status ("healthy" or "unhealthy")
@@ -254,7 +254,7 @@ async def general_health() -> JSONResponse:
 
 # Readiness probe
 @app.get(routes.HEALTH_READY)
-async def readiness_probe() -> JSONResponse:
+def readiness_probe() -> JSONResponse:
     """Kubernetes readiness probe endpoint.
 
     :return: JSON response with status ("ready" or "not_ready")
@@ -271,7 +271,7 @@ async def readiness_probe() -> JSONResponse:
 
 # Liveness probe endpoint
 @app.get(routes.HEALTH_LIVE)
-async def liveness_probe() -> JSONResponse:
+def liveness_probe() -> JSONResponse:
     """Kubernetes liveness probe endpoint.
 
     :return: JSON response with status ("alive")

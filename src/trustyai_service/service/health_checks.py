@@ -63,12 +63,13 @@ class HealthCache:
                 if now - cached_time < self.ttl:
                     self.hits += 1
                     return cached_value
-
-            # Cache miss or expired - compute new value
             self.misses += 1
-            value = compute_func()
-            self.cache[key] = (value, now)
-            return value
+
+        value = compute_func()
+
+        with self.lock:
+            self.cache[key] = (value, time.time())
+        return value
 
     def stats(self) -> dict[str, int]:
         """Get cache statistics.
@@ -158,10 +159,15 @@ class HealthCheckRegistry:
 
         except Exception as e:  # Health check must not crash
             logger.exception("Storage readiness check failed")
+            error_msg = (
+                "Unexpected storage error"
+                if _is_production
+                else f"Unexpected error: {e!s}"
+            )
             return HealthCheck(
                 "Storage readiness",
                 STATUS_ERROR,
-                {"error": f"Unexpected error: {e!s}"},
+                {"error": error_msg},
             )
 
     @staticmethod
