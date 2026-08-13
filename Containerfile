@@ -22,7 +22,7 @@ RUN rpm --import https://supplychain.mariadb.com/MariaDB-Server-GPG-KEY && \
 
 WORKDIR /opt/app-root
 
-ENV SETUPTOOLS_SCM_PRETEND_VERSION="0.0.0.dev0"
+ENV SETUPTOOLS_SCM_PRETEND_VERSION="${VERSION}"
 
 COPY pyproject.toml README.md ./
 COPY requirements.txt requirements-build.txt ./
@@ -37,9 +37,6 @@ COPY src src
 RUN pip install --no-cache-dir --no-deps --no-build-isolation . && \
     pip uninstall -y hatchling hatch-vcs setuptools setuptools-scm \
         vcs-versioning trove-classifiers pathspec pluggy
-
-RUN printf '__version__ = version = "%s"\n' "${VERSION}" > src/trustyai_service/_version.py && \
-    chown 1001:0 src/trustyai_service/_version.py
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
