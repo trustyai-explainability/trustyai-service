@@ -2,7 +2,7 @@
 
 import logging
 from http import HTTPStatus
-from typing import Annotated
+from typing import Annotated, Never
 
 from fastapi import APIRouter, Body, HTTPException, Query
 from pydantic import BaseModel

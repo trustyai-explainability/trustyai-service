@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, patch
 import numpy as np
 from fastapi.testclient import TestClient
 
-from src.main import app
-from src.service.constants import SYNTHETIC_TAG
+from trustyai_service.main import app
+from trustyai_service.service.constants import SYNTHETIC_TAG
 
 client = TestClient(app)
 
@@ -38,8 +38,8 @@ def _read_data_side_effect(metadata: np.ndarray):  # noqa: ANN202
 class TestGetInferenceIds:
     """Tests for the inference ID retrieval endpoint."""
 
-    @patch("src.endpoints.metadata.storage_interface")
-    @patch("src.service.data.model_data.get_global_storage_interface")
+    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.service.data.model_data.get_global_storage_interface")
     def test_returns_ids_for_valid_model(
         self, mock_global_storage: AsyncMock, mock_storage: AsyncMock
     ) -> None:
@@ -61,7 +61,7 @@ class TestGetInferenceIds:
         assert body["total"] == 3  # noqa: PLR2004
         assert body["offset"] == 0
 
-    @patch("src.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.storage_interface")
     def test_returns_400_for_unknown_model(self, mock_storage: AsyncMock) -> None:
         """Unknown model returns 400 BAD_REQUEST (matching Java)."""
         mock_storage.dataset_exists = AsyncMock(return_value=False)
@@ -71,8 +71,8 @@ class TestGetInferenceIds:
         assert response.status_code == 400  # noqa: PLR2004
         assert "No metadata found" in response.json()["detail"]
 
-    @patch("src.endpoints.metadata.storage_interface")
-    @patch("src.service.data.model_data.get_global_storage_interface")
+    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.service.data.model_data.get_global_storage_interface")
     def test_returns_empty_list_for_model_with_no_data(
         self, mock_global_storage: AsyncMock, mock_storage: AsyncMock
     ) -> None:
@@ -94,8 +94,8 @@ class TestGetInferenceIds:
 class TestInferenceIdsTypeFilter:
     """Tests for the type query parameter (organic/all filtering)."""
 
-    @patch("src.endpoints.metadata.storage_interface")
-    @patch("src.service.data.model_data.get_global_storage_interface")
+    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.service.data.model_data.get_global_storage_interface")
     def test_type_all_returns_everything(
         self, mock_global_storage: AsyncMock, mock_storage: AsyncMock
     ) -> None:
@@ -116,8 +116,8 @@ class TestInferenceIdsTypeFilter:
         returned_ids = [item["id"] for item in body["ids"]]
         assert returned_ids == ids
 
-    @patch("src.endpoints.metadata.storage_interface")
-    @patch("src.service.data.model_data.get_global_storage_interface")
+    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.service.data.model_data.get_global_storage_interface")
     def test_type_organic_filters_synthetic(
         self, mock_global_storage: AsyncMock, mock_storage: AsyncMock
     ) -> None:
@@ -138,8 +138,8 @@ class TestInferenceIdsTypeFilter:
         returned_ids = [item["id"] for item in body["ids"]]
         assert returned_ids == ["organic1", "organic2"]
 
-    @patch("src.endpoints.metadata.storage_interface")
-    @patch("src.service.data.model_data.get_global_storage_interface")
+    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.service.data.model_data.get_global_storage_interface")
     def test_type_case_insensitive(
         self, mock_global_storage: AsyncMock, mock_storage: AsyncMock
     ) -> None:
@@ -170,8 +170,8 @@ class TestInferenceIdsTypeFilter:
 class TestInferenceIdsPagination:
     """Tests for limit/offset pagination of inference IDs."""
 
-    @patch("src.endpoints.metadata.storage_interface")
-    @patch("src.service.data.model_data.get_global_storage_interface")
+    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.service.data.model_data.get_global_storage_interface")
     def test_limit_truncates_results(
         self, mock_global_storage: AsyncMock, mock_storage: AsyncMock
     ) -> None:
@@ -193,8 +193,8 @@ class TestInferenceIdsPagination:
         ]
         assert body["total"] == 10  # noqa: PLR2004
 
-    @patch("src.endpoints.metadata.storage_interface")
-    @patch("src.service.data.model_data.get_global_storage_interface")
+    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.service.data.model_data.get_global_storage_interface")
     def test_offset_skips_results(
         self, mock_global_storage: AsyncMock, mock_storage: AsyncMock
     ) -> None:
@@ -216,8 +216,8 @@ class TestInferenceIdsPagination:
         assert body["total"] == 10  # noqa: PLR2004
         assert body["offset"] == 7  # noqa: PLR2004
 
-    @patch("src.endpoints.metadata.storage_interface")
-    @patch("src.service.data.model_data.get_global_storage_interface")
+    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.service.data.model_data.get_global_storage_interface")
     def test_offset_beyond_total_returns_empty(
         self, mock_global_storage: AsyncMock, mock_storage: AsyncMock
     ) -> None:

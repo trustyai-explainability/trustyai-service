@@ -1593,7 +1593,7 @@ types = [
 
 [package.metadata]
 requires-dist = [
-    { name = "fastapi", specifier = ">=0.116,<0.140" },
+    { name = "fastapi", specifier = ">=0.116,<0.142" },
     { name = "h5py", specifier = ">=3.13,<4" },
     { name = "hypercorn", specifier = ">=0.18,<0.19" },
     { name = "isodate", specifier = ">=0.7,<0.8" },
