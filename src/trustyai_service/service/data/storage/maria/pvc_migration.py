@@ -181,7 +181,7 @@ class PVCToDBMigrator:
         :param total_files: Total number of HDF5 files to migrate
         :return: Migration ID for tracking this migration run
         """
-        with self.connection_manager as (_conn, cursor):
+        with self.connection_manager as (conn, cursor):
             # Check for existing IN_PROGRESS migration to resume
             cursor.execute(
                 "SELECT id, total_files FROM trustyai_migration_status "
@@ -206,6 +206,7 @@ class PVCToDBMigrator:
                 "VALUES (?, ?, 0, ?)",
                 (MIGRATION_TYPE_PVC_TO_DB, MIGRATION_STATUS_IN_PROGRESS, total_files),
             )
+            conn.commit()
             migration_id = cursor.lastrowid
             logger.info(
                 "Started PVC-to-DB migration tracking (ID=%d, total_files=%d)",
@@ -222,11 +223,12 @@ class PVCToDBMigrator:
         if self._migration_id is None:
             return
 
-        with self.connection_manager as (_conn, cursor):
+        with self.connection_manager as (conn, cursor):
             cursor.execute(
                 "UPDATE trustyai_migration_status SET files_processed=? WHERE id=?",
                 (files_processed, self._migration_id),
             )
+            conn.commit()
             logger.debug("Migration progress: %d files processed", files_processed)
 
     def _mark_migration_complete(self) -> None:
@@ -234,13 +236,14 @@ class PVCToDBMigrator:
         if self._migration_id is None:
             return
 
-        with self.connection_manager as (_conn, cursor):
+        with self.connection_manager as (conn, cursor):
             cursor.execute(
                 "UPDATE trustyai_migration_status "
                 "SET status=?, completed_at=CURRENT_TIMESTAMP "
                 "WHERE id=?",
                 (MIGRATION_STATUS_COMPLETE, self._migration_id),
             )
+            conn.commit()
             logger.info("Migration marked as complete (ID=%d)", self._migration_id)
 
     def _mark_migration_partial(self, files_succeeded: int, files_failed: int) -> None:
@@ -253,13 +256,14 @@ class PVCToDBMigrator:
             return
 
         error_msg = f"{files_succeeded} files succeeded, {files_failed} files failed"
-        with self.connection_manager as (_conn, cursor):
+        with self.connection_manager as (conn, cursor):
             cursor.execute(
                 "UPDATE trustyai_migration_status "
                 "SET status=?, error_message=?, completed_at=CURRENT_TIMESTAMP "
                 "WHERE id=?",
                 (MIGRATION_STATUS_PARTIAL, error_msg, self._migration_id),
             )
+            conn.commit()
             logger.warning(
                 "Migration marked as partial (ID=%d): %s",
                 self._migration_id,
@@ -274,13 +278,14 @@ class PVCToDBMigrator:
         if self._migration_id is None:
             return
 
-        with self.connection_manager as (_conn, cursor):
+        with self.connection_manager as (conn, cursor):
             cursor.execute(
                 "UPDATE trustyai_migration_status "
                 "SET status=?, error_message=?, completed_at=CURRENT_TIMESTAMP "
                 "WHERE id=?",
                 (MIGRATION_STATUS_FAILED, error_message, self._migration_id),
             )
+            conn.commit()
             logger.error(
                 "Migration marked as failed (ID=%d): %s",
                 self._migration_id,
@@ -290,17 +295,17 @@ class PVCToDBMigrator:
     def _is_file_already_migrated(self, file_name: str) -> bool:
         """Check if a specific HDF5 file has already been migrated.
 
+        Checks across ALL migration runs, not just the current one,
+        to prevent re-importing files completed in a prior PARTIAL/FAILED run.
+
         :param file_name: Name of the HDF5 file to check
         :return: True if file was previously migrated successfully
         """
-        if self._migration_id is None:
-            return False
-
         with self.connection_manager as (_conn, cursor):
             cursor.execute(
                 "SELECT id FROM trustyai_file_migration_status "
-                "WHERE migration_id=? AND file_name=? AND completed_at IS NOT NULL",
-                (self._migration_id, file_name),
+                "WHERE file_name=? AND completed_at IS NOT NULL",
+                (file_name,),
             )
             return cursor.fetchone() is not None
 
@@ -316,7 +321,7 @@ class PVCToDBMigrator:
         if self._migration_id is None:
             return
 
-        with self.connection_manager as (_conn, cursor):
+        with self.connection_manager as (conn, cursor):
             # Use INSERT ... ON DUPLICATE KEY UPDATE for idempotence
             cursor.execute(
                 "INSERT INTO trustyai_file_migration_status "
@@ -326,6 +331,7 @@ class PVCToDBMigrator:
                 "rows_migrated=VALUES(rows_migrated), completed_at=CURRENT_TIMESTAMP",
                 (self._migration_id, file_name, dataset_name, rows_migrated),
             )
+            conn.commit()
             logger.debug(
                 "Marked file as migrated: %s (dataset=%s, rows=%d)",
                 file_name,
@@ -342,7 +348,7 @@ class PVCToDBMigrator:
         if self._migration_id is None:
             return
 
-        with self.connection_manager as (_conn, cursor):
+        with self.connection_manager as (conn, cursor):
             cursor.execute(
                 "INSERT INTO trustyai_file_migration_status "
                 "(migration_id, file_name, dataset_name, rows_migrated, error_message) "
@@ -351,6 +357,7 @@ class PVCToDBMigrator:
                 "error_message=VALUES(error_message)",
                 (self._migration_id, file_name, error_message),
             )
+            conn.commit()
             logger.error(
                 "Marked file as failed: %s - %s",
                 file_name,
@@ -424,18 +431,19 @@ class PVCToDBMigrator:
             msg = f"HDF5 validation error: {e}"
             return False, msg
 
-    async def _validate_migration(self, dataset_name: str, expected_rows: int) -> bool:
-        """Validate migrated data row count matches source.
+    async def _validate_migration(
+        self, dataset_name: str, expected_rows: int, pre_migration_rows: int = 0
+    ) -> bool:
+        """Validate migrated data row count increase matches source.
 
-        Queries MariaDB to verify the number of rows in the migrated dataset
-        matches the expected count from the HDF5 source.
-
-        Note: Validation occurs AFTER data is written to MariaDB. If validation fails,
-        data remains in the database but migration is marked as failed. This allows
-        manual inspection and recovery rather than silent data loss.
+        Queries MariaDB to verify the row count INCREASE in the migrated dataset
+        matches the expected count from the HDF5 source. Uses delta comparison
+        (post - pre) instead of absolute count to handle datasets that already
+        had rows from concurrent traffic or prior partial writes.
 
         :param dataset_name: Name of the dataset in MariaDB
         :param expected_rows: Expected row count from HDF5 source
+        :param pre_migration_rows: Row count before migration (for delta comparison)
         :return: True if validation passed, False otherwise
         """
         try:
@@ -454,17 +462,21 @@ class PVCToDBMigrator:
                     return False
 
                 actual_rows = result[0]
-                if actual_rows != expected_rows:
+                actual_delta = actual_rows - pre_migration_rows
+                if actual_delta != expected_rows:
                     logger.error(
-                        "Validation FAILED: Dataset '%s' has %d rows in MariaDB, expected %d from HDF5",
+                        "Validation FAILED: Dataset '%s' has %d new rows in MariaDB "
+                        "(total %d, pre-migration %d), expected %d from HDF5",
                         dataset_name,
+                        actual_delta,
                         actual_rows,
+                        pre_migration_rows,
                         expected_rows,
                     )
                     return False
 
                 logger.info(
-                    "✓ Validation passed: Dataset '%s' has %d rows in MariaDB",
+                    "Validation passed: Dataset '%s' has %d new rows in MariaDB",
                     dataset_name,
                     expected_rows,
                 )

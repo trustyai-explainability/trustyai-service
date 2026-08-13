@@ -303,22 +303,28 @@ class TestFileTracking:
         mock_maria_storage.connection_manager = mock_conn_mgr
 
         migrator = PVCToDBMigrator(mock_maria_storage)
-        migrator._migration_id = 42
         result = migrator._is_file_already_migrated("test.hdf5")
 
         assert result is False
+        # Cross-run query: checks across ALL migration runs, not scoped to _migration_id
+        call_args = mock_cursor.execute.call_args[0]
+        assert "completed_at IS NOT NULL" in call_args[0]
+        assert call_args[1] == ("test.hdf5",)
 
     def test_is_file_already_migrated(self, mock_maria_storage):
-        """Test checking when file has been migrated."""
+        """Test checking when file has been migrated in a prior run."""
         mock_conn_mgr, mock_cursor = mock_connection_manager()
         mock_cursor.fetchone = MagicMock(return_value=(1,))
         mock_maria_storage.connection_manager = mock_conn_mgr
 
         migrator = PVCToDBMigrator(mock_maria_storage)
-        migrator._migration_id = 42
         result = migrator._is_file_already_migrated("test.hdf5")
 
         assert result is True
+        # Cross-run query: no migration_id filter
+        call_args = mock_cursor.execute.call_args[0]
+        assert "completed_at IS NOT NULL" in call_args[0]
+        assert call_args[1] == ("test.hdf5",)
 
     def test_mark_file_migrated(self, mock_maria_storage):
         """Test marking a file as migrated."""
@@ -499,10 +505,19 @@ class TestFullMigration:
     async def test_migrate_success_with_files(
         self, mock_maria_storage, temp_pvc_dir, sample_hdf5_file
     ):
-        """Test successful migration with HDF5 files."""
+        """Test successful migration with HDF5 files sets COMPLETE status."""
         mock_conn_mgr, mock_cursor = mock_connection_manager()
-        mock_cursor.fetchone = MagicMock(return_value=None)
         mock_cursor.lastrowid = 1
+
+        def mock_fetchone(*args, **kwargs):  # noqa: ARG001
+            if mock_cursor.execute.call_args:
+                call_args = mock_cursor.execute.call_args[0]
+                # Validation query: return matching row count (sample has 2 rows)
+                if "trustyai_v2_table_reference" in call_args[0]:
+                    return (2,)
+            return None
+
+        mock_cursor.fetchone = MagicMock(side_effect=mock_fetchone)
         mock_maria_storage.connection_manager = mock_conn_mgr
 
         migrator = PVCToDBMigrator(mock_maria_storage, pvc_folder=str(temp_pvc_dir))
@@ -511,6 +526,21 @@ class TestFullMigration:
 
         # Verify data was written
         assert mock_maria_storage.write_data.await_count > 0
+
+        # Verify COMPLETE status was set
+        execute_calls = [
+            (call[0][0], call[0][1] if len(call[0]) > 1 else None)
+            for call in mock_cursor.execute.call_args_list
+        ]
+        complete_update = [
+            call
+            for call in execute_calls
+            if call[0] is not None
+            and "UPDATE trustyai_migration_status" in call[0]
+            and call[1]
+            and MIGRATION_STATUS_COMPLETE in str(call[1])
+        ]
+        assert len(complete_update) > 0
 
 
 class TestErrorHandling:
@@ -693,13 +723,15 @@ class TestErrorHandling:
         migrator._mark_migration_failed("error")
         migrator._mark_file_migrated("test.hdf5", "dataset", 10)
         migrator._mark_file_failed("test.hdf5", "error")
-        result = migrator._is_file_already_migrated("test.hdf5")
 
-        # Verify no SQL was executed
+        # Verify no SQL was executed for methods guarded by _migration_id
         assert mock_cursor.execute.call_count == 0
-        assert (
-            result is False
-        )  # _is_file_already_migrated returns False when no migration_id
+
+        # _is_file_already_migrated uses cross-run check (no _migration_id guard)
+        # so it DOES execute SQL even without _migration_id
+        result = migrator._is_file_already_migrated("test.hdf5")
+        assert mock_cursor.execute.call_count == 1
+        assert result is False
 
 
 class TestBatchedProcessing:
