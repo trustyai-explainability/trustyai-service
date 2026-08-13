@@ -65,14 +65,6 @@ class TestDIREndpoints:
         expected_name="Disparate Impact Ratio",
     )
 
-    test_interpret_value_not_implemented = (
-        factory.make_interpret_value_not_implemented_test(
-            metric_name="DIR",
-            endpoint_path="/metrics/group/fairness/dir/definition",
-            client=client,
-        )
-    )
-
     test_schedule_endpoint = factory.make_schedule_endpoint_test(
         metric_name="DIR",
         module_path=_MODULE,

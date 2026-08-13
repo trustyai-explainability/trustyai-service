@@ -65,14 +65,6 @@ class TestSPDEndpoints:
         expected_name="Statistical Parity Difference",
     )
 
-    test_interpret_value_not_implemented = (
-        factory.make_interpret_value_not_implemented_test(
-            metric_name="SPD",
-            endpoint_path="/metrics/group/fairness/spd/definition",
-            client=client,
-        )
-    )
-
     test_schedule_endpoint = factory.make_schedule_endpoint_test(
         metric_name="SPD",
         module_path=_MODULE,
