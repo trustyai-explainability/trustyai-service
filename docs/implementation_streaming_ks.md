@@ -13,12 +13,12 @@ This approach provides memory-efficient, one-pass streaming KS testing with form
 
 The implementation consists of two primary components:
 
-1. **Greenwald-Khanna Quantile Sketch** (`src/core/metrics/drift/greenwald_khanna_quantile_sketch.py`)
+1. **Greenwald-Khanna Quantile Sketch** (`src/trustyai_service/core/metrics/drift/greenwald_khanna_quantile_sketch.py`)
    - Space-efficient streaming quantile data structure
    - Maintains an ε-approximate quantile summary with O(1/ε log(εn)) space complexity
    - Error parameter ε must be in (0, 0.5]; values > 0.4 trigger performance warnings
 
-2. **Streaming KS Test** (`src/core/metrics/drift/kolmogorov_smirnov_streaming.py`)
+2. **Streaming KS Test** (`src/trustyai_service/core/metrics/drift/kolmogorov_smirnov_streaming.py`)
    - Two-sample KS test using GK sketches
    - Computes approximate KS statistic with error bounded by 4ε
 
@@ -54,7 +54,7 @@ The paper ["Two-sample KS test with approxQuantile in Apache Spark"](https://arx
 | Space Complexity | O(1/ε log(εn)) total | O(√N) for CDFs + O(1/ε log(εn)) for sketches |
 | CDF Construction | Direct from sketch ranks | Linear interpolation |
 | Approximation Layers | 1 (sketch only) | 2 (sketch + interpolation) |
-| Error Bound | 4ε (simpler, tighter) | δ ≤ 1/(a-1) + ε |
+| Error Bound | 4ε (fixed, simpler) | δ ≤ 1/(a-1) + ε (depends on *a*) |
 | Memory Efficiency | Several orders of magnitude reduction | Moderate reduction |
 | Online Updates | ✅ Supports streaming inserts | ❌ Not supported |
 | Sketch Operations | ✅ delete(), merge(), serialize() | ❌ Limited (query only) |
@@ -62,7 +62,7 @@ The paper ["Two-sample KS test with approxQuantile in Apache Spark"](https://arx
 
 ### Why Lall (2015) Was Chosen
 
-1. **Simpler Error Bound**: Single 4ε bound vs. complex δ ≤ 1/(a-1) + ε that depends on number of interpolation points. With Lall's approach, just set ε and the error bound is automatic; Spark's approach requires choosing *a* to balance accuracy vs. space.
+1. **Simpler Error Bound**: Single fixed 4ε bound vs. δ ≤ 1/(a-1) + ε that depends on the number of interpolation points *a*. With Lall's approach, just set ε and the error bound is automatic. Note that Spark's bound can be smaller than 4ε for large *a* (e.g., a=100, ε=0.01 gives δ≈0.02 vs. 4ε=0.04), but requires choosing *a* to balance accuracy vs. space.
 
 2. **Better Space Efficiency**: O(1/ε log(εn)) vs. O(√N) for CDFs. For N=1M, ε=0.01: ~2.2 KB (ours) vs. ~1,000 points (Spark interpolated CDF). Eck et al. explicitly note: "Approximate CDFs scale as O(√N), compared to O(1/ε log(εN)) for direct sketch methods."
 
@@ -198,11 +198,13 @@ For typical use cases (ε=0.01, millions of elements), a Python list is optimal.
 
 #### Time Complexity
 
+Here `s` denotes the current summary size (typically ~100 tuples for ε=0.01), not the stream length `n`.
+
 | Operation | Complexity   | Actual Performance        |
 |-----------|--------------|---------------------------|
-| Insert    | O(log n + n) | ~0.001 ms (n ≈ 100)      |
-| Compress  | O(n)         | ~0.025 ms per compression |
-| Quantile  | O(log n)     | ~4 μs (microseconds)     |
+| Insert    | O(log s + s) | ~0.001 ms (s ≈ 100)      |
+| Compress  | O(s)         | ~0.025 ms per compression |
+| Quantile  | O(log s)     | ~4 μs (microseconds)     |
 | Min/Max   | O(1)         | Direct array access       |
 
 #### Space Complexity
@@ -309,8 +311,19 @@ cur_r_min, cur_r_max = 0, 0
 i, j = 0, 0
 
 while i < len(ref_summary) or j < len(cur_summary):
+    # Handle exhausted summaries
+    if i >= len(ref_summary):
+        _, g, delta = cur_summary[j]
+        cur_r_min += g
+        cur_r_max = cur_r_min + delta
+        j += 1
+    elif j >= len(cur_summary):
+        _, g, delta = ref_summary[i]
+        ref_r_min += g
+        ref_r_max = ref_r_min + delta
+        i += 1
     # Pick smaller value (merge step)
-    if ref_summary[i][0] < cur_summary[j][0]:
+    elif ref_summary[i][0] < cur_summary[j][0]:
         _, g, delta = ref_summary[i]
         ref_r_min += g
         ref_r_max = ref_r_min + delta
@@ -436,9 +449,11 @@ ks_restored = KolmogorovSmirnovStreaming.from_dict(state)
 
 ### Time Complexity
 
-- **Insert (streaming)**: O(log n) per element (n ≈ 100 tuples)
-- **Quantile query**: O(log n) with cumulative rank caching
-- **KS statistic**: O(m + n) merge-scan (m, n ≈ 100 tuples each)
+Here `s` denotes the summary size (typically ~100 tuples for ε=0.01).
+
+- **Insert (streaming)**: O(log s + s) per element (amortized; includes bisect and list shift)
+- **Quantile query**: O(log s) with cumulative rank caching
+- **KS statistic**: O(s_ref + s_cur) merge-scan (s_ref, s_cur ≈ 100 tuples each)
 
 ### Accuracy
 

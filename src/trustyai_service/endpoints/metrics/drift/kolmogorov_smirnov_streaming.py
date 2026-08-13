@@ -225,6 +225,12 @@ async def schedule_ksteststreaming(
     request: ApproxKSTestMetricRequest,
 ) -> dict[str, str]:
     """Schedule a recurring computation of KS Test Streaming metric."""
+    if not request.reference_tag:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail="referenceTag is required for drift detection",
+        )
+
     if not request.fit_columns:
         data_source = get_data_source()
         metadata = await data_source.get_metadata(request.model_id)
@@ -346,7 +352,7 @@ async def list_ksteststreaming_requests(
                     "id": str(request_id),  # deprecated: use requestId
                     "requestId": str(request_id),
                     "modelId": request.model_id,
-                    "metricName": METRIC_NAME,
+                    "metricName": metric_name,
                     "batchSize": request.batch_size,
                     "referenceTag": request.reference_tag,
                     "fitColumns": request.fit_columns,
