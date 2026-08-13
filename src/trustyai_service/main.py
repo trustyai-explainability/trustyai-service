@@ -54,6 +54,9 @@ from trustyai_service.endpoints.metrics.metrics_info import (
 
 # Middleware
 from trustyai_service.middleware.gzip_middleware import GzipRequestMiddleware
+
+# Feature flag gating
+from trustyai_service.service.config.registry import register_if_enabled_with_group
 from trustyai_service.service.data.storage.maria.pvc_migration import (
     MIGRATION_STATUS_COMPLETE,
     MIGRATION_STATUS_FAILED,
@@ -164,59 +167,107 @@ async def strip_trailing_slash(
     return await call_next(request)
 
 
-# Include all routers
+# Include core routers (always registered)
 app.include_router(
     consumer_router,
     tags=["{Internal Only} Inference Consumer", "{Internal Only} ModelMesh Consumer"],
 )
-app.include_router(dir_router, tags=["Fairness Metrics: Group: Disparate Impact Ratio"])
 app.include_router(data_upload_router, tags=["Data Upload"])
+app.include_router(batch_mean_router, tags=["Metrics: Batch Mean"])
+app.include_router(metadata_router, tags=["Service Metadata"])
+app.include_router(metrics_info_router, tags=["Metrics Information Endpoint"])
 
-#   Drift metrics
-app.include_router(
+# Fairness metrics (feature-flag gated, with legacy /metrics prefix)
+register_with_legacy_prefix(
+    app,
+    dir_router,
+    "fairness",
+    "fairness_dir",
+    modern_tag="Fairness Metrics: Group: Disparate Impact Ratio",
+    legacy_tag="{Legacy}: Disparate Impact Ratio",
+)
+register_with_legacy_prefix(
+    app,
+    spd_router,
+    "fairness",
+    "fairness_spd",
+    modern_tag="Fairness Metrics: Group: Statistical Parity Difference",
+    legacy_tag="{Legacy}: Statistical Parity Difference",
+)
+
+# Drift metrics (feature-flag gated)
+register_if_enabled_with_group(
+    app,
     drift_comparemeans_router,
-    tags=[
-        "Drift Metrics: CompareMeans",
-    ],
+    "drift",
+    "drift_compare_means",
+    tag="Drift Metrics: CompareMeans",
 )
-app.include_router(
+register_if_enabled_with_group(
+    app,
     drift_fouriermmd_router,
-    tags=["Drift Metrics: FourierMMD"],
+    "drift",
+    "drift_fourier_mmd",
+    tag="Drift Metrics: FourierMMD",
 )
-app.include_router(
+register_if_enabled_with_group(
+    app,
+    drift_approxkstest_router,
+    "drift",
+    "drift_approx_ks_test",
+    tag="Drift Metrics: ApproxKSTest",
+)
+register_if_enabled_with_group(
+    app,
     drift_jensenshannon_router,
-    tags=["Drift Metrics: JensenShannon"],
+    "drift",
+    "drift_jensen_shannon",
+    tag="Drift Metrics: JensenShannon",
 )
-app.include_router(
+register_if_enabled_with_group(
+    app,
     drift_kstest_router,
-    tags=[
-        "Drift Metrics: KSTest",
-    ],
+    "drift",
+    "drift_ks_test",
+    tag="Drift Metrics: KSTest",
 )
 app.include_router(
     drift_ksteststreaming_router,
     tags=["Drift Metrics: KSTestStreaming"],
 )
 
-app.include_router(explainers_global_router, tags=["Explainers: Global"])
-app.include_router(explainers_local_router, tags=["Explainers: Local"])
-app.include_router(
-    spd_router,
-    tags=["Fairness Metrics: Group: Statistical Parity Difference"],
+# Explainer endpoints (feature-flag gated, disabled by default)
+register_if_enabled_with_group(
+    app,
+    explainers_global_router,
+    "explainer",
+    "explainer_global",
+    tag="Explainers: Global",
 )
-app.include_router(batch_mean_router, tags=["Metrics: Batch Mean"])
-app.include_router(metadata_router, tags=["Service Metadata"])
-app.include_router(metrics_info_router, tags=["Metrics Information Endpoint"])
-
-
-# Deprecated endpoints
-app.include_router(
-    dir_router, prefix="/metrics", tags=["{Legacy}: Disparate Impact Ratio"]
+register_if_enabled_with_group(
+    app,
+    explainers_local_router,
+    "explainer",
+    "explainer_local",
+    tag="Explainers: Local",
 )
-app.include_router(
-    spd_router,
+
+# Deprecated endpoints (gated by same fairness flags)
+register_if_enabled_with_group(
+    app,
+    dir_router,
+    "fairness",
+    "fairness_dir",
+    tag="{Legacy}: Disparate Impact Ratio",
     prefix="/metrics",
-    tags=["{Legacy}: Statistical Parity Difference"],
+)
+register_if_enabled_with_group(
+    app,
+    spd_router,
+    "fairness",
+    "fairness_spd",
+    tag="{Legacy}: Statistical Parity Difference",
+    prefix="/metrics",
 )
 
 
