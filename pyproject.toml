@@ -46,6 +46,7 @@ test = [
 [project.optional-dependencies]
 # Note: grpcio/grpcio-tools removed - incompatible with protobuf v7, unused (protoc used instead)
 mariadb = ["mariadb>=1.1,<1.2", "javaobj-py3>=0.5,<0.6"]
+mmd = ["goodpoints>=0.5.0,<0.7"]
 
 [tool.hatch.version]
 source = "vcs"
@@ -137,7 +138,7 @@ skips = [
 
 [tool.pyrefly]
 search-path = ["."]
-project-excludes = ["**/proto/**", "src/trustyai_service/proto/**", "src/trustyai_service/proto/grpc_predict_v2_pb2.py", "src/trustyai_service/_version.py"]
+project-excludes = [".claude/**", "**/proto/**", "src/trustyai_service/proto/**", "src/trustyai_service/proto/grpc_predict_v2_pb2.py", "src/trustyai_service/_version.py"]
 disable-project-excludes-heuristics = true
 # Forward-looking: pyrefly uses this for type checking, not runtime
 python-version = "3.14.0"
