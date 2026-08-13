@@ -24,6 +24,14 @@ from trustyai_service.endpoints.consumer import (
 )
 from trustyai_service.endpoints.consumer.gzip_utils import decompress_if_gzip
 from trustyai_service.exceptions import ReconciliationError
+from trustyai_service.service.constants import (
+    BIAS_IGNORE_PARAM,
+    INPUT_SUFFIX,
+    METADATA_SUFFIX,
+    OUTPUT_SUFFIX,
+    SYNTHETIC_TAG,
+    UNLABELED_TAG,
+)
 from trustyai_service.service.data.datasources.data_source import DataSource
 from trustyai_service.service.data.model_data import ModelData
 from trustyai_service.service.data.modelmesh_parser import (
@@ -34,14 +42,6 @@ from trustyai_service.service.data.shared_data_source import get_shared_data_sou
 from trustyai_service.service.data.storage import get_global_storage_interface
 from trustyai_service.service.payloads.values.data_type import DataType
 from trustyai_service.service.utils import list_utils
-
-# Define constants locally to avoid import issues
-INPUT_SUFFIX = "_inputs"
-OUTPUT_SUFFIX = "_outputs"
-METADATA_SUFFIX = "_metadata"
-SYNTHETIC_TAG = "synthetic"
-UNLABELED_TAG = "unlabeled"
-BIAS_IGNORE_PARAM = "bias-ignore"
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
