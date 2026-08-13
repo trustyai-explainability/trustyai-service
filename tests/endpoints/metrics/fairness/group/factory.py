@@ -965,7 +965,7 @@ def make_retrieve_tags_test() -> Callable[[Any], None]:
     """Create a test for GroupMetricRequest.retrieve_tags()."""
 
     def test_impl(_: object) -> None:
-        from src.endpoints.metrics.fairness.group.utils import (
+        from trustyai_service.endpoints.metrics.fairness.group.utils import (
             GroupMetricRequest,
         )
 

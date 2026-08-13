@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.endpoints.metrics.fairness.group.spd import (
+from trustyai_service.endpoints.metrics.fairness.group.spd import (
     DEFAULT_SPD_THRESHOLD_DELTA,
     SPD_FAIRNESS_TARGET,
     router,
@@ -33,7 +33,7 @@ app.include_router(router)
 client = TestClient(app)
 
 # Module path used for all patches
-_MODULE = "src.endpoints.metrics.fairness.group.spd"
+_MODULE = "trustyai_service.endpoints.metrics.fairness.group.spd"
 
 # Standard request payload
 _PAYLOAD = factory._base_request_payload()

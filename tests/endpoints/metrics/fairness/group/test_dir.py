@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.endpoints.metrics.fairness.group.dir import (
+from trustyai_service.endpoints.metrics.fairness.group.dir import (
     DEFAULT_DIR_THRESHOLD_DELTA,
     DIR_FAIRNESS_TARGET,
     router,
@@ -33,7 +33,7 @@ app.include_router(router)
 client = TestClient(app)
 
 # Module path used for all patches
-_MODULE = "src.endpoints.metrics.fairness.group.dir"
+_MODULE = "trustyai_service.endpoints.metrics.fairness.group.dir"
 
 # Standard request payload
 _PAYLOAD = factory._base_request_payload()
