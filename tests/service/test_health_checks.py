@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from trustyai_service.main import app
+from trustyai_service.main import app, health_app
 from trustyai_service.service.health_checks import (
     STATUS_ERROR,
     STATUS_OK,
@@ -401,18 +401,15 @@ class TestHealthCheckFunctions:
     """Test health check orchestration functions."""
 
     def test_perform_readiness_checks_all_up(self, tmp_path) -> None:
-        """Test perform_readiness_checks returns correct structure.
-
-        Note: Storage check may fail in test environment due to cache/worker isolation,
-        so we verify structure rather than requiring all checks to pass.
-        """
+        """Test perform_readiness_checks returns correct structure."""
         with patch.dict(
             os.environ,
             {"SERVICE_STORAGE_FORMAT": "PVC", "STORAGE_DATA_FOLDER": str(tmp_path)},
+            clear=True,
         ):
             _health_cache.cache.clear()  # Clear cache to pick up new env vars
             status, checks = perform_readiness_checks()
-            assert status in [STATUS_OK, STATUS_ERROR]
+            assert status == STATUS_OK
             assert len(checks) == 3
             # Verify all checks have required fields
             assert all("name" in check and "status" in check for check in checks)
@@ -451,29 +448,20 @@ class TestHealthEndpoints:
         return TestClient(app)
 
     def test_readiness_endpoint_success(self, client, tmp_path) -> None:
-        """Test /q/health/ready endpoint returns correct format.
-
-        Note: Storage check may fail in test environment due to cache/worker isolation,
-        so we accept both ready and not_ready states.
-        """
+        """Test /q/health/ready endpoint returns success when ready."""
         with patch.dict(
             os.environ,
             {"SERVICE_STORAGE_FORMAT": "PVC", "STORAGE_DATA_FOLDER": str(tmp_path)},
+            clear=True,
         ):
             _health_cache.cache.clear()  # Clear cache to pick up new env vars
             response = client.get("/q/health/ready")
             data = response.json()
-            # Accept both OK (ready) and SERVICE_UNAVAILABLE (not ready) - test environment may vary
-            assert response.status_code in [
-                HTTPStatus.OK,
-                HTTPStatus.SERVICE_UNAVAILABLE,
-            ]
-            assert data["status"] in ["ready", "not_ready"]
+            assert response.status_code == HTTPStatus.OK
+            assert data["status"] == "ready"
             assert len(data["checks"]) == 3
-            # At least one check should report (structure test)
-            assert all(
-                "name" in check and "status" in check for check in data["checks"]
-            )
+            # Verify all checks passed
+            assert all(check["status"] == STATUS_OK for check in data["checks"])
 
     def test_readiness_endpoint_failure(self, client) -> None:
         """Test /q/health/ready endpoint when not ready."""
@@ -497,24 +485,17 @@ class TestHealthEndpoints:
         assert data["checks"][0]["name"] == "Application"
 
     def test_general_health_endpoint_success(self, client, tmp_path) -> None:
-        """Test /q/health endpoint returns correct format.
-
-        Note: Storage check may fail in test environment due to cache/worker isolation,
-        so we accept both healthy and unhealthy states.
-        """
+        """Test /q/health endpoint returns healthy when all checks pass."""
         with patch.dict(
             os.environ,
             {"SERVICE_STORAGE_FORMAT": "PVC", "STORAGE_DATA_FOLDER": str(tmp_path)},
+            clear=True,
         ):
             _health_cache.cache.clear()  # Clear cache to pick up new env vars
             response = client.get("/q/health")
             data = response.json()
-            # Accept both OK (healthy) and SERVICE_UNAVAILABLE (unhealthy) - test environment may vary
-            assert response.status_code in [
-                HTTPStatus.OK,
-                HTTPStatus.SERVICE_UNAVAILABLE,
-            ]
-            assert data["status"] in ["healthy", "unhealthy"]
+            assert response.status_code == HTTPStatus.OK
+            assert data["status"] == "healthy"
             # Should have both readiness and liveness checks
             assert "readiness" in data["checks"]
             assert "liveness" in data["checks"]
@@ -531,3 +512,66 @@ class TestHealthEndpoints:
             assert data["status"] == "unhealthy"
             assert "readiness" in data["checks"]
             assert "liveness" in data["checks"]
+
+
+class TestHealthApp:
+    """Test the dedicated health-only app (kubelet probe listener)."""
+
+    @pytest.fixture
+    def client(self) -> TestClient:
+        """Create a test client for the health_app."""
+        return TestClient(health_app)
+
+    def test_readiness(self, client, tmp_path) -> None:
+        """Test /q/health/ready endpoint on health_app."""
+        with patch.dict(
+            os.environ,
+            {"SERVICE_STORAGE_FORMAT": "PVC", "STORAGE_DATA_FOLDER": str(tmp_path)},
+        ):
+            _health_cache.cache.clear()
+            response = client.get("/q/health/ready")
+            assert response.status_code in [
+                HTTPStatus.OK,
+                HTTPStatus.SERVICE_UNAVAILABLE,
+            ]
+            data = response.json()
+            assert "status" in data
+            assert "checks" in data
+
+    def test_liveness(self, client) -> None:
+        """Test /q/health/live endpoint on health_app."""
+        response = client.get("/q/health/live")
+        assert response.status_code == HTTPStatus.OK
+        data = response.json()
+        assert data["status"] == "alive"
+
+    def test_general_health(self, client, tmp_path) -> None:
+        """Test /q/health endpoint on health_app."""
+        with patch.dict(
+            os.environ,
+            {"SERVICE_STORAGE_FORMAT": "PVC", "STORAGE_DATA_FOLDER": str(tmp_path)},
+        ):
+            _health_cache.cache.clear()
+            response = client.get("/q/health")
+            assert response.status_code in [
+                HTTPStatus.OK,
+                HTTPStatus.SERVICE_UNAVAILABLE,
+            ]
+            data = response.json()
+            assert "checks" in data
+
+    def test_no_other_routes(self, client) -> None:
+        """Test that other routes are not exposed on health_app."""
+        for path in ["/", "/q/metrics", "/info"]:
+            response = client.get(path)
+            assert response.status_code == HTTPStatus.NOT_FOUND, (
+                f"{path} should not exist on health app"
+            )
+
+    def test_no_docs(self, client) -> None:
+        """Test that OpenAPI docs are disabled on health_app."""
+        for path in ["/docs", "/openapi.json"]:
+            response = client.get(path)
+            assert response.status_code == HTTPStatus.NOT_FOUND, (
+                f"{path} should be disabled on health app"
+            )

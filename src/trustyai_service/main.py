@@ -286,6 +286,17 @@ def liveness_probe() -> JSONResponse:
     return JSONResponse(content=response_body, status_code=status_code)
 
 
+health_app = FastAPI(
+    title="TrustyAI Health",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
+health_app.get("/q/health")(general_health)
+health_app.get("/q/health/ready")(readiness_probe)
+health_app.get("/q/health/live")(liveness_probe)
+
+
 def get_tls_config() -> dict[str, Any] | None:
     """Get TLS configuration for the service.
 
@@ -320,6 +331,11 @@ async def run_server() -> None:
     )
     http_port = int(os.getenv("HTTP_PORT", "8080"))
     ssl_port = int(os.getenv("SSL_PORT", "4443"))
+    health_port = int(os.getenv("HEALTH_PORT", "9000"))
+
+    if health_port in (http_port, ssl_port):
+        msg = f"HEALTH_PORT ({health_port}) must differ from HTTP_PORT ({http_port}) and SSL_PORT ({ssl_port})"
+        raise ValueError(msg)
 
     # Create hypercorn config
     config = PolicyAwareConfig()
@@ -347,10 +363,15 @@ async def run_server() -> None:
     config.errorlog = "-"  # Log to stderr
     config.use_reloader = False  # Disable reloader in production
 
-    # Start the server
-    # FastAPI implements the ASGI protocol that hypercorn expects
-    # The type stubs are overly strict, but FastAPI works correctly at runtime
-    await serve(app, config)  # type: ignore[arg-type]
+    health_config = PolicyAwareConfig()
+    health_config.insecure_bind = [f"0.0.0.0:{health_port}"]
+    health_config.use_reloader = False
+    logger.info("Binding health probes on 0.0.0.0:%s for kubelet", health_port)
+
+    await asyncio.gather(
+        serve(app, config),  # type: ignore[arg-type]
+        serve(health_app, health_config),  # type: ignore[arg-type]
+    )
 
 
 if __name__ == "__main__":

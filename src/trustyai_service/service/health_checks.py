@@ -58,7 +58,7 @@ class HealthCache:
         :return: Cached or computed value
         """
         with self.lock:
-            now = time.time()
+            now = time.monotonic()
             if key in self.cache:
                 cached_value, cached_time = self.cache[key]
                 if now - cached_time < self.ttl:
@@ -69,7 +69,7 @@ class HealthCache:
         value = compute_func()
 
         with self.lock:
-            self.cache[key] = (value, time.time())
+            self.cache[key] = (value, time.monotonic())
         return value
 
     def stats(self) -> dict[str, int]:
