@@ -35,8 +35,8 @@ RUN pip install --no-cache-dir --no-deps --require-hashes \
 COPY src src
 
 RUN pip install --no-cache-dir --no-deps --no-build-isolation . && \
-    pip uninstall -y hatchling hatch-vcs setuptools-scm vcs-versioning \
-        trove-classifiers pathspec pluggy
+    pip uninstall -y hatchling hatch-vcs setuptools setuptools-scm \
+        vcs-versioning trove-classifiers pathspec pluggy
 
 RUN printf '__version__ = version = "%s"\n' "${VERSION}" > src/trustyai_service/_version.py && \
     chown 1001:0 src/trustyai_service/_version.py
