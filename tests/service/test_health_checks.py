@@ -17,11 +17,23 @@ from trustyai_service.service.health_checks import (
     STATUS_OK,
     HealthCache,
     HealthCheck,
-    HealthCheckRegistry,
     _health_cache,
+    check_application_liveness,
+    check_http_server,
+    check_migration_readiness,
+    check_storage_readiness,
     perform_liveness_checks,
     perform_readiness_checks,
 )
+
+_MARIA_ENV = {
+    "SERVICE_STORAGE_FORMAT": "MARIA",
+    "DATABASE_HOST": "localhost",
+    "DATABASE_PORT": "3306",
+    "DATABASE_USERNAME": "test_user",
+    "DATABASE_PASSWORD": "test_pass",  # pragma: allowlist secret
+    "DATABASE_DATABASE": "test_db",
+}
 
 
 @pytest.fixture(autouse=True)
@@ -53,6 +65,25 @@ def _clear_health_cache() -> Generator[None, None, None]:
     _health_cache.cache.clear()
     yield
     _health_cache.cache.clear()
+
+
+@pytest.fixture
+def mock_maria_conn() -> Generator[tuple[MagicMock, MagicMock], None, None]:
+    """Mock MariaConnectionManager for health check tests."""
+    with (
+        patch(
+            "trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__init__",
+            return_value=None,
+        ) as mock_init,
+        patch(
+            "trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__exit__",
+            return_value=False,
+        ),
+        patch(
+            "trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__enter__",
+        ) as mock_enter,
+    ):
+        yield mock_init, mock_enter
 
 
 class TestHealthCache:
@@ -178,18 +209,18 @@ class TestHealthCheck:
         }
 
 
-class TestHealthCheckRegistry:
-    """Test HealthCheckRegistry static methods."""
+class TestStorageAndHealthChecks:
+    """Test health check functions."""
 
     def test_check_http_server(self) -> None:
         """Test HTTP server health check always returns UP."""
-        check = HealthCheckRegistry.check_http_server()
+        check = check_http_server()
         assert check.name == "HTTP server"
         assert check.status == STATUS_OK
 
     def test_check_application_liveness(self) -> None:
         """Test application liveness check always returns UP."""
-        check = HealthCheckRegistry.check_application_liveness()
+        check = check_application_liveness()
         assert check.name == "Application"
         assert check.status == STATUS_OK
 
@@ -199,7 +230,7 @@ class TestHealthCheckRegistry:
             os.environ,
             {"SERVICE_STORAGE_FORMAT": "PVC", "STORAGE_DATA_FOLDER": str(tmp_path)},
         ):
-            check = HealthCheckRegistry.check_storage_readiness()
+            check = check_storage_readiness()
             assert check.status == STATUS_OK
             assert check.name == "Storage readiness"
 
@@ -212,7 +243,7 @@ class TestHealthCheckRegistry:
                 "STORAGE_DATA_FOLDER": "/nonexistent/path",
             },
         ):
-            check = HealthCheckRegistry.check_storage_readiness()
+            check = check_storage_readiness()
             assert check.status == STATUS_ERROR
             assert check.name == "Storage readiness"
             assert "not found" in check.data["error"]
@@ -227,9 +258,9 @@ class TestHealthCheckRegistry:
                     "STORAGE_DATA_FOLDER": str(tmp_path),
                 },
             ),
-            patch("pathlib.Path.write_text", side_effect=PermissionError("read-only")),
+            patch("os.access", return_value=False),
         ):
-            check = HealthCheckRegistry.check_storage_readiness()
+            check = check_storage_readiness()
             assert check.status == STATUS_ERROR
             assert check.name == "Storage readiness"
             assert "not writable" in check.data["error"]
@@ -238,43 +269,21 @@ class TestHealthCheckRegistry:
     def test_check_maria_storage_library_not_installed(self) -> None:
         """Test MariaDB check fails gracefully when library not installed."""
         with patch.dict(os.environ, {"SERVICE_STORAGE_FORMAT": "MARIA"}):
-            check = HealthCheckRegistry.check_storage_readiness()
+            check = check_storage_readiness()
             assert check.status == STATUS_ERROR
             assert check.name == "Storage readiness"
             assert "not installed" in check.data["error"]
 
     @patch("trustyai_service.service.health_checks.MARIADB_AVAILABLE", True)
-    @patch(
-        "trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__enter__"
-    )
-    @patch(
-        "trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__exit__",
-        return_value=False,
-    )
-    @patch(
-        "trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__init__",
-        return_value=None,
-    )
-    def test_check_maria_storage_connection_success(
-        self, mock_init, _mock_exit, mock_enter
-    ) -> None:
+    def test_check_maria_storage_connection_success(self, mock_maria_conn) -> None:
         """Test MariaDB check succeeds when connection works."""
+        mock_init, mock_enter = mock_maria_conn
         mock_cursor = MagicMock()
         mock_cursor.fetchone.return_value = (1,)
         mock_enter.return_value = (MagicMock(), mock_cursor)
 
-        with patch.dict(
-            os.environ,
-            {
-                "SERVICE_STORAGE_FORMAT": "MARIA",
-                "DATABASE_HOST": "localhost",
-                "DATABASE_PORT": "3306",
-                "DATABASE_USERNAME": "test_user",
-                "DATABASE_PASSWORD": "test_pass",  # pragma: allowlist secret
-                "DATABASE_DATABASE": "test_db",
-            },
-        ):
-            check = HealthCheckRegistry.check_storage_readiness()
+        with patch.dict(os.environ, _MARIA_ENV):
+            check = check_storage_readiness()
             assert check.status == STATUS_OK
             assert check.name == "Storage readiness"
 
@@ -289,96 +298,47 @@ class TestHealthCheckRegistry:
         )
 
     @patch("trustyai_service.service.health_checks.MARIADB_AVAILABLE", True)
-    @patch(
-        "trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__enter__"
-    )
-    @patch(
-        "trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__exit__",
-        return_value=False,
-    )
-    @patch(
-        "trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__init__",
-        return_value=None,
-    )
-    def test_check_maria_storage_connection_failure(
-        self, _mock_init, _mock_exit, mock_enter
-    ) -> None:
+    def test_check_maria_storage_connection_failure(self, mock_maria_conn) -> None:
         """Test MariaDB check fails when connection fails."""
+        _mock_init, mock_enter = mock_maria_conn
         mock_enter.side_effect = Exception("Connection refused")
 
-        with patch.dict(
-            os.environ,
-            {"SERVICE_STORAGE_FORMAT": "MARIA", "DATABASE_HOST": "localhost"},
-        ):
-            check = HealthCheckRegistry.check_storage_readiness()
+        with patch.dict(os.environ, _MARIA_ENV):
+            check = check_storage_readiness()
             assert check.status == STATUS_ERROR
             assert check.name == "Storage readiness"
             assert "Connection refused" in check.data["error"]
 
     @patch("trustyai_service.service.health_checks.MARIADB_AVAILABLE", True)
-    @patch(
-        "trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__enter__"
-    )
-    @patch(
-        "trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__exit__",
-        return_value=False,
-    )
-    @patch(
-        "trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__init__",
-        return_value=None,
-    )
-    def test_check_maria_storage_network_error(
-        self, _mock_init, _mock_exit, mock_enter
-    ) -> None:
+    def test_check_maria_storage_network_error(self, mock_maria_conn) -> None:
         """Test MariaDB check handles network errors specifically."""
+        _mock_init, mock_enter = mock_maria_conn
         mock_enter.side_effect = OSError("Network unreachable")
 
-        with patch.dict(
-            os.environ,
-            {"SERVICE_STORAGE_FORMAT": "MARIA", "DATABASE_HOST": "localhost"},
-        ):
-            check = HealthCheckRegistry.check_storage_readiness()
+        with patch.dict(os.environ, _MARIA_ENV):
+            check = check_storage_readiness()
             assert check.status == STATUS_ERROR
             assert check.name == "Storage readiness"
             assert "Network unreachable" in check.data["error"]
 
     @patch("trustyai_service.service.health_checks.MARIADB_AVAILABLE", True)
-    @patch(
-        "trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__enter__"
-    )
-    @patch(
-        "trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__exit__",
-        return_value=False,
-    )
-    @patch(
-        "trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__init__",
-        return_value=None,
-    )
-    def test_check_maria_storage_database_alias(
-        self, _mock_init, _mock_exit, mock_enter
-    ) -> None:
+    def test_check_maria_storage_database_alias(self, mock_maria_conn) -> None:
         """Test MariaDB check works with SERVICE_STORAGE_FORMAT=DATABASE alias."""
+        _mock_init, mock_enter = mock_maria_conn
         mock_cursor = MagicMock()
         mock_cursor.fetchone.return_value = (1,)
         mock_enter.return_value = (MagicMock(), mock_cursor)
 
         with patch.dict(
-            os.environ,
-            {
-                "SERVICE_STORAGE_FORMAT": "DATABASE",
-                "DATABASE_HOST": "localhost",
-                "DATABASE_USERNAME": "user",
-                "DATABASE_PASSWORD": "pass",  # pragma: allowlist secret
-                "DATABASE_DATABASE": "db",
-            },
+            os.environ, {**_MARIA_ENV, "SERVICE_STORAGE_FORMAT": "DATABASE"}
         ):
-            check = HealthCheckRegistry.check_storage_readiness()
+            check = check_storage_readiness()
             assert check.status == STATUS_OK
 
     def test_check_storage_unknown_format(self) -> None:
         """Test storage check fails with unknown storage format."""
         with patch.dict(os.environ, {"SERVICE_STORAGE_FORMAT": "UNKNOWN"}):
-            check = HealthCheckRegistry.check_storage_readiness()
+            check = check_storage_readiness()
             assert check.status == STATUS_ERROR
             assert check.name == "Storage readiness"
             assert "Unknown storage format" in check.data["error"]
@@ -386,89 +346,51 @@ class TestHealthCheckRegistry:
     def test_check_migration_not_configured(self) -> None:
         """Test migration check returns OK when not configured."""
         with patch.dict(os.environ, {"SERVICE_STORAGE_FORMAT": "PVC"}):
-            check = HealthCheckRegistry.check_migration_readiness()
+            check = check_migration_readiness()
             assert check.status == STATUS_OK
             assert check.name == "Migration"
 
-    @patch(
-        "trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__enter__"
-    )
-    @patch(
-        "trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__exit__",
-        return_value=False,
-    )
-    @patch(
-        "trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__init__",
-        return_value=None,
-    )
-    def test_check_migration_complete(self, _mock_init, _mock_exit, mock_enter) -> None:
+    def test_check_migration_complete(self, mock_maria_conn) -> None:
         """Test migration check returns OK when migration is COMPLETE."""
+        _mock_init, mock_enter = mock_maria_conn
         mock_cursor = MagicMock()
         mock_cursor.fetchone.return_value = ("COMPLETE",)
         mock_enter.return_value = (MagicMock(), mock_cursor)
 
         with patch.dict(
             os.environ,
-            {
-                "SERVICE_STORAGE_FORMAT": "MARIA",
-                "DATABASE_ATTEMPT_MIGRATION": "true",
-                "DATABASE_HOST": "localhost",
-                "DATABASE_USERNAME": "user",
-                "DATABASE_PASSWORD": "pass",  # pragma: allowlist secret
-                "DATABASE_DATABASE": "db",
-            },
+            {**_MARIA_ENV, "DATABASE_ATTEMPT_MIGRATION": "true"},
         ):
-            check = HealthCheckRegistry.check_migration_readiness()
+            check = check_migration_readiness()
             assert check.status == STATUS_OK
             assert check.name == "Migration"
 
-    @patch(
-        "trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__enter__"
-    )
-    @patch(
-        "trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__exit__",
-        return_value=False,
-    )
-    @patch(
-        "trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__init__",
-        return_value=None,
-    )
-    def test_check_migration_in_progress(
-        self, _mock_init, _mock_exit, mock_enter
-    ) -> None:
+    def test_check_migration_in_progress(self, mock_maria_conn) -> None:
         """Test migration check returns ERROR when migration is IN_PROGRESS."""
+        _mock_init, mock_enter = mock_maria_conn
         mock_cursor = MagicMock()
         mock_cursor.fetchone.return_value = ("IN_PROGRESS",)
         mock_enter.return_value = (MagicMock(), mock_cursor)
 
         with patch.dict(
             os.environ,
-            {
-                "SERVICE_STORAGE_FORMAT": "MARIA",
-                "DATABASE_ATTEMPT_MIGRATION": "1",
-                "DATABASE_HOST": "localhost",
-                "DATABASE_USERNAME": "user",
-                "DATABASE_PASSWORD": "pass",  # pragma: allowlist secret
-                "DATABASE_DATABASE": "db",
-            },
+            {**_MARIA_ENV, "DATABASE_ATTEMPT_MIGRATION": "1"},
         ):
-            check = HealthCheckRegistry.check_migration_readiness()
+            check = check_migration_readiness()
             assert check.status == STATUS_ERROR
             assert "in progress" in check.data["error"]
 
     def test_check_pvc_storage_production_mode(self) -> None:
         """Test PVC storage check redacts paths in production mode."""
-        with (
-            patch.dict(
-                os.environ,
-                {
-                    "SERVICE_STORAGE_FORMAT": "PVC",
-                    "STORAGE_DATA_FOLDER": "/nonexistent/path",
-                },
-            ),
-            patch("trustyai_service.service.health_checks._is_production", True),
+        with patch.dict(
+            os.environ,
+            {
+                "SERVICE_STORAGE_FORMAT": "PVC",
+                "STORAGE_DATA_FOLDER": "/nonexistent/path",
+                "ENVIRONMENT": "production",
+            },
         ):
-            check = HealthCheckRegistry.check_storage_readiness()
+            check = check_storage_readiness()
             assert check.status == STATUS_ERROR
             assert check.name == "Storage readiness"
             assert "/nonexistent/path" not in check.data["error"]

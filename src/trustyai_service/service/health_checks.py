@@ -8,6 +8,7 @@ import os
 import threading
 import time
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -92,331 +93,281 @@ except ValueError:
     _health_cache_ttl = 5
 _health_cache = HealthCache(ttl_seconds=_health_cache_ttl)
 
-# Production mode detection for security features (path redaction)
-_is_production = os.getenv("ENVIRONMENT", "").lower() == "production"
+
+def _sanitize_error(generic: str, detail: str) -> str:
+    """Return generic message in production, detailed message otherwise."""
+    if os.getenv("ENVIRONMENT", "").lower() == "production":
+        return generic
+    return detail
 
 
+@dataclass(slots=True)
 class HealthCheck:
     """Individual health check result."""
 
-    def __init__(
-        self, name: str, status: str, data: dict[str, Any] | None = None
-    ) -> None:
-        """Initialize health check result.
-
-        :param name: Name of the health check
-        :param status: Status ('ok' or 'error')
-        :param data: Optional additional data (e.g., error messages)
-        """
-        self.name = name
-        self.status = status
-        self.data = data or {}
+    name: str
+    status: str
+    data: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary for JSON serialization.
-
-        :return: Dictionary representation of health check
-        """
+        """Convert to dictionary for JSON serialization."""
         result: dict[str, Any] = {"name": self.name, "status": self.status}
         if self.data:
             result["data"] = self.data
         return result
 
 
-class HealthCheckRegistry:
-    """Registry for managing health checks."""
+def _get_health_connection_manager() -> Any:  # noqa: ANN401
+    """Create a MariaConnectionManager configured for health checks."""
+    from trustyai_service.service.data.storage import MariaDBConfig  # noqa: PLC0415
+    from trustyai_service.service.data.storage.maria.utils import (  # noqa: PLC0415
+        MariaConnectionManager,
+    )
 
-    @staticmethod
-    def check_storage_readiness() -> HealthCheck:
-        """Check if storage backend is accessible.
+    config = MariaDBConfig()
+    config.validate()
+    return MariaConnectionManager(
+        user=config.user,
+        password=config.password,
+        host=config.host,
+        port=config.port,
+        database=config.database,
+        ssl_ca=config.ssl_ca,
+        connect_timeout=2,
+    )
 
-        For PVC storage: Verifies mount point exists and is writable (cached).
-        For MariaDB: Tests database connection (cached).
 
-        Results are cached for 5 seconds to reduce I/O overhead during
-        frequent health checks (Kubernetes probes every 10 seconds).
+def check_storage_readiness() -> HealthCheck:
+    """Check if storage backend is accessible.
 
-        :return: HealthCheck indicating storage readiness
-        """
-        try:
-            storage_format = os.getenv("SERVICE_STORAGE_FORMAT", "PVC")
+    For PVC storage: Verifies mount point exists and is writable (cached).
+    For MariaDB: Tests database connection (cached).
 
-            if storage_format == "PVC":
-                # Cache PVC checks to reduce disk I/O
-                return _health_cache.get_or_compute(
-                    "pvc_storage", HealthCheckRegistry._check_pvc_storage
-                )
-            if storage_format in ("MARIA", "DATABASE"):
-                # Cache MariaDB checks to reduce connection overhead
-                return _health_cache.get_or_compute(
-                    "maria_storage", HealthCheckRegistry._check_maria_storage
-                )
-            return HealthCheck(
-                "Storage readiness",
-                STATUS_ERROR,
-                {"error": f"Unknown storage format: {storage_format}"},
-            )
-
-        except Exception as e:  # Health check must not crash
-            logger.exception("Storage readiness check failed")
-            error_msg = (
-                "Unexpected storage error"
-                if _is_production
-                else f"Unexpected error: {e!s}"
-            )
-            return HealthCheck(
-                "Storage readiness",
-                STATUS_ERROR,
-                {"error": error_msg},
-            )
-
-    @staticmethod
-    def _check_pvc_storage() -> HealthCheck:
-        """Check PVC storage accessibility.
-
-        In production, redacts full paths from error messages for security.
-
-        :return: HealthCheck for PVC storage
-        """
-        storage_path_str = os.getenv("STORAGE_DATA_FOLDER", "/inputs")
-        storage_path = Path(storage_path_str)
-
-        if not storage_path.exists():
-            # Redact full path in production
-            if _is_production:
-                error_msg = "Storage path not accessible"
-            else:
-                error_msg = f"Storage path {storage_path_str} not found"
-            return HealthCheck(
-                "Storage readiness",
-                STATUS_ERROR,
-                {"error": error_msg},
-            )
-
-        # Verify write access with a test file
-        test_file = storage_path / ".health_check"
-        try:
-            test_file.write_text("health_check")
-            test_file.unlink()
-            return HealthCheck("Storage readiness", STATUS_OK)
-        except (OSError, PermissionError) as e:
-            # Redact details in production
-            if _is_production:
-                error_msg = "Storage not writable"
-            else:
-                error_msg = f"Storage not writable: {e!s}"
-            return HealthCheck(
-                "Storage readiness",
-                STATUS_ERROR,
-                {"error": error_msg},
-            )
-
-    @staticmethod
-    def _check_maria_storage() -> HealthCheck:
-        """Check MariaDB storage accessibility.
-
-        Reuses MariaConnectionManager and MariaDBConfig for consistent
-        connection handling (TLS, env var fallbacks, resource cleanup).
-
-        :return: HealthCheck for MariaDB storage
-        """
-        if not MARIADB_AVAILABLE:
-            return HealthCheck(
-                "Storage readiness",
-                STATUS_ERROR,
-                {"error": "MariaDB library not installed (missing 'mariadb' extra)"},
-            )
-
-        try:
-            from trustyai_service.service.data.storage import (  # noqa: PLC0415
-                MariaDBConfig,
-            )
-            from trustyai_service.service.data.storage.maria.utils import (  # noqa: PLC0415
-                MariaConnectionManager,
-            )
-
-            config = MariaDBConfig()
-            mgr = MariaConnectionManager(
-                user=config.user,
-                password=config.password,
-                host=config.host,
-                port=config.port,
-                database=config.database,
-                ssl_ca=config.ssl_ca,
-                connect_timeout=2,
-            )
-
-            with mgr as (_conn, cursor):
-                cursor.execute("SELECT 1")
-                result = cursor.fetchone()
-
-            if result is not None and result[0] == 1:
-                return HealthCheck("Storage readiness", STATUS_OK)
-            return HealthCheck(
-                "Storage readiness",
-                STATUS_ERROR,
-                {"error": "Database query returned unexpected result"},
-            )
-
-        except (OSError, TimeoutError) as e:
-            logger.warning("Database health check failed: %s", e)
-            error_msg = (
-                "Database connection failed"
-                if _is_production
-                else f"Database connection failed: {e!s}"
-            )
-            return HealthCheck(
-                "Storage readiness",
-                STATUS_ERROR,
-                {"error": error_msg},
-            )
-        except Exception as e:  # Health check must not crash
-            logger.exception("Unexpected error during database health check")
-            error_msg = (
-                "Unexpected database error"
-                if _is_production
-                else f"Unexpected database error: {e!s}"
-            )
-            return HealthCheck(
-                "Storage readiness",
-                STATUS_ERROR,
-                {"error": error_msg},
-            )
-
-    @staticmethod
-    def check_migration_readiness() -> HealthCheck:
-        """Check if PVC-to-MariaDB migration is complete.
-
-        Only relevant when SERVICE_STORAGE_FORMAT is MARIA/DATABASE and
-        DATABASE_ATTEMPT_MIGRATION is enabled. Returns OK when migration
-        is not configured, complete, or partially complete.
-
-        :return: HealthCheck indicating migration readiness
-        """
+    :return: HealthCheck indicating storage readiness
+    """
+    try:
         storage_format = os.getenv("SERVICE_STORAGE_FORMAT", "PVC")
-        migration_enabled = os.getenv("DATABASE_ATTEMPT_MIGRATION", "0").lower() in (
-            "1",
-            "true",
-            "yes",
-            "on",
+
+        if storage_format == "PVC":
+            return _health_cache.get_or_compute("pvc_storage", _check_pvc_storage)
+        if storage_format in ("MARIA", "DATABASE"):
+            return _health_cache.get_or_compute("maria_storage", _check_maria_storage)
+        return HealthCheck(
+            "Storage readiness",
+            STATUS_ERROR,
+            {"error": f"Unknown storage format: {storage_format}"},
         )
 
-        if storage_format not in ("MARIA", "DATABASE") or not migration_enabled:
-            return HealthCheck("Migration", STATUS_OK)
+    except Exception as e:  # Health check must not crash
+        logger.exception("Storage readiness check failed")
+        return HealthCheck(
+            "Storage readiness",
+            STATUS_ERROR,
+            {
+                "error": _sanitize_error(
+                    "Unexpected storage error", f"Unexpected error: {e!s}"
+                )
+            },
+        )
 
-        try:
-            from trustyai_service.service.data.storage import (  # noqa: PLC0415
-                MariaDBConfig,
+
+def _check_pvc_storage() -> HealthCheck:
+    """Check PVC storage accessibility."""
+    storage_path_str = os.getenv("STORAGE_DATA_FOLDER", "/tmp")  # noqa: S108 -- fallback default for STORAGE_DATA_FOLDER env var
+    storage_path = Path(storage_path_str)
+
+    if not storage_path.exists():
+        return HealthCheck(
+            "Storage readiness",
+            STATUS_ERROR,
+            {
+                "error": _sanitize_error(
+                    "Storage path not accessible",
+                    f"Storage path {storage_path_str} not found",
+                )
+            },
+        )
+
+    if os.access(storage_path, os.W_OK):
+        return HealthCheck("Storage readiness", STATUS_OK)
+    return HealthCheck(
+        "Storage readiness",
+        STATUS_ERROR,
+        {
+            "error": _sanitize_error(
+                "Storage not writable", f"Storage not writable: {storage_path_str}"
             )
-            from trustyai_service.service.data.storage.maria.utils import (  # noqa: PLC0415
-                MariaConnectionManager,
+        },
+    )
+
+
+def _check_maria_storage() -> HealthCheck:
+    """Check MariaDB storage accessibility."""
+    if not MARIADB_AVAILABLE:
+        return HealthCheck(
+            "Storage readiness",
+            STATUS_ERROR,
+            {"error": "MariaDB library not installed (missing 'mariadb' extra)"},
+        )
+
+    import mariadb  # type: ignore[import-untyped]  # noqa: PLC0415
+
+    try:
+        mgr = _get_health_connection_manager()
+
+        with mgr as (_conn, cursor):
+            cursor.execute("SELECT 1")
+            result = cursor.fetchone()
+
+        if result is not None and result[0] == 1:
+            return HealthCheck("Storage readiness", STATUS_OK)
+        return HealthCheck(
+            "Storage readiness",
+            STATUS_ERROR,
+            {"error": "Database query returned unexpected result"},
+        )
+
+    except (mariadb.Error, ValueError) as e:
+        logger.warning("Database health check failed: %s", e)
+        return HealthCheck(
+            "Storage readiness",
+            STATUS_ERROR,
+            {
+                "error": _sanitize_error(
+                    "Database connection failed", f"Database connection failed: {e!s}"
+                )
+            },
+        )
+    except Exception as e:  # Health check must not crash
+        logger.exception("Unexpected error during database health check")
+        return HealthCheck(
+            "Storage readiness",
+            STATUS_ERROR,
+            {
+                "error": _sanitize_error(
+                    "Unexpected database error", f"Unexpected database error: {e!s}"
+                )
+            },
+        )
+
+
+def check_migration_readiness() -> HealthCheck:  # noqa: PLR0911
+    """Check if PVC-to-MariaDB migration is complete.
+
+    Only relevant when SERVICE_STORAGE_FORMAT is MARIA/DATABASE and
+    DATABASE_ATTEMPT_MIGRATION is enabled. Returns OK when migration
+    is not configured, complete, or partially complete.
+
+    :return: HealthCheck indicating migration readiness
+    """
+    storage_format = os.getenv("SERVICE_STORAGE_FORMAT", "PVC")
+    migration_enabled = os.getenv("DATABASE_ATTEMPT_MIGRATION", "0").lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+    if storage_format not in ("MARIA", "DATABASE") or not migration_enabled:
+        return HealthCheck("Migration", STATUS_OK)
+
+    try:
+        from trustyai_service.service.data.storage.maria.pvc_migration import (  # noqa: PLC0415
+            MIGRATION_STATUS_COMPLETE,
+            MIGRATION_STATUS_FAILED,
+            MIGRATION_STATUS_IN_PROGRESS,
+            MIGRATION_STATUS_PARTIAL,
+        )
+
+        mgr = _get_health_connection_manager()
+
+        with mgr as (_conn, cursor):
+            cursor.execute(
+                "SELECT status FROM trustyai_migration_status "
+                "WHERE migration_type IN ('PVC_TO_DB', 'LEGACY_DB') "
+                "ORDER BY started_at DESC LIMIT 1"
             )
+            result = cursor.fetchone()
 
-            config = MariaDBConfig()
-            mgr = MariaConnectionManager(
-                user=config.user,
-                password=config.password,
-                host=config.host,
-                port=config.port,
-                database=config.database,
-                ssl_ca=config.ssl_ca,
-                connect_timeout=2,
-            )
-
-            with mgr as (_conn, cursor):
-                cursor.execute(
-                    "SELECT status FROM trustyai_migration_status "
-                    "WHERE migration_type IN ('PVC_TO_DB', 'LEGACY_DB') "
-                    "ORDER BY started_at DESC LIMIT 1"
-                )
-                result = cursor.fetchone()
-
-            if result is None:
-                return HealthCheck(
-                    "Migration",
-                    STATUS_ERROR,
-                    {"error": "Migration not started yet"},
-                )
-
-            migration_status = result[0]
-            if migration_status == "IN_PROGRESS":
-                return HealthCheck(
-                    "Migration",
-                    STATUS_ERROR,
-                    {"error": "Data migration in progress"},
-                )
-            if migration_status == "FAILED":
-                return HealthCheck(
-                    "Migration",
-                    STATUS_ERROR,
-                    {"error": "Data migration failed"},
-                )
-            if migration_status == "PARTIAL":
-                logger.warning(
-                    "Service ready with partial migration - some files failed"
-                )
-            return HealthCheck("Migration", STATUS_OK)
-
-        except Exception:
-            logger.exception("Failed to check migration status")
+        if result is None:
             return HealthCheck(
                 "Migration",
                 STATUS_ERROR,
-                {"error": "Unable to verify migration status"},
+                {"error": "Migration not started yet"},
             )
 
-    @staticmethod
-    def check_http_server() -> HealthCheck:
-        """Check if HTTP server is running.
+        migration_status = result[0]
+        if migration_status == MIGRATION_STATUS_IN_PROGRESS:
+            return HealthCheck(
+                "Migration",
+                STATUS_ERROR,
+                {"error": "Data migration in progress"},
+            )
+        if migration_status == MIGRATION_STATUS_FAILED:
+            return HealthCheck(
+                "Migration",
+                STATUS_ERROR,
+                {"error": "Data migration failed"},
+            )
+        if migration_status == MIGRATION_STATUS_PARTIAL:
+            logger.warning("Service ready with partial migration - some files failed")
+            return HealthCheck("Migration", STATUS_OK)
+        if migration_status == MIGRATION_STATUS_COMPLETE:
+            return HealthCheck("Migration", STATUS_OK)
+        logger.warning("Unrecognized migration status: %s", migration_status)
+        return HealthCheck(
+            "Migration",
+            STATUS_ERROR,
+            {"error": "Unrecognized migration status"},
+        )
 
-        If this endpoint is being called, the server is up.
+    except Exception:
+        logger.exception("Failed to check migration status")
+        return HealthCheck(
+            "Migration",
+            STATUS_ERROR,
+            {"error": "Unable to verify migration status"},
+        )
 
-        :return: HealthCheck indicating HTTP server is up
-        """
-        return HealthCheck("HTTP server", STATUS_OK)
 
-    @staticmethod
-    def check_application_liveness() -> HealthCheck:
-        """Check if application is alive.
+def check_http_server() -> HealthCheck:
+    """Check if HTTP server is running.
 
-        Basic liveness check - if we can respond, we're alive.
-        More sophisticated checks could be added:
-        - Check for deadlocks
-        - Verify background threads are running
-        - Check memory usage isn't critical
+    If this endpoint is being called, the server is up.
 
-        :return: HealthCheck indicating application is alive
-        """
-        return HealthCheck("Application", STATUS_OK)
+    :return: HealthCheck indicating HTTP server is up
+    """
+    return HealthCheck("HTTP server", STATUS_OK)
+
+
+def check_application_liveness() -> HealthCheck:
+    """Check if application is alive.
+
+    Basic liveness check - if we can respond, we're alive.
+
+    :return: HealthCheck indicating application is alive
+    """
+    return HealthCheck("Application", STATUS_OK)
 
 
 def perform_readiness_checks() -> tuple[str, list[dict[str, Any]]]:
     """Perform all readiness checks.
 
-    Readiness checks verify the service is ready to accept requests:
-    - Storage backend is accessible
-    - HTTP server is running
-
     :return: Tuple of (overall_status, list_of_checks)
-             overall_status is "ok" if all checks pass, "error" otherwise
     """
     checks = []
 
-    # Storage check
-    storage_check = HealthCheckRegistry.check_storage_readiness()
+    storage_check = check_storage_readiness()
     checks.append(storage_check.to_dict())
 
-    # Migration check (only active when MARIA + DATABASE_ATTEMPT_MIGRATION)
     migration_check = _health_cache.get_or_compute(
-        "migration", HealthCheckRegistry.check_migration_readiness
+        "migration", check_migration_readiness
     )
     checks.append(migration_check.to_dict())
 
-    # HTTP server check
-    http_check = HealthCheckRegistry.check_http_server()
+    http_check = check_http_server()
     checks.append(http_check.to_dict())
 
-    # Determine overall status (DOWN if any check is DOWN)
     overall_status = STATUS_OK
     for check in checks:
         if check["status"] == STATUS_ERROR:
@@ -429,19 +380,8 @@ def perform_readiness_checks() -> tuple[str, list[dict[str, Any]]]:
 def perform_liveness_checks() -> tuple[str, list[dict[str, Any]]]:
     """Perform all liveness checks.
 
-    Liveness checks verify the application is alive and functioning.
-    This is lightweight - just confirms we can respond.
-
     :return: Tuple of (overall_status, list_of_checks)
-             overall_status is "ok" if alive, "error" if dead
     """
-    checks = []
-
-    # Application liveness check
-    app_check = HealthCheckRegistry.check_application_liveness()
-    checks.append(app_check.to_dict())
-
-    # Determine overall status
+    app_check = check_application_liveness()
     overall_status = app_check.status
-
-    return overall_status, checks
+    return overall_status, [app_check.to_dict()]
