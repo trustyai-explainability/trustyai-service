@@ -328,37 +328,49 @@ async def readiness_probe() -> JSONResponse:
 
                 storage = get_global_storage_interface()
 
-                # Check if storage is MariaDB (type guard)
-                if isinstance(storage, MariaDBStorage):
-                    # Query migration status from database
-                    with storage.connection_manager as (_conn, cursor):
-                        cursor.execute(
-                            "SELECT status FROM trustyai_migration_status "
-                            "WHERE migration_type IN ('PVC_TO_DB', 'LEGACY_DB') "
-                            "ORDER BY started_at DESC LIMIT 1"
+                if not isinstance(storage, MariaDBStorage):
+                    # Fail closed: storage configured as MARIA but not MariaDBStorage
+                    logger.error(
+                        "SERVICE_STORAGE_FORMAT=MARIA but storage is %s, not MariaDBStorage",
+                        type(storage).__name__,
+                    )
+                    return JSONResponse(
+                        content={
+                            "status": "not_ready",
+                            "reason": "Storage type mismatch — expected MariaDB",
+                        },
+                        status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+                    )
+
+                # Query migration status from database (isinstance guard passed above)
+                with storage.connection_manager as (_conn, cursor):
+                    cursor.execute(
+                        "SELECT status FROM trustyai_migration_status "
+                        "WHERE migration_type IN ('PVC_TO_DB', 'LEGACY_DB') "
+                        "ORDER BY started_at DESC LIMIT 1"
+                    )
+                    result = cursor.fetchone()
+
+                    if result:
+                        migration_status = result[0]
+                        # Update cache
+                        _migration_status_cache["status"] = migration_status
+                        _migration_status_cache["timestamp"] = current_time
+
+                        response = _handle_migration_status(migration_status)
+                        if response is not None:
+                            return response
+                        # Migration complete - proceed to ready state
+                    else:
+                        # No migration row exists yet - migration not started
+                        # Treat as not ready to prevent traffic before migration begins
+                        return JSONResponse(
+                            content={
+                                "status": "not_ready",
+                                "reason": "Migration not started yet",
+                            },
+                            status_code=HTTPStatus.SERVICE_UNAVAILABLE,
                         )
-                        result = cursor.fetchone()
-
-                        if result:
-                            migration_status = result[0]
-                            # Update cache
-                            _migration_status_cache["status"] = migration_status
-                            _migration_status_cache["timestamp"] = current_time
-
-                            response = _handle_migration_status(migration_status)
-                            if response is not None:
-                                return response
-                            # Migration complete - proceed to ready state
-                        else:
-                            # No migration row exists yet - migration not started
-                            # Treat as not ready to prevent traffic before migration begins
-                            return JSONResponse(
-                                content={
-                                    "status": "not_ready",
-                                    "reason": "Migration not started yet",
-                                },
-                                status_code=HTTPStatus.SERVICE_UNAVAILABLE,
-                            )
 
             except Exception as e:
                 # If we can't check migration status, assume not ready
@@ -367,7 +379,7 @@ async def readiness_probe() -> JSONResponse:
                 return JSONResponse(
                     content={
                         "status": "not_ready",
-                        "reason": f"Unable to verify migration status: {e}",
+                        "reason": f"Unable to verify migration status: {type(e).__name__}",
                     },
                     status_code=HTTPStatus.SERVICE_UNAVAILABLE,
                 )
