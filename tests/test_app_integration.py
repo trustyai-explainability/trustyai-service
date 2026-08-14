@@ -1,11 +1,14 @@
 """Integration tests for main application endpoint registration."""
 
+import os
 from http import HTTPStatus
+from unittest.mock import patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 from trustyai_service.endpoints import routes
-from trustyai_service.main import app
+from trustyai_service.main import app, run_server
 
 client = TestClient(app)
 
@@ -21,15 +24,21 @@ class TestAppCoreEndpoints:
 
     def test_health_endpoints(self) -> None:
         """Test health check endpoints are registered."""
-        # Readiness probe
+        # Readiness probe - may fail if storage not available in test
         response = client.get(routes.HEALTH_READY)
-        assert response.status_code == HTTPStatus.OK
-        assert response.json()["status"] == "ready"
+        assert response.status_code in (HTTPStatus.OK, HTTPStatus.SERVICE_UNAVAILABLE)
+        payload = response.json()
+        assert "checks" in payload
+        if response.status_code == HTTPStatus.OK:
+            assert payload["status"] == "ready"
+        else:
+            assert payload["status"] == "not_ready"
 
-        # Liveness probe
+        # Liveness probe - should always succeed
         response = client.get(routes.HEALTH_LIVE)
         assert response.status_code == HTTPStatus.OK
-        assert response.json()["status"] == "live"
+        assert response.json()["status"] == "alive"
+        assert "checks" in response.json()
 
     def test_openapi_docs_accessible(self) -> None:
         """Test that OpenAPI documentation is accessible."""
@@ -277,3 +286,45 @@ class TestJensenShannonMetricIntegration:
             routes.DRIFT_JENSEN_SHANNON.requests,
         ]:
             assert path in openapi["paths"], f"{path} not found in OpenAPI"
+
+
+class TestPortCollisionGuard:
+    """Test that run_server() rejects HEALTH_PORT colliding with HTTP_PORT or SSL_PORT."""
+
+    @pytest.mark.asyncio
+    async def test_health_port_equals_http_port(self) -> None:
+        """ValueError raised when HEALTH_PORT == HTTP_PORT."""
+        with (
+            patch.dict(os.environ, {"HEALTH_PORT": "8080", "HTTP_PORT": "8080"}),
+            pytest.raises(
+                ValueError,
+                match=r"HEALTH_PORT \(8080\) must differ from HTTP_PORT \(8080\) and SSL_PORT",
+            ),
+        ):
+            await run_server()
+
+    @pytest.mark.asyncio
+    async def test_health_port_equals_ssl_port(self) -> None:
+        """ValueError raised when HEALTH_PORT == SSL_PORT."""
+        with (
+            patch.dict(os.environ, {"HEALTH_PORT": "4443", "SSL_PORT": "4443"}),
+            pytest.raises(
+                ValueError,
+                match=r"HEALTH_PORT \(4443\) must differ from HTTP_PORT .* and SSL_PORT \(4443\)",
+            ),
+        ):
+            await run_server()
+
+    @pytest.mark.asyncio
+    async def test_default_ports_no_collision(self) -> None:
+        """Default ports (8080, 4443, 9000) do not collide — server creation proceeds past the guard."""
+        with (
+            patch.dict(
+                os.environ,
+                {"HTTP_PORT": "8080", "SSL_PORT": "4443", "HEALTH_PORT": "9000"},
+            ),
+            patch("trustyai_service.main.PolicyAwareConfig"),
+            patch("trustyai_service.main.serve", side_effect=RuntimeError("stop")),
+            pytest.raises(RuntimeError, match="stop"),
+        ):
+            await run_server()

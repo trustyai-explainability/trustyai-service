@@ -3,7 +3,6 @@
 import asyncio
 import logging
 import os
-import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from http import HTTPStatus
@@ -19,6 +18,9 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from trustyai_service.endpoints import routes
 
 # Endpoint routers
+from trustyai_service.endpoints.consumer.consumer_endpoint import (
+    consume_inference_payload,
+)
 from trustyai_service.endpoints.consumer.consumer_endpoint import (
     router as consumer_router,
 )
@@ -54,19 +56,15 @@ from trustyai_service.endpoints.metrics.metrics_info import (
 
 # Middleware
 from trustyai_service.middleware.gzip_middleware import GzipRequestMiddleware
-from trustyai_service.service.data.storage.maria.pvc_migration import (
-    MIGRATION_STATUS_COMPLETE,
-    MIGRATION_STATUS_FAILED,
-    MIGRATION_STATUS_IN_PROGRESS,
-    MIGRATION_STATUS_PARTIAL,
+from trustyai_service.service.health_checks import (
+    STATUS_OK,
+    perform_liveness_checks,
+    perform_readiness_checks,
 )
 from trustyai_service.service.prometheus.shared_prometheus_scheduler import (
     get_shared_prometheus_scheduler,
 )
 from trustyai_service.service.tls import PolicyAwareConfig
-
-# Valid storage formats (for environment variable validation)
-VALID_STORAGE_FORMATS = {"PVC", "MARIA"}
 
 logging.basicConfig(
     level=logging.INFO,  # Reduce default verbosity
@@ -76,12 +74,6 @@ logging.basicConfig(
 # Enable debug logging for TrustyAI components only
 logging.getLogger("src").setLevel(logging.DEBUG)
 logging.getLogger("__main__").setLevel(logging.DEBUG)
-
-# Migration status cache for readiness probe optimization
-# Prevents database query on every health check (typically every 10s)
-# Cache TTL: 60 seconds (once migration is complete, it stays complete)
-_migration_status_cache: dict[str, Any] = {"status": None, "timestamp": 0}
-_MIGRATION_CACHE_TTL = 60.0  # seconds
 
 # Remove noisy HTTP/2 and hypercorn internal logs
 logging.getLogger("hpack.hpack").setLevel(logging.WARNING)
@@ -239,163 +231,77 @@ async def metrics(_request: Request) -> Response:
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
-def _handle_migration_status(status: str) -> JSONResponse | None:
-    """Handle migration status and return appropriate readiness response.
+@app.get(routes.HEALTH)
+def general_health() -> JSONResponse:
+    """General health endpoint combining readiness and liveness checks.
 
-    :param status: Migration status (IN_PROGRESS, FAILED, PARTIAL, or COMPLETE)
-    :return: JSONResponse if service should be not ready, None if ready
+    :return: JSON response with status ("healthy" or "unhealthy")
+             HTTP 200 if healthy, HTTP 503 if unhealthy
     """
-    if status == MIGRATION_STATUS_IN_PROGRESS:
-        return JSONResponse(
-            content={
-                "status": "not_ready",
-                "reason": "Data migration in progress",
-            },
-            status_code=HTTPStatus.SERVICE_UNAVAILABLE,
-        )
-    if status == MIGRATION_STATUS_FAILED:
-        return JSONResponse(
-            content={
-                "status": "not_ready",
-                "reason": "Data migration failed",
-            },
-            status_code=HTTPStatus.SERVICE_UNAVAILABLE,
-        )
-    if status == MIGRATION_STATUS_PARTIAL:
-        logger.warning("Service ready with partial migration - some files failed")
-        # Fall through to ready (return None)
-    # COMPLETE or PARTIAL status - service is ready
-    return None
+    readiness_status, readiness_checks = perform_readiness_checks()
+    liveness_status, liveness_checks = perform_liveness_checks()
+
+    is_healthy = readiness_status == STATUS_OK and liveness_status == STATUS_OK
+
+    response_body = {
+        "status": "healthy" if is_healthy else "unhealthy",
+        "checks": {
+            "readiness": readiness_checks,
+            "liveness": liveness_checks,
+        },
+    }
+
+    status_code = HTTPStatus.OK if is_healthy else HTTPStatus.SERVICE_UNAVAILABLE
+    return JSONResponse(content=response_body, status_code=status_code)
 
 
 # Readiness probe
 @app.get(routes.HEALTH_READY)
-async def readiness_probe() -> JSONResponse:
+def readiness_probe() -> JSONResponse:
     """Kubernetes readiness probe endpoint.
 
-    Blocks pod readiness if DATABASE_ATTEMPT_MIGRATION is enabled and migration
-    is still in progress. This ensures the service doesn't receive traffic until
-    data migration completes.
-
-    :return: JSON response indicating service is ready (200) or not ready (503)
+    :return: JSON response with status ("ready" or "not_ready")
+             HTTP 200 if ready, HTTP 503 if not ready
     """
-    # Check if migration is required
-    storage_format = os.environ.get("SERVICE_STORAGE_FORMAT", "PVC")
+    status, checks = perform_readiness_checks()
+    is_ready = status == STATUS_OK
 
-    # Validate storage format
-    if storage_format not in VALID_STORAGE_FORMATS:
-        logger.warning(
-            "Invalid SERVICE_STORAGE_FORMAT '%s', defaulting to PVC. Valid formats: %s",
-            storage_format,
-            VALID_STORAGE_FORMATS,
-        )
-        storage_format = "PVC"
+    response_body = {"status": "ready" if is_ready else "not_ready", "checks": checks}
 
-    migration_enabled = os.environ.get("DATABASE_ATTEMPT_MIGRATION", "0").lower() in (
-        "1",
-        "true",
-        "yes",
-        "on",
-    )
-
-    if storage_format == "MARIA" and migration_enabled:
-        # Check cache first to avoid DB query on every health check
-        current_time = time.time()
-        cache_age = current_time - _migration_status_cache["timestamp"]
-
-        # Use cached status if:
-        # 1. Cache is fresh (< TTL), OR
-        # 2. Migration is COMPLETE (no need to check again)
-        if (
-            cache_age < _MIGRATION_CACHE_TTL
-            or _migration_status_cache["status"] == MIGRATION_STATUS_COMPLETE
-        ):
-            cached_status = _migration_status_cache["status"]
-            if cached_status is not None:
-                response = _handle_migration_status(cached_status)
-                if response is not None:
-                    return response
-                # COMPLETE or PARTIAL status - fall through to ready
-        else:
-            # Cache miss or expired - query database and update cache
-            try:
-                from trustyai_service.service.data.storage import (  # noqa: PLC0415 -- conditional import based on runtime config
-                    get_global_storage_interface,
-                )
-                from trustyai_service.service.data.storage.maria.maria import (  # noqa: PLC0415 -- conditional import
-                    MariaDBStorage,
-                )
-
-                storage = get_global_storage_interface()
-
-                if not isinstance(storage, MariaDBStorage):
-                    # Fail closed: storage configured as MARIA but not MariaDBStorage
-                    logger.error(
-                        "SERVICE_STORAGE_FORMAT=MARIA but storage is %s, not MariaDBStorage",
-                        type(storage).__name__,
-                    )
-                    return JSONResponse(
-                        content={
-                            "status": "not_ready",
-                            "reason": "Storage type mismatch — expected MariaDB",
-                        },
-                        status_code=HTTPStatus.SERVICE_UNAVAILABLE,
-                    )
-
-                # Query migration status from database (isinstance guard passed above)
-                with storage.connection_manager as (_conn, cursor):
-                    cursor.execute(
-                        "SELECT status FROM trustyai_migration_status "
-                        "WHERE migration_type IN ('PVC_TO_DB', 'LEGACY_DB') "
-                        "ORDER BY started_at DESC LIMIT 1"
-                    )
-                    result = cursor.fetchone()
-
-                    if result:
-                        migration_status = result[0]
-                        # Update cache
-                        _migration_status_cache["status"] = migration_status
-                        _migration_status_cache["timestamp"] = current_time
-
-                        response = _handle_migration_status(migration_status)
-                        if response is not None:
-                            return response
-                        # Migration complete - proceed to ready state
-                    else:
-                        # No migration row exists yet - migration not started
-                        # Treat as not ready to prevent traffic before migration begins
-                        return JSONResponse(
-                            content={
-                                "status": "not_ready",
-                                "reason": "Migration not started yet",
-                            },
-                            status_code=HTTPStatus.SERVICE_UNAVAILABLE,
-                        )
-
-            except Exception as e:
-                # If we can't check migration status, assume not ready
-                # This prevents traffic during migration issues
-                logger.exception("Failed to check migration status")
-                return JSONResponse(
-                    content={
-                        "status": "not_ready",
-                        "reason": f"Unable to verify migration status: {type(e).__name__}",
-                    },
-                    status_code=HTTPStatus.SERVICE_UNAVAILABLE,
-                )
-
-    # No migration required or migration completed successfully
-    return JSONResponse(content={"status": "ready"}, status_code=HTTPStatus.OK)
+    status_code = HTTPStatus.OK if is_ready else HTTPStatus.SERVICE_UNAVAILABLE
+    return JSONResponse(content=response_body, status_code=status_code)
 
 
 # Liveness probe endpoint
 @app.get(routes.HEALTH_LIVE)
-async def liveness_probe() -> JSONResponse:
+def liveness_probe() -> JSONResponse:
     """Kubernetes liveness probe endpoint.
 
-    :return: JSON response indicating service is alive
+    :return: JSON response with status ("alive")
+             HTTP 200 if alive
     """
-    return JSONResponse(content={"status": "live"}, status_code=HTTPStatus.OK)
+    status, checks = perform_liveness_checks()
+    is_alive = status == STATUS_OK
+
+    response_body = {"status": "alive" if is_alive else "dead", "checks": checks}
+
+    status_code = HTTPStatus.OK if is_alive else HTTPStatus.SERVICE_UNAVAILABLE
+    return JSONResponse(content=response_body, status_code=status_code)
+
+
+health_app = FastAPI(
+    title="TrustyAI Health",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
+health_app.get(routes.HEALTH)(general_health)
+health_app.get(routes.HEALTH_READY)(readiness_probe)
+health_app.get(routes.HEALTH_LIVE)(liveness_probe)
+
+# Register only the KServe consumer endpoint (not the entire router) to avoid
+# exposing unwanted routes like "/" on the health port
+health_app.post(routes.CONSUMER_KSERVE_V2)(consume_inference_payload)
 
 
 def get_tls_config() -> dict[str, Any] | None:
@@ -432,6 +338,11 @@ async def run_server() -> None:
     )
     http_port = int(os.getenv("HTTP_PORT", "8080"))
     ssl_port = int(os.getenv("SSL_PORT", "4443"))
+    health_port = int(os.getenv("HEALTH_PORT", "9000"))
+
+    if health_port in (http_port, ssl_port):
+        msg = f"HEALTH_PORT ({health_port}) must differ from HTTP_PORT ({http_port}) and SSL_PORT ({ssl_port})"
+        raise ValueError(msg)
 
     # Create hypercorn config
     config = PolicyAwareConfig()
@@ -459,10 +370,15 @@ async def run_server() -> None:
     config.errorlog = "-"  # Log to stderr
     config.use_reloader = False  # Disable reloader in production
 
-    # Start the server
-    # FastAPI implements the ASGI protocol that hypercorn expects
-    # The type stubs are overly strict, but FastAPI works correctly at runtime
-    await serve(app, config)  # type: ignore[arg-type]
+    health_config = PolicyAwareConfig()
+    health_config.insecure_bind = [f"0.0.0.0:{health_port}"]
+    health_config.use_reloader = False
+    logger.info("Binding health probes on 0.0.0.0:%s for kubelet", health_port)
+
+    await asyncio.gather(
+        serve(app, config),  # type: ignore[arg-type]
+        serve(health_app, health_config),  # type: ignore[arg-type]
+    )
 
 
 if __name__ == "__main__":
