@@ -191,6 +191,11 @@ async def compute_mmd(
             status_code=HTTPStatus.SERVICE_UNAVAILABLE,
             detail="MMD requires the 'goodpoints' package. Install with: pip install trustyai-service[mmd]",
         ) from None
+    except ValueError as e:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail=str(e),
+        ) from e
     except Exception as e:  # Broad catch intentional: endpoint catch-all for unknown computation errors
         logger.exception("Error computing %s", METRIC_NAME)
         raise HTTPException(
@@ -333,6 +338,7 @@ async def _list_requests(metric_name: str) -> dict[str, list[dict[str, Any]]]:
                         "batchSize": request.batch_size,
                         "referenceTag": request.reference_tag,
                         "fitColumns": request.fit_columns,
+                        "method": getattr(request, "method", "ctt"),
                         "numPermutations": getattr(
                             request,
                             "num_permutations",

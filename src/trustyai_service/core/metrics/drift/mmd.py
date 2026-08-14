@@ -178,6 +178,14 @@ def _mmd_actt(  # noqa: PLR0913
         msg = f"num_bandwidths must be >= 1, got {num_bandwidths}"
         raise ValueError(msg)
 
+    # Validate ACTT parameter hierarchy: num_permutations > b2 > b3 >= 1
+    if not (num_permutations > b2 > b3 >= 1):
+        msg = (
+            f"ACTT requires num_permutations > b2 > b3 >= 1, "
+            f"got num_permutations={num_permutations}, b2={b2}, b3={b3}"
+        )
+        raise ValueError(msg)
+
     ctt = _goodpoints_ctt
 
     # Preserve the requested bandwidth when num_bandwidths == 1
@@ -208,8 +216,8 @@ def _mmd_actt(  # noqa: PLR0913
     best_bw = max(stats, key=lambda bw: stats[bw])
     max_stat = float(stats[best_bw])
 
-    # AggregatedCttResult stores calibration draws at [0:B_2] and test draws at [B_2:]
-    # Build null distribution from calibration draws only
+    # AggregatedCttResult (goodpoints 0.6.2) stores calibration draws at [0:B_2]
+    # and test draws at [B_2:]. Build null distribution from calibration draws only.
     all_null_maxima = []
     for perm_idx in range(result.B_2):
         perm_stats_across_bw = [
@@ -219,12 +227,13 @@ def _mmd_actt(  # noqa: PLR0913
     null_maxima = np.array(all_null_maxima)
     p_value = float((np.sum(null_maxima >= max_stat) + 1) / (result.B_2 + 1))
 
+    threshold = float(thresholds[best_bw])
     return {
         "statistic": max_stat,
         "p_value": p_value,
-        "threshold": float(thresholds[best_bw]),
+        "threshold": threshold,
         "alpha": alpha,
-        "drift_detected": bool(result.rejects),
+        "drift_detected": max_stat > threshold,
     }
 
 
