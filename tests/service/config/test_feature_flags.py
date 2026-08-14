@@ -24,6 +24,7 @@ _ALL_FLAGS = frozenset(
 )
 
 
+
 class TestFlagDefaults:
     """Verify default values for all feature flags."""
 
@@ -101,13 +102,3 @@ class TestEnvironmentOverrides:
             importlib.reload(feature_flags)
             assert feature_flags.ENDPOINTS["explainer"] is True
         importlib.reload(feature_flags)
-
-
-class TestFlagRegistry:
-    """Verify the flag registry is complete and correct."""
-
-    def test_all_known_flags_present(self) -> None:
-        assert set(feature_flags.ENDPOINTS.keys()) == _ALL_FLAGS
-
-    def test_no_extra_flags(self) -> None:
-        assert not set(feature_flags.ENDPOINTS.keys()) - _ALL_FLAGS

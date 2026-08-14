@@ -262,7 +262,6 @@ class TestFeatureFlagGating:
         openapi = response.json()
         for route_group in [
             routes.DRIFT_FOURIER_MMD,
-            routes.DRIFT_APPROX_KS_TEST,
             routes.DRIFT_JENSEN_SHANNON,
             routes.DRIFT_KSTEST,
             routes.DRIFT_COMPARE_MEANS,
@@ -278,7 +277,6 @@ class TestFeatureFlagGating:
         openapi = response.json()
         for route_group in [
             routes.DRIFT_FOURIER_MMD,
-            routes.DRIFT_APPROX_KS_TEST,
             routes.DRIFT_JENSEN_SHANNON,
             routes.DRIFT_KSTEST,
             routes.DRIFT_COMPARE_MEANS,
@@ -294,7 +292,7 @@ class TestFeatureFlagGating:
         openapi = response.json()
         assert routes.DRIFT_FOURIER_MMD.compute not in openapi["paths"]
         assert routes.DRIFT_KSTEST.compute in openapi["paths"]
-        assert routes.DRIFT_APPROX_KS_TEST.compute in openapi["paths"]
+        assert routes.DRIFT_JENSEN_SHANNON.compute in openapi["paths"]
 
     def test_explainer_disabled_by_default(self) -> None:
         """Explainer endpoints are not registered with default flags."""
