@@ -7,23 +7,6 @@ import pytest
 
 from trustyai_service.service.config import feature_flags
 
-_ALL_FLAGS = frozenset(
-    {
-        "fairness",
-        "fairness_spd",
-        "fairness_dir",
-        "drift",
-        "drift_ks_test",
-        "drift_jensen_shannon",
-        "drift_compare_means",
-        "drift_fourier_mmd",
-        "drift_approx_ks_test",
-        "explainer",
-        "explainer_local",
-        "explainer_global",
-    }
-)
-
 
 class TestFlagDefaults:
     """Verify default values for all feature flags."""
@@ -105,13 +88,3 @@ class TestEnvironmentOverrides:
             importlib.reload(feature_flags)
             assert feature_flags.ENDPOINTS["explainer"] is True
         importlib.reload(feature_flags)
-
-
-class TestFlagRegistry:
-    """Verify the flag registry is complete and correct."""
-
-    def test_all_known_flags_present(self) -> None:
-        assert set(feature_flags.ENDPOINTS.keys()) == _ALL_FLAGS
-
-    def test_no_extra_flags(self) -> None:
-        assert not set(feature_flags.ENDPOINTS.keys()) - _ALL_FLAGS

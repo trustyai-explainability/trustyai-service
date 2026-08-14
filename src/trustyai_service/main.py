@@ -56,7 +56,10 @@ from trustyai_service.endpoints.metrics.metrics_info import (
 from trustyai_service.middleware.gzip_middleware import GzipRequestMiddleware
 
 # Feature flag gating
-from trustyai_service.service.config.registry import register_if_enabled_with_group
+from trustyai_service.service.config.registry import (
+    register_if_enabled_with_group,
+    register_with_legacy_prefix,
+)
 from trustyai_service.service.data.storage.maria.pvc_migration import (
     MIGRATION_STATUS_COMPLETE,
     MIGRATION_STATUS_FAILED,
@@ -250,24 +253,6 @@ register_if_enabled_with_group(
     "explainer",
     "explainer_local",
     tag="Explainers: Local",
-)
-
-# Deprecated endpoints (gated by same fairness flags)
-register_if_enabled_with_group(
-    app,
-    dir_router,
-    "fairness",
-    "fairness_dir",
-    tag="{Legacy}: Disparate Impact Ratio",
-    prefix="/metrics",
-)
-register_if_enabled_with_group(
-    app,
-    spd_router,
-    "fairness",
-    "fairness_spd",
-    tag="{Legacy}: Statistical Parity Difference",
-    prefix="/metrics",
 )
 
 
