@@ -231,7 +231,7 @@ async def metrics(_request: Request) -> Response:
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
-@app.get("/q/health")
+@app.get(routes.HEALTH)
 def general_health() -> JSONResponse:
     """General health endpoint combining readiness and liveness checks.
 
@@ -295,9 +295,9 @@ health_app = FastAPI(
     redoc_url=None,
     openapi_url=None,
 )
-health_app.get("/q/health")(general_health)
-health_app.get("/q/health/ready")(readiness_probe)
-health_app.get("/q/health/live")(liveness_probe)
+health_app.get(routes.HEALTH)(general_health)
+health_app.get(routes.HEALTH_READY)(readiness_probe)
+health_app.get(routes.HEALTH_LIVE)(liveness_probe)
 
 # Register only the KServe consumer endpoint (not the entire router) to avoid
 # exposing unwanted routes like "/" on the health port

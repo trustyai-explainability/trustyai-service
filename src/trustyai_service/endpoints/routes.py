@@ -79,6 +79,7 @@ EXPLAINER_LOCAL_TSSALIENCY = "/explainers/local/tssaliency"
 
 # === Health & Monitoring ===
 
-HEALTH_READY = "/q/health/ready"
-HEALTH_LIVE = "/q/health/live"
+HEALTH = "/q/health"
+HEALTH_READY = f"{HEALTH}/ready"
+HEALTH_LIVE = f"{HEALTH}/live"
 PROMETHEUS_METRICS = "/q/metrics"

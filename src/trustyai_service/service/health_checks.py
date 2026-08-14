@@ -85,6 +85,9 @@ class HealthCache:
 # Can be overridden via HEALTH_CACHE_TTL environment variable
 try:
     _health_cache_ttl = int(os.getenv("HEALTH_CACHE_TTL", "5"))
+    if _health_cache_ttl < 0:
+        msg = "TTL must be non-negative"
+        raise ValueError(msg)
 except ValueError:
     logger.warning(
         "Invalid HEALTH_CACHE_TTL value '%s', using default 5 seconds",
@@ -184,6 +187,18 @@ def _check_pvc_storage() -> HealthCheck:
                 "error": _sanitize_error(
                     "Storage path not accessible",
                     f"Storage path {storage_path_str} not found",
+                )
+            },
+        )
+
+    if not storage_path.is_dir():
+        return HealthCheck(
+            "Storage readiness",
+            STATUS_ERROR,
+            {
+                "error": _sanitize_error(
+                    "Storage path not accessible",
+                    f"Storage path {storage_path_str} is not a directory",
                 )
             },
         )

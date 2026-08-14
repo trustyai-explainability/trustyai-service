@@ -108,6 +108,7 @@ ignore = [
 "src/trustyai_service/endpoints/metrics/fairness/group/*.py" = ["BLE001", "TRY300", "TRY301"]
 "src/trustyai_service/endpoints/metrics/drift/jensen_shannon.py" = ["TRY300", "TRY301"]
 "src/trustyai_service/endpoints/metrics/drift/compare_means.py" = ["C901", "TRY301"]
+"src/trustyai_service/service/health_checks.py" = ["TRY301"]
 "src/trustyai_service/endpoints/metrics/drift/kolmogorov_smirnov_streaming.py" = ["RUF001", "RUF002", "RUF003", "TRY301"]
 # === TEST FILES ===
 "tests/**" = ["S101", "PT019", "SLF001"]
