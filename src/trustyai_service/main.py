@@ -377,6 +377,10 @@ async def run_server() -> None:
         msg = f"HEALTH_PORT ({health_port}) must differ from HTTP_PORT ({http_port}) and SSL_PORT ({ssl_port})"
         raise ValueError(msg)
 
+    if http_port == ssl_port:
+        msg = f"HTTP_PORT ({http_port}) must differ from SSL_PORT ({ssl_port})"
+        raise ValueError(msg)
+
     # Create hypercorn config
     config = PolicyAwareConfig()
 
