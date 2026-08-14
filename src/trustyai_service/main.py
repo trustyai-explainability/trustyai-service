@@ -19,6 +19,9 @@ from trustyai_service.endpoints import routes
 
 # Endpoint routers
 from trustyai_service.endpoints.consumer.consumer_endpoint import (
+    consume_inference_payload,
+)
+from trustyai_service.endpoints.consumer.consumer_endpoint import (
     router as consumer_router,
 )
 from trustyai_service.endpoints.data.data_upload import router as data_upload_router
@@ -295,6 +298,10 @@ health_app = FastAPI(
 health_app.get("/q/health")(general_health)
 health_app.get("/q/health/ready")(readiness_probe)
 health_app.get("/q/health/live")(liveness_probe)
+
+# Register only the KServe consumer endpoint (not the entire router) to avoid
+# exposing unwanted routes like "/" on the health port
+health_app.post(routes.CONSUMER_KSERVE_V2)(consume_inference_payload)
 
 
 def get_tls_config() -> dict[str, Any] | None:
