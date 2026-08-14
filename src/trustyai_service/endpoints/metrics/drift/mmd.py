@@ -3,7 +3,7 @@
 import logging
 import uuid
 from http import HTTPStatus
-from typing import Any
+from typing import Any, Literal
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException
@@ -15,6 +15,7 @@ from trustyai_service.core.metrics.drift.mmd import (
     DEFAULT_KERNEL,
     DEFAULT_NUM_PERMUTATIONS,
     MMD,
+    Method,
 )
 from trustyai_service.endpoints import routes
 from trustyai_service.service.data.datasources.data_source import DataSource
@@ -67,11 +68,12 @@ class MMDMetricRequest(BaseMetricRequest):
     fit_columns: list[str] = Field(default_factory=list, alias="fitColumns")
 
     # MMD-specific parameters
+    method: Method = Field(default="ctt")
     num_permutations: int = Field(
         default=DEFAULT_NUM_PERMUTATIONS, alias="numPermutations", gt=0
     )
     bandwidth: float = Field(default=DEFAULT_BANDWIDTH, gt=0)
-    kernel: str = Field(default=DEFAULT_KERNEL)
+    kernel: Literal["gauss"] = Field(default=DEFAULT_KERNEL)
     alpha: float = Field(default=DEFAULT_ALPHA, gt=0, lt=1)
     seed: int | None = Field(default=None)
 
@@ -177,6 +179,7 @@ async def compute_mmd(
         result = MMD.compute(
             reference_data=reference_data,
             current_data=current_data,
+            method=request.method,
             alpha=request.alpha,
             seed=request.seed,
             num_permutations=request.num_permutations,
@@ -254,11 +257,8 @@ async def schedule_mmd(request: MMDMetricRequest) -> dict[str, str]:
         return {"requestId": str(request_id)}
 
 
-@router.delete(routes.DRIFT_MMD.request)
-async def delete_mmd_schedule(
-    schedule: ScheduleId, metric_name: str = METRIC_NAME
-) -> dict[str, str]:
-    """Delete a recurring computation of MMD metric."""
+async def _delete_schedule(schedule: ScheduleId, metric_name: str) -> dict[str, str]:
+    """Private helper: delete a scheduled metric computation."""
     scheduler = get_prometheus_scheduler()
     if not scheduler:
         raise HTTPException(
@@ -274,7 +274,7 @@ async def delete_mmd_schedule(
         ) from e
 
     try:
-        logger.info("Deleting %s schedule: %s", METRIC_NAME, schedule.requestId)
+        logger.info("Deleting %s schedule: %s", metric_name, schedule.requestId)
         await scheduler.delete(metric_name, request_uuid)
 
     except HTTPException:
@@ -282,14 +282,14 @@ async def delete_mmd_schedule(
     except (
         Exception
     ) as e:  # Broad catch intentional: endpoint catch-all for unknown deletion errors
-        logger.exception("Error deleting %s schedule", METRIC_NAME)
+        logger.exception("Error deleting %s schedule", metric_name)
         raise HTTPException(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
             detail="Error deleting schedule. Check server logs for details.",
         ) from e
     else:
         logger.info(
-            "Successfully deleted %s schedule: %s", METRIC_NAME, schedule.requestId
+            "Successfully deleted %s schedule: %s", metric_name, schedule.requestId
         )
         return {
             "status": "success",
@@ -297,11 +297,14 @@ async def delete_mmd_schedule(
         }
 
 
-@router.get(routes.DRIFT_MMD.requests)
-async def list_mmd_requests(
-    metric_name: str = METRIC_NAME,
-) -> dict[str, list[dict[str, Any]]]:
-    """List the currently scheduled computations of MMD metric."""
+@router.delete(routes.DRIFT_MMD.request)
+async def delete_mmd_schedule(schedule: ScheduleId) -> dict[str, str]:
+    """Delete a recurring computation of MMD metric."""
+    return await _delete_schedule(schedule, METRIC_NAME)
+
+
+async def _list_requests(metric_name: str) -> dict[str, list[dict[str, Any]]]:
+    """Private helper: list scheduled metric computation requests."""
     scheduler = get_prometheus_scheduler()
     if not scheduler:
         raise HTTPException(
@@ -320,8 +323,7 @@ async def list_mmd_requests(
                 and hasattr(request, "reference_tag")
                 and hasattr(request, "fit_columns")
             ):
-                # Use the request's metric_name (FourierMMD or MMD) instead of hardcoded METRIC_NAME
-                request_metric_name = getattr(request, "metric_name", METRIC_NAME)
+                request_metric_name = getattr(request, "metric_name", metric_name)
                 requests_list.append(
                     {
                         "id": str(request_id),  # deprecated: use requestId
@@ -345,23 +347,28 @@ async def list_mmd_requests(
             else:
                 logger.warning(
                     "Skipping malformed %s request %s: missing required attributes",
-                    METRIC_NAME,
+                    metric_name,
                     request_id,
                 )
-                continue
 
     except HTTPException:
         raise
     except (
         Exception
     ) as e:  # Broad catch intentional: endpoint catch-all for unknown listing errors
-        logger.exception("Error listing %s requests", METRIC_NAME)
+        logger.exception("Error listing %s requests", metric_name)
         raise HTTPException(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
             detail="Error listing requests. Check server logs for details.",
         ) from e
     else:
         return {"requests": requests_list}
+
+
+@router.get(routes.DRIFT_MMD.requests)
+async def list_mmd_requests() -> dict[str, list[dict[str, Any]]]:
+    """List the currently scheduled computations of MMD metric."""
+    return await _list_requests(METRIC_NAME)
 
 
 # ============================================================================
@@ -417,7 +424,7 @@ async def delete_fouriermmd_schedule(schedule: ScheduleId) -> dict[str, str]:
     /metrics/drift/mmd/request instead.
     """
     log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
-    return await delete_mmd_schedule(schedule, metric_name=DEPRECATED_METRIC_NAME)
+    return await _delete_schedule(schedule, DEPRECATED_METRIC_NAME)
 
 
 @router.get(routes.DRIFT_FOURIER_MMD.requests, deprecated=True)
@@ -428,7 +435,7 @@ async def list_fouriermmd_requests() -> dict[str, list[dict[str, Any]]]:
     /metrics/drift/mmd/requests instead.
     """
     log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
-    return await list_mmd_requests(metric_name=DEPRECATED_METRIC_NAME)
+    return await _list_requests(DEPRECATED_METRIC_NAME)
 
 
 async def calculate_mmd_metric(
@@ -441,6 +448,7 @@ async def calculate_mmd_metric(
         request.model_id, request.reference_tag
     )
     fit_columns = request.fit_columns or list(batch.columns)
+    method = getattr(request, "method", "ctt")
     alpha = getattr(request, "alpha", DEFAULT_ALPHA)
     num_permutations = getattr(request, "num_permutations", DEFAULT_NUM_PERMUTATIONS)
     kernel = getattr(request, "kernel", DEFAULT_KERNEL)
@@ -453,6 +461,7 @@ async def calculate_mmd_metric(
     result = MMD.compute(
         reference_data=reference_data,
         current_data=current_data,
+        method=method,
         alpha=alpha,
         num_permutations=num_permutations,
         kernel=kernel,

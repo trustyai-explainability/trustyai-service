@@ -89,6 +89,7 @@ ignore = [
 "src/trustyai_service/core/metrics/drift/greenwald_khanna_quantile_sketch.py" = ["RUF001", "RUF002", "RUF003"]
 "src/trustyai_service/core/metrics/drift/jensen_shannon.py" = ["PLR0913"]
 "src/trustyai_service/core/metrics/drift/kolmogorov_smirnov_streaming.py" = ["RUF001", "RUF002", "RUF003"]
+"src/trustyai_service/core/metrics/drift/mmd.py" = ["C901"]
 "src/trustyai_service/core/metrics/fairness/group/*.py" = ["PLR0913"]
 "src/trustyai_service/middleware/gzip_middleware.py" = ["C901", "PLR0911", "PLR0912", "PLR0913", "PLR0915"]
 "src/trustyai_service/service/data/datasources/data_source.py" = ["BLE001", "C901", "PLR0912"]
