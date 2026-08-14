@@ -604,10 +604,25 @@ async def _read_metadata(
 
 async def _ensure_model_exists(
     model_id: str,
-    data_source: DataSource,
+    data_source: DataSource,  # noqa: ARG001 -- kept for API compatibility
 ) -> None:
-    """Raise 404 if the model is not known to the data source."""
-    if model_id not in await data_source.get_known_models():
+    """Raise 404 if the model does not exist in storage.
+
+    Checks storage directly instead of relying on data_source.get_known_models()
+    cache, which may be empty after service restart.
+    """
+    # Check if at least one of the model's datasets exists
+    input_dataset = model_id + INPUT_SUFFIX
+    output_dataset = model_id + OUTPUT_SUFFIX
+    metadata_dataset = model_id + METADATA_SUFFIX
+
+    if not any(
+        [
+            await storage_interface.dataset_exists(input_dataset),
+            await storage_interface.dataset_exists(output_dataset),
+            await storage_interface.dataset_exists(metadata_dataset),
+        ]
+    ):
         raise HTTPException(
             status_code=HTTPStatus.NOT_FOUND,
             detail=f"No model found with id={model_id}",
@@ -663,8 +678,11 @@ async def get_tags(
     for mid in known_models:
         try:
             result[mid] = await _get_tag_counts_for_model(mid, data_source)
-        except HTTPException:
-            continue
+        except HTTPException as exc:
+            # Only skip models that don't exist (404), not server errors (500)
+            if exc.status_code == HTTPStatus.NOT_FOUND:
+                continue
+            raise
     return result
 
 
@@ -772,16 +790,26 @@ async def _persist_metadata(
     metadata: np.ndarray,
     metadata_names: list[str],
 ) -> None:
-    """Delete-and-rewrite the metadata dataset for a model.
+    """Replace the metadata dataset for a model.
 
-    .. todo:: Read-modify-write is not atomic; concurrent tag requests may conflict.
+    .. warning::
+        Not safe for concurrent tag requests on the same model — last write wins.
+        Storage interface lacks atomic compare-and-swap. Concurrent requests
+        should be serialized at the application layer.
+
+    .. warning::
+        Uses delete-then-write since storage interface lacks atomic replace.
+        If write fails after delete, metadata is permanently lost. Proper fix
+        requires storage interface to support transactional replace or rename.
     """
     metadata_dataset = model_id + METADATA_SUFFIX
     try:
-        await storage_interface.delete_dataset(metadata_dataset)
+        # Delete-then-write (not atomic - data lost if write fails after delete)
+        if await storage_interface.dataset_exists(metadata_dataset):
+            await storage_interface.delete_dataset(metadata_dataset)
         await storage_interface.write_data(metadata_dataset, metadata, metadata_names)
     except Exception as exc:
-        logger.exception("Error writing tagged metadata for model=%s", model_id)
+        logger.exception("Error persisting tagged metadata for model=%s", model_id)
         raise HTTPException(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
             detail=f"Error persisting tags for model={model_id}",

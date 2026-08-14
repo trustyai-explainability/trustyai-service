@@ -26,6 +26,7 @@ from trustyai_service.endpoints.consumer.gzip_utils import decompress_if_gzip
 from trustyai_service.exceptions import ReconciliationError
 from trustyai_service.service.constants import (
     BIAS_IGNORE_PARAM,
+    DATA_TAG_PARAM,
     INPUT_SUFFIX,
     METADATA_SUFFIX,
     OUTPUT_SUFFIX,
@@ -482,6 +483,36 @@ def process_payload(
 _kserve_payload_adapter = TypeAdapter(KServeInferenceRequest | KServeInferenceResponse)
 
 
+def _store_tag_in_payload(
+    payload: KServeInferenceRequest | KServeInferenceResponse,
+    tag: str | None,
+) -> None:
+    """Store a tag in the payload's parameters for later retrieval."""
+    if tag is not None:
+        if payload.parameters is None:
+            payload.parameters = {}
+        payload.parameters[DATA_TAG_PARAM] = tag
+
+
+def _get_tag_from_payload(
+    payload: KServeInferenceRequest | KServeInferenceResponse,
+) -> str | None:
+    """Extract the stored tag from a payload's parameters, or None if absent."""
+    return payload.parameters.get(DATA_TAG_PARAM) if payload.parameters else None
+
+
+def _merge_tags(
+    current_tag: str | None,
+    stored_payload: KServeInferenceRequest | KServeInferenceResponse,
+) -> str | None:
+    """Merge current tag with stored tag, preferring current if both present."""
+    return (
+        current_tag
+        if current_tag is not None
+        else _get_tag_from_payload(stored_payload)
+    )
+
+
 async def process_cloud_event(
     payload: KServeInferenceRequest | KServeInferenceResponse,
     ce_id: str | None = None,
@@ -528,8 +559,11 @@ async def process_cloud_event(
                         status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
                         detail="Invalid payload type from storage",
                     )
-                await reconcile_kserve(payload, partial_output, tag)
+                await reconcile_kserve(
+                    payload, partial_output, _merge_tags(tag, partial_output)
+                )
             else:
+                _store_tag_in_payload(payload, tag)
                 await storage_interface.persist_partial_payload(
                     payload, payload_id=payload.id, is_input=True
                 )
@@ -561,8 +595,11 @@ async def process_cloud_event(
                         status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
                         detail="Invalid payload type from storage",
                     )
-                await reconcile_kserve(partial_input, payload, tag)
+                await reconcile_kserve(
+                    partial_input, payload, _merge_tags(tag, partial_input)
+                )
             else:
+                _store_tag_in_payload(payload, tag)
                 await storage_interface.persist_partial_payload(
                     payload, payload_id=payload.id, is_input=False
                 )

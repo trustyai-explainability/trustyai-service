@@ -183,12 +183,18 @@ class DataSource:
         """
         df = await self.get_dataframe_with_batch_size(model_id, batch_size)
 
-        # Filter out synthetic rows — match both the current prefixed tag and
-        # the legacy unprefixed value for backward compatibility with data
-        # written before the tag-prefix migration.
-        for col in (SYNTHETIC_TAG, "synthetic"):
-            if col in df.columns:
-                df = df[~df[col].fillna(value=False)]
+        # Filter out synthetic rows — check if SYNTHETIC_TAG is in the tags list.
+        # For backward compatibility, also check for legacy boolean columns.
+        if "tags" in df.columns:
+            # Current format: tags is a list, check if SYNTHETIC_TAG is in it
+            df = df[
+                ~df["tags"].apply(lambda tags_list: SYNTHETIC_TAG in (tags_list or []))
+            ]
+        else:
+            # Legacy format: synthetic was a boolean column
+            for col in (SYNTHETIC_TAG, "synthetic"):
+                if col in df.columns:
+                    df = df[~df[col].fillna(value=False)]
 
         return df
 
