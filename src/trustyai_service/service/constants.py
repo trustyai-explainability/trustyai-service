@@ -13,6 +13,7 @@ INTERNAL_DATA_FILENAME = "internal_data.csv"
 TRUSTYAI_TAG_PREFIX = "_trustyai"
 SYNTHETIC_TAG = f"{TRUSTYAI_TAG_PREFIX}_synthetic"
 UNLABELED_TAG = f"{TRUSTYAI_TAG_PREFIX}_unlabeled"
+TAGS_COLUMN = "tags"
 BIAS_IGNORE_PARAM = "bias-ignore"
 # Prometheus constants
 PROMETHEUS_METRIC_PREFIX = "trustyai_"

@@ -12,6 +12,7 @@ from trustyai_service.service.constants import (
     INTERNAL_DATA_FILENAME,
     METADATA_FILENAME,
     OUTPUT_SUFFIX,
+    TAGS_COLUMN,
     UNLABELED_TAG,
 )
 from trustyai_service.service.data.exceptions import (
@@ -208,7 +209,9 @@ class DataSource:
                 return pd.DataFrame()
 
             tags_col = (
-                list(metadata_names).index("tags") if "tags" in metadata_names else -1
+                list(metadata_names).index(TAGS_COLUMN)
+                if TAGS_COLUMN in metadata_names
+                else -1
             )
             if tags_col < 0:
                 return pd.DataFrame()
