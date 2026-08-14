@@ -18,13 +18,13 @@ class TestRegisterIfEnabled:
 
     def test_enabled_flag_registers_router(self) -> None:
         app, router = _make_app_and_router()
-        with patch.dict(registry.ENDPOINTS, {"drift": True}):
+        with patch.dict(registry.feature_flags.ENDPOINTS, {"drift": True}):
             register_if_enabled(app, router, "drift", tag="Drift")
         app.include_router.assert_called_once_with(router, tags=["Drift"])
 
     def test_disabled_flag_skips_router(self) -> None:
         app, router = _make_app_and_router()
-        with patch.dict(registry.ENDPOINTS, {"drift": False}):
+        with patch.dict(registry.feature_flags.ENDPOINTS, {"drift": False}):
             register_if_enabled(app, router, "drift", tag="Drift")
         app.include_router.assert_not_called()
 
@@ -35,13 +35,13 @@ class TestRegisterIfEnabled:
 
     def test_prefix_passed_to_include_router(self) -> None:
         app, router = _make_app_and_router()
-        with patch.dict(registry.ENDPOINTS, {"drift": True}):
+        with patch.dict(registry.feature_flags.ENDPOINTS, {"drift": True}):
             register_if_enabled(app, router, "drift", prefix="/metrics")
         app.include_router.assert_called_once_with(router, prefix="/metrics")
 
     def test_tag_and_prefix_passed_together(self) -> None:
         app, router = _make_app_and_router()
-        with patch.dict(registry.ENDPOINTS, {"drift": True}):
+        with patch.dict(registry.feature_flags.ENDPOINTS, {"drift": True}):
             register_if_enabled(app, router, "drift", tag="Drift", prefix="/metrics")
         app.include_router.assert_called_once_with(
             router, tags=["Drift"], prefix="/metrics"
@@ -54,7 +54,7 @@ class TestRegisterIfEnabledWithGroup:
     def test_both_flags_enabled_registers(self) -> None:
         app, router = _make_app_and_router()
         with patch.dict(
-            registry.ENDPOINTS,
+            registry.feature_flags.ENDPOINTS,
             {"drift": True, "drift_ks_test": True},
         ):
             register_if_enabled_with_group(
@@ -65,7 +65,7 @@ class TestRegisterIfEnabledWithGroup:
     def test_group_disabled_skips(self) -> None:
         app, router = _make_app_and_router()
         with patch.dict(
-            registry.ENDPOINTS,
+            registry.feature_flags.ENDPOINTS,
             {"drift": False, "drift_ks_test": True},
         ):
             register_if_enabled_with_group(
@@ -76,7 +76,7 @@ class TestRegisterIfEnabledWithGroup:
     def test_metric_disabled_skips(self) -> None:
         app, router = _make_app_and_router()
         with patch.dict(
-            registry.ENDPOINTS,
+            registry.feature_flags.ENDPOINTS,
             {"drift": True, "drift_ks_test": False},
         ):
             register_if_enabled_with_group(
@@ -87,7 +87,7 @@ class TestRegisterIfEnabledWithGroup:
     def test_both_disabled_skips(self) -> None:
         app, router = _make_app_and_router()
         with patch.dict(
-            registry.ENDPOINTS,
+            registry.feature_flags.ENDPOINTS,
             {"drift": False, "drift_ks_test": False},
         ):
             register_if_enabled_with_group(
@@ -98,7 +98,7 @@ class TestRegisterIfEnabledWithGroup:
     def test_explainer_group_gating(self) -> None:
         app, router = _make_app_and_router()
         with patch.dict(
-            registry.ENDPOINTS,
+            registry.feature_flags.ENDPOINTS,
             {"explainer": False, "explainer_local": True},
         ):
             register_if_enabled_with_group(
@@ -109,7 +109,7 @@ class TestRegisterIfEnabledWithGroup:
     def test_explainer_enabled_registers(self) -> None:
         app, router = _make_app_and_router()
         with patch.dict(
-            registry.ENDPOINTS,
+            registry.feature_flags.ENDPOINTS,
             {"explainer": True, "explainer_local": True},
         ):
             register_if_enabled_with_group(
@@ -120,7 +120,7 @@ class TestRegisterIfEnabledWithGroup:
     def test_prefix_with_group(self) -> None:
         app, router = _make_app_and_router()
         with patch.dict(
-            registry.ENDPOINTS,
+            registry.feature_flags.ENDPOINTS,
             {"fairness": True, "fairness_dir": True},
         ):
             register_if_enabled_with_group(

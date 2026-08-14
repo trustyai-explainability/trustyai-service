@@ -4,16 +4,16 @@ import logging
 
 from fastapi import APIRouter, FastAPI
 
-from trustyai_service.service.config.feature_flags import ENDPOINTS
+from trustyai_service.service.config import feature_flags
 
 logger = logging.getLogger(__name__)
 
 
 def _is_enabled(flag: str) -> bool:
-    if flag not in ENDPOINTS:
+    if flag not in feature_flags.ENDPOINTS:
         logger.warning("Unknown feature flag '%s' queried; treating as disabled", flag)
         return False
-    return ENDPOINTS[flag]
+    return feature_flags.ENDPOINTS[flag]
 
 
 def _include_router(

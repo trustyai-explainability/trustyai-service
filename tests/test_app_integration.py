@@ -12,14 +12,14 @@ from trustyai_service.endpoints import routes
 
 # Default app (all flags at default values)
 from trustyai_service.main import app, run_server
-from trustyai_service.service.config.feature_flags import ENDPOINTS
+from trustyai_service.service.config import feature_flags
 
 client = TestClient(app)
 
 
 def _build_app_with_flags(overrides: dict[str, bool]) -> TestClient:
     """Reload the app module with custom feature flag overrides."""
-    with patch.dict(ENDPOINTS, overrides):
+    with patch.dict(feature_flags.ENDPOINTS, overrides):
         from trustyai_service import main  # noqa: PLC0415
 
         importlib.reload(main)
@@ -279,6 +279,7 @@ class TestFeatureFlagGating:
             routes.DRIFT_FOURIER_MMD,
             routes.DRIFT_JENSEN_SHANNON,
             routes.DRIFT_KSTEST,
+            routes.DRIFT_KS_TEST_STREAMING,
             routes.DRIFT_COMPARE_MEANS,
         ]:
             assert route_group.compute not in openapi["paths"], (
@@ -300,11 +301,6 @@ class TestFeatureFlagGating:
         openapi = response.json()
         assert "/explainers/local" not in str(openapi["paths"])
 
-    def test_fairness_disabled_hides_legacy(self) -> None:
-        """Disabling fairness also hides legacy /metrics prefixed endpoints."""
-        test_client = _build_app_with_flags({"fairness": False})
-        response = test_client.get("/openapi.json")
-        openapi = response.json()
     def test_fairness_disabled_hides_legacy(self) -> None:
         """Disabling fairness also hides legacy /metrics prefixed endpoints."""
         test_client = _build_app_with_flags({"fairness": False})

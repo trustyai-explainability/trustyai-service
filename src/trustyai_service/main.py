@@ -64,6 +64,7 @@ from trustyai_service.service.health_checks import (
 
 # Feature flag gating
 from trustyai_service.service.config.registry import (
+    register_if_enabled,
     register_if_enabled_with_group,
     register_with_legacy_prefix,
 )
@@ -225,9 +226,12 @@ register_if_enabled_with_group(
     "drift_ks_test",
     tag="Drift Metrics: KSTest",
 )
-app.include_router(
+# KSTestStreaming doesn't have its own flag yet, gate with drift group
+register_if_enabled(
+    app,
     drift_ksteststreaming_router,
-    tags=["Drift Metrics: KSTestStreaming"],
+    "drift",
+    tag="Drift Metrics: KSTestStreaming",
 )
 
 # Explainer endpoints (feature-flag gated, disabled by default)
