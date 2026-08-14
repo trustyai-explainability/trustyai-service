@@ -134,7 +134,17 @@ class PVCStorage(StorageInterface):
 
     @staticmethod
     def allocate_valid_dataset_name(dataset_name: str) -> str:
-        """Allocate a valid dataset name that does not conflict with internal names."""
+        """Allocate a valid dataset name that does not conflict with internal names.
+
+        Raises:
+            ValueError: If dataset_name contains path traversal characters.
+
+        """
+        # Reject path traversal attempts (CWE-22)
+        if ".." in dataset_name or "/" in dataset_name or "\\" in dataset_name:
+            msg = f"Dataset name contains invalid path characters: {dataset_name}"
+            raise ValueError(msg)
+
         if dataset_name.startswith(PROTECTED_DATASET_SUFFIX):
             return dataset_name.replace(PROTECTED_DATASET_SUFFIX, "inference_")
         return dataset_name
