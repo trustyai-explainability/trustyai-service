@@ -55,24 +55,18 @@ from trustyai_service.endpoints.metrics.metrics_info import (
 # Middleware
 from trustyai_service.middleware.gzip_middleware import GzipRequestMiddleware
 
-# Health checks
-from trustyai_service.service.health_checks import (
-    STATUS_OK,
-    perform_liveness_checks,
-    perform_readiness_checks,
-)
-
 # Feature flag gating
 from trustyai_service.service.config.registry import (
     register_if_enabled,
     register_if_enabled_with_group,
     register_with_legacy_prefix,
 )
-from trustyai_service.service.data.storage.maria.pvc_migration import (
-    MIGRATION_STATUS_COMPLETE,
-    MIGRATION_STATUS_FAILED,
-    MIGRATION_STATUS_IN_PROGRESS,
-    MIGRATION_STATUS_PARTIAL,
+
+# Health checks
+from trustyai_service.service.health_checks import (
+    STATUS_OK,
+    perform_liveness_checks,
+    perform_readiness_checks,
 )
 from trustyai_service.service.prometheus.shared_prometheus_scheduler import (
     get_shared_prometheus_scheduler,
