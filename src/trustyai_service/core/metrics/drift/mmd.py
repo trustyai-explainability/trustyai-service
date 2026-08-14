@@ -60,18 +60,24 @@ class MMDResult(TypedDict):
 
 def _build_result(result: Any, alpha: float) -> MMDResult:  # noqa: ANN401
     """Build MMDResult from a goodpoints TestResults object."""
-    # Use statistic_values for observed statistic; estimator_values contains permutation null
     observed = float(result.statistic_values)
-    # For RFF/CTT, estimator_values is B permutation draws (no observed value mixed in)
-    null_stats = result.estimator_values
-    p_value = float((np.sum(null_stats >= observed) + 1) / (len(null_stats) + 1))
+    estimator_values = result.estimator_values
+    threshold = float(result.threshold_values)
+
+    # P-value: fraction of permutation null draws >= observed statistic
+    p_value = float(
+        np.count_nonzero(estimator_values >= observed) / estimator_values.size
+    )
+
+    # Drift detection: strict threshold comparison (not result.rejects)
+    drift_detected = observed > threshold
 
     return {
         "statistic": observed,
         "p_value": p_value,
-        "threshold": float(result.threshold_values),
+        "threshold": threshold,
         "alpha": alpha,
-        "drift_detected": bool(result.rejects),
+        "drift_detected": drift_detected,
     }
 
 
@@ -202,17 +208,16 @@ def _mmd_actt(  # noqa: PLR0913
     best_bw = max(stats, key=lambda bw: stats[bw])
     max_stat = float(stats[best_bw])
 
-    # Compute p-value using the max-across-bandwidths null model
-    # For each permutation, compute max statistic across all bandwidths,
-    # then compare these maxima with the observed max_stat
+    # AggregatedCttResult stores calibration draws at [0:B_2] and test draws at [B_2:]
+    # Build null distribution from calibration draws only
     all_null_maxima = []
-    for perm_idx in range(num_permutations):
+    for perm_idx in range(result.B_2):
         perm_stats_across_bw = [
             result.all_estimator_values[bw][perm_idx] for bw in stats
         ]
         all_null_maxima.append(max(perm_stats_across_bw))
     null_maxima = np.array(all_null_maxima)
-    p_value = float((np.sum(null_maxima >= max_stat) + 1) / (num_permutations + 1))
+    p_value = float((np.sum(null_maxima >= max_stat) + 1) / (result.B_2 + 1))
 
     return {
         "statistic": max_stat,
@@ -276,6 +281,28 @@ class MMD:
         if method not in supported:
             msg = f"Unknown method {method!r}. Supported: {sorted(supported)}"
             raise ValueError(msg)
+
+        # Validate CTT/ACTT compression-bin allocations for non-RFF methods
+        if method in {"ctt", "actt"}:
+            num_bins = kwargs.get("num_bins", DEFAULT_NUM_BINS)
+            if num_bins < 1:
+                msg = f"num_bins must be >= 1, got {num_bins}"
+                raise ValueError(msg)
+
+            n1, n2 = reference_data.shape[0], current_data.shape[0]
+            num_bins_total = min(2 * num_bins, n1 + n2)
+            bin_size = (n1 + n2) // num_bins_total
+            num_bins1 = n1 // bin_size
+            num_bins2 = num_bins_total - num_bins1
+
+            if num_bins1 <= 0 or num_bins2 <= 0:
+                msg = (
+                    f"Invalid sample sizes for {method.upper()}: reference={n1}, current={n2}, "
+                    f"num_bins={num_bins} produces bin_size={bin_size}, "
+                    f"num_bins1={num_bins1}, num_bins2={num_bins2}. "
+                    f"Both bin counts must be positive."
+                )
+                raise ValueError(msg)
 
         if method == "rff":
             return _mmd_rff(
