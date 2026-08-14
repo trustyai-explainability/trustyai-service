@@ -296,7 +296,7 @@ async def get_inference_ids(
         logger.exception("Error reading metadata for model=%s", model)
         raise HTTPException(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
-            detail=f"Error reading metadata for model={model}: {e!s}",
+            detail=f"Error reading metadata for model={model}. Check service logs for details.",
         ) from e
 
     if metadata is None or len(metadata) == 0:
