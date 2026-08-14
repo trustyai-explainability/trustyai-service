@@ -31,9 +31,6 @@ from trustyai_service.endpoints.explainers.local_explainer import (
 )
 from trustyai_service.endpoints.metadata import router as metadata_router
 from trustyai_service.endpoints.metrics.batch_mean import router as batch_mean_router
-from trustyai_service.endpoints.metrics.drift.approx_ks_test import (
-    router as drift_approxkstest_router,
-)
 from trustyai_service.endpoints.metrics.drift.compare_means import (
     router as drift_comparemeans_router,
 )
@@ -45,6 +42,9 @@ from trustyai_service.endpoints.metrics.drift.jensen_shannon import (
 )
 from trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov import (
     router as drift_kstest_router,
+)
+from trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov_streaming import (
+    router as drift_ksteststreaming_router,
 )
 from trustyai_service.endpoints.metrics.fairness.group.dir import router as dir_router
 from trustyai_service.endpoints.metrics.fairness.group.spd import router as spd_router
@@ -184,10 +184,6 @@ app.include_router(
     tags=["Drift Metrics: FourierMMD"],
 )
 app.include_router(
-    drift_approxkstest_router,
-    tags=["Drift Metrics: ApproxKSTest"],
-)
-app.include_router(
     drift_jensenshannon_router,
     tags=["Drift Metrics: JensenShannon"],
 )
@@ -196,6 +192,10 @@ app.include_router(
     tags=[
         "Drift Metrics: KSTest",
     ],
+)
+app.include_router(
+    drift_ksteststreaming_router,
+    tags=["Drift Metrics: KSTestStreaming"],
 )
 
 app.include_router(explainers_global_router, tags=["Explainers: Global"])
