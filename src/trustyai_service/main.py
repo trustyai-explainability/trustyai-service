@@ -336,9 +336,9 @@ async def run_server() -> None:
     host_http = (
         "127.0.0.1"  # Keep loopback-only for security (kube-rbac-proxy forwards here)
     )
-    http_port = int(os.getenv("HTTP_PORT", "8080"))
+    http_port = int(os.getenv("HTTP_PORT", "8081"))
     ssl_port = int(os.getenv("SSL_PORT", "4443"))
-    health_port = int(os.getenv("HEALTH_PORT", "9000"))
+    health_port = int(os.getenv("HEALTH_PORT", "8080"))
 
     if health_port in (http_port, ssl_port):
         msg = f"HEALTH_PORT ({health_port}) must differ from HTTP_PORT ({http_port}) and SSL_PORT ({ssl_port})"
@@ -371,7 +371,7 @@ async def run_server() -> None:
     config.use_reloader = False  # Disable reloader in production
 
     health_config = PolicyAwareConfig()
-    health_config.insecure_bind = [f"0.0.0.0:{health_port}"]
+    health_config.bind = [f"0.0.0.0:{health_port}"]
     health_config.use_reloader = False
     logger.info("Binding health probes on 0.0.0.0:%s for kubelet", health_port)
 

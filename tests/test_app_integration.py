@@ -317,11 +317,11 @@ class TestPortCollisionGuard:
 
     @pytest.mark.asyncio
     async def test_default_ports_no_collision(self) -> None:
-        """Default ports (8080, 4443, 9000) do not collide — server creation proceeds past the guard."""
+        """Non-colliding ports (8081, 4443, 8080) do not trigger the guard — server creation proceeds."""
         with (
             patch.dict(
                 os.environ,
-                {"HTTP_PORT": "8080", "SSL_PORT": "4443", "HEALTH_PORT": "9000"},
+                {"HTTP_PORT": "8081", "SSL_PORT": "4443", "HEALTH_PORT": "8080"},
             ),
             patch("trustyai_service.main.PolicyAwareConfig"),
             patch("trustyai_service.main.serve", side_effect=RuntimeError("stop")),
