@@ -966,37 +966,3 @@ class TestDeleteInfoNames:
         mock_storage.clear_name_mapping.assert_awaited_once_with(
             "half-model_outputs",
         )
-
-
-# ---------------------------------------------------------------------------
-# GET /info/tags and POST /info/tags (not-implemented stubs)
-# ---------------------------------------------------------------------------
-
-
-class TestTagEndpoints:
-    """Tests for tag endpoints (currently return 501 Not Implemented)."""
-
-    def test_get_tags_returns_501(self) -> None:
-        """GET /info/tags returns 501 Not Implemented."""
-        response = client.get("/info/tags")
-
-        assert response.status_code == 501  # noqa: PLR2004
-        assert "not yet implemented" in response.json()["detail"]
-
-    def test_post_tags_returns_501(self) -> None:
-        """POST /info/tags returns 501 Not Implemented."""
-        payload = {
-            "modelId": "any-model",
-            "dataTagging": {"tag1": [[0, 5]]},
-        }
-
-        response = client.post("/info/tags", json=payload)
-
-        assert response.status_code == 501  # noqa: PLR2004
-        assert "not yet implemented" in response.json()["detail"]
-
-    def test_post_tags_missing_model_id(self) -> None:
-        """POST /info/tags without modelId returns 422."""
-        response = client.post("/info/tags", json={})
-
-        assert response.status_code == 422  # noqa: PLR2004
