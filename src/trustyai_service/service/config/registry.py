@@ -48,7 +48,7 @@ def register_if_enabled(
     :param prefix: Optional URL prefix (e.g. "/metrics" for legacy endpoints).
     """
     if not _is_enabled(flag):
-        logger.debug("Skipping router: flag '%s' is disabled", flag)
+        logger.info("Skipping router: flag '%s' is disabled", flag)
         return
     _include_router(app, router, tag, prefix)
 
