@@ -3,7 +3,6 @@
 import asyncio
 import logging
 import os
-import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from http import HTTPStatus
@@ -20,6 +19,9 @@ from trustyai_service.endpoints import routes
 
 # Endpoint routers
 from trustyai_service.endpoints.consumer.consumer_endpoint import (
+    consume_inference_payload,
+)
+from trustyai_service.endpoints.consumer.consumer_endpoint import (
     router as consumer_router,
 )
 from trustyai_service.endpoints.data.data_upload import router as data_upload_router
@@ -31,14 +33,8 @@ from trustyai_service.endpoints.explainers.local_explainer import (
 )
 from trustyai_service.endpoints.metadata import router as metadata_router
 from trustyai_service.endpoints.metrics.batch_mean import router as batch_mean_router
-from trustyai_service.endpoints.metrics.drift.approx_ks_test import (
-    router as drift_approxkstest_router,
-)
 from trustyai_service.endpoints.metrics.drift.compare_means import (
     router as drift_comparemeans_router,
-)
-from trustyai_service.endpoints.metrics.drift.fourier_mmd import (
-    router as drift_fouriermmd_router,
 )
 from trustyai_service.endpoints.metrics.drift.jensen_shannon import (
     router as drift_jensenshannon_router,
@@ -46,6 +42,10 @@ from trustyai_service.endpoints.metrics.drift.jensen_shannon import (
 from trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov import (
     router as drift_kstest_router,
 )
+from trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov_streaming import (
+    router as drift_ksteststreaming_router,
+)
+from trustyai_service.endpoints.metrics.drift.mmd import router as drift_mmd_router
 from trustyai_service.endpoints.metrics.fairness.group.dir import router as dir_router
 from trustyai_service.endpoints.metrics.fairness.group.spd import router as spd_router
 from trustyai_service.endpoints.metrics.metrics_info import (
@@ -54,19 +54,24 @@ from trustyai_service.endpoints.metrics.metrics_info import (
 
 # Middleware
 from trustyai_service.middleware.gzip_middleware import GzipRequestMiddleware
-from trustyai_service.service.data.storage.maria.pvc_migration import (
-    MIGRATION_STATUS_COMPLETE,
-    MIGRATION_STATUS_FAILED,
-    MIGRATION_STATUS_IN_PROGRESS,
-    MIGRATION_STATUS_PARTIAL,
+
+# Feature flag gating
+from trustyai_service.service.config.registry import (
+    register_if_enabled,
+    register_if_enabled_with_group,
+    register_with_legacy_prefix,
+)
+
+# Health checks
+from trustyai_service.service.health_checks import (
+    STATUS_OK,
+    perform_liveness_checks,
+    perform_readiness_checks,
 )
 from trustyai_service.service.prometheus.shared_prometheus_scheduler import (
     get_shared_prometheus_scheduler,
 )
 from trustyai_service.service.tls import PolicyAwareConfig
-
-# Valid storage formats (for environment variable validation)
-VALID_STORAGE_FORMATS = {"PVC", "MARIA"}
 
 logging.basicConfig(
     level=logging.INFO,  # Reduce default verbosity
@@ -76,12 +81,6 @@ logging.basicConfig(
 # Enable debug logging for TrustyAI components only
 logging.getLogger("src").setLevel(logging.DEBUG)
 logging.getLogger("__main__").setLevel(logging.DEBUG)
-
-# Migration status cache for readiness probe optimization
-# Prevents database query on every health check (typically every 10s)
-# Cache TTL: 60 seconds (once migration is complete, it stays complete)
-_migration_status_cache: dict[str, Any] = {"status": None, "timestamp": 0}
-_MIGRATION_CACHE_TTL = 60.0  # seconds
 
 # Remove noisy HTTP/2 and hypercorn internal logs
 logging.getLogger("hpack.hpack").setLevel(logging.WARNING)
@@ -164,59 +163,85 @@ async def strip_trailing_slash(
     return await call_next(request)
 
 
-# Include all routers
+# Include core routers (always registered)
 app.include_router(
     consumer_router,
     tags=["{Internal Only} Inference Consumer", "{Internal Only} ModelMesh Consumer"],
 )
-app.include_router(dir_router, tags=["Fairness Metrics: Group: Disparate Impact Ratio"])
 app.include_router(data_upload_router, tags=["Data Upload"])
-
-#   Drift metrics
-app.include_router(
-    drift_comparemeans_router,
-    tags=[
-        "Drift Metrics: CompareMeans",
-    ],
-)
-app.include_router(
-    drift_fouriermmd_router,
-    tags=["Drift Metrics: FourierMMD"],
-)
-app.include_router(
-    drift_approxkstest_router,
-    tags=["Drift Metrics: ApproxKSTest"],
-)
-app.include_router(
-    drift_jensenshannon_router,
-    tags=["Drift Metrics: JensenShannon"],
-)
-app.include_router(
-    drift_kstest_router,
-    tags=[
-        "Drift Metrics: KSTest",
-    ],
-)
-
-app.include_router(explainers_global_router, tags=["Explainers: Global"])
-app.include_router(explainers_local_router, tags=["Explainers: Local"])
-app.include_router(
-    spd_router,
-    tags=["Fairness Metrics: Group: Statistical Parity Difference"],
-)
 app.include_router(batch_mean_router, tags=["Metrics: Batch Mean"])
 app.include_router(metadata_router, tags=["Service Metadata"])
 app.include_router(metrics_info_router, tags=["Metrics Information Endpoint"])
 
-
-# Deprecated endpoints
-app.include_router(
-    dir_router, prefix="/metrics", tags=["{Legacy}: Disparate Impact Ratio"]
+# Fairness metrics (feature-flag gated, with legacy /metrics prefix)
+register_with_legacy_prefix(
+    app,
+    dir_router,
+    "fairness",
+    "fairness_dir",
+    modern_tag="Fairness Metrics: Group: Disparate Impact Ratio",
+    legacy_tag="{Legacy}: Disparate Impact Ratio",
 )
-app.include_router(
+register_with_legacy_prefix(
+    app,
     spd_router,
-    prefix="/metrics",
-    tags=["{Legacy}: Statistical Parity Difference"],
+    "fairness",
+    "fairness_spd",
+    modern_tag="Fairness Metrics: Group: Statistical Parity Difference",
+    legacy_tag="{Legacy}: Statistical Parity Difference",
+)
+
+# Drift metrics (feature-flag gated)
+register_if_enabled_with_group(
+    app,
+    drift_comparemeans_router,
+    "drift",
+    "drift_compare_means",
+    tag="Drift Metrics: CompareMeans",
+)
+register_if_enabled_with_group(
+    app,
+    drift_mmd_router,
+    "drift",
+    "drift_mmd",
+    tag="Drift Metrics: MMD",
+)
+register_if_enabled_with_group(
+    app,
+    drift_jensenshannon_router,
+    "drift",
+    "drift_jensen_shannon",
+    tag="Drift Metrics: JensenShannon",
+)
+register_if_enabled_with_group(
+    app,
+    drift_kstest_router,
+    "drift",
+    "drift_ks_test",
+    tag="Drift Metrics: KSTest",
+)
+# KSTestStreaming doesn't have its own flag yet, gate with drift group
+register_if_enabled(
+    app,
+    drift_ksteststreaming_router,
+    "drift",
+    tag="Drift Metrics: KSTestStreaming",
+)
+
+# Explainer endpoints (feature-flag gated, disabled by default)
+register_if_enabled_with_group(
+    app,
+    explainers_global_router,
+    "explainer",
+    "explainer_global",
+    tag="Explainers: Global",
+)
+register_if_enabled_with_group(
+    app,
+    explainers_local_router,
+    "explainer",
+    "explainer_local",
+    tag="Explainers: Local",
 )
 
 
@@ -239,151 +264,77 @@ async def metrics(_request: Request) -> Response:
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
-def _handle_migration_status(status: str) -> JSONResponse | None:
-    """Handle migration status and return appropriate readiness response.
+@app.get(routes.HEALTH)
+def general_health() -> JSONResponse:
+    """General health endpoint combining readiness and liveness checks.
 
-    :param status: Migration status (IN_PROGRESS, FAILED, PARTIAL, or COMPLETE)
-    :return: JSONResponse if service should be not ready, None if ready
+    :return: JSON response with status ("healthy" or "unhealthy")
+             HTTP 200 if healthy, HTTP 503 if unhealthy
     """
-    if status == MIGRATION_STATUS_IN_PROGRESS:
-        return JSONResponse(
-            content={
-                "status": "not_ready",
-                "reason": "Data migration in progress",
-            },
-            status_code=HTTPStatus.SERVICE_UNAVAILABLE,
-        )
-    if status == MIGRATION_STATUS_FAILED:
-        return JSONResponse(
-            content={
-                "status": "not_ready",
-                "reason": "Data migration failed",
-            },
-            status_code=HTTPStatus.SERVICE_UNAVAILABLE,
-        )
-    if status == MIGRATION_STATUS_PARTIAL:
-        logger.warning("Service ready with partial migration - some files failed")
-        # Fall through to ready (return None)
-    # COMPLETE or PARTIAL status - service is ready
-    return None
+    readiness_status, readiness_checks = perform_readiness_checks()
+    liveness_status, liveness_checks = perform_liveness_checks()
+
+    is_healthy = readiness_status == STATUS_OK and liveness_status == STATUS_OK
+
+    response_body = {
+        "status": "healthy" if is_healthy else "unhealthy",
+        "checks": {
+            "readiness": readiness_checks,
+            "liveness": liveness_checks,
+        },
+    }
+
+    status_code = HTTPStatus.OK if is_healthy else HTTPStatus.SERVICE_UNAVAILABLE
+    return JSONResponse(content=response_body, status_code=status_code)
 
 
 # Readiness probe
 @app.get(routes.HEALTH_READY)
-async def readiness_probe() -> JSONResponse:
+def readiness_probe() -> JSONResponse:
     """Kubernetes readiness probe endpoint.
 
-    Blocks pod readiness if DATABASE_ATTEMPT_MIGRATION is enabled and migration
-    is still in progress. This ensures the service doesn't receive traffic until
-    data migration completes.
-
-    :return: JSON response indicating service is ready (200) or not ready (503)
+    :return: JSON response with status ("ready" or "not_ready")
+             HTTP 200 if ready, HTTP 503 if not ready
     """
-    # Check if migration is required
-    storage_format = os.environ.get("SERVICE_STORAGE_FORMAT", "PVC")
+    status, checks = perform_readiness_checks()
+    is_ready = status == STATUS_OK
 
-    # Validate storage format
-    if storage_format not in VALID_STORAGE_FORMATS:
-        logger.warning(
-            "Invalid SERVICE_STORAGE_FORMAT '%s', defaulting to PVC. Valid formats: %s",
-            storage_format,
-            VALID_STORAGE_FORMATS,
-        )
-        storage_format = "PVC"
+    response_body = {"status": "ready" if is_ready else "not_ready", "checks": checks}
 
-    migration_enabled = os.environ.get("DATABASE_ATTEMPT_MIGRATION", "0").lower() in (
-        "1",
-        "true",
-        "yes",
-        "on",
-    )
-
-    if storage_format == "MARIA" and migration_enabled:
-        # Check cache first to avoid DB query on every health check
-        current_time = time.time()
-        cache_age = current_time - _migration_status_cache["timestamp"]
-
-        # Use cached status if:
-        # 1. Cache is fresh (< TTL), OR
-        # 2. Migration is COMPLETE (no need to check again)
-        if (
-            cache_age < _MIGRATION_CACHE_TTL
-            or _migration_status_cache["status"] == MIGRATION_STATUS_COMPLETE
-        ):
-            cached_status = _migration_status_cache["status"]
-            if cached_status is not None:
-                response = _handle_migration_status(cached_status)
-                if response is not None:
-                    return response
-                # COMPLETE or PARTIAL status - fall through to ready
-        else:
-            # Cache miss or expired - query database and update cache
-            try:
-                from trustyai_service.service.data.storage import (  # noqa: PLC0415 -- conditional import based on runtime config
-                    get_global_storage_interface,
-                )
-                from trustyai_service.service.data.storage.maria.maria import (  # noqa: PLC0415 -- conditional import
-                    MariaDBStorage,
-                )
-
-                storage = get_global_storage_interface()
-
-                # Check if storage is MariaDB (type guard)
-                if isinstance(storage, MariaDBStorage):
-                    # Query migration status from database
-                    with storage.connection_manager as (_conn, cursor):
-                        cursor.execute(
-                            "SELECT status FROM trustyai_migration_status "
-                            "WHERE migration_type IN ('PVC_TO_DB', 'LEGACY_DB') "
-                            "ORDER BY started_at DESC LIMIT 1"
-                        )
-                        result = cursor.fetchone()
-
-                        if result:
-                            migration_status = result[0]
-                            # Update cache
-                            _migration_status_cache["status"] = migration_status
-                            _migration_status_cache["timestamp"] = current_time
-
-                            response = _handle_migration_status(migration_status)
-                            if response is not None:
-                                return response
-                            # Migration complete - proceed to ready state
-                        else:
-                            # No migration row exists yet - migration not started
-                            # Treat as not ready to prevent traffic before migration begins
-                            return JSONResponse(
-                                content={
-                                    "status": "not_ready",
-                                    "reason": "Migration not started yet",
-                                },
-                                status_code=HTTPStatus.SERVICE_UNAVAILABLE,
-                            )
-
-            except Exception as e:
-                # If we can't check migration status, assume not ready
-                # This prevents traffic during migration issues
-                logger.exception("Failed to check migration status")
-                return JSONResponse(
-                    content={
-                        "status": "not_ready",
-                        "reason": f"Unable to verify migration status: {e}",
-                    },
-                    status_code=HTTPStatus.SERVICE_UNAVAILABLE,
-                )
-
-    # No migration required or migration completed successfully
-    return JSONResponse(content={"status": "ready"}, status_code=HTTPStatus.OK)
+    status_code = HTTPStatus.OK if is_ready else HTTPStatus.SERVICE_UNAVAILABLE
+    return JSONResponse(content=response_body, status_code=status_code)
 
 
 # Liveness probe endpoint
 @app.get(routes.HEALTH_LIVE)
-async def liveness_probe() -> JSONResponse:
+def liveness_probe() -> JSONResponse:
     """Kubernetes liveness probe endpoint.
 
-    :return: JSON response indicating service is alive
+    :return: JSON response with status ("alive")
+             HTTP 200 if alive
     """
-    return JSONResponse(content={"status": "live"}, status_code=HTTPStatus.OK)
+    status, checks = perform_liveness_checks()
+    is_alive = status == STATUS_OK
+
+    response_body = {"status": "alive" if is_alive else "dead", "checks": checks}
+
+    status_code = HTTPStatus.OK if is_alive else HTTPStatus.SERVICE_UNAVAILABLE
+    return JSONResponse(content=response_body, status_code=status_code)
+
+
+health_app = FastAPI(
+    title="TrustyAI Health",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
+health_app.get(routes.HEALTH)(general_health)
+health_app.get(routes.HEALTH_READY)(readiness_probe)
+health_app.get(routes.HEALTH_LIVE)(liveness_probe)
+
+# Register only the KServe consumer endpoint (not the entire router) to avoid
+# exposing unwanted routes like "/" on the health port
+health_app.post(routes.CONSUMER_KSERVE_V2)(consume_inference_payload)
 
 
 def get_tls_config() -> dict[str, Any] | None:
@@ -418,8 +369,17 @@ async def run_server() -> None:
     host_http = (
         "127.0.0.1"  # Keep loopback-only for security (kube-rbac-proxy forwards here)
     )
-    http_port = int(os.getenv("HTTP_PORT", "8080"))
+    http_port = int(os.getenv("HTTP_PORT", "8081"))
     ssl_port = int(os.getenv("SSL_PORT", "4443"))
+    health_port = int(os.getenv("HEALTH_PORT", "8080"))
+
+    if health_port in (http_port, ssl_port):
+        msg = f"HEALTH_PORT ({health_port}) must differ from HTTP_PORT ({http_port}) and SSL_PORT ({ssl_port})"
+        raise ValueError(msg)
+
+    if http_port == ssl_port:
+        msg = f"HTTP_PORT ({http_port}) must differ from SSL_PORT ({ssl_port})"
+        raise ValueError(msg)
 
     # Create hypercorn config
     config = PolicyAwareConfig()
@@ -447,10 +407,15 @@ async def run_server() -> None:
     config.errorlog = "-"  # Log to stderr
     config.use_reloader = False  # Disable reloader in production
 
-    # Start the server
-    # FastAPI implements the ASGI protocol that hypercorn expects
-    # The type stubs are overly strict, but FastAPI works correctly at runtime
-    await serve(app, config)  # type: ignore[arg-type]
+    health_config = PolicyAwareConfig()
+    health_config.bind = [f"0.0.0.0:{health_port}"]
+    health_config.use_reloader = False
+    logger.info("Binding health probes on 0.0.0.0:%s for kubelet", health_port)
+
+    await asyncio.gather(
+        serve(app, config),  # type: ignore[arg-type]
+        serve(health_app, health_config),  # type: ignore[arg-type]
+    )
 
 
 if __name__ == "__main__":

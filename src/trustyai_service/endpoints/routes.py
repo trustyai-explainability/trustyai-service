@@ -32,8 +32,9 @@ DRIFT_COMPARE_MEANS = _metric("/metrics/drift/comparemeans")
 DRIFT_MEANSHIFT = _metric("/metrics/drift/meanshift")  # deprecated alias
 DRIFT_KSTEST = _metric("/metrics/drift/kstest")
 DRIFT_JENSEN_SHANNON = _metric("/metrics/drift/jensenshannon")
-DRIFT_FOURIER_MMD = _metric("/metrics/drift/fouriermmd")
-DRIFT_APPROX_KS_TEST = _metric("/metrics/drift/approxkstest")
+DRIFT_MMD = _metric("/metrics/drift/mmd")
+DRIFT_FOURIER_MMD = _metric("/metrics/drift/fouriermmd")  # deprecated alias
+DRIFT_KS_TEST_STREAMING = _metric("/metrics/drift/ksteststreaming")
 
 # === Fairness Metrics ===
 
@@ -78,6 +79,7 @@ EXPLAINER_LOCAL_TSSALIENCY = "/explainers/local/tssaliency"
 
 # === Health & Monitoring ===
 
-HEALTH_READY = "/q/health/ready"
-HEALTH_LIVE = "/q/health/live"
+HEALTH = "/q/health"
+HEALTH_READY = f"{HEALTH}/ready"
+HEALTH_LIVE = f"{HEALTH}/live"
 PROMETHEUS_METRICS = "/q/metrics"

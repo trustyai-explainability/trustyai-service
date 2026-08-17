@@ -34,7 +34,7 @@ class TestProcessPayloadSingleTensor(unittest.TestCase):
                 ),
             ],
         )
-        arr, names = process_payload(payload, lambda p: p.inputs)
+        arr, names, _types = process_payload(payload, lambda p: p.inputs)
         assert names == ["feature"]
         assert arr.shape == (4,)
         np.testing.assert_array_almost_equal(arr, [1.0, 2.0, 3.0, 4.0])
@@ -52,7 +52,7 @@ class TestProcessPayloadSingleTensor(unittest.TestCase):
                 ),
             ],
         )
-        arr, names = process_payload(payload, lambda p: p.inputs)
+        arr, names, _types = process_payload(payload, lambda p: p.inputs)
         assert names == ["feat-0", "feat-1"]
         assert arr.shape == (3, 2)
 
@@ -70,7 +70,7 @@ class TestProcessPayloadSingleTensor(unittest.TestCase):
                 ),
             ],
         )
-        arr, names = process_payload(
+        arr, names, _types = process_payload(
             payload, lambda p: p.inputs, enforced_first_shape=expected_rows
         )
         assert len(arr) == expected_rows
@@ -115,7 +115,7 @@ class TestProcessPayloadMultiTensor(unittest.TestCase):
                 ),
             ],
         )
-        arr, names = process_payload(payload, lambda p: p.inputs)
+        arr, names, _types = process_payload(payload, lambda p: p.inputs)
         assert names == ["age", "income"]
         assert arr.shape == (3, 2)
         np.testing.assert_array_almost_equal(arr[:, 0], [25.0, 30.0, 35.0])
@@ -182,7 +182,7 @@ class TestProcessPayloadNonNumeric(unittest.TestCase):
                 ),
             ],
         )
-        arr, names = process_payload(payload, lambda p: p.inputs)
+        arr, names, _types = process_payload(payload, lambda p: p.inputs)
         assert names == ["category"]
         assert arr.dtype == object
         assert list(arr) == ["cat", "dog", "bird"]
@@ -206,7 +206,7 @@ class TestProcessPayloadNonNumeric(unittest.TestCase):
                 ),
             ],
         )
-        arr, names = process_payload(payload, lambda p: p.inputs)
+        arr, names, _types = process_payload(payload, lambda p: p.inputs)
         assert names == ["color", "size"]
         assert arr.dtype == object
         assert arr.shape == (2, 2)

@@ -40,10 +40,6 @@ class TestDriftPaths:
         """FourierMMD paths."""
         assert routes.DRIFT_FOURIER_MMD.compute == "/metrics/drift/fouriermmd"
 
-    def test_approx_ks_test(self) -> None:
-        """ApproxKSTest paths."""
-        assert routes.DRIFT_APPROX_KS_TEST.compute == "/metrics/drift/approxkstest"
-
 
 class TestFairnessPaths:
     """Fairness metric paths match the API contract."""
