@@ -260,15 +260,26 @@ class DataSource:
                 match_tags.add(_legacy_aliases[tag])
 
             if len(metadata.shape) == 1:
-                mask = [
-                    bool(match_tags & set(_extract_tags(cell))) for cell in metadata
-                ]
+                mask = np.array(
+                    [bool(match_tags & set(_extract_tags(cell))) for cell in metadata],
+                    dtype=bool,
+                )
             else:
-                mask = [
-                    bool(match_tags & set(_extract_tags(row[tags_col])))
-                    for row in metadata
-                ]
+                mask = np.array(
+                    [
+                        bool(match_tags & set(_extract_tags(row[tags_col])))
+                        for row in metadata
+                    ],
+                    dtype=bool,
+                )
             filtered_input = input_data[mask]
+
+            # Warn on duplicate column names between input and output
+            overlap = set(input_names) & set(output_names)
+            if overlap:
+                logger.warning(
+                    "Column name collision between input/output: %s", overlap
+                )
 
             df_data: dict[str, object] = {}
             for i, col_name in enumerate(input_names):
