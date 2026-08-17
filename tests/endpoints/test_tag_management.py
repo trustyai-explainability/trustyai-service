@@ -1,5 +1,6 @@
 """Tests for GET /info/tags and POST /info/tags endpoints."""
 
+from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
@@ -74,7 +75,7 @@ class TestGetTags:
         ):
             response = client.get(routes.INFO_TAGS, params={"modelId": "test-model"})
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == HTTPStatus.OK
         data = response.json()
         assert data["_trustyai_unlabeled"] == 2  # noqa: PLR2004
         assert data["TRAINING"] == 2  # noqa: PLR2004
@@ -95,7 +96,7 @@ class TestGetTags:
 
         response = client.get(routes.INFO_TAGS, params={"modelId": "nonexistent"})
 
-        assert response.status_code == 404  # noqa: PLR2004
+        assert response.status_code == HTTPStatus.NOT_FOUND
 
     @patch("trustyai_service.endpoints.metadata.storage_interface")
     @patch("trustyai_service.endpoints.metadata.get_data_source")
@@ -117,7 +118,7 @@ class TestGetTags:
         with patch("trustyai_service.endpoints.metadata.ModelData", return_value=md):
             response = client.get(routes.INFO_TAGS, params={"modelId": "empty-model"})
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == HTTPStatus.OK
         assert response.json() == {}
 
     @patch("trustyai_service.endpoints.metadata.storage_interface")
@@ -148,7 +149,7 @@ class TestGetTags:
         ):
             response = client.get(routes.INFO_TAGS)
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == HTTPStatus.OK
         data = response.json()
         assert "model-a" in data
         assert "model-b" in data
@@ -171,6 +172,8 @@ class TestApplyTags:
 
         # Configure storage_interface for model existence check and persistence
         mock_storage.dataset_exists = AsyncMock(return_value=True)
+        mock_storage.read_data = AsyncMock(return_value=_make_metadata_rows(10))
+        mock_storage.read_column_names = AsyncMock(return_value=METADATA_NAMES)
         mock_storage.delete_dataset = AsyncMock()
         mock_storage.write_data = AsyncMock()
 
@@ -186,7 +189,7 @@ class TestApplyTags:
                 },
             )
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == HTTPStatus.OK
         data = response.json()
         assert data["applied"]["TRAINING"] == 5  # noqa: PLR2004
         mock_storage.delete_dataset.assert_awaited_once()
@@ -213,7 +216,7 @@ class TestApplyTags:
             },
         )
 
-        assert response.status_code == 400  # noqa: PLR2004
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         assert "_trustyai" in response.json()["detail"]
 
     @patch("trustyai_service.endpoints.metadata.storage_interface")
@@ -241,7 +244,7 @@ class TestApplyTags:
                 },
             )
 
-        assert response.status_code == 400  # noqa: PLR2004
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         assert "exceeds dataset size" in response.json()["detail"]
 
     @patch("trustyai_service.endpoints.metadata.storage_interface")
@@ -256,6 +259,8 @@ class TestApplyTags:
 
         metadata = _make_metadata_rows(3, [["TRAINING"]] * 3)
         mock_storage.dataset_exists = AsyncMock(return_value=True)
+        mock_storage.read_data = AsyncMock(return_value=_make_metadata_rows(10))
+        mock_storage.read_column_names = AsyncMock(return_value=METADATA_NAMES)
         mock_storage.delete_dataset = AsyncMock()
 
         written_data: dict[str, np.ndarray] = {}
@@ -281,7 +286,7 @@ class TestApplyTags:
                 },
             )
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == HTTPStatus.OK
         saved = written_data["metadata"]
         for row in saved:
             assert row[3].count("TRAINING") == 1
@@ -307,7 +312,7 @@ class TestApplyTags:
             },
         )
 
-        assert response.status_code == 404  # noqa: PLR2004
+        assert response.status_code == HTTPStatus.NOT_FOUND
 
     @patch("trustyai_service.endpoints.metadata.storage_interface")
     @patch("trustyai_service.endpoints.metadata.get_data_source")
@@ -334,7 +339,7 @@ class TestApplyTags:
                 },
             )
 
-        assert response.status_code == 400  # noqa: PLR2004
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         assert "start must be less than end" in response.json()["detail"]
 
     @patch("trustyai_service.endpoints.metadata.storage_interface")
@@ -362,7 +367,7 @@ class TestApplyTags:
                 },
             )
 
-        assert response.status_code == 400  # noqa: PLR2004
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         assert "non-negative" in response.json()["detail"]
 
     @patch("trustyai_service.endpoints.metadata.storage_interface")
@@ -376,6 +381,8 @@ class TestApplyTags:
         mock_get_ds.return_value = mock_ds
 
         mock_storage.dataset_exists = AsyncMock(return_value=True)
+        mock_storage.read_data = AsyncMock(return_value=_make_metadata_rows(10))
+        mock_storage.read_column_names = AsyncMock(return_value=METADATA_NAMES)
         mock_storage.delete_dataset = AsyncMock()
 
         written_data: dict[str, np.ndarray] = {}
@@ -401,7 +408,7 @@ class TestApplyTags:
                 },
             )
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == HTTPStatus.OK
         saved = written_data["metadata"]
         # Rows 3 and 4 appear in both ranges but TAG should appear only once
         for idx in range(8):
@@ -418,6 +425,8 @@ class TestApplyTags:
         mock_get_ds.return_value = mock_ds
 
         mock_storage.dataset_exists = AsyncMock(return_value=True)
+        mock_storage.read_data = AsyncMock(return_value=_make_metadata_rows(10))
+        mock_storage.read_column_names = AsyncMock(return_value=METADATA_NAMES)
         mock_storage.delete_dataset = AsyncMock()
 
         written_data: dict[str, np.ndarray] = {}
@@ -446,7 +455,7 @@ class TestApplyTags:
                 },
             )
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == HTTPStatus.OK
         data = response.json()
         assert data["applied"]["TRAINING"] == 3  # noqa: PLR2004
         assert data["applied"]["REFERENCE"] == 3  # noqa: PLR2004
@@ -467,6 +476,8 @@ class TestApplyTags:
         mock_get_ds.return_value = mock_ds
 
         mock_storage.dataset_exists = AsyncMock(return_value=True)
+        mock_storage.read_data = AsyncMock(return_value=_make_metadata_rows(10))
+        mock_storage.read_column_names = AsyncMock(return_value=METADATA_NAMES)
         mock_storage.delete_dataset = AsyncMock()
 
         written_data: dict[str, np.ndarray] = {}
@@ -492,7 +503,7 @@ class TestApplyTags:
                 },
             )
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == HTTPStatus.OK
         saved = written_data["metadata"]
         # Rows 0, 1 and 5, 6, 7 should have TAG
         for idx in (0, 1, 5, 6, 7):
@@ -512,6 +523,8 @@ class TestApplyTags:
         mock_get_ds.return_value = mock_ds
 
         mock_storage.dataset_exists = AsyncMock(return_value=True)
+        mock_storage.read_data = AsyncMock(return_value=_make_metadata_rows(10))
+        mock_storage.read_column_names = AsyncMock(return_value=METADATA_NAMES)
         mock_storage.delete_dataset = AsyncMock()
 
         written_data: dict[str, np.ndarray] = {}
@@ -537,7 +550,7 @@ class TestApplyTags:
                 },
             )
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == HTTPStatus.OK
         saved = written_data["metadata"]
         assert "TAG" in saved[3][3]
         assert "TAG" not in saved[2][3]
@@ -564,7 +577,7 @@ class TestApplyTags:
             },
         )
 
-        assert response.status_code == 400  # noqa: PLR2004
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         assert "at least one tag" in response.json()["detail"]
 
     @patch("trustyai_service.endpoints.metadata.storage_interface")
@@ -592,5 +605,5 @@ class TestApplyTags:
                 },
             )
 
-        assert response.status_code == 400  # noqa: PLR2004
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         assert "[start, end] or [index]" in response.json()["detail"]

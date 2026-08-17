@@ -790,25 +790,53 @@ async def _persist_metadata(
     metadata: np.ndarray,
     metadata_names: list[str],
 ) -> None:
-    """Replace the metadata dataset for a model.
+    """Replace the metadata dataset for a model with backup/restore on failure.
 
     .. warning::
         Not safe for concurrent tag requests on the same model — last write wins.
         Storage interface lacks atomic compare-and-swap. Concurrent requests
         should be serialized at the application layer.
 
-    .. warning::
-        Uses delete-then-write since storage interface lacks atomic replace.
-        If write fails after delete, metadata is permanently lost. Proper fix
-        requires storage interface to support transactional replace or rename.
+    .. note::
+        Backs up existing metadata before delete. If write fails, attempts
+        best-effort restore. This mitigates data loss but is not atomic.
+        Proper fix requires storage interface to support transactional replace.
     """
     metadata_dataset = model_id + METADATA_SUFFIX
+
+    # Backup existing metadata if it exists
+    backup_data: np.ndarray | None = None
+    backup_names: list[str] | None = None
+
     try:
-        # Delete-then-write (not atomic - data lost if write fails after delete)
         if await storage_interface.dataset_exists(metadata_dataset):
+            # Read and backup current metadata before deletion
+            backup_data = await storage_interface.read_data(metadata_dataset)
+            backup_names = list(
+                await storage_interface.read_column_names(metadata_dataset)
+            )
             await storage_interface.delete_dataset(metadata_dataset)
+
+        # Write new metadata
         await storage_interface.write_data(metadata_dataset, metadata, metadata_names)
+
     except Exception as exc:
+        # Attempt best-effort restore of backup if write failed
+        if backup_data is not None and backup_names is not None:
+            try:
+                await storage_interface.write_data(
+                    metadata_dataset, backup_data, backup_names
+                )
+                logger.warning(
+                    "Write failed for model=%s but backup restored successfully",
+                    model_id,
+                )
+            except Exception:
+                logger.exception(
+                    "Write failed for model=%s AND backup restore failed",
+                    model_id,
+                )
+
         logger.exception("Error persisting tagged metadata for model=%s", model_id)
         raise HTTPException(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,

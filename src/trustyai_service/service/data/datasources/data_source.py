@@ -184,11 +184,16 @@ class DataSource:
         df = await self.get_dataframe_with_batch_size(model_id, batch_size)
 
         # Filter out synthetic rows — check if SYNTHETIC_TAG is in the tags list.
-        # For backward compatibility, also check for legacy boolean columns.
+        # For backward compatibility, also check for legacy boolean columns and legacy tag values.
         if "tags" in df.columns:
-            # Current format: tags is a list, check if SYNTHETIC_TAG is in it
+            # Current format: tags is a list, check if SYNTHETIC_TAG or legacy "synthetic" is in it
             df = df[
-                ~df["tags"].apply(lambda tags_list: SYNTHETIC_TAG in (tags_list or []))
+                ~df["tags"].apply(
+                    lambda tags_list: (
+                        SYNTHETIC_TAG in (tags_list or [])
+                        or "synthetic" in (tags_list or [])
+                    )
+                )
             ]
         else:
             # Legacy format: synthetic was a boolean column
