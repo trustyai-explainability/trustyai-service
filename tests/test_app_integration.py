@@ -288,10 +288,10 @@ class TestFeatureFlagGating:
 
     def test_individual_drift_metric_disabled(self) -> None:
         """Disabling an individual drift metric hides only that metric."""
-        test_client = _build_app_with_flags({"drift_fourier_mmd": False})
+        test_client = _build_app_with_flags({"drift_mmd": False})
         response = test_client.get("/openapi.json")
         openapi = response.json()
-        assert routes.DRIFT_FOURIER_MMD.compute not in openapi["paths"]
+        assert routes.DRIFT_MMD.compute not in openapi["paths"]
         assert routes.DRIFT_KSTEST.compute in openapi["paths"]
         assert routes.DRIFT_JENSEN_SHANNON.compute in openapi["paths"]
 

@@ -24,7 +24,6 @@ _ALL_FLAGS = frozenset(
 )
 
 
-
 class TestFlagDefaults:
     """Verify default values for all feature flags."""
 
