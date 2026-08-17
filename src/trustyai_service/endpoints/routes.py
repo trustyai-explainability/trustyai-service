@@ -34,7 +34,6 @@ DRIFT_KSTEST = _metric("/metrics/drift/kstest")
 DRIFT_JENSEN_SHANNON = _metric("/metrics/drift/jensenshannon")
 DRIFT_MMD = _metric("/metrics/drift/mmd")
 DRIFT_FOURIER_MMD = _metric("/metrics/drift/fouriermmd")  # deprecated alias
-DRIFT_APPROX_KS_TEST = _metric("/metrics/drift/approxkstest")  # deprecated alias
 DRIFT_KS_TEST_STREAMING = _metric("/metrics/drift/ksteststreaming")
 
 # === Fairness Metrics ===

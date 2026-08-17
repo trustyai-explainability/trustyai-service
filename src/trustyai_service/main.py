@@ -54,6 +54,15 @@ from trustyai_service.endpoints.metrics.metrics_info import (
 
 # Middleware
 from trustyai_service.middleware.gzip_middleware import GzipRequestMiddleware
+
+# Feature flag gating
+from trustyai_service.service.config.registry import (
+    register_if_enabled,
+    register_if_enabled_with_group,
+    register_with_legacy_prefix,
+)
+
+# Health checks
 from trustyai_service.service.health_checks import (
     STATUS_OK,
     perform_liveness_checks,
@@ -154,63 +163,85 @@ async def strip_trailing_slash(
     return await call_next(request)
 
 
-# Include all routers
+# Include core routers (always registered)
 app.include_router(
     consumer_router,
     tags=["{Internal Only} Inference Consumer", "{Internal Only} ModelMesh Consumer"],
 )
-app.include_router(dir_router, tags=["Fairness Metrics: Group: Disparate Impact Ratio"])
 app.include_router(data_upload_router, tags=["Data Upload"])
-
-#   Drift metrics
-app.include_router(
-    drift_comparemeans_router,
-    tags=[
-        "Drift Metrics: CompareMeans",
-    ],
-)
-app.include_router(
-    drift_mmd_router,
-    tags=["Drift Metrics: MMD"],
-)
-app.include_router(
-    drift_jensenshannon_router,
-    tags=["Drift Metrics: JensenShannon"],
-)
-app.include_router(
-    drift_kstest_router,
-    tags=[
-        "Drift Metrics: KSTest",
-    ],
-)
-app.include_router(
-    drift_ksteststreaming_router,
-    tags=["Drift Metrics: KSTestStreaming"],
-)
-app.include_router(
-    drift_mmd_router,
-    tags=["Drift Metrics: MMD"],
-)
-
-app.include_router(explainers_global_router, tags=["Explainers: Global"])
-app.include_router(explainers_local_router, tags=["Explainers: Local"])
-app.include_router(
-    spd_router,
-    tags=["Fairness Metrics: Group: Statistical Parity Difference"],
-)
 app.include_router(batch_mean_router, tags=["Metrics: Batch Mean"])
 app.include_router(metadata_router, tags=["Service Metadata"])
 app.include_router(metrics_info_router, tags=["Metrics Information Endpoint"])
 
-
-# Deprecated endpoints
-app.include_router(
-    dir_router, prefix="/metrics", tags=["{Legacy}: Disparate Impact Ratio"]
+# Fairness metrics (feature-flag gated, with legacy /metrics prefix)
+register_with_legacy_prefix(
+    app,
+    dir_router,
+    "fairness",
+    "fairness_dir",
+    modern_tag="Fairness Metrics: Group: Disparate Impact Ratio",
+    legacy_tag="{Legacy}: Disparate Impact Ratio",
 )
-app.include_router(
+register_with_legacy_prefix(
+    app,
     spd_router,
-    prefix="/metrics",
-    tags=["{Legacy}: Statistical Parity Difference"],
+    "fairness",
+    "fairness_spd",
+    modern_tag="Fairness Metrics: Group: Statistical Parity Difference",
+    legacy_tag="{Legacy}: Statistical Parity Difference",
+)
+
+# Drift metrics (feature-flag gated)
+register_if_enabled_with_group(
+    app,
+    drift_comparemeans_router,
+    "drift",
+    "drift_compare_means",
+    tag="Drift Metrics: CompareMeans",
+)
+register_if_enabled_with_group(
+    app,
+    drift_mmd_router,
+    "drift",
+    "drift_mmd",
+    tag="Drift Metrics: MMD",
+)
+register_if_enabled_with_group(
+    app,
+    drift_jensenshannon_router,
+    "drift",
+    "drift_jensen_shannon",
+    tag="Drift Metrics: JensenShannon",
+)
+register_if_enabled_with_group(
+    app,
+    drift_kstest_router,
+    "drift",
+    "drift_ks_test",
+    tag="Drift Metrics: KSTest",
+)
+# KSTestStreaming doesn't have its own flag yet, gate with drift group
+register_if_enabled(
+    app,
+    drift_ksteststreaming_router,
+    "drift",
+    tag="Drift Metrics: KSTestStreaming",
+)
+
+# Explainer endpoints (feature-flag gated, disabled by default)
+register_if_enabled_with_group(
+    app,
+    explainers_global_router,
+    "explainer",
+    "explainer_global",
+    tag="Explainers: Global",
+)
+register_if_enabled_with_group(
+    app,
+    explainers_local_router,
+    "explainer",
+    "explainer_local",
+    tag="Explainers: Local",
 )
 
 
@@ -344,6 +375,10 @@ async def run_server() -> None:
 
     if health_port in (http_port, ssl_port):
         msg = f"HEALTH_PORT ({health_port}) must differ from HTTP_PORT ({http_port}) and SSL_PORT ({ssl_port})"
+        raise ValueError(msg)
+
+    if http_port == ssl_port:
+        msg = f"HTTP_PORT ({http_port}) must differ from SSL_PORT ({ssl_port})"
         raise ValueError(msg)
 
     # Create hypercorn config
