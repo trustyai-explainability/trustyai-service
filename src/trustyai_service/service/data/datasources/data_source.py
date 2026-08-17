@@ -224,10 +224,22 @@ class DataSource:
                 return []
 
             if len(metadata.shape) == 1:
-                mask = [tag in _extract_tags(cell) for cell in metadata]
+                mask = np.array(
+                    [tag in _extract_tags(cell) for cell in metadata], dtype=bool
+                )
             else:
-                mask = [tag in _extract_tags(row[tags_col]) for row in metadata]
+                mask = np.array(
+                    [tag in _extract_tags(row[tags_col]) for row in metadata],
+                    dtype=bool,
+                )
             filtered_input = input_data[mask]
+
+            # Warn on duplicate column names between input and output
+            overlap = set(input_names) & set(output_names)
+            if overlap:
+                logger.warning(
+                    "Column name collision between input/output: %s", overlap
+                )
 
             df_data: dict[str, object] = {}
             for i, col_name in enumerate(input_names):
