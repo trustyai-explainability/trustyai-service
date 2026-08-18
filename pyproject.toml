@@ -45,7 +45,7 @@ test = [
 
 [project.optional-dependencies]
 # Note: grpcio/grpcio-tools removed - incompatible with protobuf v7, unused (protoc used instead)
-mariadb = ["mariadb>=1.1,<1.2", "javaobj-py3>=0.5,<0.6"]
+mariadb = ["mariadb>=1.1,<1.2", "javaobj-py3>=0.5,<0.7"]
 mmd = ["goodpoints>=0.5.0,<0.7"]
 
 [tool.hatch.version]
