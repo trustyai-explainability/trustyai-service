@@ -110,9 +110,9 @@ isodate==0.7.2 \
     --hash=sha256:4cd1aa0f43ca76f4a6c6c0292a85f40b35ec2e43e315b59f06e6d32171a953e6
     # via trustyai-service (pyproject.toml)
     # from https://pypi.org/simple
-javaobj-py3==0.5.0 \
-    --hash=sha256:45494ac00a42fbfbb7b3b3282b31c15692e2edd3563be68e6d5c8ec3afe4005f \
-    --hash=sha256:aa0b8db60597002270aae1b2f0a801f84f361a435e81c7a6103deab82c85867f
+javaobj-py3==0.6.1 \
+    --hash=sha256:088ff086c6aa2912f342754c43b0ca3a504fb869bb5e6f13395131e87744ef3c \
+    --hash=sha256:da97c61cb050bad37cca00523b1a617cc26ed2b698b6322cbc118820a4f52b30
     # via trustyai-service (pyproject.toml)
     # from https://pypi.org/simple
 joblib==1.5.3 \
