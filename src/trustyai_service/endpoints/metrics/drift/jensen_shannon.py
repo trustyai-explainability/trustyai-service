@@ -18,6 +18,7 @@ from trustyai_service.core.metrics.drift.jensen_shannon import (
     JensenShannon,
 )
 from trustyai_service.endpoints import routes
+from trustyai_service.endpoints.metrics.drift.validation import validate_drift_request
 from trustyai_service.service.data.shared_data_source import (
     DataSource,
     get_shared_data_source,
@@ -82,7 +83,7 @@ class JensenShannonMetricRequest(BaseMetricRequest):
         default=DEFAULT_BINS, alias="bins"
     )  # Number of bins for histogram method
     reference_tag: str | None = Field(default=None, alias="referenceTag")
-    fit_columns: list[str] = Field(default_factory=list, alias="fitColumns")
+    fit_columns: list[str] | None = Field(default=None, alias="fitColumns")
 
     def retrieve_tags(self) -> dict[str, str]:
         """Retrieve tags for this JensenShannon metric request."""
@@ -99,18 +100,8 @@ async def compute_jensenshannon(
     request: JensenShannonMetricRequest,
 ) -> dict[str, float | bool | str | dict[str, dict[str, float | bool]]]:
     """Compute the current value of Jensen-Shannon metric."""
-    # Validate inputs before try block
-    if not request.reference_tag:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="referenceTag is required for drift detection",
-        )
-
-    if not request.fit_columns:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="fitColumns is required for drift detection. Provide the list of feature columns to analyze.",
-        )
+    # Validate drift request fields (modifies request.fit_columns in-place)
+    await validate_drift_request(request)
 
     try:
         logger.info("Computing %s for model: %s", METRIC_NAME, request.model_id)
@@ -224,18 +215,8 @@ async def get_jensenshannon_definition() -> dict[str, str]:
 @router.post(routes.DRIFT_JENSEN_SHANNON.request)
 async def schedule_jensenshannon(request: JensenShannonMetricRequest) -> dict[str, str]:
     """Schedule a recurring computation of Jensen-Shannon metric."""
-    # Validate inputs before scheduling
-    if not request.reference_tag:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="referenceTag is required for drift detection",
-        )
-
-    if not request.fit_columns:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="fitColumns is required for drift detection. Provide the list of feature columns to analyze.",
-        )
+    # Validate drift request fields (modifies request.fit_columns in-place)
+    await validate_drift_request(request)
 
     # Get the scheduler and validate availability
     scheduler = get_prometheus_scheduler()

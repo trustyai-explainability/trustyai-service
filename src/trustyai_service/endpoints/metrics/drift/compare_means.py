@@ -17,6 +17,7 @@ from trustyai_service.core.metrics.drift.compare_means import (
     NanPolicy,
 )
 from trustyai_service.endpoints import routes
+from trustyai_service.endpoints.metrics.drift.validation import validate_drift_request
 from trustyai_service.service.data.datasources.data_source import DataSource
 from trustyai_service.service.data.shared_data_source import get_shared_data_source
 from trustyai_service.service.payloads.metrics.base_metric_request import (
@@ -74,7 +75,7 @@ class CompareMeansMetricRequest(BaseMetricRequest):
     equal_var: bool = Field(default=DEFAULT_EQUAL_VAR, alias="equalVar")
     nan_policy: NanPolicy = Field(default=DEFAULT_NAN_POLICY, alias="nanPolicy")
     reference_tag: str | None = Field(default=None, alias="referenceTag")
-    fit_columns: list[str] = Field(default_factory=list, alias="fitColumns")
+    fit_columns: list[str] | None = Field(default=None, alias="fitColumns")
 
     def retrieve_tags(self) -> dict[str, str]:
         """Retrieve tags for this CompareMeans metric request."""
@@ -91,26 +92,8 @@ async def compute_compare_means(
     request: CompareMeansMetricRequest,
 ) -> dict[str, float | bool | str | dict[str, dict[str, float | bool]]]:
     """Compute the current value of CompareMeans metric."""
-    # Validate inputs before try block
-    if not request.reference_tag or not request.reference_tag.strip():
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="referenceTag is required for drift detection",
-        )
-
-    if not request.fit_columns:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="fitColumns is required - specify which features to test for drift",
-        )
-
-    # Validate feature names are not blank/whitespace
-    valid_features = [f.strip() for f in request.fit_columns if f.strip()]
-    if not valid_features:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="fitColumns must contain at least one non-empty feature name",
-        )
+    # Validate drift request fields
+    valid_features = await validate_drift_request(request)
 
     try:
         logger.info("Computing %s for model: %s", METRIC_NAME, request.model_id)
@@ -235,34 +218,8 @@ async def schedule_compare_means(request: CompareMeansMetricRequest) -> dict[str
             detail="Prometheus scheduler not available",
         )
 
-    # Validate request before scheduling
-    if not request.model_id or not request.model_id.strip():
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="model_id is required and cannot be empty",
-        )
-
-    # Validate drift-specific required fields before scheduling
-    if not request.reference_tag or not request.reference_tag.strip():
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="referenceTag is required for drift detection",
-        )
-
-    if not request.fit_columns:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="fitColumns is required - specify which features to test for drift",
-        )
-
-    # Validate feature names are not blank/whitespace
-    valid_features = [f.strip() for f in request.fit_columns if f.strip()]
-    if not valid_features:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="fitColumns must contain at least one non-empty feature name",
-        )
-    request.fit_columns = valid_features
+    # Validate drift request fields (modifies request.fit_columns in-place)
+    await validate_drift_request(request)
 
     try:
         # Generate UUID for this request

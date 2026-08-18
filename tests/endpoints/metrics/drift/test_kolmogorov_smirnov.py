@@ -118,8 +118,8 @@ class TestKSTestEndpoints:
         expected_error_substring="referenceTag is required",
     )
 
-    test_compute_missing_fit_columns_returns_error = (
-        factory.make_compute_endpoint_error_test(
+    test_compute_missing_fit_columns_derives_from_metadata = (
+        factory.make_compute_endpoint_test(
             metric_name="KSTest",
             module_path="trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov",
             endpoint_path=routes.DRIFT_KSTEST.compute,
@@ -127,10 +127,53 @@ class TestKSTestEndpoints:
             request_payload={
                 "modelId": "test-model",
                 "referenceTag": "baseline",
+                # fitColumns omitted - should auto-derive from metadata
             },
-            expected_status_code=HTTPStatus.BAD_REQUEST,
-            expected_error_substring="fitColumns is required",
+            expected_response_keys=["status", "value", "drift_detected"],
         )
+    )
+
+    test_compute_explicit_empty_fit_columns_returns_error = factory.make_compute_endpoint_error_test(
+        metric_name="KSTest",
+        module_path="trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov",
+        endpoint_path=routes.DRIFT_KSTEST.compute,
+        client=client,
+        request_payload={
+            "modelId": "test-model",
+            "referenceTag": "baseline",
+            "fitColumns": [],  # Explicit empty list
+        },
+        expected_status_code=HTTPStatus.BAD_REQUEST,
+        expected_error_substring="fitColumns must contain at least one non-empty feature name",
+    )
+
+    test_schedule_missing_fit_columns_derives_from_metadata = (
+        factory.make_schedule_endpoint_test(
+            metric_name="KSTest",
+            module_path="trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov",
+            endpoint_path=routes.DRIFT_KSTEST.request,
+            client=client,
+            request_payload={
+                "modelId": "test-model",
+                "referenceTag": "baseline",
+                # fitColumns omitted - should auto-derive from metadata
+            },
+        )
+    )
+
+    test_schedule_explicit_empty_fit_columns_returns_error = factory.make_schedule_endpoint_error_test(
+        metric_name="KSTest",
+        module_path="trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov",
+        endpoint_path=routes.DRIFT_KSTEST.request,
+        client=client,
+        request_payload={
+            "modelId": "test-model",
+            "referenceTag": "baseline",
+            "fitColumns": [],  # Explicit empty list
+        },
+        expected_status_code=HTTPStatus.BAD_REQUEST,
+        expected_error_substring="fitColumns must contain at least one non-empty feature name",
+        mock_scheduler_none=False,
     )
 
     test_compute_invalid_feature = factory.make_compute_endpoint_error_test(

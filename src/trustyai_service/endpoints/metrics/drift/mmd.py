@@ -18,6 +18,7 @@ from trustyai_service.core.metrics.drift.mmd import (
     Method,
 )
 from trustyai_service.endpoints import routes
+from trustyai_service.endpoints.metrics.drift.validation import validate_drift_request
 from trustyai_service.service.data.datasources.data_source import DataSource
 from trustyai_service.service.data.shared_data_source import get_shared_data_source
 from trustyai_service.service.payloads.metrics.base_metric_request import (
@@ -65,7 +66,7 @@ class MMDMetricRequest(BaseMetricRequest):
     batch_size: int | None = Field(default=DEFAULT_BATCH_SIZE, alias="batchSize", gt=0)
 
     reference_tag: str | None = Field(default=None, alias="referenceTag")
-    fit_columns: list[str] = Field(default_factory=list, alias="fitColumns")
+    fit_columns: list[str] | None = Field(default=None, alias="fitColumns")
 
     # MMD-specific parameters
     method: Method = Field(default="ctt")
@@ -93,46 +94,13 @@ class MMDMetricRequest(BaseMetricRequest):
         return tags
 
 
-async def _validate_drift_request(request: MMDMetricRequest) -> list[str]:
-    """Validate common drift request fields and return cleaned fit_columns."""
-    if not request.model_id:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="model_id is required and cannot be empty",
-        )
-    if not request.reference_tag:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="referenceTag is required for drift detection",
-        )
-
-    if not request.fit_columns:
-        data_source = get_data_source()
-        metadata = await data_source.get_metadata(request.model_id)
-        request.fit_columns = list(metadata.input_schema.items.keys())
-        logger.info(
-            "fitColumns not specified, using all input columns for model %s: %s",
-            request.model_id,
-            request.fit_columns,
-        )
-        return request.fit_columns
-
-    valid_features = [f.strip() for f in request.fit_columns if f.strip()]
-    if not valid_features:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="fitColumns must contain at least one non-empty feature name",
-        )
-    request.fit_columns = valid_features
-    return valid_features
-
-
 @router.post(routes.DRIFT_MMD.compute)
 async def compute_mmd(
     request: MMDMetricRequest,
 ) -> dict[str, float | bool | str | list[str]]:
     """Compute the current value of MMD metric."""
-    valid_features = await _validate_drift_request(request)
+    # Validate drift request fields
+    valid_features = await validate_drift_request(request)
     logger.info("Computing %s for model: %s", METRIC_NAME, request.model_id)
 
     data_source = get_data_source()
@@ -233,14 +201,15 @@ async def get_mmd_definition() -> dict[str, str]:
 @router.post(routes.DRIFT_MMD.request)
 async def schedule_mmd(request: MMDMetricRequest) -> dict[str, str]:
     """Schedule a recurring computation of MMD metric."""
+    # Validate drift request fields (modifies request.fit_columns in-place)
+    await validate_drift_request(request)
+
     scheduler = get_prometheus_scheduler()
     if not scheduler:
         raise HTTPException(
             status_code=HTTPStatus.SERVICE_UNAVAILABLE,
             detail="Prometheus scheduler not available",
         )
-
-    await _validate_drift_request(request)
 
     try:
         request_id = uuid.uuid4()
