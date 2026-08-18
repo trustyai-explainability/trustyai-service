@@ -221,9 +221,53 @@ class TestMMDEndpoints:
             request_payload={
                 "modelId": "test-model",
                 "referenceTag": "baseline",
+                # fitColumns omitted - should auto-derive from metadata
             },
             expected_response_keys=["status", "value", "drift_detected"],
         )
+    )
+
+    test_compute_explicit_empty_fit_columns_returns_error = factory.make_compute_endpoint_error_test(
+        metric_name="MMD",
+        module_path=MODULE_PATH,
+        endpoint_path=routes.DRIFT_MMD.compute,
+        client=client,
+        request_payload={
+            "modelId": "test-model",
+            "referenceTag": "baseline",
+            "fitColumns": [],  # Explicit empty list
+        },
+        expected_status_code=HTTPStatus.BAD_REQUEST,
+        expected_error_substring="fitColumns must contain at least one non-empty feature name",
+    )
+
+    test_schedule_missing_fit_columns_derives_from_metadata = (
+        factory.make_schedule_endpoint_test(
+            metric_name="MMD",
+            module_path=MODULE_PATH,
+            endpoint_path=routes.DRIFT_MMD.request,
+            client=client,
+            request_payload={
+                "modelId": "test-model",
+                "referenceTag": "baseline",
+                # fitColumns omitted - should auto-derive from metadata
+            },
+        )
+    )
+
+    test_schedule_explicit_empty_fit_columns_returns_error = factory.make_schedule_endpoint_error_test(
+        metric_name="MMD",
+        module_path=MODULE_PATH,
+        endpoint_path=routes.DRIFT_MMD.request,
+        client=client,
+        request_payload={
+            "modelId": "test-model",
+            "referenceTag": "baseline",
+            "fitColumns": [],  # Explicit empty list
+        },
+        expected_status_code=HTTPStatus.BAD_REQUEST,
+        expected_error_substring="fitColumns must contain at least one non-empty feature name",
+        mock_scheduler_none=False,
     )
 
     test_compute_invalid_feature = factory.make_compute_endpoint_error_test(

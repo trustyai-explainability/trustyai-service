@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from trustyai_service.core.metrics.drift.kolmogorov_smirnov import KolmogorovSmirnov
 from trustyai_service.endpoints import routes
+from trustyai_service.endpoints.metrics.drift.validation import validate_drift_request
 from trustyai_service.service.data.datasources.data_source import DataSource
 from trustyai_service.service.data.shared_data_source import get_shared_data_source
 from trustyai_service.service.payloads.metrics.base_metric_request import (
@@ -61,7 +62,7 @@ class KSTestMetricRequest(BaseMetricRequest):
         default=0.05, alias="thresholdDelta"
     )  # Default alpha value
     reference_tag: str | None = Field(default=None, alias="referenceTag")
-    fit_columns: list[str] = Field(default_factory=list, alias="fitColumns")
+    fit_columns: list[str] | None = Field(default=None, alias="fitColumns")
 
     def retrieve_tags(self) -> dict[str, str]:
         """Retrieve tags for this KSTest metric request."""
@@ -78,18 +79,8 @@ async def compute_kstest(
     request: KSTestMetricRequest,
 ) -> dict[str, float | bool | str | dict[str, dict[str, float]]]:
     """Compute the current value of KSTest metric."""
-    # Validate inputs before try block
-    if not request.reference_tag:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="referenceTag is required for drift detection",
-        )
-
-    if not request.fit_columns:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="fitColumns is required for drift detection. Provide the list of feature columns to analyze.",
-        )
+    # Validate drift request fields (modifies request.fit_columns in-place)
+    await validate_drift_request(request)
 
     try:
         logger.info("Computing %s for model: %s", METRIC_NAME, request.model_id)
@@ -189,11 +180,8 @@ async def get_kstest_definition() -> dict[str, str]:
 @router.post(routes.DRIFT_KSTEST.request)
 async def schedule_kstest(request: KSTestMetricRequest) -> dict[str, str]:
     """Schedule a recurring computation of KSTest metric."""
-    if not request.fit_columns:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="fitColumns is required for drift detection. Provide the list of feature columns to analyze.",
-        )
+    # Validate drift request fields (modifies request.fit_columns in-place)
+    await validate_drift_request(request)
 
     # Get the scheduler and validate availability
     scheduler = get_prometheus_scheduler()
