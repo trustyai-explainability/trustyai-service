@@ -61,7 +61,7 @@ class KSTestMetricRequest(BaseMetricRequest):
         default=0.05, alias="thresholdDelta"
     )  # Default alpha value
     reference_tag: str | None = Field(default=None, alias="referenceTag")
-    fit_columns: list[str] = Field(default_factory=list, alias="fitColumns")
+    fit_columns: list[str] | None = Field(default=None, alias="fitColumns")
 
     def retrieve_tags(self) -> dict[str, str]:
         """Retrieve tags for this KSTest metric request."""
@@ -74,7 +74,7 @@ class KSTestMetricRequest(BaseMetricRequest):
 
 
 @router.post(routes.DRIFT_KSTEST.compute)
-async def compute_kstest(
+async def compute_kstest(  # noqa: C901 -- complexity needed to distinguish omitted vs explicit empty fitColumns
     request: KSTestMetricRequest,
 ) -> dict[str, float | bool | str | dict[str, dict[str, float]]]:
     """Compute the current value of KSTest metric."""
@@ -86,7 +86,8 @@ async def compute_kstest(
         )
 
     # Auto-derive fitColumns from metadata if not provided (matches Java behavior)
-    if not request.fit_columns:
+    if request.fit_columns is None:
+        # Field was omitted - auto-derive from metadata
         data_source = get_data_source()
         metadata = await data_source.get_metadata(request.model_id)
         request.fit_columns = list(metadata.input_schema.items.keys())
@@ -94,6 +95,12 @@ async def compute_kstest(
             "fitColumns not specified, using all input columns for model %s: %s",
             request.model_id,
             request.fit_columns,
+        )
+    elif not request.fit_columns:
+        # Field was explicitly set to empty list
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail="fitColumns must contain at least one non-empty feature name",
         )
     else:
         # Validate provided columns are not empty/whitespace
@@ -204,7 +211,8 @@ async def get_kstest_definition() -> dict[str, str]:
 async def schedule_kstest(request: KSTestMetricRequest) -> dict[str, str]:
     """Schedule a recurring computation of KSTest metric."""
     # Auto-derive fitColumns from metadata if not provided (matches Java behavior)
-    if not request.fit_columns:
+    if request.fit_columns is None:
+        # Field was omitted - auto-derive from metadata
         data_source = get_data_source()
         metadata = await data_source.get_metadata(request.model_id)
         request.fit_columns = list(metadata.input_schema.items.keys())
@@ -212,6 +220,12 @@ async def schedule_kstest(request: KSTestMetricRequest) -> dict[str, str]:
             "fitColumns not specified, using all input columns for model %s: %s",
             request.model_id,
             request.fit_columns,
+        )
+    elif not request.fit_columns:
+        # Field was explicitly set to empty list
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail="fitColumns must contain at least one non-empty feature name",
         )
     else:
         # Validate provided columns are not empty/whitespace

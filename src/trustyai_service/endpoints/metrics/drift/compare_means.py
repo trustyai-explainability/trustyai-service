@@ -74,7 +74,7 @@ class CompareMeansMetricRequest(BaseMetricRequest):
     equal_var: bool = Field(default=DEFAULT_EQUAL_VAR, alias="equalVar")
     nan_policy: NanPolicy = Field(default=DEFAULT_NAN_POLICY, alias="nanPolicy")
     reference_tag: str | None = Field(default=None, alias="referenceTag")
-    fit_columns: list[str] = Field(default_factory=list, alias="fitColumns")
+    fit_columns: list[str] | None = Field(default=None, alias="fitColumns")
 
     def retrieve_tags(self) -> dict[str, str]:
         """Retrieve tags for this CompareMeans metric request."""
@@ -87,7 +87,7 @@ class CompareMeansMetricRequest(BaseMetricRequest):
 
 
 @router.post(routes.DRIFT_COMPARE_MEANS.compute)
-async def compute_compare_means(
+async def compute_compare_means(  # noqa: PLR0912 -- complexity needed to distinguish omitted vs explicit empty fitColumns
     request: CompareMeansMetricRequest,
 ) -> dict[str, float | bool | str | dict[str, dict[str, float | bool]]]:
     """Compute the current value of CompareMeans metric."""
@@ -99,7 +99,8 @@ async def compute_compare_means(
         )
 
     # Auto-derive fitColumns from metadata if not provided (matches Java behavior)
-    if not request.fit_columns:
+    if request.fit_columns is None:
+        # Field was omitted - auto-derive from metadata
         data_source = get_data_source()
         metadata = await data_source.get_metadata(request.model_id)
         request.fit_columns = list(metadata.input_schema.items.keys())
@@ -107,6 +108,12 @@ async def compute_compare_means(
             "fitColumns not specified, using all input columns for model %s: %s",
             request.model_id,
             request.fit_columns,
+        )
+    elif not request.fit_columns:
+        # Field was explicitly set to empty list
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail="fitColumns must contain at least one non-empty feature name",
         )
     else:
         # Validate provided columns are not empty/whitespace
@@ -256,7 +263,8 @@ async def schedule_compare_means(request: CompareMeansMetricRequest) -> dict[str
         )
 
     # Auto-derive fitColumns from metadata if not provided (matches Java behavior)
-    if not request.fit_columns:
+    if request.fit_columns is None:
+        # Field was omitted - auto-derive from metadata
         data_source = get_data_source()
         metadata = await data_source.get_metadata(request.model_id)
         request.fit_columns = list(metadata.input_schema.items.keys())
@@ -264,6 +272,12 @@ async def schedule_compare_means(request: CompareMeansMetricRequest) -> dict[str
             "fitColumns not specified, using all input columns for model %s: %s",
             request.model_id,
             request.fit_columns,
+        )
+    elif not request.fit_columns:
+        # Field was explicitly set to empty list
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail="fitColumns must contain at least one non-empty feature name",
         )
     else:
         # Validate provided columns are not empty/whitespace
