@@ -141,15 +141,7 @@ class PVCStorage(StorageInterface):
             base_path_str = os.path.realpath(self.data_directory)
 
             # Defense in depth: verify normalized path is within base directory
-            # Use commonpath to handle edge cases like base_path="/"
-            try:
-                common = os.path.commonpath([normalized_path_str, base_path_str])
-            except ValueError:
-                # Paths on different drives (Windows) - treat as traversal
-                msg = f"Path traversal attempt detected: {dataset_name}"
-                raise ValueError(msg) from None
-
-            if common != base_path_str:
+            if not normalized_path_str.startswith(base_path_str + os.sep):
                 msg = f"Path traversal attempt detected: {dataset_name}"
                 raise ValueError(msg)
 
@@ -415,10 +407,8 @@ class PVCStorage(StorageInterface):
         async with self.get_lock(allocated_dataset_name):
             # Check if HDF5 file exists before opening to prevent phantom file creation
             # Opening in "a" mode creates the file if it doesn't exist
-            filename = Path(
-                self._get_filename(allocated_dataset_name)
-            )  # nosem: python.lang.security.audit.dynamic-urllib-use-detected
-            if not filename.exists():  # lgtm[py/path-injection]
+            filename = Path(self._get_filename(allocated_dataset_name))
+            if not filename.exists():
                 return
             try:
                 with H5PYContext(self, allocated_dataset_name, "a") as db:
@@ -507,10 +497,8 @@ class PVCStorage(StorageInterface):
         allocated_dataset_name = self.allocate_valid_dataset_name(dataset_name)
 
         # Return early if file doesn't exist to avoid creating it
-        filename = self._get_filename(
-            allocated_dataset_name
-        )  # nosem: python.lang.security.audit.dynamic-urllib-use-detected
-        if not os.path.exists(filename):  # lgtm[py/path-injection]
+        filename = self._get_filename(allocated_dataset_name)
+        if not os.path.exists(filename):
             return None
 
         async with self.get_lock(allocated_dataset_name):
