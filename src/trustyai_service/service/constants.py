@@ -14,5 +14,6 @@ TRUSTYAI_TAG_PREFIX = "_trustyai"
 SYNTHETIC_TAG = f"{TRUSTYAI_TAG_PREFIX}_synthetic"
 UNLABELED_TAG = f"{TRUSTYAI_TAG_PREFIX}_unlabeled"
 BIAS_IGNORE_PARAM = "bias-ignore"
+DATA_TAG_PARAM = "_trustyai_data_tag"  # Stores tag in partial payload parameters
 # Prometheus constants
 PROMETHEUS_METRIC_PREFIX = "trustyai_"

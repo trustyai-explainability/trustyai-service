@@ -394,6 +394,40 @@ class TestAllocateDatasetName:
         """Names without the protected prefix pass through unchanged."""
         assert PVCStorage.allocate_valid_dataset_name("normal") == "normal"
 
+    def test_rejects_parent_directory_traversal(self) -> None:
+        """Reject dataset names containing parent directory (..) traversal."""
+        with pytest.raises(ValueError, match="invalid path characters"):
+            PVCStorage.allocate_valid_dataset_name("../etc/passwd")
+
+    def test_rejects_forward_slash(self) -> None:
+        """Reject dataset names containing forward slash path separators."""
+        with pytest.raises(ValueError, match="invalid path characters"):
+            PVCStorage.allocate_valid_dataset_name("path/to/file")
+
+    def test_rejects_backslash(self) -> None:
+        """Reject dataset names containing backslash path separators."""
+        with pytest.raises(ValueError, match="invalid path characters"):
+            PVCStorage.allocate_valid_dataset_name("path\\to\\file")
+
+    def test_rejects_absolute_path(self) -> None:
+        """Reject absolute paths starting with slash."""
+        with pytest.raises(ValueError, match="invalid path characters"):
+            PVCStorage.allocate_valid_dataset_name("/etc/passwd")
+
+    def test_rejects_dot_dot_in_middle(self) -> None:
+        """Reject dataset names with .. anywhere in the string."""
+        with pytest.raises(ValueError, match="invalid path characters"):
+            PVCStorage.allocate_valid_dataset_name("data..backup")
+
+    def test_accepts_valid_names_with_special_chars(self) -> None:
+        """Accept dataset names with safe special characters."""
+        # Underscores, hyphens, dots (single), and alphanumerics are safe
+        assert (
+            PVCStorage.allocate_valid_dataset_name("model-name_v1.2")
+            == "model-name_v1.2"
+        )
+        assert PVCStorage.allocate_valid_dataset_name("data_2024") == "data_2024"
+
 
 # ===========================================================================
 # _get_filename / one_file_per_dataset modes
