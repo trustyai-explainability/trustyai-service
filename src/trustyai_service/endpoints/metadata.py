@@ -3,7 +3,7 @@
 import logging
 from collections import Counter
 from http import HTTPStatus
-from typing import Annotated, Never
+from typing import Annotated
 
 import numpy as np
 from fastapi import APIRouter, Body, HTTPException, Query
@@ -15,6 +15,7 @@ from trustyai_service.service.constants import (
     INPUT_SUFFIX,
     METADATA_SUFFIX,
     OUTPUT_SUFFIX,
+    SYNTHETIC_TAG,
 )
 from trustyai_service.service.data.datasources.data_source import DataSource
 from trustyai_service.service.data.model_data import ModelData
@@ -840,5 +841,5 @@ async def _persist_metadata(
         logger.exception("Error persisting tagged metadata for model=%s", model_id)
         raise HTTPException(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
-            detail=f"Error persisting tags for model={model_id}",
+            detail="Error persisting tags. Check server logs for details.",
         ) from exc

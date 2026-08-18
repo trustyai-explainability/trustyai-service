@@ -43,6 +43,7 @@ from trustyai_service.service.data.shared_data_source import get_shared_data_sou
 from trustyai_service.service.data.storage import get_global_storage_interface
 from trustyai_service.service.payloads.values.data_type import DataType
 from trustyai_service.service.utils import list_utils
+from trustyai_service.service.validation import validate_data_tag
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -497,8 +498,29 @@ def _store_tag_in_payload(
 def _get_tag_from_payload(
     payload: KServeInferenceRequest | KServeInferenceResponse,
 ) -> str | None:
-    """Extract the stored tag from a payload's parameters, or None if absent."""
-    return payload.parameters.get(DATA_TAG_PARAM) if payload.parameters else None
+    """Extract the stored tag from a payload's parameters, or None if absent/invalid.
+
+    Validates tag format and rejects reserved prefixes. Invalid tags are ignored
+    (returns None) rather than raising errors to avoid breaking ingestion.
+    """
+    if not payload.parameters:
+        return None
+
+    tag = payload.parameters.get(DATA_TAG_PARAM)
+    if tag is None:
+        return None
+
+    # Validate tag - if invalid, log warning and ignore it
+    error_msg = validate_data_tag(tag)
+    if error_msg:
+        logger.warning(
+            "Ignoring invalid tag from KServe payload: %s (tag=%s)",
+            error_msg,
+            tag,
+        )
+        return None
+
+    return tag
 
 
 def _merge_tags(

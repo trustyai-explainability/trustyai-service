@@ -141,7 +141,15 @@ class PVCStorage(StorageInterface):
             base_path_str = os.path.realpath(self.data_directory)
 
             # Defense in depth: verify normalized path is within base directory
-            if not normalized_path_str.startswith(base_path_str + os.sep):
+            # Use commonpath to handle edge cases like base_path="/"
+            try:
+                common = os.path.commonpath([normalized_path_str, base_path_str])
+            except ValueError:
+                # Paths on different drives (Windows) - treat as traversal
+                msg = f"Path traversal attempt detected: {dataset_name}"
+                raise ValueError(msg) from None
+
+            if common != base_path_str:
                 msg = f"Path traversal attempt detected: {dataset_name}"
                 raise ValueError(msg)
 
@@ -483,7 +491,8 @@ class PVCStorage(StorageInterface):
         allocated_dataset_name = self.allocate_valid_dataset_name(dataset_name)
         async with self.get_lock(allocated_dataset_name):
             try:
-                with H5PYContext(self, dataset_name, "a") as db:
+                # Use allocated name to ensure protected datasets open correct file
+                with H5PYContext(self, allocated_dataset_name, "a") as db:
                     if allocated_dataset_name in db:
                         dataset = db[allocated_dataset_name]
                         if COLUMN_TYPES_ATTRIBUTE not in dataset.attrs:
@@ -494,9 +503,16 @@ class PVCStorage(StorageInterface):
     async def get_column_types(self, dataset_name: str) -> list[str] | None:
         """Read column types from HDF5 attribute. Returns None for old data."""
         allocated_dataset_name = self.allocate_valid_dataset_name(dataset_name)
+
+        # Return early if file doesn't exist to avoid creating it
+        filename = self._get_filename(allocated_dataset_name)
+        if not os.path.exists(filename):
+            return None
+
         async with self.get_lock(allocated_dataset_name):
             try:
-                with H5PYContext(self, dataset_name, "r") as db:
+                # Use allocated name to ensure protected datasets open correct file
+                with H5PYContext(self, allocated_dataset_name, "r") as db:
                     if allocated_dataset_name in db:
                         dataset = db[allocated_dataset_name]
                         if COLUMN_TYPES_ATTRIBUTE in dataset.attrs:

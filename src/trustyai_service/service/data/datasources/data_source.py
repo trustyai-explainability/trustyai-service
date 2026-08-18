@@ -187,11 +187,22 @@ class DataSource:
         # For backward compatibility, also check for legacy boolean columns and legacy tag values.
         if "tags" in df.columns:
             # Current format: tags is a list, check if SYNTHETIC_TAG or legacy "synthetic" is in it
+            # Normalize tags to handle NumPy arrays that cause ambiguous truth value errors
+            def _normalize_tags(tags_cell: object) -> list:
+                """Convert tags cell to list, handling NumPy arrays."""
+                if isinstance(tags_cell, np.ndarray):
+                    return tags_cell.tolist()
+                if isinstance(tags_cell, list):
+                    return tags_cell
+                if tags_cell is None:
+                    return []
+                return [tags_cell]
+
             df = df[
                 ~df["tags"].apply(
-                    lambda tags_list: (
-                        SYNTHETIC_TAG in (tags_list or [])
-                        or "synthetic" in (tags_list or [])
+                    lambda tags_cell: (
+                        SYNTHETIC_TAG in _normalize_tags(tags_cell)
+                        or "synthetic" in _normalize_tags(tags_cell)
                     )
                 )
             ]
@@ -268,7 +279,7 @@ class DataSource:
                 model_id,
                 tag,
             )
-            msg = f"Error creating dataframe by tag for model={model_id}: {e!s}"
+            msg = "Error creating dataframe by tag. Check server logs for details."
             raise DataframeCreateError(msg) from e
 
     # METADATA READS

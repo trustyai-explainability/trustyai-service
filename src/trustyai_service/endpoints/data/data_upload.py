@@ -14,8 +14,8 @@ from trustyai_service.endpoints.consumer import (
 )
 from trustyai_service.endpoints.consumer.consumer_endpoint import process_cloud_event
 from trustyai_service.exceptions import ReconciliationError
-from trustyai_service.service.constants import TRUSTYAI_TAG_PREFIX
 from trustyai_service.service.data.model_data import ModelData
+from trustyai_service.service.validation import validate_data_tag
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -31,25 +31,6 @@ class UploadPayload(BaseModel):
     )
     request: KServeInferenceRequest
     response: KServeInferenceResponse
-
-
-def validate_data_tag(tag: str | None) -> str | None:
-    """Validate data tag format and content.
-
-    Returns:
-        Error message if invalid, None if valid.
-
-    """
-    if tag is None:
-        return None
-    if not tag or not tag.strip():
-        return "Tag name cannot be empty or whitespace-only"
-    if tag.startswith(TRUSTYAI_TAG_PREFIX):
-        return (
-            f"The tag prefix '{TRUSTYAI_TAG_PREFIX}' is reserved for internal TrustyAI use only. "
-            f"Provided tag '{tag}' violates this restriction."
-        )
-    return None
 
 
 @router.post(routes.DATA_UPLOAD)
