@@ -13,6 +13,7 @@ INTERNAL_DATA_FILENAME = "internal_data.csv"
 TRUSTYAI_TAG_PREFIX = "_trustyai"
 SYNTHETIC_TAG = f"{TRUSTYAI_TAG_PREFIX}_synthetic"
 UNLABELED_TAG = f"{TRUSTYAI_TAG_PREFIX}_unlabeled"
+TAGS_COLUMN = "tags"
 BIAS_IGNORE_PARAM = "bias-ignore"
 DATA_TAG_PARAM = "_trustyai_data_tag"  # Stores tag in partial payload parameters
 # Prometheus constants
