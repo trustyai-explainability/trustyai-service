@@ -106,11 +106,25 @@ async def compute_jensenshannon(
             detail="referenceTag is required for drift detection",
         )
 
+    # Auto-derive fitColumns from metadata if not provided (matches Java behavior)
     if not request.fit_columns:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="fitColumns is required for drift detection. Provide the list of feature columns to analyze.",
+        data_source = get_data_source()
+        metadata = await data_source.get_metadata(request.model_id)
+        request.fit_columns = list(metadata.input_schema.items.keys())
+        logger.info(
+            "fitColumns not specified, using all input columns for model %s: %s",
+            request.model_id,
+            request.fit_columns,
         )
+    else:
+        # Validate provided columns are not empty/whitespace
+        valid_features = [f.strip() for f in request.fit_columns if f.strip()]
+        if not valid_features:
+            raise HTTPException(
+                status_code=HTTPStatus.BAD_REQUEST,
+                detail="fitColumns must contain at least one non-empty feature name",
+            )
+        request.fit_columns = valid_features
 
     try:
         logger.info("Computing %s for model: %s", METRIC_NAME, request.model_id)
@@ -231,11 +245,25 @@ async def schedule_jensenshannon(request: JensenShannonMetricRequest) -> dict[st
             detail="referenceTag is required for drift detection",
         )
 
+    # Auto-derive fitColumns from metadata if not provided (matches Java behavior)
     if not request.fit_columns:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="fitColumns is required for drift detection. Provide the list of feature columns to analyze.",
+        data_source = get_data_source()
+        metadata = await data_source.get_metadata(request.model_id)
+        request.fit_columns = list(metadata.input_schema.items.keys())
+        logger.info(
+            "fitColumns not specified, using all input columns for model %s: %s",
+            request.model_id,
+            request.fit_columns,
         )
+    else:
+        # Validate provided columns are not empty/whitespace
+        valid_features = [f.strip() for f in request.fit_columns if f.strip()]
+        if not valid_features:
+            raise HTTPException(
+                status_code=HTTPStatus.BAD_REQUEST,
+                detail="fitColumns must contain at least one non-empty feature name",
+            )
+        request.fit_columns = valid_features
 
     # Get the scheduler and validate availability
     scheduler = get_prometheus_scheduler()

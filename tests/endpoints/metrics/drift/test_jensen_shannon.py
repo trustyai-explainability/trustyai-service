@@ -130,8 +130,8 @@ class TestJensenShannonEndpoints:
         expected_error_substring="referenceTag is required",
     )
 
-    test_compute_missing_fit_columns_returns_error = (
-        factory.make_compute_endpoint_error_test(
+    test_compute_missing_fit_columns_derives_from_metadata = (
+        factory.make_compute_endpoint_test(
             metric_name="JensenShannon",
             module_path="trustyai_service.endpoints.metrics.drift.jensen_shannon",
             endpoint_path=routes.DRIFT_JENSEN_SHANNON.compute,
@@ -140,8 +140,7 @@ class TestJensenShannonEndpoints:
                 "modelId": "test-model",
                 "referenceTag": "baseline",
             },
-            expected_status_code=HTTPStatus.BAD_REQUEST,
-            expected_error_substring="fitColumns is required",
+            expected_response_keys=["status", "value", "drift_detected"],
         )
     )
 
