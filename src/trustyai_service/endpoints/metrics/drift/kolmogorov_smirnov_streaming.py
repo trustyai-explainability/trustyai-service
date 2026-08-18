@@ -15,6 +15,7 @@ from trustyai_service.core.metrics.drift.greenwald_khanna_quantile_sketch import
 from trustyai_service.core.metrics.drift.kolmogorov_smirnov_streaming import (
     KolmogorovSmirnovStreaming,
 )
+from trustyai_service.endpoints.metrics.drift.validation import validate_drift_request
 from trustyai_service.service.data.datasources.data_source import DataSource
 from trustyai_service.service.data.shared_data_source import get_shared_data_source
 from trustyai_service.service.payloads.metrics.base_metric_request import (
@@ -65,7 +66,7 @@ class ApproxKSTestMetricRequest(BaseMetricRequest):
     # ApproxKSTest-specific fields
     threshold_delta: float = Field(default=0.05, alias="thresholdDelta")
     reference_tag: str | None = Field(default=None, alias="referenceTag")
-    fit_columns: list[str] = Field(default_factory=list, alias="fitColumns")
+    fit_columns: list[str] | None = Field(default=None, alias="fitColumns")
 
     # Streaming-specific field: epsilon for GK sketch accuracy
     # Must be in the interval (0, 0.5] to satisfy GK sketch requirements.
@@ -95,22 +96,8 @@ async def compute_ksteststreaming(
     request: ApproxKSTestMetricRequest,
 ) -> dict[str, float | bool | str | dict[str, dict[str, float]]]:
     """Compute the current value of KS Test Streaming metric."""
-    # Validate inputs before try block
-    if not request.reference_tag:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="referenceTag is required for drift detection",
-        )
-
-    if not request.fit_columns:
-        data_source = get_data_source()
-        metadata = await data_source.get_metadata(request.model_id)
-        request.fit_columns = list(metadata.input_schema.items.keys())
-        logger.info(
-            "fitColumns not specified, using all input columns for model %s: %s",
-            request.model_id,
-            request.fit_columns,
-        )
+    # Validate drift request fields (modifies request.fit_columns in-place)
+    await validate_drift_request(request)
 
     try:
         logger.info("Computing %s for model: %s", METRIC_NAME, request.model_id)
@@ -225,21 +212,8 @@ async def schedule_ksteststreaming(
     request: ApproxKSTestMetricRequest,
 ) -> dict[str, str]:
     """Schedule a recurring computation of KS Test Streaming metric."""
-    if not request.reference_tag:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="referenceTag is required for drift detection",
-        )
-
-    if not request.fit_columns:
-        data_source = get_data_source()
-        metadata = await data_source.get_metadata(request.model_id)
-        request.fit_columns = list(metadata.input_schema.items.keys())
-        logger.info(
-            "fitColumns not specified, using all input columns for model %s: %s",
-            request.model_id,
-            request.fit_columns,
-        )
+    # Validate drift request fields (modifies request.fit_columns in-place)
+    await validate_drift_request(request)
 
     # Get the scheduler and validate availability
     scheduler = get_prometheus_scheduler()

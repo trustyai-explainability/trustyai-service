@@ -71,8 +71,9 @@ def make_compute_endpoint_test(
     :return: Test function
     """
 
+    @patch("trustyai_service.endpoints.metrics.drift.validation.get_shared_data_source")
     @patch(f"{module_path}.get_data_source")
-    def test_impl(_: object, mock_ds: MagicMock) -> None:
+    def test_impl(_: object, mock_ds: MagicMock, mock_shared_ds: MagicMock) -> None:
         """Test compute endpoint returns valid response structure."""
         # Create sample dataframe (Pandas or Polars based on df_type)
         columns = request_payload.get("fitColumns", ["feature1"])
@@ -87,6 +88,7 @@ def make_compute_endpoint_test(
         mock_metadata.input_schema.items.keys.return_value = columns
         mock_data_source.get_metadata = AsyncMock(return_value=mock_metadata)
         mock_ds.return_value = mock_data_source
+        mock_shared_ds.return_value = mock_data_source
 
         # Send request
         response = client.post(endpoint_path, json=request_payload)
@@ -176,9 +178,15 @@ def make_schedule_endpoint_test(
     :return: Test function
     """
 
+    @patch("trustyai_service.endpoints.metrics.drift.validation.get_shared_data_source")
     @patch(f"{module_path}.get_prometheus_scheduler")
     @patch(f"{module_path}.get_data_source")
-    def test_impl(_: object, mock_ds: MagicMock, mock_sched_fn: MagicMock) -> None:
+    def test_impl(
+        _: object,
+        mock_ds: MagicMock,
+        mock_sched_fn: MagicMock,
+        mock_shared_ds: MagicMock,
+    ) -> None:
         """Test schedule endpoint returns requestId."""
         # Mock scheduler
         mock_sched = MagicMock()
@@ -191,6 +199,7 @@ def make_schedule_endpoint_test(
         mock_sched_metadata.input_schema.items.keys.return_value = ["feature1"]
         mock_data_source.get_metadata = AsyncMock(return_value=mock_sched_metadata)
         mock_ds.return_value = mock_data_source
+        mock_shared_ds.return_value = mock_data_source
 
         # Send request
         response = client.post(endpoint_path, json=request_payload)
