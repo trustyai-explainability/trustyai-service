@@ -1,13 +1,16 @@
 """Metadata endpoint for managing model metadata and schema information."""
 
 import logging
+from collections import Counter
 from http import HTTPStatus
-from typing import Annotated, Never
+from typing import Annotated
 
+import numpy as np
 from fastapi import APIRouter, Body, HTTPException, Query
 from pydantic import BaseModel
 
 from trustyai_service.endpoints import routes
+from trustyai_service.endpoints.data.data_upload import validate_data_tag
 from trustyai_service.service.constants import (
     INPUT_SUFFIX,
     METADATA_SUFFIX,
@@ -567,20 +570,276 @@ async def remove_column_names(
         return {"message": "Feature and output name mapping successfully cleared."}
 
 
-@router.get(routes.INFO_TAGS, response_model=None)
-async def get_tags() -> Never:
-    """Retrieve the tags that have been applied to a particular model dataset, as well as a count of that tag's frequency within the dataset."""
-    raise HTTPException(
-        status_code=HTTPStatus.NOT_IMPLEMENTED,
-        detail="Tag retrieval is not yet implemented",
-    )
+def _extract_tags(cell: object) -> list[str]:
+    """Extract a list of tag strings from a metadata cell value."""
+    if isinstance(cell, np.ndarray):
+        return cell.tolist()
+    if isinstance(cell, list):
+        return cell
+    if isinstance(cell, str):
+        return [cell]
+    return []
 
 
-@router.post(routes.INFO_TAGS, response_model=None)
-async def apply_tags(data_tagging: DataTagging) -> Never:
-    """Apply per-row tags to a particular inference model dataset, to label certain rows as training or drift reference data, etc."""
-    logger.info("Applying tags for model: %s", data_tagging.modelId)
-    raise HTTPException(
-        status_code=HTTPStatus.NOT_IMPLEMENTED,
-        detail="Tag application is not yet implemented",
-    )
+def _find_tags_column(metadata_names: list[str]) -> int:
+    """Return the column index of the ``tags`` column, or -1 if absent."""
+    return list(metadata_names).index("tags") if "tags" in metadata_names else -1
+
+
+async def _read_metadata(
+    model_id: str,
+) -> tuple[np.ndarray | None, list[str]]:
+    """Read the metadata array and column names for a model."""
+    model_data = ModelData(model_id)
+    try:
+        _, _, metadata = await model_data.data(get_input=False, get_output=False)
+    except Exception as exc:
+        logger.exception("Error reading metadata for model=%s", model_id)
+        raise HTTPException(
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+            detail=f"Error reading metadata for model={model_id}",
+        ) from exc
+    _, _, metadata_names = await model_data.column_names()
+    return metadata, list(metadata_names)
+
+
+async def _ensure_model_exists(
+    model_id: str,
+    data_source: DataSource,  # noqa: ARG001 -- kept for API compatibility
+) -> None:
+    """Raise 404 if the model does not exist in storage.
+
+    Checks storage directly instead of relying on data_source.get_known_models()
+    cache, which may be empty after service restart.
+    """
+    # Check if at least one of the model's datasets exists
+    input_dataset = model_id + INPUT_SUFFIX
+    output_dataset = model_id + OUTPUT_SUFFIX
+    metadata_dataset = model_id + METADATA_SUFFIX
+
+    if not any(
+        [
+            await storage_interface.dataset_exists(input_dataset),
+            await storage_interface.dataset_exists(output_dataset),
+            await storage_interface.dataset_exists(metadata_dataset),
+        ]
+    ):
+        raise HTTPException(
+            status_code=HTTPStatus.NOT_FOUND,
+            detail=f"No model found with id={model_id}",
+        )
+
+
+def _parse_range(r: list[int]) -> tuple[int, int]:
+    """Parse a ``[start, end]`` or ``[index]`` range into ``(start, end)``."""
+    expected_pair_len = 2
+    if len(r) == 1:
+        return r[0], r[0] + 1
+    if len(r) == expected_pair_len:
+        return r[0], r[1]
+    msg = f"Each range must be [start, end] or [index], got {r}"
+    raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=msg)
+
+
+def _validate_range(start: int, end: int, total_rows: int) -> None:
+    """Raise 400 if the range is invalid or out of bounds."""
+    if start < 0 or end < 0:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail=f"Row indices must be non-negative, got [{start}, {end})",
+        )
+    if start >= end:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail=f"Range start must be less than end, got [{start}, {end})",
+        )
+    if end > total_rows:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail=(f"Range [{start}, {end}) exceeds dataset size ({total_rows} rows)"),
+        )
+
+
+@router.get(routes.INFO_TAGS)
+async def get_tags(
+    model_id: Annotated[str | None, Query(alias="modelId")] = None,
+) -> dict:
+    """Retrieve per-tag row counts for a model's dataset.
+
+    If ``modelId`` is provided, returns ``dict[str, int]`` for that model.
+    If omitted, returns ``dict[str, dict[str, int]]`` for every known model.
+    """
+    data_source = get_data_source()
+
+    if model_id is not None:
+        return await _get_tag_counts_for_model(model_id, data_source)
+
+    known_models = await data_source.get_verified_models()
+    result: dict[str, dict[str, int]] = {}
+    for mid in known_models:
+        try:
+            result[mid] = await _get_tag_counts_for_model(mid, data_source)
+        except HTTPException as exc:
+            # Only skip models that don't exist (404), not server errors (500)
+            if exc.status_code == HTTPStatus.NOT_FOUND:
+                continue
+            raise
+    return result
+
+
+async def _get_tag_counts_for_model(
+    model_id: str,
+    data_source: DataSource,
+) -> dict[str, int]:
+    """Return a Counter-style dict mapping tag name to row count."""
+    await _ensure_model_exists(model_id, data_source)
+
+    metadata, metadata_names = await _read_metadata(model_id)
+    if metadata is None or len(metadata) == 0:
+        return {}
+
+    tags_col = _find_tags_column(metadata_names)
+    if tags_col < 0:
+        return {}
+
+    counter: Counter[str] = Counter()
+    for row in metadata:
+        counter.update(_extract_tags(row[tags_col]))
+
+    return dict(counter)
+
+
+@router.post(routes.INFO_TAGS)
+async def apply_tags(data_tagging: DataTagging) -> dict:
+    """Apply per-row tags to a model dataset.
+
+    Tags are appended idempotently (a tag already present on a row is not
+    duplicated).  The ``_trustyai`` prefix is reserved for internal use.
+    """
+    model_id = data_tagging.modelId
+    logger.info("Applying tags for model: %s", model_id)
+
+    data_source = get_data_source()
+    await _ensure_model_exists(model_id, data_source)
+
+    if not data_tagging.dataTagging:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail="dataTagging must contain at least one tag with ranges",
+        )
+
+    for tag_name in data_tagging.dataTagging:
+        validation_msg = validate_data_tag(tag_name)
+        if validation_msg is not None:
+            raise HTTPException(
+                status_code=HTTPStatus.BAD_REQUEST,
+                detail=validation_msg,
+            )
+
+    metadata, metadata_names = await _read_metadata(model_id)
+    if metadata is None or len(metadata) == 0:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail=f"Model {model_id} has no observation data to tag",
+        )
+
+    tags_col = _find_tags_column(metadata_names)
+    if tags_col < 0:
+        raise HTTPException(
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+            detail="Metadata dataset is missing the 'tags' column",
+        )
+
+    applied = _apply_tags_to_metadata(data_tagging.dataTagging, metadata, tags_col)
+
+    await _persist_metadata(model_id, metadata, metadata_names)
+
+    logger.info("Successfully applied tags to model=%s: %s", model_id, applied)
+    return {"message": "Datapoints successfully tagged.", "applied": applied}
+
+
+def _apply_tags_to_metadata(
+    tagging: dict[str, list[list[int]]],
+    metadata: np.ndarray,
+    tags_col: int,
+) -> dict[str, int]:
+    """Mutate *metadata* in place, appending tags idempotently.
+
+    Returns a dict mapping each tag name to the number of rows processed.
+    """
+    total_rows = len(metadata)
+    applied: dict[str, int] = {}
+
+    for tag_name, ranges in tagging.items():
+        rows_tagged = 0
+        for r in ranges:
+            start, end = _parse_range(r)
+            _validate_range(start, end, total_rows)
+            for idx in range(start, end):
+                existing = _extract_tags(metadata[idx][tags_col])
+                if tag_name not in existing:
+                    existing.append(tag_name)
+                    metadata[idx][tags_col] = existing
+                rows_tagged += 1
+        applied[tag_name] = rows_tagged
+
+    return applied
+
+
+async def _persist_metadata(
+    model_id: str,
+    metadata: np.ndarray,
+    metadata_names: list[str],
+) -> None:
+    """Replace the metadata dataset for a model with backup/restore on failure.
+
+    .. warning::
+        Not safe for concurrent tag requests on the same model — last write wins.
+        Storage interface lacks atomic compare-and-swap. Concurrent requests
+        should be serialized at the application layer.
+
+    .. note::
+        Backs up existing metadata before delete. If write fails, attempts
+        best-effort restore. This mitigates data loss but is not atomic.
+        Proper fix requires storage interface to support transactional replace.
+    """
+    metadata_dataset = model_id + METADATA_SUFFIX
+
+    # Backup existing metadata if it exists
+    backup_data: np.ndarray | None = None
+    backup_names: list[str] | None = None
+
+    try:
+        if await storage_interface.dataset_exists(metadata_dataset):
+            # Read and backup current metadata before deletion
+            backup_data = await storage_interface.read_data(metadata_dataset)
+            backup_names = list(
+                await storage_interface.read_column_names(metadata_dataset)
+            )
+            await storage_interface.delete_dataset(metadata_dataset)
+
+        # Write new metadata
+        await storage_interface.write_data(metadata_dataset, metadata, metadata_names)
+
+    except Exception as exc:
+        # Attempt best-effort restore of backup if write failed
+        if backup_data is not None and backup_names is not None:
+            try:
+                await storage_interface.write_data(
+                    metadata_dataset, backup_data, backup_names
+                )
+                logger.warning(
+                    "Write failed for model=%s but backup restored successfully",
+                    model_id,
+                )
+            except Exception:
+                logger.exception(
+                    "Write failed for model=%s AND backup restore failed",
+                    model_id,
+                )
+
+        logger.exception("Error persisting tagged metadata for model=%s", model_id)
+        raise HTTPException(
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+            detail="Error persisting tags. Check server logs for details.",
+        ) from exc
