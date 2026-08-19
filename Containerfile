@@ -43,7 +43,7 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONHASHSEED=random
 
 USER 1001
-EXPOSE 8080 4443 9000
+EXPOSE 8081 4443 8080
 
 CMD ["python", "-m", "trustyai_service.main"]
 
