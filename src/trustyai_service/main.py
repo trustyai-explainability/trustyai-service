@@ -55,6 +55,12 @@ from trustyai_service.endpoints.metrics.metrics_info import (
 # Middleware
 from trustyai_service.middleware.gzip_middleware import GzipRequestMiddleware
 
+# Process-isolated MMD computation
+from trustyai_service.service.compute.mmd_executor import (
+    shutdown_mmd_executor,
+    start_mmd_executor,
+)
+
 # Feature flag gating
 from trustyai_service.service.config.registry import (
     register_if_enabled,
@@ -121,6 +127,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     """
     # Start the background metrics calculation task
     task = asyncio.create_task(schedule_metrics_calculation())
+    start_mmd_executor()
 
     yield
 
@@ -130,6 +137,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         await task
     except asyncio.CancelledError:
         logger.info("Prometheus metrics calculation task cancelled during shutdown")
+    shutdown_mmd_executor()
 
 
 app = FastAPI(
