@@ -173,6 +173,12 @@ async def compute_mmd(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
             detail="MMD computation failed due to an internal worker crash. Check server logs for details.",
         ) from e
+    except TimeoutError as e:
+        logger.exception("MMD worker process timed out while computing %s", METRIC_NAME)
+        raise HTTPException(
+            status_code=HTTPStatus.GATEWAY_TIMEOUT,
+            detail="MMD computation timed out. Check server logs for details.",
+        ) from e
     except Exception as e:  # Broad catch intentional: endpoint catch-all for unknown computation errors
         logger.exception("Error computing %s", METRIC_NAME)
         raise HTTPException(

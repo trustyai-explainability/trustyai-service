@@ -109,6 +109,14 @@ def _raise_if_unbalanced(n1: int, n2: int, s: int, g: int) -> None:
     num_bins1 = n1 // bin_size
     num_bins2 = num_bins_total - num_bins1
 
+    if num_bins1 <= 0 or num_bins2 <= 0:
+        msg = (
+            f"Unsupported sample-size combination for MMD ctt/actt "
+            f"(reference={n1}, current={n2}, s={s}): produces "
+            f"num_bins1={num_bins1}, num_bins2={num_bins2}."
+        )
+        raise ValueError(msg)
+
     bin_out_size1 = _predict_compress_kt_output_size(n1, num_bins1, g) // num_bins1
     bin_out_size2 = _predict_compress_kt_output_size(n2, num_bins2, g) // num_bins2
     if bin_out_size1 != bin_out_size2:

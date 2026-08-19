@@ -335,6 +335,36 @@ class TestMMDEndpoints:
             assert response.status_code == HTTPStatus.INTERNAL_SERVER_ERROR
             assert "worker crash" in response.json()["detail"].lower()
 
+    def test_compute_worker_process_timeout_returns_504(self) -> None:
+        """A hung MMD worker process returns 504 with a clear message."""
+        sample_df = pd.DataFrame(
+            {"feature1": np.random.default_rng(0).standard_normal(50)}
+        )
+
+        with (
+            patch(f"{MODULE_PATH}.get_data_source") as mock_ds,
+            patch(
+                f"{MODULE_PATH}.run_in_mmd_executor",
+                side_effect=TimeoutError("worker timed out"),
+            ),
+        ):
+            mock_data_source = MagicMock()
+            mock_data_source.get_dataframe_by_tag = AsyncMock(return_value=sample_df)
+            mock_data_source.get_organic_dataframe = AsyncMock(return_value=sample_df)
+            mock_ds.return_value = mock_data_source
+
+            response = client.post(
+                routes.DRIFT_MMD.compute,
+                json={
+                    "modelId": "test-model",
+                    "referenceTag": "baseline",
+                    "fitColumns": ["feature1"],
+                },
+            )
+
+            assert response.status_code == HTTPStatus.GATEWAY_TIMEOUT
+            assert "timed out" in response.json()["detail"].lower()
+
     test_delete_invalid_uuid = factory.make_delete_endpoint_error_test(
         metric_name="MMD",
         module_path=MODULE_PATH,

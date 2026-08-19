@@ -161,3 +161,33 @@ class TestWorkerCrashIsolation:
 
         result = await run_in_mmd_executor(_crash_helpers.add_one, x=1)
         assert result == 2  # noqa: PLR2004
+
+
+@pytest.mark.asyncio
+class TestWorkerTimeout:
+    """A worker that hangs (instead of crashing) is bounded by a timeout."""
+
+    async def test_hung_worker_raises_timeout_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A worker that never returns raises TimeoutError, not a hang."""
+        monkeypatch.setenv("TRUSTYAI_MMD_TIMEOUT_SECONDS", "0.2")
+        start_mmd_executor()
+        with pytest.raises(TimeoutError):
+            await run_in_mmd_executor(_crash_helpers.hang_forever)
+
+    async def test_pool_is_replaced_after_timeout(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The pool is replaced after a timeout so later calls aren't blocked."""
+        monkeypatch.setenv("TRUSTYAI_MMD_TIMEOUT_SECONDS", "0.2")
+        start_mmd_executor()
+        original_pool = mmd_executor._state["pool"]
+
+        with pytest.raises(TimeoutError):
+            await run_in_mmd_executor(_crash_helpers.hang_forever)
+        assert mmd_executor._state["pool"] is not original_pool
+
+        monkeypatch.setenv("TRUSTYAI_MMD_TIMEOUT_SECONDS", "300")
+        result = await run_in_mmd_executor(_crash_helpers.add_one, x=1)
+        assert result == 2  # noqa: PLR2004

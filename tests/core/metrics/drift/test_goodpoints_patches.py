@@ -80,6 +80,20 @@ class TestApplyGoodpointsPatches:
                 x1, x2, 0, B=49, B_2=30, B_3=5, s=16, lam=np.array([1.0])
             )
 
+    def test_guard_raises_value_error_for_zero_bin_count(self) -> None:
+        """A tiny reference vs. large current sample doesn't crash with ZeroDivisionError.
+
+        n1=1 with the default s=16 makes num_bins1 derive to 0, which would
+        otherwise raise ZeroDivisionError inside the guard itself instead of
+        the intended clean ValueError.
+        """
+        apply_goodpoints_patches()
+        rng = np.random.default_rng(0)
+        x1 = rng.standard_normal((1, 2))
+        x2 = rng.standard_normal((100, 2))
+        with pytest.raises(ValueError, match=r"num_bins1=0"):
+            goodpoints_ctt.ctt(x1, x2, 0, B=9, s=16, null_seed=0, statistic_seed=0)
+
     def test_patch_is_idempotent(self) -> None:
         """Applying the patch twice does not re-wrap an already-guarded function."""
         apply_goodpoints_patches()

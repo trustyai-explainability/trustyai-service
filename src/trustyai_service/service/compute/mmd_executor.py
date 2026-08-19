@@ -23,6 +23,7 @@ from trustyai_service.core.metrics.drift._goodpoints_patches import (
 logger = logging.getLogger(__name__)
 
 _DEFAULT_MAX_WORKERS = 2
+_DEFAULT_TIMEOUT_SECONDS = 300.0
 
 _state: dict[str, ProcessPoolExecutor | None] = {"pool": None}
 _lock = threading.Lock()
@@ -49,6 +50,27 @@ def _max_workers() -> int:
     return value
 
 
+def _timeout_seconds() -> float:
+    raw = os.getenv("TRUSTYAI_MMD_TIMEOUT_SECONDS", str(_DEFAULT_TIMEOUT_SECONDS))
+    try:
+        value = float(raw)
+    except ValueError:
+        logger.warning(
+            "Invalid TRUSTYAI_MMD_TIMEOUT_SECONDS=%r; using default %s",
+            raw,
+            _DEFAULT_TIMEOUT_SECONDS,
+        )
+        return _DEFAULT_TIMEOUT_SECONDS
+    if value <= 0:
+        logger.warning(
+            "TRUSTYAI_MMD_TIMEOUT_SECONDS must be > 0, got %s; using default %s",
+            value,
+            _DEFAULT_TIMEOUT_SECONDS,
+        )
+        return _DEFAULT_TIMEOUT_SECONDS
+    return value
+
+
 def _create_pool() -> ProcessPoolExecutor:
     # Use "spawn" (not the platform default "fork") since this process
     # is multi-threaded (asyncio event loop, background tasks) --
@@ -72,21 +94,23 @@ def start_mmd_executor() -> None:
             _state["pool"] = _create_pool()
 
 
-def _recover_broken_pool(broken_pool: ProcessPoolExecutor) -> None:
-    """Replace a broken pool with a fresh one so future calls can succeed.
+def _replace_pool(stale_pool: ProcessPoolExecutor, *, reason: str) -> None:
+    """Replace an unusable pool with a fresh one so future calls can succeed.
 
-    A crashed worker (from any native bug, not just the ones goodpoints is
-    known to have) leaves the whole ProcessPoolExecutor permanently unusable
-    -- it does not self-heal. Without this, one crash would silently disable
-    MMD for the rest of the process lifetime.
+    Used both when a worker crashes (the pool is permanently broken -- it
+    does not self-heal) and when a worker times out (the pool is still
+    technically usable, but the hung worker occupies a slot forever;
+    replacing the pool at least frees up future calls, though the hung
+    worker process itself is not killed and its resources leak until it
+    naturally exits).
     """
     with _lock:
         # Only replace if another caller hasn't already recovered it.
-        if _state["pool"] is broken_pool:
-            broken_pool.shutdown(wait=False)
+        if _state["pool"] is stale_pool:
+            stale_pool.shutdown(wait=False)
             _state["pool"] = _create_pool()
             logger.warning(
-                "MMD process pool was broken by a worker crash; replaced with a fresh pool."
+                "MMD process pool replaced with a fresh pool (reason: %s).", reason
             )
 
 
@@ -114,14 +138,26 @@ async def run_in_mmd_executor[T](func: Callable[..., T], /, **kwargs: Any) -> T:
     still raises BrokenProcessPool (the caller's request failed and its
     result is lost), but the pool is transparently replaced so the *next*
     call can succeed instead of failing forever.
+
+    A worker that hangs instead of crashing (e.g. a native infinite loop)
+    would otherwise occupy its slot forever; this call is bounded by
+    TRUSTYAI_MMD_TIMEOUT_SECONDS (default 300s) and raises TimeoutError,
+    replacing the pool so later calls aren't blocked by the same hang.
     """
-    pool = _state["pool"]
-    if pool is None:
-        msg = "MMD process pool not started; start_mmd_executor() must run during app startup"
-        raise RuntimeError(msg)
+    with _lock:
+        pool = _state["pool"]
+        if pool is None:
+            msg = "MMD process pool not started; start_mmd_executor() must run during app startup"
+            raise RuntimeError(msg)
     loop = asyncio.get_running_loop()
     try:
-        return await loop.run_in_executor(pool, functools.partial(func, **kwargs))
+        return await asyncio.wait_for(
+            loop.run_in_executor(pool, functools.partial(func, **kwargs)),
+            timeout=_timeout_seconds(),
+        )
     except BrokenProcessPool:
-        _recover_broken_pool(pool)
+        _replace_pool(pool, reason="worker crash")
+        raise
+    except TimeoutError:
+        _replace_pool(pool, reason="worker timeout")
         raise
