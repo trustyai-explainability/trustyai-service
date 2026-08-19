@@ -1,5 +1,6 @@
 """Tests for the MMD process-pool executor."""
 
+import asyncio
 from collections.abc import Generator
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
@@ -122,3 +123,41 @@ class TestWorkerCrashIsolation:
             start_mmd_executor()
         with pytest.raises(BrokenProcessPool):
             await run_in_mmd_executor(_crash_helpers.die_hard)
+
+    async def test_pool_recovers_after_crash(self) -> None:
+        """A crash doesn't permanently kill MMD.
+
+        A crash from ANY bug (not just a specific known one) doesn't
+        permanently kill MMD: the next call after a BrokenProcessPool
+        succeeds on a fresh pool.
+        """
+        # Real ProcessPoolExecutor (not mocked) so ProcessPoolExecutor's real
+        # "broken forever" behavior is exercised, then transparently recovered.
+        start_mmd_executor()
+
+        with pytest.raises(BrokenProcessPool):
+            await run_in_mmd_executor(_crash_helpers.die_hard)
+
+        # Without recovery this would also raise BrokenProcessPool forever.
+        result = await run_in_mmd_executor(_crash_helpers.add_one, x=41)
+        assert result == 42  # noqa: PLR2004
+
+    async def test_concurrent_crashes_do_not_leak_pools(self) -> None:
+        """Concurrent crashes only trigger one pool replacement.
+
+        Multiple concurrent callers hitting the same broken pool only
+        trigger one replacement, not one per caller.
+        """
+        start_mmd_executor()
+        original_pool = mmd_executor._state["pool"]
+
+        results = await asyncio.gather(
+            run_in_mmd_executor(_crash_helpers.die_hard),
+            run_in_mmd_executor(_crash_helpers.die_hard),
+            return_exceptions=True,
+        )
+        assert all(isinstance(r, BrokenProcessPool) for r in results)
+        assert mmd_executor._state["pool"] is not original_pool
+
+        result = await run_in_mmd_executor(_crash_helpers.add_one, x=1)
+        assert result == 2  # noqa: PLR2004
