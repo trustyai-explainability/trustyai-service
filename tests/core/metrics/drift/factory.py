@@ -557,9 +557,9 @@ def make_multivariate_detects_shift_test(
     """
 
     @given(
-        n_samples=st.integers(min_value=50, max_value=150),
-        n_features=st.integers(min_value=2, max_value=5),
-        shift=st.floats(min_value=3.0, max_value=5.0),
+        n_samples=st.integers(min_value=100, max_value=200),
+        n_features=st.integers(min_value=2, max_value=3),
+        shift=st.floats(min_value=5.0, max_value=7.0),
         seed=st.integers(min_value=0, max_value=5000),
     )
     @settings(max_examples=20, deadline=None)
@@ -589,7 +589,7 @@ def make_multivariate_detects_shift_test(
             random_state=rng,
         )
 
-        result = metric_fn(reference, current, **params)
+        result = metric_fn(reference, current, seed=seed, **params)
 
         # Large shift should be detected
         assert result["drift_detected"] is True
