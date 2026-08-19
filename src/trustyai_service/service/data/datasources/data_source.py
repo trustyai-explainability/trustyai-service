@@ -13,6 +13,7 @@ from trustyai_service.service.constants import (
     METADATA_FILENAME,
     OUTPUT_SUFFIX,
     SYNTHETIC_TAG,
+    TAGS_COLUMN,
     UNLABELED_TAG,
 )
 from trustyai_service.service.data.exceptions import (
@@ -227,14 +228,16 @@ class DataSource:
         """
         try:
             model_data = ModelData(model_id)
-            input_data, _, metadata = await model_data.data()
-            input_names, _, metadata_names = await model_data.column_names()
+            input_data, output_data, metadata = await model_data.data()
+            input_names, output_names, metadata_names = await model_data.column_names()
 
             if metadata is None or input_data is None:
                 return pd.DataFrame()
 
             tags_col = (
-                list(metadata_names).index("tags") if "tags" in metadata_names else -1
+                list(metadata_names).index(TAGS_COLUMN)
+                if TAGS_COLUMN in metadata_names
+                else -1
             )
             if tags_col < 0:
                 return pd.DataFrame()
@@ -256,10 +259,27 @@ class DataSource:
             if tag in _legacy_aliases:
                 match_tags.add(_legacy_aliases[tag])
 
-            mask = [
-                bool(match_tags & set(_extract_tags(row[tags_col]))) for row in metadata
-            ]
+            if len(metadata.shape) == 1:
+                mask = np.array(
+                    [bool(match_tags & set(_extract_tags(cell))) for cell in metadata],
+                    dtype=bool,
+                )
+            else:
+                mask = np.array(
+                    [
+                        bool(match_tags & set(_extract_tags(row[tags_col])))
+                        for row in metadata
+                    ],
+                    dtype=bool,
+                )
             filtered_input = input_data[mask]
+
+            # Warn on duplicate column names between input and output
+            overlap = set(input_names) & set(output_names)
+            if overlap:
+                logger.warning(
+                    "Column name collision between input/output: %s", overlap
+                )
 
             df_data: dict[str, object] = {}
             for i, col_name in enumerate(input_names):
@@ -270,6 +290,17 @@ class DataSource:
                     df_data[col_name] = filtered_input[:, i]
                 elif len(filtered_input.shape) == 1 and i == 0:
                     df_data[col_name] = filtered_input
+
+            if output_data is not None:
+                filtered_output = output_data[mask]
+                for i, col_name in enumerate(output_names):
+                    if (
+                        len(filtered_output.shape) == ARRAY_DIM_2D
+                        and i < filtered_output.shape[1]
+                    ):
+                        df_data[col_name] = filtered_output[:, i]
+                    elif len(filtered_output.shape) == 1 and i == 0:
+                        df_data[col_name] = filtered_output
 
             return pd.DataFrame(df_data)
 
