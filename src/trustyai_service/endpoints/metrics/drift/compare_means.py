@@ -7,7 +7,7 @@ from typing import Any
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from trustyai_service.core.metrics.drift.compare_means import (
     DEFAULT_ALPHA,
@@ -66,7 +66,7 @@ class CompareMeansMetricRequest(BaseMetricRequest):
     model_config = ConfigDict(populate_by_name=True)
 
     model_id: str = Field(alias="modelId")
-    metric_name: str = Field(default=METRIC_NAME, alias="metricName")
+    metric_name: str | None = Field(default=None, alias="metricName")
     request_name: str | None = Field(default=None, alias="requestName")
     batch_size: int = Field(default=DEFAULT_BATCH_SIZE, alias="batchSize", gt=0)
 
@@ -76,6 +76,12 @@ class CompareMeansMetricRequest(BaseMetricRequest):
     nan_policy: NanPolicy = Field(default=DEFAULT_NAN_POLICY, alias="nanPolicy")
     reference_tag: str | None = Field(default=None, alias="referenceTag")
     fit_columns: list[str] | None = Field(default=None, alias="fitColumns")
+
+    @model_validator(mode="after")
+    def _set_default_metric_name(self) -> "CompareMeansMetricRequest":
+        if self.metric_name is None:
+            self.metric_name = METRIC_NAME
+        return self
 
     def retrieve_tags(self) -> dict[str, str]:
         """Retrieve tags for this CompareMeans metric request."""
@@ -225,9 +231,6 @@ async def schedule_compare_means(request: CompareMeansMetricRequest) -> dict[str
         # Generate UUID for this request
         request_id = uuid.uuid4()
         logger.info("Scheduling %s computation with ID: %s.", METRIC_NAME, request_id)
-
-        # Set metric name automatically
-        request.metric_name = METRIC_NAME
 
         # Register with the scheduler (this will reconcile the request and store it)
         await scheduler.register(request.metric_name, request_id, request)
@@ -415,6 +418,7 @@ async def schedule_meanshift(request: MeanshiftMetricRequest) -> dict[str, str]:
     compare_means_request = CompareMeansMetricRequest.model_validate(
         request.model_dump(exclude_none=True)
     )
+    compare_means_request.metric_name = DEPRECATED_METRIC_NAME
     return await schedule_compare_means(compare_means_request)
 
 
@@ -476,6 +480,12 @@ def _register_compare_means_calculator() -> None:
             METRIC_NAME, calculate_compare_means_metric
         )
         logger.info("%s calculator registered with metrics directory", METRIC_NAME)
+        scheduler.metrics_directory.register(
+            DEPRECATED_METRIC_NAME, calculate_compare_means_metric
+        )
+        logger.info(
+            "%s calculator registered with metrics directory", DEPRECATED_METRIC_NAME
+        )
 
 
 try:
