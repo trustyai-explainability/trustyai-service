@@ -562,10 +562,18 @@ class TestHealthApp:
 
     def test_no_other_routes(self, client) -> None:
         """Test that other routes are not exposed on health_app."""
-        for path in ["/", "/q/metrics", "/info"]:
+        for path in ["/q/metrics", "/info"]:
             response = client.get(path)
             assert response.status_code == HTTPStatus.NOT_FOUND, (
                 f"{path} should not exist on health app"
+            )
+
+    def test_root_post_accepts_like_canonical(self, client) -> None:
+        """POST / and POST /consumer/kserve/v2 both route to consumer."""
+        for path in ["/", "/consumer/kserve/v2"]:
+            response = client.get(path)
+            assert response.status_code == HTTPStatus.METHOD_NOT_ALLOWED, (
+                f"GET {path} should be 405 (POST-only consumer route)"
             )
 
     def test_no_docs(self, client) -> None:

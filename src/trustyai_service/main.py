@@ -332,9 +332,11 @@ health_app.get(routes.HEALTH)(general_health)
 health_app.get(routes.HEALTH_READY)(readiness_probe)
 health_app.get(routes.HEALTH_LIVE)(liveness_probe)
 
-# Register only the KServe consumer endpoint (not the entire router) to avoid
-# exposing unwanted routes like "/" on the health port
+# Register the KServe consumer at both its canonical path and root ("/").
+# The operator sets logger-sink-url without a path suffix, so the KServe agent
+# POSTs to "/" on this port. The canonical path is kept for direct callers.
 health_app.post(routes.CONSUMER_KSERVE_V2)(consume_inference_payload)
+health_app.post("/")(consume_inference_payload)
 
 
 def get_tls_config() -> dict[str, Any] | None:
