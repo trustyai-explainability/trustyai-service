@@ -483,6 +483,10 @@ def process_payload(
 
 _kserve_payload_adapter = TypeAdapter(KServeInferenceRequest | KServeInferenceResponse)
 
+# CloudEvent type constants from the KServe inference logger
+CE_TYPE_REQUEST = "org.kubeflow.serving.inference.request"
+CE_TYPE_RESPONSE = "org.kubeflow.serving.inference.response"
+
 
 def _store_tag_in_payload(
     payload: KServeInferenceRequest | KServeInferenceResponse,
@@ -642,32 +646,79 @@ async def process_cloud_event(
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=str(e)) from e
 
 
+def _parse_cloud_event_body(
+    body: bytes,
+    ce_type: str | None,
+) -> KServeInferenceRequest | KServeInferenceResponse:
+    """Parse a CloudEvent body as a KServe inference payload.
+
+    When ``ce_type`` matches a known KServe inference logger type, the body is
+    parsed directly as the corresponding model for a clearer error message on
+    failure.  Otherwise falls back to discriminated union parsing via
+    ``TypeAdapter``.
+
+    :param body: JSON bytes (already decompressed if gzip)
+    :param ce_type: Value of the ``ce-type`` CloudEvent header, or *None*
+    :return: Parsed request or response payload
+    :raises HTTPException: On JSON / validation errors
+    """
+    try:
+        if ce_type == CE_TYPE_REQUEST:
+            return KServeInferenceRequest.model_validate_json(body)
+        if ce_type == CE_TYPE_RESPONSE:
+            return KServeInferenceResponse.model_validate_json(body)
+        return _kserve_payload_adapter.validate_json(body)
+    except ValidationError as e:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail=f"Invalid payload: {e}",
+        ) from e
+
+
 @router.post(routes.CONSUMER_ROOT)
 async def consume_cloud_event(
     http_request: Request,
     ce_id: Annotated[str | None, Header()] = None,
+    ce_type: Annotated[str | None, Header()] = None,
+    inferenceservicename: Annotated[str | None, Header()] = None,
     tag: str | None = None,
 ) -> dict[str, str]:
     """Consume KServe v2 payloads from cloud events.
+
+    Handles both the KServe inference logger CloudEvent format (with ``ce-type``
+    and ``Inferenceservicename`` headers) and plain KServe v2 JSON.
 
     Knative Eventing may strip the Content-Encoding header while leaving the
     body gzip-compressed, so this endpoint detects gzip by magic bytes and
     decompresses before JSON parsing.
 
     :param http_request: Raw HTTP request (body may be gzip-compressed without header)
-    :param ce_id: Cloud event ID from header
+    :param ce_id: Cloud event ID from header (correlation ID)
+    :param ce_type: Cloud event type — determines request vs response
+    :param inferenceservicename: Model name from KServe inference logger
     :param tag: Optional tag to associate with the data
     :raises HTTPException: If payload processing fails
     """
     raw_body = await http_request.body()
-    body = decompress_if_gzip(raw_body)
-
     try:
-        payload = _kserve_payload_adapter.validate_json(body)
-    except ValidationError as e:
+        body = decompress_if_gzip(raw_body)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+            detail=str(e),
+        ) from e
+
+    payload = _parse_cloud_event_body(body, ce_type)
+
+    # The KServe inference logger provides the model name via a CloudEvent
+    # extension header.  Prefer the header value — it is always present
+    # whereas the body ``model_name`` field may be absent for requests.
+    if inferenceservicename and isinstance(payload, KServeInferenceResponse):
+        payload.model_name = inferenceservicename
+    if isinstance(payload, KServeInferenceResponse) and payload.model_name is None:
         raise HTTPException(
             status_code=HTTPStatus.BAD_REQUEST,
-            detail=f"Invalid payload: {e}",
-        ) from e
+            detail="Response payload requires 'model_name' field or 'Inferenceservicename' header",
+        )
 
     return await process_cloud_event(payload, ce_id=ce_id, tag=tag)
