@@ -295,10 +295,10 @@ async def delete_compare_means_schedule(schedule: ScheduleId) -> dict[str, str]:
         }
 
 
-@router.get(routes.DRIFT_COMPARE_MEANS.requests)
-async def list_compare_means_requests() -> dict[str, list[dict[str, Any]]]:
-    """List the currently scheduled computations of CompareMeans metric."""
-    # Get the scheduler and validate availability
+async def _list_compare_means_requests(
+    metric_name: str,
+) -> dict[str, list[dict[str, Any]]]:
+    """Private helper: list scheduled CompareMeans/Meanshift requests by metric name."""
     scheduler = get_prometheus_scheduler()
     if not scheduler:
         raise HTTPException(
@@ -307,8 +307,7 @@ async def list_compare_means_requests() -> dict[str, list[dict[str, Any]]]:
         )
 
     try:
-        # Get all requests for CompareMeans
-        requests = scheduler.get_requests(METRIC_NAME)
+        requests = scheduler.get_requests(metric_name)
 
         # Convert to list format expected by client
         requests_list = []
@@ -325,7 +324,7 @@ async def list_compare_means_requests() -> dict[str, list[dict[str, Any]]]:
                         "id": str(request_id),  # deprecated: use requestId
                         "requestId": str(request_id),
                         "modelId": request.model_id,
-                        "metricName": METRIC_NAME,
+                        "metricName": metric_name,
                         "batchSize": request.batch_size,
                         "referenceTag": request.reference_tag,
                         "fitColumns": request.fit_columns,
@@ -338,7 +337,7 @@ async def list_compare_means_requests() -> dict[str, list[dict[str, Any]]]:
                 # Log warning for malformed request objects and skip them
                 logger.warning(
                     "Skipping malformed %s request %s: missing required attributes",
-                    METRIC_NAME,
+                    metric_name,
                     request_id,
                 )
                 continue
@@ -348,13 +347,19 @@ async def list_compare_means_requests() -> dict[str, list[dict[str, Any]]]:
     except (
         Exception
     ) as e:  # Broad catch intentional: endpoint catch-all for unknown listing errors
-        logger.exception("Error listing %s requests", METRIC_NAME)
+        logger.exception("Error listing %s requests", metric_name)
         raise HTTPException(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
             detail="Error listing requests. Check server logs for details.",
         ) from e
     else:
         return {"requests": requests_list}
+
+
+@router.get(routes.DRIFT_COMPARE_MEANS.requests)
+async def list_compare_means_requests() -> dict[str, list[dict[str, Any]]]:
+    """List the currently scheduled computations of CompareMeans metric."""
+    return await _list_compare_means_requests(METRIC_NAME)
 
 
 # ============================================================================
@@ -441,7 +446,7 @@ async def list_meanshift_requests() -> dict[str, list[dict[str, Any]]]:
     /metrics/drift/comparemeans/requests instead.
     """
     log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
-    return await list_compare_means_requests()
+    return await _list_compare_means_requests(DEPRECATED_METRIC_NAME)
 
 
 async def calculate_compare_means_metric(
