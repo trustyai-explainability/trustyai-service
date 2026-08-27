@@ -561,12 +561,17 @@ class TestHealthApp:
             assert "checks" in data
 
     def test_no_other_routes(self, client) -> None:
-        """Test that other routes are not exposed on health_app."""
-        for path in ["/", "/q/metrics", "/info"]:
+        """Test that non-consumer routes are not exposed on health_app."""
+        for path in ["/q/metrics", "/info"]:
             response = client.get(path)
             assert response.status_code == HTTPStatus.NOT_FOUND, (
                 f"{path} should not exist on health app"
             )
+        # "/" is a POST-only route (CloudEvent consumer), GET should be rejected
+        response = client.get("/")
+        assert response.status_code == HTTPStatus.METHOD_NOT_ALLOWED, (
+            "GET / should be rejected on health app (POST only)"
+        )
 
     def test_no_docs(self, client) -> None:
         """Test that OpenAPI docs are disabled on health_app."""

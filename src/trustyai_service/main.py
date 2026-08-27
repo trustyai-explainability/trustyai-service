@@ -19,6 +19,7 @@ from trustyai_service.endpoints import routes
 
 # Endpoint routers
 from trustyai_service.endpoints.consumer.consumer_endpoint import (
+    consume_cloud_event,
     consume_inference_payload,
 )
 from trustyai_service.endpoints.consumer.consumer_endpoint import (
@@ -332,9 +333,11 @@ health_app.get(routes.HEALTH)(general_health)
 health_app.get(routes.HEALTH_READY)(readiness_probe)
 health_app.get(routes.HEALTH_LIVE)(liveness_probe)
 
-# Register only the KServe consumer endpoint (not the entire router) to avoid
-# exposing unwanted routes like "/" on the health port
+# KServe consumer endpoints on the health port (8080).
+# The ModelMesh agent sends flat payloads to /consumer/kserve/v2.
+# The KServe inference logger sends CloudEvents to /.
 health_app.post(routes.CONSUMER_KSERVE_V2)(consume_inference_payload)
+health_app.post(routes.CONSUMER_ROOT)(consume_cloud_event)
 
 
 def get_tls_config() -> dict[str, Any] | None:
