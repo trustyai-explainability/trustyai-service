@@ -700,7 +700,13 @@ async def consume_cloud_event(
     :raises HTTPException: If payload processing fails
     """
     raw_body = await http_request.body()
-    body = decompress_if_gzip(raw_body)
+    try:
+        body = decompress_if_gzip(raw_body)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+            detail=str(e),
+        ) from e
 
     payload = _parse_cloud_event_body(body, ce_type)
 
@@ -709,5 +715,10 @@ async def consume_cloud_event(
     # whereas the body ``model_name`` field may be absent for requests.
     if inferenceservicename and isinstance(payload, KServeInferenceResponse):
         payload.model_name = inferenceservicename
+    if isinstance(payload, KServeInferenceResponse) and payload.model_name is None:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail="Response payload requires 'model_name' field or 'Inferenceservicename' header",
+        )
 
     return await process_cloud_event(payload, ce_id=ce_id, tag=tag)
