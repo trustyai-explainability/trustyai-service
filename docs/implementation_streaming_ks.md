@@ -384,7 +384,9 @@ The merge-scan pattern is similar, but the semantics differ fundamentally.
 ### Basic Usage
 
 ```python
-from trustyai_service.core.metrics.drift.kolmogorov_smirnov_streaming import KolmogorovSmirnovStreaming
+from trustyai_service.core.metrics.drift.kolmogorov_smirnov_streaming import (
+    KolmogorovSmirnovStreaming,
+)
 
 # Initialize streaming KS test
 ks = KolmogorovSmirnovStreaming(epsilon=0.01)
@@ -419,7 +421,7 @@ for value in current_stream:
 # Test for drift periodically
 if ks.n_current >= window_size:
     result = ks.kstest(alpha=0.05)
-    if result['drift_detected']:
+    if result["drift_detected"]:
         handle_drift_alert()
     ks.reset_current()  # Reset for next window
 ```
@@ -509,7 +511,7 @@ for value in realtime_stream:
 
     if ks.n_current >= window_size:
         result = ks.kstest(alpha=0.05)
-        if result['drift_detected']:
+        if result["drift_detected"]:
             alert_drift()
         ks.reset_current()
 ```
