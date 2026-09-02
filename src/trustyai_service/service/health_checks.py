@@ -26,6 +26,14 @@ try:
 except ModuleNotFoundError:
     MARIADB_AVAILABLE = False
 
+# PostgreSQL is an optional dependency (postgres extra)
+try:
+    import psycopg  # noqa: F401
+
+    PSYCOPG_AVAILABLE = True
+except ModuleNotFoundError:
+    PSYCOPG_AVAILABLE = False
+
 
 class HealthCache:
     """TTL-based cache for health check results.
@@ -140,6 +148,26 @@ def _get_health_connection_manager() -> Any:  # noqa: ANN401
     )
 
 
+def _get_postgres_health_connection_manager() -> Any:  # noqa: ANN401
+    """Create a PostgresConnectionManager configured for health checks."""
+    from trustyai_service.service.data.storage import PostgreSQLConfig  # noqa: PLC0415
+    from trustyai_service.service.data.storage.postgres.utils import (  # noqa: PLC0415
+        PostgresConnectionManager,
+    )
+
+    config = PostgreSQLConfig()
+    config.validate()
+    return PostgresConnectionManager(
+        user=config.user,
+        password=config.password,
+        host=config.host,
+        port=config.port,
+        database=config.database,
+        ssl_ca=config.ssl_ca,
+        connect_timeout=2,
+    )
+
+
 def check_storage_readiness() -> HealthCheck:
     """Check if storage backend is accessible.
 
@@ -155,6 +183,10 @@ def check_storage_readiness() -> HealthCheck:
             return _health_cache.get_or_compute("pvc_storage", _check_pvc_storage)
         if storage_format in ("MARIA", "DATABASE"):
             return _health_cache.get_or_compute("maria_storage", _check_maria_storage)
+        if storage_format in ("POSTGRESQL", "POSTGRES"):
+            return _health_cache.get_or_compute(
+                "postgres_storage", _check_postgres_storage
+            )
         return HealthCheck(
             "Storage readiness",
             STATUS_ERROR,
@@ -243,6 +275,56 @@ def _check_maria_storage() -> HealthCheck:
         )
 
     except (mariadb.Error, ValueError) as e:
+        logger.warning("Database health check failed: %s", e)
+        return HealthCheck(
+            "Storage readiness",
+            STATUS_ERROR,
+            {
+                "error": _sanitize_error(
+                    "Database connection failed", f"Database connection failed: {e!s}"
+                )
+            },
+        )
+    except Exception as e:  # Health check must not crash
+        logger.exception("Unexpected error during database health check")
+        return HealthCheck(
+            "Storage readiness",
+            STATUS_ERROR,
+            {
+                "error": _sanitize_error(
+                    "Unexpected database error", f"Unexpected database error: {e!s}"
+                )
+            },
+        )
+
+
+def _check_postgres_storage() -> HealthCheck:
+    """Check PostgreSQL storage accessibility."""
+    if not PSYCOPG_AVAILABLE:
+        return HealthCheck(
+            "Storage readiness",
+            STATUS_ERROR,
+            {"error": "psycopg library not installed (missing 'postgres' extra)"},
+        )
+
+    import psycopg  # noqa: PLC0415
+
+    try:
+        mgr = _get_postgres_health_connection_manager()
+
+        with mgr as (_conn, cursor):
+            cursor.execute("SELECT 1")
+            result = cursor.fetchone()
+
+        if result is not None and result[0] == 1:
+            return HealthCheck("Storage readiness", STATUS_OK)
+        return HealthCheck(
+            "Storage readiness",
+            STATUS_ERROR,
+            {"error": "Database query returned unexpected result"},
+        )
+
+    except (psycopg.Error, ValueError) as e:
         logger.warning("Database health check failed: %s", e)
         return HealthCheck(
             "Storage readiness",
