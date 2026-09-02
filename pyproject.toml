@@ -46,6 +46,7 @@ test = [
 [project.optional-dependencies]
 # Note: grpcio/grpcio-tools removed - incompatible with protobuf v7, unused (protoc used instead)
 mariadb = ["mariadb>=1.1,<1.2", "javaobj-py3>=0.5,<0.7"]
+postgres = ["psycopg[binary]>=3.2,<4"]
 mmd = ["goodpoints>=0.6.3,<0.7"]
 
 [tool.hatch.version]
@@ -155,6 +156,7 @@ ignore-missing-imports = [
     "isodate.*",
     "javaobj.*",
     "mariadb.*",
+    "psycopg.*",
     "prometheus_client.*",
     "starlette.*",
     "libcst.*",

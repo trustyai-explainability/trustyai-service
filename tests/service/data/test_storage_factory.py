@@ -79,3 +79,55 @@ class TestGetStorageInterfaceMariaDB:
         with patch.dict(os.environ, env, clear=False):
             storage = get_storage_interface()
             assert isinstance(storage, MariaDBStorage)
+
+
+@pytest.mark.skipif(
+    not pytest.importorskip("psycopg", reason="psycopg not installed"),
+    reason="psycopg not installed",
+)
+class TestGetStorageInterfacePostgres:
+    """Tests for PostgreSQL storage format routing (requires psycopg package)."""
+
+    @patch(
+        "trustyai_service.service.data.storage.postgres.postgres.PostgreSQLStorage.__init__",
+        return_value=None,
+    )
+    def test_postgresql_format_creates_postgres(self, _mock_init: object) -> None:
+        """POSTGRESQL format returns PostgreSQLStorage."""
+        from trustyai_service.service.data.storage.postgres.postgres import (  # noqa: PLC0415
+            PostgreSQLStorage,
+        )
+
+        env = {
+            "SERVICE_STORAGE_FORMAT": "POSTGRESQL",
+            "DATABASE_USERNAME": "user",
+            "DATABASE_PASSWORD": "pass",  # pragma: allowlist secret
+            "DATABASE_HOST": "localhost",
+            "DATABASE_PORT": "5432",
+            "DATABASE_DATABASE": "testdb",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            storage = get_storage_interface()
+            assert isinstance(storage, PostgreSQLStorage)
+
+    @patch(
+        "trustyai_service.service.data.storage.postgres.postgres.PostgreSQLStorage.__init__",
+        return_value=None,
+    )
+    def test_postgres_alias_creates_postgres(self, _mock_init: object) -> None:
+        """POSTGRES is accepted as an alias for POSTGRESQL."""
+        from trustyai_service.service.data.storage.postgres.postgres import (  # noqa: PLC0415
+            PostgreSQLStorage,
+        )
+
+        env = {
+            "SERVICE_STORAGE_FORMAT": "POSTGRES",
+            "DATABASE_USERNAME": "user",
+            "DATABASE_PASSWORD": "pass",  # pragma: allowlist secret
+            "DATABASE_HOST": "localhost",
+            "DATABASE_PORT": "5432",
+            "DATABASE_DATABASE": "testdb",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            storage = get_storage_interface()
+            assert isinstance(storage, PostgreSQLStorage)
