@@ -8,6 +8,9 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from trustyai_service.service.data.storage.maria.maria import MariaDBStorage
+    from trustyai_service.service.data.storage.postgres.postgres import (
+        PostgreSQLStorage,
+    )
 
 from trustyai_service.service.data.storage.pvc import PVCStorage
 
@@ -15,14 +18,16 @@ from trustyai_service.service.data.storage.pvc import PVCStorage
 class GlobalStorageInterface:
     """Singleton holder for global storage interface."""
 
-    _instance: MariaDBStorage | PVCStorage | None = None
+    _instance: MariaDBStorage | PVCStorage | PostgreSQLStorage | None = None
 
     @classmethod
-    def get(cls, *, force_reload: bool = False) -> MariaDBStorage | PVCStorage:
+    def get(
+        cls, *, force_reload: bool = False
+    ) -> MariaDBStorage | PVCStorage | PostgreSQLStorage:
         """Get or create the global storage interface singleton.
 
         :param force_reload: If True, force recreation of the storage interface
-        :return: Storage interface instance (PVCStorage or MariaDBStorage)
+        :return: Storage interface instance (PVCStorage, MariaDBStorage, or PostgreSQLStorage)
         """
         if cls._instance is None or force_reload:
             cls._instance = get_storage_interface()
@@ -36,11 +41,11 @@ class GlobalStorageInterface:
 
 def get_global_storage_interface(
     *, force_reload: bool = False
-) -> MariaDBStorage | PVCStorage:
+) -> MariaDBStorage | PVCStorage | PostgreSQLStorage:
     """Get or create the global storage interface singleton.
 
     :param force_reload: If True, force recreation of the storage interface
-    :return: Storage interface instance (PVCStorage or MariaDBStorage)
+    :return: Storage interface instance (PVCStorage, MariaDBStorage, or PostgreSQLStorage)
     """
     return GlobalStorageInterface.get(force_reload=force_reload)
 
@@ -93,10 +98,60 @@ class MariaDBConfig:
             raise ValueError(msg)
 
 
-def get_storage_interface() -> MariaDBStorage | PVCStorage:
+class PostgreSQLConfig:
+    """PostgreSQL connection configuration read from environment variables.
+
+    Supports both operator (Quarkus) and direct deployment env vars. Env vars
+    are identical to MariaDB's except that DATABASE_PORT defaults to 5432.
+    """
+
+    def __init__(self) -> None:
+        """Read PostgreSQL connection parameters from environment variables."""
+        self.user = os.environ.get("DATABASE_USERNAME") or os.environ.get(
+            "QUARKUS_DATASOURCE_USERNAME"
+        )
+        self.password = os.environ.get("DATABASE_PASSWORD") or os.environ.get(
+            "QUARKUS_DATASOURCE_PASSWORD"
+        )
+        self.host = os.environ.get("DATABASE_HOST") or os.environ.get(
+            "DATABASE_SERVICE"
+        )
+        self.database = os.environ.get("DATABASE_DATABASE") or os.environ.get(
+            "DATABASE_NAME"
+        )
+        port_str = os.environ.get("DATABASE_PORT", "5432")
+        try:
+            self.port = int(port_str)
+        except ValueError as e:
+            msg = f"Invalid DATABASE_PORT value '{port_str}': must be a valid integer"
+            raise ValueError(msg) from e
+
+        ssl_ca_path = os.environ.get("DATABASE_TLS_CA_CERT", "/etc/tls/db/ca.crt")
+        self.ssl_ca = ssl_ca_path if Path(ssl_ca_path).exists() else None
+
+    def validate(self) -> None:
+        """Raise ValueError if required env vars are missing."""
+        missing = []
+        if not self.user:
+            missing.append("DATABASE_USERNAME or QUARKUS_DATASOURCE_USERNAME")
+        if not self.password:
+            missing.append("DATABASE_PASSWORD or QUARKUS_DATASOURCE_PASSWORD")
+        if not self.host:
+            missing.append("DATABASE_HOST or DATABASE_SERVICE")
+        if not self.database:
+            missing.append("DATABASE_DATABASE or DATABASE_NAME")
+        if missing:
+            msg = (
+                "PostgreSQL storage requires environment variables: "
+                f"{', '.join(missing)}"
+            )
+            raise ValueError(msg)
+
+
+def get_storage_interface() -> MariaDBStorage | PVCStorage | PostgreSQLStorage:
     """Create a new storage interface based on environment configuration.
 
-    :return: Storage interface instance (PVCStorage or MariaDBStorage)
+    :return: Storage interface instance (PVCStorage, MariaDBStorage, or PostgreSQLStorage)
     :raises ValueError: If storage format is unsupported or dependencies missing
     """
     storage_format = os.environ.get("SERVICE_STORAGE_FORMAT", "PVC")
@@ -131,6 +186,31 @@ def get_storage_interface() -> MariaDBStorage | PVCStorage:
             msg = (
                 "MariaDB storage requires optional dependencies. "
                 "Install with: pip install trustyai-service[mariadb]. "
+                f"Error: {e}"
+            )
+            raise ValueError(msg) from e
+    if storage_format in ("POSTGRESQL", "POSTGRES"):
+        try:
+            # Import PostgreSQL storage only when needed (optional dependency)
+            from trustyai_service.service.data.storage.postgres.postgres import (  # noqa: PLC0415 -- lazy import: psycopg is optional
+                PostgreSQLStorage,
+            )
+
+            config = PostgreSQLConfig()
+            config.validate()
+
+            return PostgreSQLStorage(
+                user=config.user,
+                password=config.password,
+                host=config.host,
+                port=config.port,
+                database=config.database,
+                ssl_ca=config.ssl_ca,
+            )
+        except ImportError as e:
+            msg = (
+                "PostgreSQL storage requires optional dependencies. "
+                "Install with: pip install trustyai-service[postgres]. "
                 f"Error: {e}"
             )
             raise ValueError(msg) from e
