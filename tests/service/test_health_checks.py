@@ -35,6 +35,15 @@ _MARIA_ENV = {
     "DATABASE_DATABASE": "test_db",
 }
 
+_POSTGRES_ENV = {
+    "SERVICE_STORAGE_FORMAT": "POSTGRESQL",
+    "DATABASE_HOST": "localhost",
+    "DATABASE_PORT": "5432",
+    "DATABASE_USERNAME": "test_user",
+    "DATABASE_PASSWORD": "test_pass",  # pragma: allowlist secret
+    "DATABASE_DATABASE": "test_db",
+}
+
 
 @pytest.fixture(autouse=True)
 def _fake_mariadb_module() -> Generator[None, None, None]:
@@ -60,6 +69,29 @@ def _fake_mariadb_module() -> Generator[None, None, None]:
 
 
 @pytest.fixture(autouse=True)
+def _fake_psycopg_module() -> Generator[None, None, None]:
+    """Provide a temporary psycopg module for patching in tests.
+
+    Creates a fake psycopg module when the postgres extra is not installed,
+    allowing the health check import to work. Restores original state after
+    the test to prevent contamination across the test session.
+    """
+    original = sys.modules.get("psycopg")
+    if original is None:
+        fake_psycopg = ModuleType("psycopg")
+        fake_psycopg.Error = type("Error", (Exception,), {})  # type: ignore[attr-defined]
+        fake_psycopg.connect = MagicMock()  # type: ignore[attr-defined]
+        sys.modules["psycopg"] = fake_psycopg
+    try:
+        yield
+    finally:
+        if original is None:
+            sys.modules.pop("psycopg", None)
+        else:
+            sys.modules["psycopg"] = original
+
+
+@pytest.fixture(autouse=True)
 def _clear_health_cache() -> Generator[None, None, None]:
     """Clear global health cache before and after each test to prevent interference."""
     _health_cache.cache.clear()
@@ -81,6 +113,25 @@ def mock_maria_conn() -> Generator[tuple[MagicMock, MagicMock], None, None]:
         ),
         patch(
             "trustyai_service.service.data.storage.maria.utils.MariaConnectionManager.__enter__",
+        ) as mock_enter,
+    ):
+        yield mock_init, mock_enter
+
+
+@pytest.fixture
+def mock_postgres_conn() -> Generator[tuple[MagicMock, MagicMock], None, None]:
+    """Mock PostgresConnectionManager for health check tests."""
+    with (
+        patch(
+            "trustyai_service.service.data.storage.postgres.utils.PostgresConnectionManager.__init__",
+            return_value=None,
+        ) as mock_init,
+        patch(
+            "trustyai_service.service.data.storage.postgres.utils.PostgresConnectionManager.__exit__",
+            return_value=False,
+        ),
+        patch(
+            "trustyai_service.service.data.storage.postgres.utils.PostgresConnectionManager.__enter__",
         ) as mock_enter,
     ):
         yield mock_init, mock_enter
@@ -334,6 +385,92 @@ class TestStorageAndHealthChecks:
         ):
             check = check_storage_readiness()
             assert check.status == STATUS_OK
+
+    @patch("trustyai_service.service.health_checks.PSYCOPG_AVAILABLE", False)
+    def test_check_postgres_storage_library_not_installed(self) -> None:
+        """Test PostgreSQL check fails gracefully when library not installed."""
+        with patch.dict(os.environ, {"SERVICE_STORAGE_FORMAT": "POSTGRESQL"}):
+            check = check_storage_readiness()
+            assert check.status == STATUS_ERROR
+            assert check.name == "Storage readiness"
+            assert "not installed" in check.data["error"]
+
+    @patch("trustyai_service.service.health_checks.PSYCOPG_AVAILABLE", True)
+    def test_check_postgres_storage_connection_success(
+        self, mock_postgres_conn
+    ) -> None:
+        """Test PostgreSQL check succeeds when connection works."""
+        mock_init, mock_enter = mock_postgres_conn
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = (1,)
+        mock_enter.return_value = (MagicMock(), mock_cursor)
+
+        with patch.dict(os.environ, _POSTGRES_ENV):
+            check = check_storage_readiness()
+            assert check.status == STATUS_OK
+            assert check.name == "Storage readiness"
+
+        mock_init.assert_called_once_with(
+            user="test_user",
+            password="test_pass",  # pragma: allowlist secret
+            host="localhost",
+            port=5432,
+            database="test_db",
+            ssl_ca=None,
+            connect_timeout=2,
+        )
+
+    @patch("trustyai_service.service.health_checks.PSYCOPG_AVAILABLE", True)
+    def test_check_postgres_storage_connection_failure(
+        self, mock_postgres_conn
+    ) -> None:
+        """Test PostgreSQL check fails when connection fails."""
+        _mock_init, mock_enter = mock_postgres_conn
+        mock_enter.side_effect = Exception("Connection refused")
+
+        with patch.dict(os.environ, _POSTGRES_ENV):
+            check = check_storage_readiness()
+            assert check.status == STATUS_ERROR
+            assert check.name == "Storage readiness"
+            assert "Connection refused" in check.data["error"]
+
+    @patch("trustyai_service.service.health_checks.PSYCOPG_AVAILABLE", True)
+    def test_check_postgres_storage_psycopg_error(self, mock_postgres_conn) -> None:
+        """Test PostgreSQL check handles psycopg.Error specifically."""
+        _mock_init, mock_enter = mock_postgres_conn
+        mock_enter.side_effect = sys.modules["psycopg"].Error("connection error")
+
+        with patch.dict(os.environ, _POSTGRES_ENV):
+            check = check_storage_readiness()
+            assert check.status == STATUS_ERROR
+            assert check.name == "Storage readiness"
+            assert "connection error" in check.data["error"]
+
+    @patch("trustyai_service.service.health_checks.PSYCOPG_AVAILABLE", True)
+    def test_check_postgres_storage_alias(self, mock_postgres_conn) -> None:
+        """Test PostgreSQL check works with SERVICE_STORAGE_FORMAT=POSTGRES alias."""
+        _mock_init, mock_enter = mock_postgres_conn
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = (1,)
+        mock_enter.return_value = (MagicMock(), mock_cursor)
+
+        with patch.dict(
+            os.environ, {**_POSTGRES_ENV, "SERVICE_STORAGE_FORMAT": "POSTGRES"}
+        ):
+            check = check_storage_readiness()
+            assert check.status == STATUS_OK
+
+    @patch("trustyai_service.service.health_checks.PSYCOPG_AVAILABLE", True)
+    def test_check_postgres_storage_uses_cache_key(self, mock_postgres_conn) -> None:
+        """Test POSTGRESQL routes through the 'postgres_storage' cache key."""
+        _mock_init, mock_enter = mock_postgres_conn
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = (1,)
+        mock_enter.return_value = (MagicMock(), mock_cursor)
+
+        with patch.dict(os.environ, _POSTGRES_ENV):
+            check_storage_readiness()
+            assert "postgres_storage" in _health_cache.cache
 
     def test_check_storage_unknown_format(self) -> None:
         """Test storage check fails with unknown storage format."""
