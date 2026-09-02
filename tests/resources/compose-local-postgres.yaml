@@ -1,0 +1,38 @@
+### Use this to run the postgres tests locally: `podman compose -f compose-local-postgres.yaml up`
+
+x-common-variables: &global-variables
+  POSTGRES_USER: trustyai
+  POSTGRES_PASSWORD: trustyai  # pragma: allowlist secret
+  POSTGRES_DB: trustyai-database
+
+services:
+  trustyai-postgres-container:
+    networks:
+      - data-connection
+    container_name: trustyai-postgres-container
+    healthcheck:
+      interval: 30s
+      retries: 3
+      test:
+        [
+          "CMD",
+          "pg_isready",
+          "-U",
+          "trustyai",
+          "-d",
+          "trustyai-database"
+        ]
+      timeout: 30s
+    ports:
+      - 5432:5432
+    expose:
+      - 5432
+    volumes:
+      - trustyai-postgres-container:/var/lib/postgresql/data
+    environment:
+      <<: *global-variables
+    image: postgres
+volumes:
+  trustyai-postgres-container:
+networks:
+  data-connection:

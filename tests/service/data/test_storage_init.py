@@ -6,12 +6,18 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from trustyai_service.service.data.storage import MariaDBConfig, get_storage_interface
+from trustyai_service.service.data.storage import (
+    MariaDBConfig,
+    PostgreSQLConfig,
+    get_storage_interface,
+)
 from trustyai_service.service.data.storage.pvc import PVCStorage
 
 # Test constants
 DEFAULT_MARIADB_PORT = 3306
 ALTERNATE_MARIADB_PORT = 3307
+DEFAULT_POSTGRES_PORT = 5432
+ALTERNATE_POSTGRES_PORT = 5433
 
 # Check if mariadb is available
 try:
@@ -20,6 +26,14 @@ try:
     HAS_MARIADB = True
 except ImportError:
     HAS_MARIADB = False
+
+# Check if psycopg is available
+try:
+    import psycopg  # noqa: F401
+
+    HAS_PSYCOPG = True
+except ImportError:
+    HAS_PSYCOPG = False
 
 
 class TestStorageInterfaceEnvVars:
@@ -621,4 +635,347 @@ class TestMariaDBConfig:
             clear=True,
         ):
             config = MariaDBConfig()
+            config.validate()
+
+
+class TestStorageInterfacePostgresEnvVars:
+    """Test PostgreSQL storage interface creation with env var conventions."""
+
+    @pytest.mark.skipif(not HAS_PSYCOPG, reason="postgres extra not installed")
+    @patch("trustyai_service.service.data.storage.postgres.postgres.PostgreSQLStorage")
+    def test_postgres_with_database_host_and_database(
+        self, mock_storage: MagicMock
+    ) -> None:
+        """Test PostgreSQL with DATABASE_HOST and DATABASE_DATABASE (direct deployment)."""
+        with patch.dict(
+            os.environ,
+            {
+                "SERVICE_STORAGE_FORMAT": "POSTGRESQL",
+                "DATABASE_USERNAME": "test_user",
+                "DATABASE_PASSWORD": "test_pass",  # pragma: allowlist secret
+                "DATABASE_HOST": "localhost",
+                "DATABASE_PORT": str(DEFAULT_POSTGRES_PORT),
+                "DATABASE_DATABASE": "test_db",
+            },
+            clear=False,
+        ):
+            get_storage_interface()
+            mock_storage.assert_called_once_with(
+                user="test_user",
+                password="test_pass",  # noqa: S106  # pragma: allowlist secret
+                host="localhost",
+                port=DEFAULT_POSTGRES_PORT,
+                database="test_db",
+                ssl_ca=None,
+            )
+
+    @pytest.mark.skipif(not HAS_PSYCOPG, reason="postgres extra not installed")
+    @patch("trustyai_service.service.data.storage.postgres.postgres.PostgreSQLStorage")
+    def test_postgres_with_database_service_and_name(
+        self, mock_storage: MagicMock
+    ) -> None:
+        """Test PostgreSQL with DATABASE_SERVICE and DATABASE_NAME (operator deployment)."""
+        with patch.dict(
+            os.environ,
+            {
+                "SERVICE_STORAGE_FORMAT": "POSTGRES",
+                "DATABASE_USERNAME": "operator_user",
+                "DATABASE_PASSWORD": "operator_pass",  # pragma: allowlist secret
+                "DATABASE_SERVICE": "postgres-service",
+                "DATABASE_PORT": str(ALTERNATE_POSTGRES_PORT),
+                "DATABASE_NAME": "operator_db",
+            },
+            clear=False,
+        ):
+            get_storage_interface()
+            mock_storage.assert_called_once_with(
+                user="operator_user",
+                password="operator_pass",  # noqa: S106  # pragma: allowlist secret
+                host="postgres-service",
+                port=ALTERNATE_POSTGRES_PORT,
+                database="operator_db",
+                ssl_ca=None,
+            )
+
+    @pytest.mark.skipif(not HAS_PSYCOPG, reason="postgres extra not installed")
+    @patch("trustyai_service.service.data.storage.postgres.postgres.PostgreSQLStorage")
+    def test_postgres_with_quarkus_credentials(self, mock_storage: MagicMock) -> None:
+        """Test PostgreSQL with QUARKUS_DATASOURCE_USERNAME/PASSWORD fallback."""
+        with patch.dict(
+            os.environ,
+            {
+                "SERVICE_STORAGE_FORMAT": "POSTGRESQL",
+                "DATABASE_USERNAME": "",  # Explicitly clear to test fallback
+                "DATABASE_PASSWORD": "",  # Explicitly clear to test fallback
+                "QUARKUS_DATASOURCE_USERNAME": "quarkus_user",
+                "QUARKUS_DATASOURCE_PASSWORD": "quarkus_pass",  # pragma: allowlist secret
+                "DATABASE_SERVICE": "postgres-service",
+                "DATABASE_PORT": str(DEFAULT_POSTGRES_PORT),
+                "DATABASE_NAME": "operator_db",
+            },
+            clear=False,
+        ):
+            get_storage_interface()
+            mock_storage.assert_called_once_with(
+                user="quarkus_user",
+                password="quarkus_pass",  # noqa: S106  # pragma: allowlist secret
+                host="postgres-service",
+                port=DEFAULT_POSTGRES_PORT,
+                database="operator_db",
+                ssl_ca=None,
+            )
+
+    @pytest.mark.skipif(not HAS_PSYCOPG, reason="postgres extra not installed")
+    @patch("trustyai_service.service.data.storage.postgres.postgres.PostgreSQLStorage")
+    def test_postgres_fallback_priority(self, mock_storage: MagicMock) -> None:
+        """Test DATABASE_HOST/DATABASE_DATABASE take priority over SERVICE/NAME."""
+        with patch.dict(
+            os.environ,
+            {
+                "SERVICE_STORAGE_FORMAT": "POSTGRESQL",
+                "DATABASE_USERNAME": "test_user",
+                "DATABASE_PASSWORD": "test_pass",  # pragma: allowlist secret
+                "DATABASE_HOST": "direct_host",
+                "DATABASE_SERVICE": "operator_host",
+                "DATABASE_DATABASE": "direct_db",
+                "DATABASE_NAME": "operator_db",
+                "DATABASE_PORT": str(DEFAULT_POSTGRES_PORT),
+            },
+            clear=False,
+        ):
+            get_storage_interface()
+            mock_storage.assert_called_once_with(
+                user="test_user",
+                password="test_pass",  # noqa: S106  # pragma: allowlist secret
+                host="direct_host",
+                port=DEFAULT_POSTGRES_PORT,
+                database="direct_db",
+                ssl_ca=None,
+            )
+
+    @pytest.mark.skipif(not HAS_PSYCOPG, reason="postgres extra not installed")
+    @patch("trustyai_service.service.data.storage.postgres.postgres.PostgreSQLStorage")
+    def test_postgres_default_port_propagated(self, mock_storage: MagicMock) -> None:
+        """Test default port 5432 is propagated when DATABASE_PORT is unset."""
+        env = os.environ.copy()
+        env.pop("DATABASE_PORT", None)
+        env.update(
+            {
+                "SERVICE_STORAGE_FORMAT": "POSTGRESQL",
+                "DATABASE_USERNAME": "test_user",
+                "DATABASE_PASSWORD": "test_pass",  # pragma: allowlist secret
+                "DATABASE_HOST": "localhost",
+                "DATABASE_DATABASE": "test_db",
+            }
+        )
+        with patch.dict(os.environ, env, clear=True):
+            get_storage_interface()
+            mock_storage.assert_called_once_with(
+                user="test_user",
+                password="test_pass",  # noqa: S106  # pragma: allowlist secret
+                host="localhost",
+                port=DEFAULT_POSTGRES_PORT,
+                database="test_db",
+                ssl_ca=None,
+            )
+
+    @pytest.mark.skipif(not HAS_PSYCOPG, reason="postgres extra not installed")
+    @patch("trustyai_service.service.data.storage.postgres.postgres.PostgreSQLStorage")
+    def test_postgres_ssl_ca_passed_when_file_exists(
+        self, mock_storage: MagicMock
+    ) -> None:
+        """Test that ssl_ca is passed through when the CA cert file exists."""
+        with (
+            tempfile.NamedTemporaryFile(suffix=".crt") as ca_file,
+            patch.dict(
+                os.environ,
+                {
+                    "SERVICE_STORAGE_FORMAT": "POSTGRESQL",
+                    "DATABASE_USERNAME": "test_user",
+                    "DATABASE_PASSWORD": "test_pass",  # pragma: allowlist secret
+                    "DATABASE_HOST": "localhost",
+                    "DATABASE_PORT": str(DEFAULT_POSTGRES_PORT),
+                    "DATABASE_DATABASE": "test_db",
+                    "DATABASE_TLS_CA_CERT": ca_file.name,
+                },
+                clear=False,
+            ),
+        ):
+            get_storage_interface()
+            mock_storage.assert_called_once_with(
+                user="test_user",
+                password="test_pass",  # noqa: S106  # pragma: allowlist secret
+                host="localhost",
+                port=DEFAULT_POSTGRES_PORT,
+                database="test_db",
+                ssl_ca=ca_file.name,
+            )
+
+    @pytest.mark.skipif(not HAS_PSYCOPG, reason="postgres extra not installed")
+    @patch("trustyai_service.service.data.storage.postgres.postgres.PostgreSQLStorage")
+    def test_postgres_ssl_ca_none_when_file_missing(
+        self, mock_storage: MagicMock
+    ) -> None:
+        """Test that ssl_ca is None when the configured CA cert file does not exist."""
+        with patch.dict(
+            os.environ,
+            {
+                "SERVICE_STORAGE_FORMAT": "POSTGRESQL",
+                "DATABASE_USERNAME": "test_user",
+                "DATABASE_PASSWORD": "test_pass",  # pragma: allowlist secret
+                "DATABASE_HOST": "localhost",
+                "DATABASE_PORT": str(DEFAULT_POSTGRES_PORT),
+                "DATABASE_DATABASE": "test_db",
+                "DATABASE_TLS_CA_CERT": "/nonexistent/path/ca.crt",
+            },
+            clear=False,
+        ):
+            get_storage_interface()
+            mock_storage.assert_called_once_with(
+                user="test_user",
+                password="test_pass",  # noqa: S106  # pragma: allowlist secret
+                host="localhost",
+                port=DEFAULT_POSTGRES_PORT,
+                database="test_db",
+                ssl_ca=None,
+            )
+
+
+class TestPostgreSQLConfig:
+    """Direct unit tests for PostgreSQLConfig init and validate()."""
+
+    def test_default_port(self) -> None:
+        """Default port is 5432 when DATABASE_PORT is not set."""
+        with patch.dict(
+            os.environ,
+            {
+                "DATABASE_USERNAME": "u",
+                "DATABASE_PASSWORD": "p",  # pragma: allowlist secret
+                "DATABASE_HOST": "h",
+                "DATABASE_DATABASE": "d",
+            },
+            clear=True,
+        ):
+            config = PostgreSQLConfig()
+            assert config.port == DEFAULT_POSTGRES_PORT
+
+    def test_custom_port(self) -> None:
+        """DATABASE_PORT is parsed as an integer."""
+        with patch.dict(
+            os.environ,
+            {
+                "DATABASE_USERNAME": "u",
+                "DATABASE_PASSWORD": "p",  # pragma: allowlist secret
+                "DATABASE_HOST": "h",
+                "DATABASE_DATABASE": "d",
+                "DATABASE_PORT": str(ALTERNATE_POSTGRES_PORT),
+            },
+            clear=True,
+        ):
+            config = PostgreSQLConfig()
+            assert config.port == ALTERNATE_POSTGRES_PORT
+
+    def test_invalid_port_raises(self) -> None:
+        """Non-numeric DATABASE_PORT raises ValueError with descriptive message."""
+        with (
+            patch.dict(
+                os.environ,
+                {"DATABASE_PORT": "abc"},
+                clear=True,
+            ),
+            pytest.raises(ValueError, match="Invalid DATABASE_PORT value 'abc'"),
+        ):
+            PostgreSQLConfig()
+
+    def test_quarkus_env_var_fallbacks(self) -> None:
+        """Quarkus-style env vars are used when primary vars are absent."""
+        with patch.dict(
+            os.environ,
+            {
+                "QUARKUS_DATASOURCE_USERNAME": "q_user",
+                "QUARKUS_DATASOURCE_PASSWORD": "q_pass",  # pragma: allowlist secret
+                "DATABASE_SERVICE": "q_host",
+                "DATABASE_NAME": "q_db",
+            },
+            clear=True,
+        ):
+            config = PostgreSQLConfig()
+            assert config.user == "q_user"
+            assert config.password == "q_pass"  # noqa: S105  # pragma: allowlist secret
+            assert config.host == "q_host"
+            assert config.database == "q_db"
+            config.validate()
+
+    def test_primary_env_vars_take_precedence(self) -> None:
+        """Primary env vars are preferred over Quarkus fallbacks."""
+        with patch.dict(
+            os.environ,
+            {
+                "DATABASE_USERNAME": "primary_user",
+                "QUARKUS_DATASOURCE_USERNAME": "quarkus_user",
+                "DATABASE_PASSWORD": "primary_pass",  # pragma: allowlist secret
+                "QUARKUS_DATASOURCE_PASSWORD": "quarkus_pass",  # pragma: allowlist secret
+                "DATABASE_HOST": "primary_host",
+                "DATABASE_SERVICE": "quarkus_host",
+                "DATABASE_DATABASE": "primary_db",
+                "DATABASE_NAME": "quarkus_db",
+            },
+            clear=True,
+        ):
+            config = PostgreSQLConfig()
+            assert config.user == "primary_user"
+            assert config.password == "primary_pass"  # noqa: S105  # pragma: allowlist secret
+            assert config.host == "primary_host"
+            assert config.database == "primary_db"
+
+    def test_validate_all_missing(self) -> None:
+        """validate() lists all four missing env var pairs."""
+        with patch.dict(os.environ, {}, clear=True):
+            config = PostgreSQLConfig()
+            with pytest.raises(
+                ValueError,
+                match=(
+                    "PostgreSQL storage requires environment variables: "
+                    "DATABASE_USERNAME or QUARKUS_DATASOURCE_USERNAME, "
+                    "DATABASE_PASSWORD or QUARKUS_DATASOURCE_PASSWORD, "
+                    "DATABASE_HOST or DATABASE_SERVICE, "
+                    "DATABASE_DATABASE or DATABASE_NAME"
+                ),
+            ):
+                config.validate()
+
+    def test_validate_partial_missing(self) -> None:
+        """validate() lists only the missing env var pairs."""
+        with patch.dict(
+            os.environ,
+            {
+                "DATABASE_USERNAME": "u",
+                "DATABASE_HOST": "h",
+            },
+            clear=True,
+        ):
+            config = PostgreSQLConfig()
+            with pytest.raises(
+                ValueError,
+                match=(
+                    "PostgreSQL storage requires environment variables: "
+                    "DATABASE_PASSWORD or QUARKUS_DATASOURCE_PASSWORD, "
+                    "DATABASE_DATABASE or DATABASE_NAME"
+                ),
+            ):
+                config.validate()
+
+    def test_validate_all_present(self) -> None:
+        """validate() succeeds when all required env vars are set."""
+        with patch.dict(
+            os.environ,
+            {
+                "DATABASE_USERNAME": "u",
+                "DATABASE_PASSWORD": "p",  # pragma: allowlist secret
+                "DATABASE_HOST": "h",
+                "DATABASE_DATABASE": "d",
+            },
+            clear=True,
+        ):
+            config = PostgreSQLConfig()
             config.validate()
