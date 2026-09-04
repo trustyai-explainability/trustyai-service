@@ -27,7 +27,17 @@ from typing import Any, Literal, TypedDict
 
 import numpy as np
 
+from trustyai_service.core.metrics.drift._goodpoints_patches import (
+    GoodpointsPatchError,
+    apply_goodpoints_patches,
+)
+
 logger = logging.getLogger(__name__)
+
+try:
+    apply_goodpoints_patches()
+except GoodpointsPatchError:
+    logger.exception("Failed to apply goodpoints compatibility guard")
 
 DEFAULT_ALPHA = 0.05
 DEFAULT_NUM_PERMUTATIONS = 39
