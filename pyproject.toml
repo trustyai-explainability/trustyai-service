@@ -159,6 +159,7 @@ ignore-missing-imports = [
     "javaobj.*",
     "mariadb.*",
     "psycopg.*",
+    "sqlalchemy.*",
     "prometheus_client.*",
     "starlette.*",
     "libcst.*",
