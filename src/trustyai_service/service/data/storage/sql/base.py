@@ -114,10 +114,14 @@ class SQLStorage(StorageInterface):
     async def _get_clean_table_name(self, dataset_name: str) -> str:
         """Get the generated table name for a dataset (SQL-injection-safe)."""
         with self._engine.connect() as conn:
+            # ORDER BY table_idx LIMIT 1 makes the lookup deterministic and
+            # crash-free even on a legacy DB that predates the dataset_name
+            # UNIQUE constraint and already holds duplicate rows.
             idx = conn.execute(
-                select(self._ref.c.table_idx).where(
-                    self._ref.c.dataset_name == dataset_name
-                )
+                select(self._ref.c.table_idx)
+                .where(self._ref.c.dataset_name == dataset_name)
+                .order_by(self._ref.c.table_idx)
+                .limit(1)
             ).scalar_one()
         return self._build_table_name(idx)
 
@@ -128,9 +132,10 @@ class SQLStorage(StorageInterface):
             # SQLAlchemy's JSON type returns an already-parsed dict on both
             # PostgreSQL (JSONB) and SQLite/MariaDB (JSON/TEXT).
             return conn.execute(
-                select(self._ref.c["metadata"]).where(
-                    self._ref.c.dataset_name == dataset_name
-                )
+                select(self._ref.c["metadata"])
+                .where(self._ref.c.dataset_name == dataset_name)
+                .order_by(self._ref.c.table_idx)
+                .limit(1)
             ).scalar_one()
 
     # === DATASET QUERYING ==========================================================================
@@ -163,9 +168,10 @@ class SQLStorage(StorageInterface):
         """Get the number of rows in a stored dataset (equivalent to data.shape[0])."""
         with self._engine.connect() as conn:
             return conn.execute(
-                select(self._ref.c.n_rows).where(
-                    self._ref.c.dataset_name == dataset_name
-                )
+                select(self._ref.c.n_rows)
+                .where(self._ref.c.dataset_name == dataset_name)
+                .order_by(self._ref.c.table_idx)
+                .limit(1)
             ).scalar_one()
 
     @require_existing_dataset
@@ -383,9 +389,10 @@ class SQLStorage(StorageInterface):
         """
         with self._engine.begin() as conn:
             metadata = conn.execute(
-                select(self._ref.c["metadata"]).where(
-                    self._ref.c.dataset_name == dataset_name
-                )
+                select(self._ref.c["metadata"])
+                .where(self._ref.c.dataset_name == dataset_name)
+                .order_by(self._ref.c.table_idx)
+                .limit(1)
             ).scalar_one()
             metadata["aliased_names"] = aliased_names
             conn.execute(
