@@ -1,0 +1,20 @@
+# Build-time dependencies for TrustyAI Service.
+# Compiled to requirements-build.txt via:
+#
+#   uv pip compile requirements-build.in \
+#     --python-version 3.12 --python-platform linux \
+#     --emit-index-url --emit-index-annotation \
+#     --generate-hashes --prerelease=if-necessary \
+#     --no-strip-markers \
+#     -o requirements-build.txt \
+#     --index-url https://pypi.org/simple
+#
+# Top-level build deps:
+#   hatchling + hatch-vcs: build backend (pyproject.toml build-system.requires)
+#   cython, numpy: required before --no-build-isolation installs in requirements.txt
+#     (extension packages call cython/numpy at compile time)
+
+hatchling
+hatch-vcs
+cython
+numpy
