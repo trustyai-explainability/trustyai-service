@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 
     from trustyai_service.service.data.storage.sql.base import SQLStorage
 
-ALPHABET = "abcdefghijklmnopqrstuvwxz"
+ALPHABET = "abcdefghijklmnopqrstuvwxz"  # pragma: allowlist secret
 BIG_INSERT_ROWS = 5000
 
 
