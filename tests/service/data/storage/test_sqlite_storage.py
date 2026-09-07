@@ -8,6 +8,7 @@ no-op defaults, the deserialization-error path, and reset semantics.
 from __future__ import annotations
 
 import os
+import stat
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
@@ -64,6 +65,18 @@ async def test_reset_database_then_dataset_gone() -> None:
     await storage.reset_database()
     # Reference table dropped -> dataset_exists swallows the missing-table error.
     assert await storage.dataset_exists("ds") is False
+
+
+@pytest.mark.asyncio
+async def test_require_existing_dataset_accepts_keyword_name() -> None:
+    """@require_existing_dataset works when dataset_name is passed as a keyword."""
+    storage = SQLiteStorage(":memory:")
+    await storage.write_data("ds", np.arange(6).reshape(2, 3), ["a", "b", "c"])
+    # dataset_name supplied as a keyword -> must not raise IndexError.
+    rows = await storage.read_data(dataset_name="ds")
+    assert rows.shape == (2, 3)
+    with pytest.raises(ValueError, match="does not exist"):
+        await storage.read_data(dataset_name="missing")
 
 
 @pytest.mark.asyncio
@@ -145,3 +158,20 @@ class TestSQLiteHealthCheck:
         with patch.dict(os.environ, env, clear=False):
             result = check_storage_readiness()
         assert result.status == "error"
+
+    def test_existing_non_writable_file_errors(self, tmp_path: Path) -> None:
+        """An existing but read-only database file reports an error."""
+        _health_cache.cache.clear()
+        db_file = tmp_path / "ro.sqlite"
+        db_file.write_bytes(b"")
+        db_file.chmod(stat.S_IRUSR)  # read-only for owner
+        try:
+            env = {
+                "SERVICE_STORAGE_FORMAT": "SQLITE",
+                "STORAGE_DATABASE_PATH": str(db_file),
+            }
+            with patch.dict(os.environ, env, clear=False):
+                result = check_storage_readiness()
+            assert result.status == "error"
+        finally:
+            db_file.chmod(stat.S_IRUSR | stat.S_IWUSR)

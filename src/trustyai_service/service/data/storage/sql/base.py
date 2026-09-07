@@ -61,7 +61,9 @@ def require_existing_dataset[**P, R](
     """Assert the first non-self argument names an existing dataset."""
 
     async def validate_dataset_exists(*args: P.args, **kwargs: P.kwargs) -> R:
-        storage, dataset_name = args[0], args[1]
+        storage = args[0]
+        # dataset_name is the first non-self argument; support keyword calls too.
+        dataset_name = args[1] if len(args) > 1 else kwargs["dataset_name"]
         if not await storage.dataset_exists(dataset_name):
             msg = f"Error when calling {func.__name__}: Dataset '{dataset_name}' does not exist."
             raise ValueError(msg)
@@ -236,12 +238,10 @@ class SQLStorage(StorageInterface):
                 )
                 ds_table = self._dataset_table(table_name, cleaned_names)
                 ds_table.create(conn, checkfirst=True)
-            nrows = 0
         else:
             # if dataset already exists, grab its current shape and information
             stored_shape = await self.dataset_shape(dataset_name)
             ncols = stored_shape[1]
-            nrows = await self.dataset_rows(dataset_name)
             table_name = await self._get_clean_table_name(dataset_name)
 
             # validate that the number of columns in the saved DB matched the provided column names
@@ -271,13 +271,16 @@ class SQLStorage(StorageInterface):
                 row_params[col_name] = gzip.compress(json_bytes)
             params.append(row_params)
 
-        # insert data and bump n_rows in a single transaction
+        # insert data and bump n_rows in a single transaction. The count is
+        # incremented database-side (n_rows = n_rows + N) rather than from a
+        # Python snapshot, so concurrent writers cannot clobber each other's
+        # updates and lose rows.
         with self._engine.begin() as conn:
             conn.execute(insert(ds_table), params)
             conn.execute(
                 update(self._ref)
                 .where(self._ref.c.dataset_name == dataset_name)
-                .values(n_rows=nrows + len(new_rows))
+                .values(n_rows=self._ref.c.n_rows + len(new_rows))
             )
 
     @require_existing_dataset

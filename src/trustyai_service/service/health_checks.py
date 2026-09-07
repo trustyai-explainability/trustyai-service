@@ -360,8 +360,16 @@ def _check_sqlite_storage() -> HealthCheck:
     if path == ":memory:":
         return HealthCheck("Storage readiness", STATUS_OK)
 
-    parent = Path(path).parent
-    if not parent.exists() or not os.access(parent, os.W_OK):
+    db_file = Path(path)
+    # An existing database file must itself be writable; a writable parent is
+    # not sufficient (SQLite writes fail on a read-only existing file).
+    if db_file.exists():
+        target_writable = os.access(db_file, os.W_OK)
+    else:
+        parent = db_file.parent
+        target_writable = parent.exists() and os.access(parent, os.W_OK)
+
+    if not target_writable:
         return HealthCheck(
             "Storage readiness",
             STATUS_ERROR,
