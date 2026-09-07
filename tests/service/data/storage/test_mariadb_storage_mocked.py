@@ -1,8 +1,15 @@
-"""Tests for MariaDB storage backend using mocked database connections.
+"""Unit tests for MariaDB helper utilities and adapter glue (no running database).
 
-Covers: connection manager, SSL/TLS configuration, schema metadata operations,
-get_known_models, get_metadata, error handling, and the require_existing_dataset
-decorator. These tests do NOT require a running MariaDB instance.
+Covers the connection manager (used by health checks + migration), the
+``get_clean_column_names`` utility, the ``require_existing_dataset`` decorator, the
+migration-done callback, and payload delegation.
+
+Storage-behavior coverage (write/read/name-mapping/payloads/etc.) now lives in the
+shared, live behavior-parity suite ``test_sql_parity.py``, which runs against
+in-memory SQLite on every CI run (plus PostgreSQL/MariaDB when a server is up).
+That replaces the previous exact-SQL/connection-manager mock assertions, which
+were coupled to the raw-SQL internals removed when the backend moved onto
+SQLAlchemy Core.
 """
 
 from __future__ import annotations
@@ -16,9 +23,9 @@ import pytest
 if TYPE_CHECKING:
     from collections.abc import Coroutine
 
-mariadb = pytest.importorskip("mariadb")
+pytest.importorskip("mariadb")
 
-from trustyai_service.service.data.storage.maria.utils import (  # noqa: E402
+from trustyai_service.service.data.storage.maria.utils import (
     MariaConnectionManager,
     get_clean_column_names,
     require_existing_dataset,
@@ -178,6 +185,49 @@ class TestRequireExistingDataset:
 
 
 # ===========================================================================
+# Deprecation
+# ===========================================================================
+
+
+class TestMariaDeprecation:
+    """MariaDBStorage emits a deprecation warning on construction."""
+
+    def test_init_logs_deprecation_warning(self) -> None:
+        """Constructing MariaDBStorage logs a DEPRECATED warning (no DB needed)."""
+        # Stub the shared base __init__ so no real DB connection is attempted.
+        with (
+            patch(
+                "trustyai_service.service.data.storage.maria.maria.SQLStorage.__init__",
+                return_value=None,
+            ),
+            patch(
+                "trustyai_service.service.data.storage.maria.maria.build_engine",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "trustyai_service.service.data.storage.maria.maria.MariaConnectionManager",
+                return_value=MagicMock(),
+            ),
+        ):
+            from trustyai_service.service.data.storage.maria import (  # noqa: PLC0415
+                maria as maria_module,
+            )
+
+            with patch.object(maria_module.logger, "warning") as mock_warning:
+                maria_module.MariaDBStorage(
+                    "u",
+                    "p",
+                    "h",
+                    3306,
+                    "d",
+                    attempt_migration=False,
+                )
+
+        assert mock_warning.called
+        assert "DEPRECATED" in mock_warning.call_args[0][0]
+
+
+# ===========================================================================
 # MariaDBStorage with mocked connections
 # ===========================================================================
 
@@ -203,105 +253,10 @@ class TestMariaDBStorageMocked:
             storage.connection_manager = MagicMock()
             return storage
 
-    def test_dataset_exists_returns_false_on_programming_error(self) -> None:
-        """dataset_exists returns False when MariaDB raises ProgrammingError."""
-        storage = self._make_storage()
-
-        mock_cursor = MagicMock()
-        mock_cursor.execute.side_effect = mariadb.ProgrammingError("table missing")
-        mock_conn = MagicMock()
-        storage.connection_manager.__enter__ = MagicMock(
-            return_value=(mock_conn, mock_cursor)
-        )
-        storage.connection_manager.__exit__ = MagicMock(return_value=False)
-
-        result = _run(storage.dataset_exists("some_dataset"))
-        assert result is False
-
-    def test_dataset_exists_returns_true(self) -> None:
-        """dataset_exists returns True when a row is found."""
-        storage = self._make_storage()
-
-        mock_cursor = MagicMock()
-        mock_cursor.fetchone.return_value = ("some_dataset",)
-        mock_conn = MagicMock()
-        storage.connection_manager.__enter__ = MagicMock(
-            return_value=(mock_conn, mock_cursor)
-        )
-        storage.connection_manager.__exit__ = MagicMock(return_value=False)
-
-        result = _run(storage.dataset_exists("some_dataset"))
-        assert result is True
-
-    def test_dataset_exists_returns_false_when_not_found(self) -> None:
-        """dataset_exists returns False when no matching row is found."""
-        storage = self._make_storage()
-
-        mock_cursor = MagicMock()
-        mock_cursor.fetchone.return_value = None
-        mock_conn = MagicMock()
-        storage.connection_manager.__enter__ = MagicMock(
-            return_value=(mock_conn, mock_cursor)
-        )
-        storage.connection_manager.__exit__ = MagicMock(return_value=False)
-
-        result = _run(storage.dataset_exists("missing"))
-        assert result is False
-
-    def test_get_known_models_extracts_ids(self) -> None:
-        """get_known_models extracts model IDs by stripping suffixes."""
-        storage = self._make_storage()
-
-        mock_cursor = MagicMock()
-        mock_cursor.fetchall.return_value = [
-            ("model_a_inputs",),
-            ("model_a_outputs",),
-            ("model_b_inputs",),
-            ("model_b_metadata",),
-            ("trustyai_internal_foo",),
-        ]
-        mock_conn = MagicMock()
-        storage.connection_manager.__enter__ = MagicMock(
-            return_value=(mock_conn, mock_cursor)
-        )
-        storage.connection_manager.__exit__ = MagicMock(return_value=False)
-
-        models = sorted(_run(storage.get_known_models()))
-        assert models == ["model_a", "model_b"]
-
-    def test_get_known_models_empty(self) -> None:
-        """get_known_models returns empty list when no datasets exist."""
-        storage = self._make_storage()
-
-        mock_cursor = MagicMock()
-        mock_cursor.fetchall.return_value = []
-        mock_conn = MagicMock()
-        storage.connection_manager.__enter__ = MagicMock(
-            return_value=(mock_conn, mock_cursor)
-        )
-        storage.connection_manager.__exit__ = MagicMock(return_value=False)
-
-        assert _run(storage.get_known_models()) == []
-
     def test_build_table_name(self) -> None:
         """_build_table_name produces the expected format."""
         storage = self._make_storage()
         assert storage._build_table_name(42) == "trustyai_v2_dataset_42"
-
-    def test_list_all_datasets_sync(self) -> None:
-        """_list_all_datasets_sync returns dataset names from DB."""
-        storage = self._make_storage()
-
-        mock_cursor = MagicMock()
-        mock_cursor.fetchall.return_value = [("ds_a",), ("ds_b",)]
-        mock_conn = MagicMock()
-        storage.connection_manager.__enter__ = MagicMock(
-            return_value=(mock_conn, mock_cursor)
-        )
-        storage.connection_manager.__exit__ = MagicMock(return_value=False)
-
-        result = storage._list_all_datasets_sync()
-        assert result == ["ds_a", "ds_b"]
 
     def test_on_migration_done_handles_cancelled(self) -> None:
         """_on_migration_done does nothing for cancelled tasks."""
@@ -326,25 +281,6 @@ class TestMariaDBStorageMocked:
         mock_task.exception.return_value = RuntimeError("migration failed")
         # Should not raise (it logs the exception)
         MariaDBStorage._on_migration_done(mock_task)
-
-    def test_get_metadata_empty_model(self) -> None:
-        """get_metadata returns dict with None values for a model with no data."""
-        storage = self._make_storage()
-
-        # Mock dataset_exists to return False for all
-        mock_cursor = MagicMock()
-        mock_cursor.fetchone.return_value = None
-        mock_conn = MagicMock()
-        storage.connection_manager.__enter__ = MagicMock(
-            return_value=(mock_conn, mock_cursor)
-        )
-        storage.connection_manager.__exit__ = MagicMock(return_value=False)
-
-        result = _run(storage.get_metadata("empty_model"))
-        assert result["modelId"] == "empty_model"
-        assert result["inputData"] is None
-        assert result["outputData"] is None
-        assert result["metadataData"] is None
 
     def test_persist_modelmesh_delegates(self) -> None:
         """persist_modelmesh_payload delegates to persist_partial_payload."""

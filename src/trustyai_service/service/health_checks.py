@@ -187,6 +187,8 @@ def check_storage_readiness() -> HealthCheck:
             return _health_cache.get_or_compute(
                 "postgres_storage", _check_postgres_storage
             )
+        if storage_format == "SQLITE":
+            return _health_cache.get_or_compute("sqlite_storage", _check_sqlite_storage)
         return HealthCheck(
             "Storage readiness",
             STATUS_ERROR,
@@ -346,6 +348,31 @@ def _check_postgres_storage() -> HealthCheck:
                 )
             },
         )
+
+
+def _check_sqlite_storage() -> HealthCheck:
+    """Check SQLite storage accessibility.
+
+    In-memory databases are always ready. File-backed databases are ready when
+    their parent directory exists and is writable.
+    """
+    path = os.getenv("STORAGE_DATABASE_PATH", ":memory:")
+    if path == ":memory:":
+        return HealthCheck("Storage readiness", STATUS_OK)
+
+    parent = Path(path).parent
+    if not parent.exists() or not os.access(parent, os.W_OK):
+        return HealthCheck(
+            "Storage readiness",
+            STATUS_ERROR,
+            {
+                "error": _sanitize_error(
+                    "Storage path not accessible",
+                    f"SQLite path {path} is not writable",
+                )
+            },
+        )
+    return HealthCheck("Storage readiness", STATUS_OK)
 
 
 def check_migration_readiness() -> HealthCheck:  # noqa: PLR0911

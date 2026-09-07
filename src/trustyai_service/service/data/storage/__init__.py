@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from trustyai_service.service.data.storage.postgres.postgres import (
         PostgreSQLStorage,
     )
+    from trustyai_service.service.data.storage.sqlite.sqlite import SQLiteStorage
 
 from trustyai_service.service.data.storage.pvc import PVCStorage
 
@@ -18,16 +19,18 @@ from trustyai_service.service.data.storage.pvc import PVCStorage
 class GlobalStorageInterface:
     """Singleton holder for global storage interface."""
 
-    _instance: MariaDBStorage | PVCStorage | PostgreSQLStorage | None = None
+    _instance: (
+        MariaDBStorage | PVCStorage | PostgreSQLStorage | SQLiteStorage | None
+    ) = None
 
     @classmethod
     def get(
         cls, *, force_reload: bool = False
-    ) -> MariaDBStorage | PVCStorage | PostgreSQLStorage:
+    ) -> MariaDBStorage | PVCStorage | PostgreSQLStorage | SQLiteStorage:
         """Get or create the global storage interface singleton.
 
         :param force_reload: If True, force recreation of the storage interface
-        :return: Storage interface instance (PVCStorage, MariaDBStorage, or PostgreSQLStorage)
+        :return: Storage interface instance (PVCStorage, MariaDBStorage, PostgreSQLStorage, or SQLiteStorage)
         """
         if cls._instance is None or force_reload:
             cls._instance = get_storage_interface()
@@ -41,11 +44,11 @@ class GlobalStorageInterface:
 
 def get_global_storage_interface(
     *, force_reload: bool = False
-) -> MariaDBStorage | PVCStorage | PostgreSQLStorage:
+) -> MariaDBStorage | PVCStorage | PostgreSQLStorage | SQLiteStorage:
     """Get or create the global storage interface singleton.
 
     :param force_reload: If True, force recreation of the storage interface
-    :return: Storage interface instance (PVCStorage, MariaDBStorage, or PostgreSQLStorage)
+    :return: Storage interface instance (PVCStorage, MariaDBStorage, PostgreSQLStorage, or SQLiteStorage)
     """
     return GlobalStorageInterface.get(force_reload=force_reload)
 
@@ -148,10 +151,12 @@ class PostgreSQLConfig:
             raise ValueError(msg)
 
 
-def get_storage_interface() -> MariaDBStorage | PVCStorage | PostgreSQLStorage:
+def get_storage_interface() -> (
+    MariaDBStorage | PVCStorage | PostgreSQLStorage | SQLiteStorage
+):
     """Create a new storage interface based on environment configuration.
 
-    :return: Storage interface instance (PVCStorage, MariaDBStorage, or PostgreSQLStorage)
+    :return: Storage interface instance (PVCStorage, MariaDBStorage, PostgreSQLStorage, or SQLiteStorage)
     :raises ValueError: If storage format is unsupported or dependencies missing
     """
     storage_format = os.environ.get("SERVICE_STORAGE_FORMAT", "PVC")
@@ -160,6 +165,24 @@ def get_storage_interface() -> MariaDBStorage | PVCStorage | PostgreSQLStorage:
             data_directory=os.environ.get("STORAGE_DATA_FOLDER", "/tmp"),  # noqa: S108 -- fallback default for STORAGE_DATA_FOLDER env var
             data_file=os.environ.get("STORAGE_DATA_FILENAME", "trustyai.hdf5"),
         )
+    if storage_format == "SQLITE":
+        try:
+            # Import SQLite storage only when needed (optional dependency: sqlalchemy)
+            from trustyai_service.service.data.storage.sqlite.sqlite import (  # noqa: PLC0415 -- lazy import: sqlalchemy is optional
+                SQLiteStorage,
+            )
+
+            # STORAGE_DATABASE_PATH may be ":memory:" or a filesystem path.
+            return SQLiteStorage(
+                path=os.environ.get("STORAGE_DATABASE_PATH", ":memory:")
+            )
+        except ImportError as e:
+            msg = (
+                "SQLite storage requires optional dependencies. "
+                "Install with: pip install trustyai-service[sqlite]. "
+                f"Error: {e}"
+            )
+            raise ValueError(msg) from e
     if storage_format in ("MARIA", "DATABASE"):
         try:
             # Import MariaDB storage only when needed (optional dependency)
