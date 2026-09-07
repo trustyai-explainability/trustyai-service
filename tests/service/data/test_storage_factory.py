@@ -30,6 +30,25 @@ class TestGetStorageInterface:
 
 
 @pytest.mark.skipif(
+    not pytest.importorskip("sqlalchemy", reason="sqlalchemy not installed"),
+    reason="sqlalchemy not installed",
+)
+class TestGetStorageInterfaceSQLite:
+    """Tests for SQLite storage format routing (requires sqlalchemy)."""
+
+    def test_sqlite_format_creates_sqlite(self) -> None:
+        """SQLITE format returns an in-memory SQLiteStorage by default."""
+        from trustyai_service.service.data.storage.sqlite.sqlite import (  # noqa: PLC0415
+            SQLiteStorage,
+        )
+
+        env = {"SERVICE_STORAGE_FORMAT": "SQLITE", "STORAGE_DATABASE_PATH": ":memory:"}
+        with patch.dict(os.environ, env, clear=False):
+            storage = get_storage_interface()
+            assert isinstance(storage, SQLiteStorage)
+
+
+@pytest.mark.skipif(
     not pytest.importorskip("mariadb", reason="mariadb not installed"),
     reason="mariadb not installed",
 )
