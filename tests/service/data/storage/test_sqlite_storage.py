@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 pytest.importorskip("sqlalchemy")
 
 from sqlalchemy import insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.pool import StaticPool
 
 from trustyai_service.endpoints.consumer import (
@@ -54,6 +55,21 @@ async def test_file_backed_persists_across_instances(tmp_path: Path) -> None:
     reader = SQLiteStorage(db_path)
     assert await reader.dataset_exists("ds")
     assert np.array_equal(await reader.read_data("ds"), data)
+
+
+@pytest.mark.asyncio
+async def test_duplicate_dataset_name_rejected() -> None:
+    """The UNIQUE constraint on dataset_name blocks a concurrent-create race."""
+    storage = SQLiteStorage(":memory:")
+    with storage._engine.begin() as conn:
+        conn.execute(
+            insert(storage._ref).values(dataset_name="d", metadata={}, n_rows=0)
+        )
+    # A second row with the same dataset_name must be refused by the database.
+    with pytest.raises(IntegrityError), storage._engine.begin() as conn:
+        conn.execute(
+            insert(storage._ref).values(dataset_name="d", metadata={}, n_rows=0)
+        )
 
 
 @pytest.mark.asyncio
