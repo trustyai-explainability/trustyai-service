@@ -18,7 +18,8 @@ RUN rpm --import https://supplychain.mariadb.com/MariaDB-Server-GPG-KEY && \
     dnf clean all && \
     CONNECTOR_V="$(mariadb_config --cc_version)" && \
     { printf '3.4.9\n%s\n' "$CONNECTOR_V" | sort -V -C || \
-      { echo "FATAL: Connector/C $CONNECTOR_V < 3.4.9 (CVE-2026-44172)"; exit 1; }; }
+      { echo "FATAL: Connector/C $CONNECTOR_V < 3.4.9 (CVE-2026-44172)"; exit 1; }; } && \
+    update-crypto-policies --set DEFAULT:PQ
 
 WORKDIR /opt/app-root
 
