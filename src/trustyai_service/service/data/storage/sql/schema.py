@@ -64,7 +64,11 @@ def build_reference_table(metadata: MetaData, name: str) -> Table:
         name,
         metadata,
         Column("table_idx", _AUTOINCREMENT_PK, primary_key=True, autoincrement=True),
-        Column("dataset_name", String(255)),
+        # UNIQUE guards against a concurrent-create race (two writers inserting
+        # the same dataset_name) producing split datasets. Applied by create_all()
+        # to new databases only; retrofitting already-deployed tables needs a
+        # migration (tracked in issue #335).
+        Column("dataset_name", String(255), unique=True),
         Column("metadata", _JSON),
         Column("n_rows", BigInteger),
     )
