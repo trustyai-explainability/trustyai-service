@@ -15,6 +15,39 @@ if TYPE_CHECKING:
 
 from trustyai_service.service.data.storage.pvc import PVCStorage
 
+# Default location the operator mounts the database CA certificate at.
+DEFAULT_TLS_CA_CERT = "/etc/tls/db/ca.crt"
+
+# Opt-out for authenticated TLS. Without a CA certificate both drivers fall back
+# to an unverified (and, for libpq's `sslmode=prefer`, possibly plaintext)
+# connection, so a database connection is refused unless the deployment says
+# explicitly that it accepts that risk.
+INSECURE_TLS_ENV_VAR = "DATABASE_ALLOW_INSECURE_TLS"
+
+_TRUTHY = ("1", "true", "yes", "on")
+
+
+def _insecure_tls_allowed() -> bool:
+    """Return True when the deployment opted out of authenticated TLS."""
+    return os.environ.get(INSECURE_TLS_ENV_VAR, "").lower() in _TRUTHY
+
+
+def _resolve_tls_ca() -> tuple[str, str | None]:
+    """Return the configured CA path and the same path only if the file exists."""
+    ca_path = os.environ.get("DATABASE_TLS_CA_CERT", DEFAULT_TLS_CA_CERT)
+    return ca_path, ca_path if Path(ca_path).exists() else None
+
+
+def _tls_error(backend: str, ca_path: str) -> str:
+    """Build the error message for a missing CA certificate."""
+    return (
+        f"{backend} storage requires authenticated TLS but no CA certificate was "
+        f"found at '{ca_path}'. Mount the database CA certificate there (or point "
+        f"DATABASE_TLS_CA_CERT at it). For local development against a database "
+        f"without TLS, set {INSECURE_TLS_ENV_VAR}=true to accept an unverified, "
+        f"possibly plaintext connection."
+    )
+
 
 class GlobalStorageInterface:
     """Singleton holder for global storage interface."""
@@ -80,11 +113,11 @@ class MariaDBConfig:
             msg = f"Invalid DATABASE_PORT value '{port_str}': must be a valid integer"
             raise ValueError(msg) from e
 
-        ssl_ca_path = os.environ.get("DATABASE_TLS_CA_CERT", "/etc/tls/db/ca.crt")
-        self.ssl_ca = ssl_ca_path if Path(ssl_ca_path).exists() else None
+        self.ssl_ca_path, self.ssl_ca = _resolve_tls_ca()
+        self.allow_insecure_tls = _insecure_tls_allowed()
 
     def validate(self) -> None:
-        """Raise ValueError if required env vars are missing."""
+        """Raise ValueError if required env vars are missing or TLS is unusable."""
         missing = []
         if not self.user:
             missing.append("DATABASE_USERNAME or QUARKUS_DATASOURCE_USERNAME")
@@ -99,6 +132,8 @@ class MariaDBConfig:
                 f"MariaDB storage requires environment variables: {', '.join(missing)}"
             )
             raise ValueError(msg)
+        if self.ssl_ca is None and not self.allow_insecure_tls:
+            raise ValueError(_tls_error("MariaDB", self.ssl_ca_path))
 
 
 class PostgreSQLConfig:
@@ -129,11 +164,11 @@ class PostgreSQLConfig:
             msg = f"Invalid DATABASE_PORT value '{port_str}': must be a valid integer"
             raise ValueError(msg) from e
 
-        ssl_ca_path = os.environ.get("DATABASE_TLS_CA_CERT", "/etc/tls/db/ca.crt")
-        self.ssl_ca = ssl_ca_path if Path(ssl_ca_path).exists() else None
+        self.ssl_ca_path, self.ssl_ca = _resolve_tls_ca()
+        self.allow_insecure_tls = _insecure_tls_allowed()
 
     def validate(self) -> None:
-        """Raise ValueError if required env vars are missing."""
+        """Raise ValueError if required env vars are missing or TLS is unusable."""
         missing = []
         if not self.user:
             missing.append("DATABASE_USERNAME or QUARKUS_DATASOURCE_USERNAME")
@@ -149,6 +184,8 @@ class PostgreSQLConfig:
                 f"{', '.join(missing)}"
             )
             raise ValueError(msg)
+        if self.ssl_ca is None and not self.allow_insecure_tls:
+            raise ValueError(_tls_error("PostgreSQL", self.ssl_ca_path))
 
 
 def get_storage_interface() -> (

@@ -27,6 +27,9 @@ class TestUploadEndpointMaria(TestUploadEndpointPVC):
             "DATABASE_PORT": os.environ.get("DATABASE_PORT"),
             "DATABASE_DATABASE": os.environ.get("DATABASE_DATABASE"),
             "DATABASE_ATTEMPT_MIGRATION": os.environ.get("DATABASE_ATTEMPT_MIGRATION"),
+            "DATABASE_ALLOW_INSECURE_TLS": os.environ.get(
+                "DATABASE_ALLOW_INSECURE_TLS"
+            ),
         }
 
         # Use addCleanup to ensure environment is restored even if setUp fails
@@ -45,6 +48,8 @@ class TestUploadEndpointMaria(TestUploadEndpointPVC):
         os.environ["DATABASE_HOST"] = "127.0.0.1"
         os.environ["DATABASE_PORT"] = "3306"
         os.environ["DATABASE_DATABASE"] = "trustyai-database"
+        # The local test database serves no TLS, so opt out of the CA requirement.
+        os.environ["DATABASE_ALLOW_INSECURE_TLS"] = "true"
 
         # Force reload of the global storage interface to use the new temp dir
         from trustyai_service.service.data import (  # noqa: PLC0415  # re-import after reload for test isolation

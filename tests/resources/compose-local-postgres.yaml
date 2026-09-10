@@ -31,7 +31,8 @@ services:
       - trustyai-postgres-container:/var/lib/postgresql/data
     environment:
       <<: *global-variables
-    image: postgres
+    # Pinned to match the postgres service used by the CI test job.
+    image: postgres:16
 volumes:
   trustyai-postgres-container:
 networks:

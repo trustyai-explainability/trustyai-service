@@ -2,6 +2,7 @@
 
 import os
 import tempfile
+from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -65,6 +66,7 @@ class TestStorageInterfaceEnvVars:
             os.environ,
             {
                 "SERVICE_STORAGE_FORMAT": "MARIA",
+                "DATABASE_ALLOW_INSECURE_TLS": "true",
                 "DATABASE_USERNAME": "test_user",
                 "DATABASE_PASSWORD": "test_pass",  # pragma: allowlist secret
                 "DATABASE_HOST": "localhost",
@@ -96,6 +98,7 @@ class TestStorageInterfaceEnvVars:
             os.environ,
             {
                 "SERVICE_STORAGE_FORMAT": "MARIA",
+                "DATABASE_ALLOW_INSECURE_TLS": "true",
                 "DATABASE_USERNAME": "operator_user",
                 "DATABASE_PASSWORD": "operator_pass",  # pragma: allowlist secret
                 "DATABASE_SERVICE": "mariadb-service",
@@ -125,6 +128,7 @@ class TestStorageInterfaceEnvVars:
             os.environ,
             {
                 "SERVICE_STORAGE_FORMAT": "MARIA",
+                "DATABASE_ALLOW_INSECURE_TLS": "true",
                 "DATABASE_USERNAME": "test_user",
                 "DATABASE_PASSWORD": "test_pass",  # pragma: allowlist secret
                 "DATABASE_HOST": "direct_host",
@@ -156,6 +160,7 @@ class TestStorageInterfaceEnvVars:
             os.environ,
             {
                 "SERVICE_STORAGE_FORMAT": "MARIA",
+                "DATABASE_ALLOW_INSECURE_TLS": "true",
                 "DATABASE_USERNAME": "test_user",
                 "DATABASE_PASSWORD": "test_pass",  # pragma: allowlist secret
                 "DATABASE_HOST": "mixed_host",
@@ -185,6 +190,7 @@ class TestStorageInterfaceEnvVars:
             os.environ,
             {
                 "SERVICE_STORAGE_FORMAT": "DATABASE",
+                "DATABASE_ALLOW_INSECURE_TLS": "true",
                 "DATABASE_USERNAME": "operator_user",
                 "DATABASE_PASSWORD": "operator_pass",  # pragma: allowlist secret
                 "DATABASE_SERVICE": "mariadb-service",
@@ -214,6 +220,7 @@ class TestStorageInterfaceEnvVars:
             os.environ,
             {
                 "SERVICE_STORAGE_FORMAT": "DATABASE",
+                "DATABASE_ALLOW_INSECURE_TLS": "true",
                 "DATABASE_USERNAME": "",  # Explicitly clear to test fallback
                 "DATABASE_PASSWORD": "",  # Explicitly clear to test fallback
                 "QUARKUS_DATASOURCE_USERNAME": "quarkus_user",
@@ -247,6 +254,7 @@ class TestStorageInterfaceEnvVars:
             os.environ,
             {
                 "SERVICE_STORAGE_FORMAT": "MARIA",
+                "DATABASE_ALLOW_INSECURE_TLS": "true",
                 "DATABASE_USERNAME": "direct_user",
                 "QUARKUS_DATASOURCE_USERNAME": "quarkus_user",
                 "DATABASE_PASSWORD": "direct_pass",  # pragma: allowlist secret
@@ -282,6 +290,7 @@ class TestStorageInterfaceEnvVars:
                 os.environ,
                 {
                     "SERVICE_STORAGE_FORMAT": "MARIA",
+                    "DATABASE_ALLOW_INSECURE_TLS": "true",
                     "DATABASE_USERNAME": "test_user",
                     "DATABASE_PASSWORD": "test_pass",  # pragma: allowlist secret
                     "DATABASE_HOST": "localhost",
@@ -306,14 +315,15 @@ class TestStorageInterfaceEnvVars:
 
     @pytest.mark.skipif(not HAS_MARIADB, reason="mariadb extra not installed")
     @patch("trustyai_service.service.data.storage.maria.maria.MariaDBStorage")
-    def test_mariadb_ssl_ca_none_when_file_missing(
+    def test_mariadb_ssl_ca_none_when_file_missing_and_insecure_allowed(
         self, mock_storage: MagicMock
     ) -> None:
-        """Test that ssl_ca is None when the configured CA cert file does not exist."""
+        """ssl_ca is None when the CA is missing and insecure TLS is allowed."""
         with patch.dict(
             os.environ,
             {
                 "SERVICE_STORAGE_FORMAT": "MARIA",
+                "DATABASE_ALLOW_INSECURE_TLS": "true",
                 "DATABASE_USERNAME": "test_user",
                 "DATABASE_PASSWORD": "test_pass",  # pragma: allowlist secret
                 "DATABASE_HOST": "localhost",
@@ -373,6 +383,7 @@ class TestStorageInterfaceEnvVars:
                 os.environ,
                 {
                     "SERVICE_STORAGE_FORMAT": "MARIA",
+                    "DATABASE_ALLOW_INSECURE_TLS": "true",
                     "DATABASE_PASSWORD": "test_pass",  # pragma: allowlist secret
                     "DATABASE_HOST": "localhost",
                     "DATABASE_DATABASE": "test_db",
@@ -395,6 +406,7 @@ class TestStorageInterfaceEnvVars:
                 os.environ,
                 {
                     "SERVICE_STORAGE_FORMAT": "MARIA",
+                    "DATABASE_ALLOW_INSECURE_TLS": "true",
                     "DATABASE_USERNAME": "test_user",
                     "DATABASE_HOST": "localhost",
                     "DATABASE_DATABASE": "test_db",
@@ -417,6 +429,7 @@ class TestStorageInterfaceEnvVars:
                 os.environ,
                 {
                     "SERVICE_STORAGE_FORMAT": "MARIA",
+                    "DATABASE_ALLOW_INSECURE_TLS": "true",
                     "DATABASE_USERNAME": "test_user",
                     "DATABASE_PASSWORD": "test_pass",  # pragma: allowlist secret
                     "DATABASE_DATABASE": "test_db",
@@ -439,6 +452,7 @@ class TestStorageInterfaceEnvVars:
                 os.environ,
                 {
                     "SERVICE_STORAGE_FORMAT": "MARIA",
+                    "DATABASE_ALLOW_INSECURE_TLS": "true",
                     "DATABASE_USERNAME": "test_user",
                     "DATABASE_PASSWORD": "test_pass",  # pragma: allowlist secret
                     "DATABASE_HOST": "localhost",
@@ -461,6 +475,7 @@ class TestStorageInterfaceEnvVars:
                 os.environ,
                 {
                     "SERVICE_STORAGE_FORMAT": "MARIA",
+                    "DATABASE_ALLOW_INSECURE_TLS": "true",
                     "DATABASE_USERNAME": "test_user",
                     "DATABASE_HOST": "localhost",
                 },
@@ -483,6 +498,7 @@ class TestStorageInterfaceEnvVars:
                 os.environ,
                 {
                     "SERVICE_STORAGE_FORMAT": "MARIA",
+                    "DATABASE_ALLOW_INSECURE_TLS": "true",
                     "DATABASE_USERNAME": "test_user",
                     "DATABASE_PASSWORD": "test_pass",  # pragma: allowlist secret
                     "DATABASE_HOST": "localhost",
@@ -553,6 +569,7 @@ class TestMariaDBConfig:
                 "QUARKUS_DATASOURCE_PASSWORD": "q_pass",  # pragma: allowlist secret
                 "DATABASE_SERVICE": "q_host",
                 "DATABASE_NAME": "q_db",
+                "DATABASE_ALLOW_INSECURE_TLS": "true",
             },
             clear=True,
         ):
@@ -631,6 +648,7 @@ class TestMariaDBConfig:
                 "DATABASE_PASSWORD": "p",  # pragma: allowlist secret
                 "DATABASE_HOST": "h",
                 "DATABASE_DATABASE": "d",
+                "DATABASE_ALLOW_INSECURE_TLS": "true",
             },
             clear=True,
         ):
@@ -651,6 +669,7 @@ class TestStorageInterfacePostgresEnvVars:
             os.environ,
             {
                 "SERVICE_STORAGE_FORMAT": "POSTGRESQL",
+                "DATABASE_ALLOW_INSECURE_TLS": "true",
                 "DATABASE_USERNAME": "test_user",
                 "DATABASE_PASSWORD": "test_pass",  # pragma: allowlist secret
                 "DATABASE_HOST": "localhost",
@@ -679,6 +698,7 @@ class TestStorageInterfacePostgresEnvVars:
             os.environ,
             {
                 "SERVICE_STORAGE_FORMAT": "POSTGRES",
+                "DATABASE_ALLOW_INSECURE_TLS": "true",
                 "DATABASE_USERNAME": "operator_user",
                 "DATABASE_PASSWORD": "operator_pass",  # pragma: allowlist secret
                 "DATABASE_SERVICE": "postgres-service",
@@ -705,6 +725,7 @@ class TestStorageInterfacePostgresEnvVars:
             os.environ,
             {
                 "SERVICE_STORAGE_FORMAT": "POSTGRESQL",
+                "DATABASE_ALLOW_INSECURE_TLS": "true",
                 "DATABASE_USERNAME": "",  # Explicitly clear to test fallback
                 "DATABASE_PASSWORD": "",  # Explicitly clear to test fallback
                 "QUARKUS_DATASOURCE_USERNAME": "quarkus_user",
@@ -733,6 +754,7 @@ class TestStorageInterfacePostgresEnvVars:
             os.environ,
             {
                 "SERVICE_STORAGE_FORMAT": "POSTGRESQL",
+                "DATABASE_ALLOW_INSECURE_TLS": "true",
                 "DATABASE_USERNAME": "test_user",
                 "DATABASE_PASSWORD": "test_pass",  # pragma: allowlist secret
                 "DATABASE_HOST": "direct_host",
@@ -762,6 +784,7 @@ class TestStorageInterfacePostgresEnvVars:
         env.update(
             {
                 "SERVICE_STORAGE_FORMAT": "POSTGRESQL",
+                "DATABASE_ALLOW_INSECURE_TLS": "true",
                 "DATABASE_USERNAME": "test_user",
                 "DATABASE_PASSWORD": "test_pass",  # pragma: allowlist secret
                 "DATABASE_HOST": "localhost",
@@ -791,6 +814,7 @@ class TestStorageInterfacePostgresEnvVars:
                 os.environ,
                 {
                     "SERVICE_STORAGE_FORMAT": "POSTGRESQL",
+                    "DATABASE_ALLOW_INSECURE_TLS": "true",
                     "DATABASE_USERNAME": "test_user",
                     "DATABASE_PASSWORD": "test_pass",  # pragma: allowlist secret
                     "DATABASE_HOST": "localhost",
@@ -813,14 +837,15 @@ class TestStorageInterfacePostgresEnvVars:
 
     @pytest.mark.skipif(not HAS_PSYCOPG, reason="postgres extra not installed")
     @patch("trustyai_service.service.data.storage.postgres.postgres.PostgreSQLStorage")
-    def test_postgres_ssl_ca_none_when_file_missing(
+    def test_postgres_ssl_ca_none_when_file_missing_and_insecure_allowed(
         self, mock_storage: MagicMock
     ) -> None:
-        """Test that ssl_ca is None when the configured CA cert file does not exist."""
+        """ssl_ca is None when the CA is missing and insecure TLS is allowed."""
         with patch.dict(
             os.environ,
             {
                 "SERVICE_STORAGE_FORMAT": "POSTGRESQL",
+                "DATABASE_ALLOW_INSECURE_TLS": "true",
                 "DATABASE_USERNAME": "test_user",
                 "DATABASE_PASSWORD": "test_pass",  # pragma: allowlist secret
                 "DATABASE_HOST": "localhost",
@@ -896,6 +921,7 @@ class TestPostgreSQLConfig:
                 "QUARKUS_DATASOURCE_PASSWORD": "q_pass",  # pragma: allowlist secret
                 "DATABASE_SERVICE": "q_host",
                 "DATABASE_NAME": "q_db",
+                "DATABASE_ALLOW_INSECURE_TLS": "true",
             },
             clear=True,
         ):
@@ -974,8 +1000,69 @@ class TestPostgreSQLConfig:
                 "DATABASE_PASSWORD": "p",  # pragma: allowlist secret
                 "DATABASE_HOST": "h",
                 "DATABASE_DATABASE": "d",
+                "DATABASE_ALLOW_INSECURE_TLS": "true",
             },
             clear=True,
         ):
             config = PostgreSQLConfig()
             config.validate()
+
+
+class TestTLSPolicy:
+    """Authenticated TLS is required unless the deployment opts out explicitly."""
+
+    BASE_ENV: ClassVar[dict[str, str]] = {
+        "DATABASE_USERNAME": "u",
+        "DATABASE_PASSWORD": "p",  # pragma: allowlist secret
+        "DATABASE_HOST": "h",
+        "DATABASE_DATABASE": "d",
+        "DATABASE_TLS_CA_CERT": "/nonexistent/path/ca.crt",
+    }
+
+    @pytest.mark.parametrize("config_cls", [MariaDBConfig, PostgreSQLConfig])
+    def test_validate_rejects_missing_ca(self, config_cls: type) -> None:
+        """A missing CA certificate fails validation instead of falling back."""
+        with (
+            patch.dict(os.environ, self.BASE_ENV, clear=True),
+            pytest.raises(ValueError, match="requires authenticated TLS"),
+        ):
+            config_cls().validate()
+
+    @pytest.mark.parametrize("config_cls", [MariaDBConfig, PostgreSQLConfig])
+    def test_validate_accepts_missing_ca_with_opt_in(self, config_cls: type) -> None:
+        """DATABASE_ALLOW_INSECURE_TLS permits a connection with no CA certificate."""
+        env = {**self.BASE_ENV, "DATABASE_ALLOW_INSECURE_TLS": "true"}
+        with patch.dict(os.environ, env, clear=True):
+            config = config_cls()
+            config.validate()
+            assert config.ssl_ca is None
+            assert config.allow_insecure_tls is True
+
+    @pytest.mark.parametrize("config_cls", [MariaDBConfig, PostgreSQLConfig])
+    def test_validate_accepts_present_ca(self, config_cls: type) -> None:
+        """An existing CA certificate satisfies the TLS requirement."""
+        with tempfile.NamedTemporaryFile(suffix=".crt") as ca_file:
+            env = {**self.BASE_ENV, "DATABASE_TLS_CA_CERT": ca_file.name}
+            with patch.dict(os.environ, env, clear=True):
+                config = config_cls()
+                config.validate()
+                assert config.ssl_ca == ca_file.name
+
+    @pytest.mark.parametrize("config_cls", [MariaDBConfig, PostgreSQLConfig])
+    def test_missing_credentials_reported_before_tls(self, config_cls: type) -> None:
+        """Missing credentials keep their own error message."""
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            pytest.raises(ValueError, match="requires environment variables"),
+        ):
+            config_cls().validate()
+
+    @pytest.mark.parametrize("flag", ["0", "false", "no", "off", ""])
+    def test_non_truthy_opt_in_still_rejects(self, flag: str) -> None:
+        """Only truthy DATABASE_ALLOW_INSECURE_TLS values disable the TLS check."""
+        env = {**self.BASE_ENV, "DATABASE_ALLOW_INSECURE_TLS": flag}
+        with (
+            patch.dict(os.environ, env, clear=True),
+            pytest.raises(ValueError, match="requires authenticated TLS"),
+        ):
+            PostgreSQLConfig().validate()
