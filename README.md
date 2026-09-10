@@ -101,20 +101,35 @@ podman run -p 8080:8080 trustyai:latest
 
 | Environment Variable | Default | Description |
 | -------- | ------- | ----------- |
-| `SERVICE_STORAGE_FORMAT` | `PVC` | Storage backend (`PVC` or `MARIA`) |
+| `SERVICE_STORAGE_FORMAT` | `PVC` | Storage backend (`PVC`, `POSTGRESQL`, `SQLITE`, or the deprecated `MARIA`) |
 | `SERVICE_METRICS_SCHEDULE` | `30` | Seconds between scheduled computations |
 | `HTTP_PORT` | `8080` | HTTP listener port |
 | `SSL_PORT` | `4443` | HTTPS listener port |
 | `TLS_CERT_FILE` | `/etc/tls/internal/tls.crt` | TLS certificate path |
 | `TLS_KEY_FILE` | `/etc/tls/internal/tls.key` | TLS private key path |
-| `DATABASE_HOST` | — | MariaDB hostname |
-| `DATABASE_PORT` | `3306` | MariaDB port |
-| `DATABASE_USERNAME` | — | MariaDB username |
-| `DATABASE_PASSWORD` | — | MariaDB password |
-| `DATABASE_DATABASE` | — | MariaDB database name |
+| `DATABASE_HOST` | — | Database hostname |
+| `DATABASE_PORT` | `3306` (MariaDB) / `5432` (PostgreSQL) | Database port |
+| `DATABASE_USERNAME` | — | Database username |
+| `DATABASE_PASSWORD` | — | Database password |
+| `DATABASE_DATABASE` | — | Database name |
+| `DATABASE_TLS_CA_CERT` | `/etc/tls/db/ca.crt` | CA certificate used to verify the database server |
+| `DATABASE_ALLOW_INSECURE_TLS` | `false` | Allow a database connection with no CA certificate (development only) |
+| `STORAGE_DATABASE_PATH` | `:memory:` | SQLite database path |
 
 TLS is enabled automatically when both the certificate and key
 files are present.
+
+### Database TLS
+
+MariaDB and PostgreSQL connections require authenticated TLS. The service reads
+the CA certificate from `DATABASE_TLS_CA_CERT` and verifies the server against
+it (`sslmode=verify-full` on PostgreSQL, `ssl_verify_cert` on MariaDB). Startup
+fails when that file is absent, because both drivers would otherwise fall back
+to an unverified — and, for PostgreSQL, possibly plaintext — connection.
+
+For local development against a database without TLS, set
+`DATABASE_ALLOW_INSECURE_TLS=true` to accept that fallback. Do not set it in a
+deployment.
 
 ---
 

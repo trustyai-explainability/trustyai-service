@@ -8,21 +8,62 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from trustyai_service.service.data.storage.maria.maria import MariaDBStorage
+    from trustyai_service.service.data.storage.postgres.postgres import (
+        PostgreSQLStorage,
+    )
+    from trustyai_service.service.data.storage.sqlite.sqlite import SQLiteStorage
 
 from trustyai_service.service.data.storage.pvc import PVCStorage
+
+# Default location the operator mounts the database CA certificate at.
+DEFAULT_TLS_CA_CERT = "/etc/tls/db/ca.crt"
+
+# Opt-out for authenticated TLS. Without a CA certificate both drivers fall back
+# to an unverified (and, for libpq's `sslmode=prefer`, possibly plaintext)
+# connection, so a database connection is refused unless the deployment says
+# explicitly that it accepts that risk.
+INSECURE_TLS_ENV_VAR = "DATABASE_ALLOW_INSECURE_TLS"
+
+_TRUTHY = ("1", "true", "yes", "on")
+
+
+def _insecure_tls_allowed() -> bool:
+    """Return True when the deployment opted out of authenticated TLS."""
+    return os.environ.get(INSECURE_TLS_ENV_VAR, "").lower() in _TRUTHY
+
+
+def _resolve_tls_ca() -> tuple[str, str | None]:
+    """Return the configured CA path and the same path only if the file exists."""
+    ca_path = os.environ.get("DATABASE_TLS_CA_CERT", DEFAULT_TLS_CA_CERT)
+    return ca_path, ca_path if Path(ca_path).exists() else None
+
+
+def _tls_error(backend: str, ca_path: str) -> str:
+    """Build the error message for a missing CA certificate."""
+    return (
+        f"{backend} storage requires authenticated TLS but no CA certificate was "
+        f"found at '{ca_path}'. Mount the database CA certificate there (or point "
+        f"DATABASE_TLS_CA_CERT at it). For local development against a database "
+        f"without TLS, set {INSECURE_TLS_ENV_VAR}=true to accept an unverified, "
+        f"possibly plaintext connection."
+    )
 
 
 class GlobalStorageInterface:
     """Singleton holder for global storage interface."""
 
-    _instance: MariaDBStorage | PVCStorage | None = None
+    _instance: (
+        MariaDBStorage | PVCStorage | PostgreSQLStorage | SQLiteStorage | None
+    ) = None
 
     @classmethod
-    def get(cls, *, force_reload: bool = False) -> MariaDBStorage | PVCStorage:
+    def get(
+        cls, *, force_reload: bool = False
+    ) -> MariaDBStorage | PVCStorage | PostgreSQLStorage | SQLiteStorage:
         """Get or create the global storage interface singleton.
 
         :param force_reload: If True, force recreation of the storage interface
-        :return: Storage interface instance (PVCStorage or MariaDBStorage)
+        :return: Storage interface instance (PVCStorage, MariaDBStorage, PostgreSQLStorage, or SQLiteStorage)
         """
         if cls._instance is None or force_reload:
             cls._instance = get_storage_interface()
@@ -36,11 +77,11 @@ class GlobalStorageInterface:
 
 def get_global_storage_interface(
     *, force_reload: bool = False
-) -> MariaDBStorage | PVCStorage:
+) -> MariaDBStorage | PVCStorage | PostgreSQLStorage | SQLiteStorage:
     """Get or create the global storage interface singleton.
 
     :param force_reload: If True, force recreation of the storage interface
-    :return: Storage interface instance (PVCStorage or MariaDBStorage)
+    :return: Storage interface instance (PVCStorage, MariaDBStorage, PostgreSQLStorage, or SQLiteStorage)
     """
     return GlobalStorageInterface.get(force_reload=force_reload)
 
@@ -72,11 +113,11 @@ class MariaDBConfig:
             msg = f"Invalid DATABASE_PORT value '{port_str}': must be a valid integer"
             raise ValueError(msg) from e
 
-        ssl_ca_path = os.environ.get("DATABASE_TLS_CA_CERT", "/etc/tls/db/ca.crt")
-        self.ssl_ca = ssl_ca_path if Path(ssl_ca_path).exists() else None
+        self.ssl_ca_path, self.ssl_ca = _resolve_tls_ca()
+        self.allow_insecure_tls = _insecure_tls_allowed()
 
     def validate(self) -> None:
-        """Raise ValueError if required env vars are missing."""
+        """Raise ValueError if required env vars are missing or TLS is unusable."""
         missing = []
         if not self.user:
             missing.append("DATABASE_USERNAME or QUARKUS_DATASOURCE_USERNAME")
@@ -91,12 +132,68 @@ class MariaDBConfig:
                 f"MariaDB storage requires environment variables: {', '.join(missing)}"
             )
             raise ValueError(msg)
+        if self.ssl_ca is None and not self.allow_insecure_tls:
+            raise ValueError(_tls_error("MariaDB", self.ssl_ca_path))
 
 
-def get_storage_interface() -> MariaDBStorage | PVCStorage:
+class PostgreSQLConfig:
+    """PostgreSQL connection configuration read from environment variables.
+
+    Supports both operator (Quarkus) and direct deployment env vars. Env vars
+    are identical to MariaDB's except that DATABASE_PORT defaults to 5432.
+    """
+
+    def __init__(self) -> None:
+        """Read PostgreSQL connection parameters from environment variables."""
+        self.user = os.environ.get("DATABASE_USERNAME") or os.environ.get(
+            "QUARKUS_DATASOURCE_USERNAME"
+        )
+        self.password = os.environ.get("DATABASE_PASSWORD") or os.environ.get(
+            "QUARKUS_DATASOURCE_PASSWORD"
+        )
+        self.host = os.environ.get("DATABASE_HOST") or os.environ.get(
+            "DATABASE_SERVICE"
+        )
+        self.database = os.environ.get("DATABASE_DATABASE") or os.environ.get(
+            "DATABASE_NAME"
+        )
+        port_str = os.environ.get("DATABASE_PORT", "5432")
+        try:
+            self.port = int(port_str)
+        except ValueError as e:
+            msg = f"Invalid DATABASE_PORT value '{port_str}': must be a valid integer"
+            raise ValueError(msg) from e
+
+        self.ssl_ca_path, self.ssl_ca = _resolve_tls_ca()
+        self.allow_insecure_tls = _insecure_tls_allowed()
+
+    def validate(self) -> None:
+        """Raise ValueError if required env vars are missing or TLS is unusable."""
+        missing = []
+        if not self.user:
+            missing.append("DATABASE_USERNAME or QUARKUS_DATASOURCE_USERNAME")
+        if not self.password:
+            missing.append("DATABASE_PASSWORD or QUARKUS_DATASOURCE_PASSWORD")
+        if not self.host:
+            missing.append("DATABASE_HOST or DATABASE_SERVICE")
+        if not self.database:
+            missing.append("DATABASE_DATABASE or DATABASE_NAME")
+        if missing:
+            msg = (
+                "PostgreSQL storage requires environment variables: "
+                f"{', '.join(missing)}"
+            )
+            raise ValueError(msg)
+        if self.ssl_ca is None and not self.allow_insecure_tls:
+            raise ValueError(_tls_error("PostgreSQL", self.ssl_ca_path))
+
+
+def get_storage_interface() -> (
+    MariaDBStorage | PVCStorage | PostgreSQLStorage | SQLiteStorage
+):
     """Create a new storage interface based on environment configuration.
 
-    :return: Storage interface instance (PVCStorage or MariaDBStorage)
+    :return: Storage interface instance (PVCStorage, MariaDBStorage, PostgreSQLStorage, or SQLiteStorage)
     :raises ValueError: If storage format is unsupported or dependencies missing
     """
     storage_format = os.environ.get("SERVICE_STORAGE_FORMAT", "PVC")
@@ -105,6 +202,24 @@ def get_storage_interface() -> MariaDBStorage | PVCStorage:
             data_directory=os.environ.get("STORAGE_DATA_FOLDER", "/tmp"),  # noqa: S108 -- fallback default for STORAGE_DATA_FOLDER env var
             data_file=os.environ.get("STORAGE_DATA_FILENAME", "trustyai.hdf5"),
         )
+    if storage_format == "SQLITE":
+        try:
+            # Import SQLite storage only when needed (optional dependency: sqlalchemy)
+            from trustyai_service.service.data.storage.sqlite.sqlite import (  # noqa: PLC0415 -- lazy import: sqlalchemy is optional
+                SQLiteStorage,
+            )
+
+            # STORAGE_DATABASE_PATH may be ":memory:" or a filesystem path.
+            return SQLiteStorage(
+                path=os.environ.get("STORAGE_DATABASE_PATH", ":memory:")
+            )
+        except ImportError as e:
+            msg = (
+                "SQLite storage requires optional dependencies. "
+                "Install with: pip install trustyai-service[sqlite]. "
+                f"Error: {e}"
+            )
+            raise ValueError(msg) from e
     if storage_format in ("MARIA", "DATABASE"):
         try:
             # Import MariaDB storage only when needed (optional dependency)
@@ -131,6 +246,31 @@ def get_storage_interface() -> MariaDBStorage | PVCStorage:
             msg = (
                 "MariaDB storage requires optional dependencies. "
                 "Install with: pip install trustyai-service[mariadb]. "
+                f"Error: {e}"
+            )
+            raise ValueError(msg) from e
+    if storage_format in ("POSTGRESQL", "POSTGRES"):
+        try:
+            # Import PostgreSQL storage only when needed (optional dependency)
+            from trustyai_service.service.data.storage.postgres.postgres import (  # noqa: PLC0415 -- lazy import: psycopg is optional
+                PostgreSQLStorage,
+            )
+
+            config = PostgreSQLConfig()
+            config.validate()
+
+            return PostgreSQLStorage(
+                user=config.user,
+                password=config.password,
+                host=config.host,
+                port=config.port,
+                database=config.database,
+                ssl_ca=config.ssl_ca,
+            )
+        except ImportError as e:
+            msg = (
+                "PostgreSQL storage requires optional dependencies. "
+                "Install with: pip install trustyai-service[postgres]. "
                 f"Error: {e}"
             )
             raise ValueError(msg) from e
