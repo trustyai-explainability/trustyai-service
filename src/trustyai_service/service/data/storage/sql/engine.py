@@ -85,7 +85,13 @@ def postgres_url(
 
 
 def postgres_connect_args(ssl_ca: str | None) -> dict[str, Any]:
-    """Psycopg TLS connect args mirroring the raw-SQL backend (``verify-full``)."""
+    """Psycopg TLS connect args mirroring the raw-SQL backend (``verify-full``).
+
+    With no CA certificate libpq falls back to ``sslmode=prefer``, which allows an
+    unverified or plaintext connection. Configuration read from the environment
+    refuses that unless ``DATABASE_ALLOW_INSECURE_TLS`` is set, so a ``None`` here
+    means the deployment opted in explicitly (or is a direct, in-test construction).
+    """
     if ssl_ca:
         return {"sslmode": "verify-full", "sslrootcert": ssl_ca}
     return {}
@@ -110,9 +116,14 @@ def mariadb_url(
 
 
 def mariadb_connect_args(ssl_ca: str | None) -> dict[str, Any]:
-    """MariaDB TLS connect args (CA verification)."""
+    """MariaDB TLS connect args (CA verification).
+
+    ``ssl_verify_cert`` is set explicitly to match ``MariaConnectionManager``. As
+    with PostgreSQL, a ``None`` CA leaves the connection unencrypted and is only
+    reachable from the environment after a ``DATABASE_ALLOW_INSECURE_TLS`` opt-in.
+    """
     if ssl_ca:
-        return {"ssl_ca": ssl_ca}
+        return {"ssl_ca": ssl_ca, "ssl_verify_cert": True}
     return {}
 
 
