@@ -67,6 +67,7 @@ class TestGetStorageInterfaceMariaDB:
 
         env = {
             "SERVICE_STORAGE_FORMAT": "MARIA",
+            "DATABASE_ALLOW_INSECURE_TLS": "true",
             "DATABASE_USERNAME": "user",
             "DATABASE_PASSWORD": "pass",  # pragma: allowlist secret
             "DATABASE_HOST": "localhost",
@@ -89,6 +90,7 @@ class TestGetStorageInterfaceMariaDB:
 
         env = {
             "SERVICE_STORAGE_FORMAT": "DATABASE",
+            "DATABASE_ALLOW_INSECURE_TLS": "true",
             "DATABASE_USERNAME": "user",
             "DATABASE_PASSWORD": "pass",  # pragma: allowlist secret
             "DATABASE_HOST": "localhost",
@@ -119,6 +121,7 @@ class TestGetStorageInterfacePostgres:
 
         env = {
             "SERVICE_STORAGE_FORMAT": "POSTGRESQL",
+            "DATABASE_ALLOW_INSECURE_TLS": "true",
             "DATABASE_USERNAME": "user",
             "DATABASE_PASSWORD": "pass",  # pragma: allowlist secret
             "DATABASE_HOST": "localhost",
@@ -141,6 +144,7 @@ class TestGetStorageInterfacePostgres:
 
         env = {
             "SERVICE_STORAGE_FORMAT": "POSTGRES",
+            "DATABASE_ALLOW_INSECURE_TLS": "true",
             "DATABASE_USERNAME": "user",
             "DATABASE_PASSWORD": "pass",  # pragma: allowlist secret
             "DATABASE_HOST": "localhost",
