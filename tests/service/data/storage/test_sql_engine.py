@@ -102,9 +102,10 @@ class TestConnectArgs:
         assert eng.postgres_connect_args(None) == {}
 
     def test_mariadb_connect_args_with_ca(self) -> None:
-        """MariaDB CA arg is set when a CA is given."""
+        """MariaDB CA arg and certificate verification are set when a CA is given."""
         assert eng.mariadb_connect_args("/etc/tls/ca.crt") == {
-            "ssl_ca": "/etc/tls/ca.crt"
+            "ssl_ca": "/etc/tls/ca.crt",
+            "ssl_verify_cert": True,
         }
 
     def test_mariadb_connect_args_without_ca(self) -> None:

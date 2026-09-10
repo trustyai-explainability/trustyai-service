@@ -28,6 +28,8 @@ from trustyai_service.service.health_checks import (
 
 _MARIA_ENV = {
     "SERVICE_STORAGE_FORMAT": "MARIA",
+    # No CA certificate is available in tests, so opt out of authenticated TLS.
+    "DATABASE_ALLOW_INSECURE_TLS": "true",
     "DATABASE_HOST": "localhost",
     "DATABASE_PORT": "3306",
     "DATABASE_USERNAME": "test_user",
@@ -37,6 +39,7 @@ _MARIA_ENV = {
 
 _POSTGRES_ENV = {
     "SERVICE_STORAGE_FORMAT": "POSTGRESQL",
+    "DATABASE_ALLOW_INSECURE_TLS": "true",
     "DATABASE_HOST": "localhost",
     "DATABASE_PORT": "5432",
     "DATABASE_USERNAME": "test_user",
