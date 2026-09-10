@@ -1,5 +1,6 @@
 """Local explainer endpoint for instance-level explanation requests."""
 
+import asyncio
 import logging
 from enum import StrEnum
 from http import HTTPStatus
@@ -128,11 +129,15 @@ class SHAPExplainerConfig(BaseModel):
 
     n_samples: int = Field(
         default=300,
-        description="Number of background samples used for Shapley value integration.",
+        description="Number of KernelSHAP samples and background centroids per explanation.",
+    )
+    n_training_rows: int = Field(
+        default=1000,
+        description="Maximum number of organic observations used to train the surrogate model.",
     )
     timeout: int = Field(
-        default=10,
-        description="Computation timeout in seconds. Reserved for future use; not currently enforced.",
+        default=300,
+        description="Computation timeout in seconds.",
     )
     link: LinkType = Field(
         default=LinkType.IDENTITY,
@@ -391,7 +396,7 @@ async def local_shap_explanation(
 
     instance, all_input_names = await get_stored_prediction(model, request.predictionId)
     x_train, y_train, training_cols = await _prepare_training_data(
-        model, config.n_samples
+        model, config.n_training_rows
     )
 
     # Validate training columns exist in stored instance
@@ -410,24 +415,38 @@ async def local_shap_explanation(
     link_str = _LINK_MAP[config.link]
     l1_reg_str = _REG_MAP[config.regularizer]
 
-    surrogate = build_surrogate(x_train, y_train)
-    shap_vals = compute_shap_values(
-        instance_f64,
-        x_train,
-        surrogate,
-        n_samples=config.n_samples,
-        link=link_str,
-        l1_reg=l1_reg_str,
-    )
-    lower, upper = compute_confidence_intervals(
-        instance_f64,
-        x_train,
-        surrogate,
-        confidence=config.confidence,
-        n_samples=config.n_samples,
-        link=link_str,
-        l1_reg=l1_reg_str,
-    )
+    def _compute() -> tuple[np.ndarray, np.ndarray | None, np.ndarray | None]:
+        _surrogate = build_surrogate(x_train, y_train)
+        _values = compute_shap_values(
+            instance_f64,
+            x_train,
+            _surrogate,
+            n_samples=config.n_samples,
+            link=link_str,
+            l1_reg=l1_reg_str,
+        )
+        _lower, _upper = compute_confidence_intervals(
+            instance_f64,
+            x_train,
+            _surrogate,
+            confidence=config.confidence,
+            n_samples=config.n_samples,
+            link=link_str,
+            l1_reg=l1_reg_str,
+        )
+        return _values, _lower, _upper
+
+    try:
+        shap_vals, lower, upper = await asyncio.wait_for(
+            asyncio.to_thread(_compute),
+            timeout=config.timeout,
+        )
+    except TimeoutError as exc:
+        msg = f"SHAP computation exceeded {config.timeout}s timeout."
+        raise HTTPException(
+            status_code=HTTPStatus.GATEWAY_TIMEOUT,
+            detail=msg,
+        ) from exc
 
     attributions = [
         SHAPFeatureAttribution(
