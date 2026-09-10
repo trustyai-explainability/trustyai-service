@@ -47,6 +47,7 @@ test = [
 # Note: grpcio/grpcio-tools removed - incompatible with protobuf v7, unused (protoc used instead)
 mariadb = ["mariadb>=1.1,<1.2", "javaobj-py3>=0.5,<0.7"]
 mmd = ["goodpoints>=0.6.3,<0.7"]
+explainability = ["shap>=0.46,<0.48"]
 
 [tool.hatch.version]
 source = "vcs"
@@ -104,7 +105,8 @@ ignore = [
 "src/trustyai_service/endpoints/consumer/*.py" = ["N815"]
 "src/trustyai_service/endpoints/consumer/__init__.py" = ["C901"]
 "src/trustyai_service/endpoints/consumer/consumer_endpoint.py" = ["BLE001", "C901", "PLR0912", "PLR0913", "PLR0915"]
-"src/trustyai_service/endpoints/explainers/*.py" = ["N815"]
+"src/trustyai_service/core/explainers/shap.py" = ["PLR0913"]
+"src/trustyai_service/endpoints/explainers/*.py" = ["N815", "PLR0913"]
 "src/trustyai_service/endpoints/metadata.py" = ["N815", "BLE001", "C901"]
 "src/trustyai_service/endpoints/metrics/**/*.py" = ["N815"]
 "src/trustyai_service/endpoints/metrics/fairness/group/*.py" = ["BLE001", "TRY300", "TRY301"]
@@ -127,6 +129,8 @@ ignore = [
 "tests/service/serialization/test_rows.py" = ["PLR2004"]
 "tests/service/data/storage/test_pvc_storage.py" = ["PLC0415", "PLR2004"]
 "tests/service/data/storage/maria/*.py" = ["ANN", "PLR2004", "ARG002"]  # Pytest style: no test method annotations, exact assertion values, setup-only fixtures
+"tests/core/explainers/*.py" = ["PLR2004", "N806"]
+"tests/endpoints/explainers/*.py" = ["PLR2004", "N806", "FBT003"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "strict"
@@ -156,6 +160,7 @@ ignore-missing-imports = [
     "javaobj.*",
     "mariadb.*",
     "prometheus_client.*",
+    "shap.*",
     "starlette.*",
     "libcst.*",
     # Test dependencies
