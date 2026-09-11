@@ -47,6 +47,7 @@ test = [
 # Note: grpcio/grpcio-tools removed - incompatible with protobuf v7, unused (protoc used instead)
 mariadb = ["mariadb>=1.1,<1.2", "javaobj-py3>=0.5,<0.7"]
 mmd = ["goodpoints>=0.6.3,<0.7"]
+explainability = ["shap>=0.46,<0.48", "lime>=0.2,<0.3"]
 
 [tool.hatch.version]
 source = "vcs"
@@ -126,6 +127,7 @@ ignore = [
 "tests/service/data/test_utils.py" = ["PLR0913", "UP037"]  # UP037: Keep quoted annotations for optional protobuf imports
 "tests/service/data/storage/test_pvc_storage.py" = ["PLC0415"]
 "tests/service/data/storage/maria/*.py" = ["ANN", "ARG002"]  # Pytest style: no test method annotations, setup-only fixtures
+"src/trustyai_service/core/explainers/lime.py" = ["PLR0913"]  # Functions wrap lime's multi-param API
 
 [tool.pytest.ini_options]
 asyncio_mode = "strict"
@@ -153,6 +155,7 @@ ignore-missing-imports = [
     "hypercorn.*",
     "isodate.*",
     "javaobj.*",
+    "lime.*",
     "mariadb.*",
     "prometheus_client.*",
     "starlette.*",
