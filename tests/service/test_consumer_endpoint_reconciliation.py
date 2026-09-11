@@ -408,7 +408,7 @@ class TestWriteReconciledDataMetadata(unittest.TestCase):
                 id_="req-123",
             )
 
-        assert real_metadata.get_observations() == 5  # noqa: PLR2004
+        assert real_metadata.get_observations() == 5
 
     async def _test_cache_hit_increments(self) -> None:
         """Subsequent reconciliation (cache hit): observations increment correctly."""
@@ -458,7 +458,7 @@ class TestWriteReconciledDataMetadata(unittest.TestCase):
                 id_="req-456",
             )
 
-        assert real_metadata.get_observations() == 10  # noqa: PLR2004
+        assert real_metadata.get_observations() == 10
 
 
 TestWriteReconciledDataMetadata.test_cache_miss_no_double_count = (  # type: ignore[attr-defined]

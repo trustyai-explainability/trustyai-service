@@ -53,12 +53,12 @@ class TestGetInferenceIds:
 
         response = client.get("/info/inference/ids/test-model")
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == 200
         body = response.json()
         assert body["ids"] == [
             {"id": id_, "timestamp": FAKE_TIMESTAMP} for id_ in expected_ids
         ]
-        assert body["total"] == 3  # noqa: PLR2004
+        assert body["total"] == 3
         assert body["offset"] == 0
 
     @patch("trustyai_service.endpoints.metadata.storage_interface")
@@ -68,7 +68,7 @@ class TestGetInferenceIds:
 
         response = client.get("/info/inference/ids/nonexistent")
 
-        assert response.status_code == 400  # noqa: PLR2004
+        assert response.status_code == 400
         assert "No metadata found" in response.json()["detail"]
 
     @patch("trustyai_service.endpoints.metadata.storage_interface")
@@ -85,7 +85,7 @@ class TestGetInferenceIds:
 
         response = client.get("/info/inference/ids/empty-model")
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == 200
         body = response.json()
         assert body["ids"] == []
         assert body["total"] == 0
@@ -110,9 +110,9 @@ class TestInferenceIdsTypeFilter:
 
         response = client.get("/info/inference/ids/test-model?type=all")
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == 200
         body = response.json()
-        assert body["total"] == 3  # noqa: PLR2004
+        assert body["total"] == 3
         returned_ids = [item["id"] for item in body["ids"]]
         assert returned_ids == ids
 
@@ -132,9 +132,9 @@ class TestInferenceIdsTypeFilter:
 
         response = client.get("/info/inference/ids/test-model?type=organic")
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == 200
         body = response.json()
-        assert body["total"] == 2  # noqa: PLR2004
+        assert body["total"] == 2
         returned_ids = [item["id"] for item in body["ids"]]
         assert returned_ids == ["organic1", "organic2"]
 
@@ -154,7 +154,7 @@ class TestInferenceIdsTypeFilter:
 
         response = client.get("/info/inference/ids/test-model?type=ORGANIC")
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == 200
         body = response.json()
         assert body["total"] == 1
         assert body["ids"][0]["id"] == "organic1"
@@ -163,7 +163,7 @@ class TestInferenceIdsTypeFilter:
         """Invalid type value returns 400 BAD_REQUEST."""
         response = client.get("/info/inference/ids/any-model?type=invalid")
 
-        assert response.status_code == 400  # noqa: PLR2004
+        assert response.status_code == 400
         assert "Invalid type parameter" in response.json()["detail"]
 
 
@@ -185,13 +185,13 @@ class TestInferenceIdsPagination:
 
         response = client.get("/info/inference/ids/big-model?limit=3")
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == 200
         body = response.json()
-        assert len(body["ids"]) == 3  # noqa: PLR2004
+        assert len(body["ids"]) == 3
         assert body["ids"] == [
             {"id": id_, "timestamp": FAKE_TIMESTAMP} for id_ in ids[:3]
         ]
-        assert body["total"] == 10  # noqa: PLR2004
+        assert body["total"] == 10
 
     @patch("trustyai_service.endpoints.metadata.storage_interface")
     @patch("trustyai_service.service.data.model_data.get_global_storage_interface")
@@ -208,13 +208,13 @@ class TestInferenceIdsPagination:
 
         response = client.get("/info/inference/ids/big-model?limit=3&offset=7")
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == 200
         body = response.json()
         assert body["ids"] == [
             {"id": id_, "timestamp": FAKE_TIMESTAMP} for id_ in ids[7:10]
         ]
-        assert body["total"] == 10  # noqa: PLR2004
-        assert body["offset"] == 7  # noqa: PLR2004
+        assert body["total"] == 10
+        assert body["offset"] == 7
 
     @patch("trustyai_service.endpoints.metadata.storage_interface")
     @patch("trustyai_service.service.data.model_data.get_global_storage_interface")
@@ -231,7 +231,7 @@ class TestInferenceIdsPagination:
 
         response = client.get("/info/inference/ids/small-model?offset=100")
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == 200
         body = response.json()
         assert body["ids"] == []
         assert body["total"] == 1
@@ -239,9 +239,9 @@ class TestInferenceIdsPagination:
     def test_invalid_limit_rejected(self) -> None:
         """Limit of 0 is rejected with 422."""
         response = client.get("/info/inference/ids/any-model?limit=0")
-        assert response.status_code == 422  # noqa: PLR2004
+        assert response.status_code == 422
 
     def test_negative_offset_rejected(self) -> None:
         """Negative offset is rejected with 422."""
         response = client.get("/info/inference/ids/any-model?offset=-1")
-        assert response.status_code == 422  # noqa: PLR2004
+        assert response.status_code == 422

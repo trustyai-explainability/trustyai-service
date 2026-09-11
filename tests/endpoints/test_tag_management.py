@@ -77,8 +77,8 @@ class TestGetTags:
 
         assert response.status_code == HTTPStatus.OK
         data = response.json()
-        assert data["_trustyai_unlabeled"] == 2  # noqa: PLR2004
-        assert data["TRAINING"] == 2  # noqa: PLR2004
+        assert data["_trustyai_unlabeled"] == 2
+        assert data["TRAINING"] == 2
         assert data["REFERENCE"] == 1
 
     @patch("trustyai_service.endpoints.metadata.storage_interface")
@@ -153,7 +153,7 @@ class TestGetTags:
         data = response.json()
         assert "model-a" in data
         assert "model-b" in data
-        assert data["model-a"]["TRAINING"] == 2  # noqa: PLR2004
+        assert data["model-a"]["TRAINING"] == 2
         assert data["model-b"]["REFERENCE"] == 1
 
 
@@ -191,7 +191,7 @@ class TestApplyTags:
 
         assert response.status_code == HTTPStatus.OK
         data = response.json()
-        assert data["applied"]["TRAINING"] == 5  # noqa: PLR2004
+        assert data["applied"]["TRAINING"] == 5
         mock_storage.delete_dataset.assert_awaited_once()
         mock_storage.write_data.assert_awaited_once()
 
@@ -457,8 +457,8 @@ class TestApplyTags:
 
         assert response.status_code == HTTPStatus.OK
         data = response.json()
-        assert data["applied"]["TRAINING"] == 3  # noqa: PLR2004
-        assert data["applied"]["REFERENCE"] == 3  # noqa: PLR2004
+        assert data["applied"]["TRAINING"] == 3
+        assert data["applied"]["REFERENCE"] == 3
         saved = written_data["metadata"]
         assert "TRAINING" in saved[0][3]
         assert "TRAINING" not in saved[9][3]

@@ -162,7 +162,7 @@ class TestGetInfoEndpoint:
 
         response = client.get("/info")
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == 200
         assert response.json() == {}
 
     @patch("trustyai_service.endpoints.metadata.get_prometheus_scheduler")
@@ -191,12 +191,12 @@ class TestGetInfoEndpoint:
 
         response = client.get("/info")
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == 200
         body = response.json()
         assert "model-a" in body
 
         data = body["model-a"]["data"]
-        assert data["observations"] == 42  # noqa: PLR2004
+        assert data["observations"] == 42
         assert data["inputTensorName"] == "input"
         assert data["outputTensorName"] == "output"
         assert "inputSchema" in data
@@ -236,7 +236,7 @@ class TestGetInfoEndpoint:
 
         response = client.get("/info")
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == 200
         data = response.json()["test-model"]["data"]
         assert data["inputSchema"]["nameMapping"] == {"f1": "Feature One"}
         assert data["outputSchema"]["nameMapping"] == {}
@@ -264,14 +264,14 @@ class TestGetInfoEndpoint:
 
         response = client.get("/info")
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == 200
         body = response.json()
         assert "alpha" in body
         assert "beta" in body
         assert body["alpha"]["data"]["inputTensorName"] == "in_a"
         assert body["beta"]["data"]["inputTensorName"] == "in_b"
-        assert body["alpha"]["data"]["observations"] == 10  # noqa: PLR2004
-        assert body["beta"]["data"]["observations"] == 20  # noqa: PLR2004
+        assert body["alpha"]["data"]["observations"] == 10
+        assert body["beta"]["data"]["observations"] == 20
 
     @patch("trustyai_service.endpoints.metadata.get_prometheus_scheduler")
     @patch("trustyai_service.endpoints.metadata.storage_interface")
@@ -308,11 +308,11 @@ class TestGetInfoEndpoint:
 
         response = client.get("/info")
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == 200
         scheduled = response.json()["my-model"]["metrics"]["scheduledMetadata"][
             "metricCounts"
         ]
-        assert scheduled["spd"] == 2  # noqa: PLR2004
+        assert scheduled["spd"] == 2
         assert "dir" not in scheduled
 
     @patch("trustyai_service.endpoints.metadata.get_prometheus_scheduler")
@@ -344,7 +344,7 @@ class TestGetInfoEndpoint:
 
         response = client.get("/info")
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == 200
         scheduled = response.json()["m1"]["metrics"]["scheduledMetadata"][
             "metricCounts"
         ]
@@ -395,10 +395,10 @@ class TestGetInfoEndpoint:
 
         response = client.get("/info")
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == 200
         body = response.json()
         # "good" should have real data
-        assert body["good"]["data"]["observations"] == 10  # noqa: PLR2004
+        assert body["good"]["data"]["observations"] == 10
         # "bad" should have the fallback structure with an error key
         assert body["bad"]["data"]["observations"] == 0
         assert "error" in body["bad"]
@@ -428,9 +428,9 @@ class TestGetInfoEndpoint:
 
         response = client.get("/info")
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == 200
         body = response.json()
-        assert body["m"]["data"]["observations"] == 7  # noqa: PLR2004
+        assert body["m"]["data"]["observations"] == 7
         # scheduledMetadata should have empty metricCounts because the scheduler errored
         assert body["m"]["metrics"]["scheduledMetadata"] == {"metricCounts": {}}
 
@@ -446,7 +446,7 @@ class TestGetInfoEndpoint:
 
         response = client.get("/info")
 
-        assert response.status_code == 500  # noqa: PLR2004
+        assert response.status_code == 500
         assert "Error retrieving service info" in response.json()["detail"]
 
     @patch("trustyai_service.endpoints.metadata.get_prometheus_scheduler")
@@ -470,7 +470,7 @@ class TestGetInfoEndpoint:
 
         response = client.get("/info")
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == 200
         data = response.json()["null-meta"]["data"]
         assert data["inputTensorName"] == "input"
         assert data["outputTensorName"] == "output"
@@ -498,7 +498,7 @@ class TestGetInfoNames:
 
         response = client.get("/info/names")
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == 200
         assert response.json() == {}
 
     @patch("trustyai_service.endpoints.metadata.storage_interface")
@@ -518,7 +518,7 @@ class TestGetInfoNames:
 
         response = client.get("/info/names")
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == 200
         body = response.json()
         assert body["mod1"]["modelId"] == "mod1"
         assert body["mod1"]["inputMapping"] == {}
@@ -548,7 +548,7 @@ class TestGetInfoNames:
 
         response = client.get("/info/names")
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == 200
         body = response.json()["mapped-model"]
         assert body["inputMapping"] == {"feat1": "Feature 1"}
         assert body["outputMapping"] == {"pred": "Prediction"}
@@ -568,7 +568,7 @@ class TestGetInfoNames:
 
         response = client.get("/info/names")
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == 200
         body = response.json()["orphan"]
         assert body["inputMapping"] == {}
         assert body["outputMapping"] == {}
@@ -590,7 +590,7 @@ class TestGetInfoNames:
 
         response = client.get("/info/names")
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == 200
         body = response.json()["none-cols"]
         assert body["inputMapping"] == {}
         assert body["outputMapping"] == {}
@@ -619,7 +619,7 @@ class TestGetInfoNames:
 
         response = client.get("/info/names")
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == 200
         body = response.json()
         assert "ok-model" in body
         # bad-model is skipped entirely due to the per-model catch
@@ -637,7 +637,7 @@ class TestGetInfoNames:
 
         response = client.get("/info/names")
 
-        assert response.status_code == 500  # noqa: PLR2004
+        assert response.status_code == 500
         assert "Error retrieving name mappings" in response.json()["detail"]
 
     @patch("trustyai_service.endpoints.metadata.storage_interface")
@@ -674,7 +674,7 @@ class TestGetInfoNames:
 
         response = client.get("/info/names")
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == 200
         body = response.json()["partial"]
         # Input mapping should be empty due to error
         assert body["inputMapping"] == {}
@@ -710,9 +710,9 @@ class TestPostInfoNames:
 
         response = client.post("/info/names", json=payload)
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == 200
         assert "successfully applied" in response.json()["message"]
-        assert mock_storage.apply_name_mapping.await_count == 2  # noqa: PLR2004
+        assert mock_storage.apply_name_mapping.await_count == 2
 
     @patch("trustyai_service.endpoints.metadata.storage_interface")
     def test_apply_name_mapping_input_only(
@@ -731,7 +731,7 @@ class TestPostInfoNames:
 
         response = client.post("/info/names", json=payload)
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == 200
         # Only input mapping called (output mapping is empty)
         mock_storage.apply_name_mapping.assert_awaited_once_with(
             "my-model_inputs",
@@ -755,7 +755,7 @@ class TestPostInfoNames:
 
         response = client.post("/info/names", json=payload)
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == 200
         mock_storage.apply_name_mapping.assert_awaited_once_with(
             "my-model_outputs",
             {"pred": "Prediction"},
@@ -776,7 +776,7 @@ class TestPostInfoNames:
 
         response = client.post("/info/names", json=payload)
 
-        assert response.status_code == 400  # noqa: PLR2004
+        assert response.status_code == 400
         assert "No metadata found" in response.json()["detail"]
 
     def test_apply_name_mapping_missing_model_id(self) -> None:
@@ -785,13 +785,13 @@ class TestPostInfoNames:
 
         response = client.post("/info/names", json=payload)
 
-        assert response.status_code == 422  # noqa: PLR2004
+        assert response.status_code == 422
 
     def test_apply_name_mapping_empty_body(self) -> None:
         """Empty body returns 422 validation error."""
         response = client.post("/info/names", json={})
 
-        assert response.status_code == 422  # noqa: PLR2004
+        assert response.status_code == 422
 
     @patch("trustyai_service.endpoints.metadata.storage_interface")
     def test_apply_name_mapping_empty_mappings_still_succeeds(
@@ -810,7 +810,7 @@ class TestPostInfoNames:
 
         response = client.post("/info/names", json=payload)
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == 200
         # No apply calls since mappings are empty
         mock_storage.apply_name_mapping.assert_not_awaited()
 
@@ -833,7 +833,7 @@ class TestPostInfoNames:
 
         response = client.post("/info/names", json=payload)
 
-        assert response.status_code == 500  # noqa: PLR2004
+        assert response.status_code == 500
         assert "Error applying column names" in response.json()["detail"]
 
     @patch("trustyai_service.endpoints.metadata.storage_interface")
@@ -858,7 +858,7 @@ class TestPostInfoNames:
 
         response = client.post("/info/names", json=payload)
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == 200
         # Only input mapping applied since output dataset does not exist
         mock_storage.apply_name_mapping.assert_awaited_once_with(
             "partial-model_inputs",
@@ -889,9 +889,9 @@ class TestDeleteInfoNames:
             json="my-model",
         )
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == 200
         assert "successfully cleared" in response.json()["message"]
-        assert mock_storage.clear_name_mapping.await_count == 2  # noqa: PLR2004
+        assert mock_storage.clear_name_mapping.await_count == 2
 
     @patch("trustyai_service.endpoints.metadata.storage_interface")
     def test_remove_name_mapping_unknown_model(
@@ -907,20 +907,20 @@ class TestDeleteInfoNames:
             json="ghost",
         )
 
-        assert response.status_code == 400  # noqa: PLR2004
+        assert response.status_code == 400
         assert "No metadata found" in response.json()["detail"]
 
     def test_remove_name_mapping_missing_model_id(self) -> None:
         """Missing modelId returns 422 validation error."""
         response = client.request("DELETE", "/info/names", json={})
 
-        assert response.status_code == 422  # noqa: PLR2004
+        assert response.status_code == 422
 
     def test_remove_name_mapping_no_body(self) -> None:
         """No body at all returns 422 validation error."""
         response = client.request("DELETE", "/info/names")
 
-        assert response.status_code == 422  # noqa: PLR2004
+        assert response.status_code == 422
 
     @patch("trustyai_service.endpoints.metadata.storage_interface")
     def test_remove_name_mapping_storage_error_returns_500(
@@ -939,7 +939,7 @@ class TestDeleteInfoNames:
             json="my-model",
         )
 
-        assert response.status_code == 500  # noqa: PLR2004
+        assert response.status_code == 500
         assert "Error removing column names" in response.json()["detail"]
 
     @patch("trustyai_service.endpoints.metadata.storage_interface")
@@ -961,7 +961,7 @@ class TestDeleteInfoNames:
             json="half-model",
         )
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == 200
         # Only output clear called since input dataset does not exist
         mock_storage.clear_name_mapping.assert_awaited_once_with(
             "half-model_outputs",

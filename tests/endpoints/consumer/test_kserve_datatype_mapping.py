@@ -96,7 +96,7 @@ class TestProcessPayloadTypes:
 
         _, names, types = process_payload(request, lambda p: p.inputs)
 
-        assert len(names) == 3  # noqa: PLR2004
+        assert len(names) == 3
         assert types == [DataType.INT32, DataType.INT32, DataType.INT32]
 
     def test_single_tensor_1d_returns_single_type(self) -> None:
