@@ -25,13 +25,13 @@ class TestCalculateBatchMeanMetric:
         """Mean of [2, 4, 6, 8, 10] is 6.0."""
         df = pd.DataFrame({"col": [2.0, 4.0, 6.0, 8.0, 10.0]})
         result = calculate_batch_mean_metric(df, _request())
-        assert result.get_value() == 6.0  # noqa: PLR2004
+        assert result.get_value() == 6.0
 
     def test_single_value(self) -> None:
         """Mean of a single value is that value."""
         df = pd.DataFrame({"col": [42.0]})
         result = calculate_batch_mean_metric(df, _request())
-        assert result.get_value() == 42.0  # noqa: PLR2004
+        assert result.get_value() == 42.0
 
     def test_negative_values(self) -> None:
         """Mean of symmetric negatives and positives is 0.0."""
@@ -43,7 +43,7 @@ class TestCalculateBatchMeanMetric:
         """NaN values are filtered before computing the mean."""
         df = pd.DataFrame({"col": [1.0, float("nan"), 3.0, float("nan"), 5.0]})
         result = calculate_batch_mean_metric(df, _request())
-        assert result.get_value() == 3.0  # noqa: PLR2004
+        assert result.get_value() == 3.0
 
     def test_all_nan_returns_nan(self) -> None:
         """All-NaN column returns NaN."""
@@ -69,7 +69,7 @@ class TestCalculateBatchMeanMetric:
         """Integer columns are handled correctly."""
         df = pd.DataFrame({"col": [1, 2, 3, 4, 5]})
         result = calculate_batch_mean_metric(df, _request())
-        assert result.get_value() == 3.0  # noqa: PLR2004
+        assert result.get_value() == 3.0
 
     def test_string_column_raises(self) -> None:
         """String columns raise TypeError with descriptive message."""

@@ -33,9 +33,9 @@ class TestApplyColumnNames:
             },
         )
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == 200
         assert "successfully applied" in response.json()["message"]
-        assert mock_storage.apply_name_mapping.call_count == 2  # noqa: PLR2004
+        assert mock_storage.apply_name_mapping.call_count == 2
 
     @patch("trustyai_service.endpoints.metadata.storage_interface")
     @pytest.mark.asyncio
@@ -52,7 +52,7 @@ class TestApplyColumnNames:
             },
         )
 
-        assert response.status_code == 400  # noqa: PLR2004
+        assert response.status_code == 400
         assert "No feature found" in response.json()["detail"]
         assert "nonexistent" in response.json()["detail"]
         mock_storage.apply_name_mapping.assert_not_called()
@@ -74,7 +74,7 @@ class TestApplyColumnNames:
             },
         )
 
-        assert response.status_code == 400  # noqa: PLR2004
+        assert response.status_code == 400
         assert "No output found" in response.json()["detail"]
         assert "bad_col" in response.json()["detail"]
 
@@ -92,7 +92,7 @@ class TestApplyColumnNames:
             },
         )
 
-        assert response.status_code == 400  # noqa: PLR2004
+        assert response.status_code == 400
         assert "No metadata found" in response.json()["detail"]
 
 
@@ -113,9 +113,9 @@ class TestRemoveColumnNames:
             headers={"Content-Type": "application/json"},
         )
 
-        assert response.status_code == 200  # noqa: PLR2004
+        assert response.status_code == 200
         assert "successfully cleared" in response.json()["message"]
-        assert mock_storage.clear_name_mapping.call_count == 2  # noqa: PLR2004
+        assert mock_storage.clear_name_mapping.call_count == 2
 
     @patch("trustyai_service.endpoints.metadata.storage_interface")
     @pytest.mark.asyncio
@@ -130,5 +130,5 @@ class TestRemoveColumnNames:
             headers={"Content-Type": "application/json"},
         )
 
-        assert response.status_code == 400  # noqa: PLR2004
+        assert response.status_code == 400
         assert "No metadata found" in response.json()["detail"]

@@ -77,7 +77,7 @@ class TestBatchMeanCompute:
         )
 
         assert response.status_code == HTTPStatus.OK
-        assert response.json()["value"] == 6.0  # noqa: PLR2004
+        assert response.json()["value"] == 6.0
 
     @patch(f"{MODULE}.get_data_source")
     def test_compute_with_thresholds_inside(self, mock_ds: MagicMock) -> None:
@@ -309,7 +309,7 @@ class TestDeprecatedIdentityEndpoints:
         response = client.post(routes.IDENTITY.compute, json=_base_payload())
         assert response.status_code == HTTPStatus.OK
         assert response.json()["name"] == "BatchMean"
-        assert response.json()["value"] == 2.0  # noqa: PLR2004
+        assert response.json()["value"] == 2.0
 
     def test_deprecated_definition(self) -> None:
         """Deprecated definition forwards to BatchMean definition."""
