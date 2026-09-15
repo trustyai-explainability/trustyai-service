@@ -276,16 +276,16 @@ polars==1.44.1 \
     --hash=sha256:ef3c89e9ebbbe8eb343c06873f1945683f8b6f97a1bdf001c60551c6c5e3cda1
     # via trustyai-service (pyproject.toml)
     # from https://pypi.org/simple
-polars-runtime-32==1.44.1 \
-    --hash=sha256:04e2c0f46e7a9906fffb1897f18f23b079b74f83c56b50060bace9e7b9b49b1a \
-    --hash=sha256:0580807dc3eed258f0db70bb65d905dd43f0135392119ec25308033ae24258fb \
-    --hash=sha256:0627f9aa82cb869725235e5188f698862fd9ada0c8c1cf65c3dc5a49a4a0ec26 \
-    --hash=sha256:0956f0cae632d8fad3a04b4315bf2bb69b56d10c83c79a75c2c4c5a13b9ce5cc \
-    --hash=sha256:159334184e6fbb074c9f4692221ea19970a5e2bed2a479f9d7bdb00b7f3eedb9 \
-    --hash=sha256:1dfccb2b52aa50468a7d28e3e61c8338a13fb5bffc8646e388a649f5bdc6b463 \
-    --hash=sha256:3ba28d638d0513e0b4afbcdab5c0059a85021e5f81d62b5f793e7e23badb2cf7 \
-    --hash=sha256:abd10a54ed1caff42228610fcba0f93251f9870bd7cffb0c78bc26f5e0718ce4 \
-    --hash=sha256:eea4283be8e60822d890dbda20588fe59b4172b508bd5ebf3471e531ca9f50d7
+polars-runtime-32==1.44.2 \
+    --hash=sha256:10c0c695a418407617b5159db7d9a21074a733e4c6d61275b6762f25cb31ca99 \
+    --hash=sha256:1fd536720668ba203a16a20b08cd6b23057e407a0279cf36b2f35f879d6e3208 \
+    --hash=sha256:8598e7a20efba70bb74978c7df7af7c606ff4d79b9b48fdd808250b189bc9a13 \
+    --hash=sha256:a1bafb441e99199a62c63bf1bbdc0ea09ee9776dbac2bf31452b5000fb1df2f7 \
+    --hash=sha256:b84842f7d621aaca7a52e165e19a24f89db45f8aa13744941430218419a14a67 \
+    --hash=sha256:bbf9b45040291dc1c6c588c837019c33557bde25ec536562a9cca9e1f6dfcc45 \
+    --hash=sha256:c4a09fb14aad711526346efc0cb2015c2fd0555ce4118b6524e5debbaea65ff5 \
+    --hash=sha256:d51040d3ab40157f6db3c62be59cab5b80fb3c8d158924769c4982a1c8eef730 \
+    --hash=sha256:e0fd43720c8222ae39919c8ff891636d53b352706087120e62f83544dd3ff782
     # via polars
     # from https://pypi.org/simple
 priority==2.0.0 \
