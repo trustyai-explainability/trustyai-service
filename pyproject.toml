@@ -47,6 +47,7 @@ test = [
 # Note: grpcio/grpcio-tools removed - incompatible with protobuf v7, unused (protoc used instead)
 mariadb = ["mariadb>=1.1,<1.2", "javaobj-py3>=0.5,<0.7"]
 mmd = ["goodpoints>=0.6.3,<0.7"]
+explainability = ["lime>=0.2,<0.3"]
 
 [tool.hatch.version]
 source = "vcs"
@@ -119,6 +120,8 @@ ignore = [
 "tests/service/config/*.py" = ["D102"]
 "tests/core/metrics/test_fairness.py" = ["N803", "N806"]
 "tests/core/metrics/drift/test_greenwald_khanna_quantile_sketch.py" = ["RUF001", "RUF002", "RUF003"]
+"tests/core/explainers/local/factory.py" = ["PLR0913"]
+"tests/endpoints/explainers/local/factory.py" = ["PLR0913"]
 "tests/endpoints/metrics/drift/factory.py" = ["PLR0913", "C901", "PLR0915"]
 "tests/endpoints/metrics/fairness/group/factory.py" = ["PLR0913", "PLC0415"]
 "tests/endpoints/test_upload_endpoint_maria.py" = ["S105"]
@@ -126,6 +129,7 @@ ignore = [
 "tests/service/data/test_utils.py" = ["PLR0913", "UP037"]  # UP037: Keep quoted annotations for optional protobuf imports
 "tests/service/data/storage/test_pvc_storage.py" = ["PLC0415"]
 "tests/service/data/storage/maria/*.py" = ["ANN", "ARG002"]  # Pytest style: no test method annotations, setup-only fixtures
+"src/trustyai_service/core/explainers/local/lime.py" = ["PLR0913"]  # Functions wrap lime's multi-param API
 
 [tool.pytest.ini_options]
 asyncio_mode = "strict"
@@ -153,6 +157,7 @@ ignore-missing-imports = [
     "hypercorn.*",
     "isodate.*",
     "javaobj.*",
+    "lime.*",
     "mariadb.*",
     "prometheus_client.*",
     "starlette.*",
