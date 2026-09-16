@@ -105,12 +105,24 @@ _FACTORIES = {
 
 @pytest.fixture(params=_available_backends())
 def storage(request: pytest.FixtureRequest) -> Iterator[SQLStorage]:
-    """Yield a clean SQL storage backend, resetting live DBs afterward."""
+    """Yield a SQL storage backend, removing what the test created afterward."""
     backend = _FACTORIES[request.param]()
+    if request.param == "sqlite":
+        # In-memory SQLite is discarded with the object; nothing to clean up.
+        yield backend
+        return
+
+    # A live server may hold datasets that predate the test run, so only the
+    # datasets this test creates are removed. Resetting the whole database
+    # would destroy a developer's local data.
+    original = set(asyncio.run(backend.list_all_datasets()))
     yield backend
-    # In-memory SQLite is discarded with the object; live DBs need cleanup.
-    if request.param != "sqlite":
-        asyncio.run(backend.reset_database())
+
+    async def _delete_new_datasets() -> None:
+        for dataset_name in set(await backend.list_all_datasets()) - original:
+            await backend.delete_dataset(dataset_name)
+
+    asyncio.run(_delete_new_datasets())
 
 
 async def _store(

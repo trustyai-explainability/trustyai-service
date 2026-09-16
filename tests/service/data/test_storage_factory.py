@@ -9,6 +9,11 @@ import pytest
 from trustyai_service.service.data.storage import get_storage_interface
 from trustyai_service.service.data.storage.pvc import PVCStorage
 
+# The optional-dependency guards below use find_spec rather than
+# pytest.importorskip: importorskip is evaluated while pytest imports this
+# module, so a missing package would skip every test in the file instead of
+# only the class that needs it.
+
 
 class TestGetStorageInterface:
     """Tests for get_storage_interface factory function."""
@@ -30,8 +35,6 @@ class TestGetStorageInterface:
             get_storage_interface()
 
 
-# find_spec instead of importorskip: importorskip raises at module import and
-# would skip the PVC/MariaDB tests above along with the SQLite ones.
 @pytest.mark.skipif(
     find_spec("sqlalchemy") is None,
     reason="sqlalchemy not installed",
@@ -52,7 +55,7 @@ class TestGetStorageInterfaceSQLite:
 
 
 @pytest.mark.skipif(
-    not pytest.importorskip("mariadb", reason="mariadb not installed"),
+    find_spec("mariadb") is None,
     reason="mariadb not installed",
 )
 class TestGetStorageInterfaceMariaDB:
@@ -106,7 +109,7 @@ class TestGetStorageInterfaceMariaDB:
 
 
 @pytest.mark.skipif(
-    not pytest.importorskip("psycopg", reason="psycopg not installed"),
+    find_spec("psycopg") is None,
     reason="psycopg not installed",
 )
 class TestGetStorageInterfacePostgres:

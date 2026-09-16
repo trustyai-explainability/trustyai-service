@@ -40,8 +40,18 @@ class TestPostgreSQLStorage(unittest.TestCase):
         self.original_datasets = set(asyncio.run(self.storage.list_all_datasets()))
 
     def tearDown(self) -> None:
-        """Clean up PostgreSQL database after tests."""
-        asyncio.run(self.storage.reset_database())
+        """Delete only the datasets this test created.
+
+        The documented local setup uses a persistent volume, so resetting the
+        whole database here would destroy data that predates the test run.
+        """
+
+        async def _delete_new_datasets() -> None:
+            current = set(await self.storage.list_all_datasets())
+            for dataset_name in current - self.original_datasets:
+                await self.storage.delete_dataset(dataset_name)
+
+        asyncio.run(_delete_new_datasets())
 
     async def _store_dataset(
         self,
