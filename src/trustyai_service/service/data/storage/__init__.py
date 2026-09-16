@@ -33,9 +33,15 @@ def _insecure_tls_allowed() -> bool:
 
 
 def _resolve_tls_ca() -> tuple[str, str | None]:
-    """Return the configured CA path and the same path only if the file exists."""
+    """Return the configured CA path and the same path only if it is a real file.
+
+    An empty ``DATABASE_TLS_CA_CERT`` resolves to the current directory, and a
+    directory is not a usable CA bundle, so both must be treated as "no CA"
+    rather than being handed to the driver.
+    """
     ca_path = os.environ.get("DATABASE_TLS_CA_CERT", DEFAULT_TLS_CA_CERT)
-    return ca_path, ca_path if Path(ca_path).exists() else None
+    usable = bool(ca_path) and Path(ca_path).is_file()
+    return ca_path, ca_path if usable else None
 
 
 def _tls_error(backend: str, ca_path: str) -> str:

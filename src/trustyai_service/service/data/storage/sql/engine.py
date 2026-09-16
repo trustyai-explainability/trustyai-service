@@ -40,7 +40,9 @@ def pool_kwargs_from_env() -> dict[str, int]:
     ``DATABASE_POOL_TIMEOUT``, ``DATABASE_POOL_RECYCLE``.
     """
     return {
-        "pool_size": _int_env("DATABASE_POOL_SIZE", _DEFAULT_POOL_SIZE),
+        # QueuePool treats pool_size=0 as "unlimited", which removes the per-pod
+        # connection cap this sizing exists to enforce, so clamp to at least 1.
+        "pool_size": max(1, _int_env("DATABASE_POOL_SIZE", _DEFAULT_POOL_SIZE)),
         "max_overflow": _int_env("DATABASE_MAX_OVERFLOW", _DEFAULT_MAX_OVERFLOW),
         "pool_timeout": _int_env("DATABASE_POOL_TIMEOUT", _DEFAULT_POOL_TIMEOUT),
         "pool_recycle": _int_env("DATABASE_POOL_RECYCLE", _DEFAULT_POOL_RECYCLE),

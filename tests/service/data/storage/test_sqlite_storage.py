@@ -175,6 +175,36 @@ class TestSQLiteHealthCheck:
             result = check_storage_readiness()
         assert result.status == "error"
 
+    def test_writable_file_in_read_only_dir_errors(self, tmp_path: Path) -> None:
+        """A writable database in a read-only directory cannot get a WAL/journal."""
+        _health_cache.cache.clear()
+        db_dir = tmp_path / "ro-dir"
+        db_dir.mkdir()
+        db_file = db_dir / "db.sqlite"
+        db_file.write_bytes(b"")
+        db_dir.chmod(stat.S_IRUSR | stat.S_IXUSR)  # readable + searchable, not writable
+        try:
+            env = {
+                "SERVICE_STORAGE_FORMAT": "SQLITE",
+                "STORAGE_DATABASE_PATH": str(db_file),
+            }
+            with patch.dict(os.environ, env, clear=False):
+                result = check_storage_readiness()
+            assert result.status == "error"
+        finally:
+            db_dir.chmod(stat.S_IRWXU)
+
+    def test_directory_path_errors(self, tmp_path: Path) -> None:
+        """A path pointing at a directory is not a usable database file."""
+        _health_cache.cache.clear()
+        env = {
+            "SERVICE_STORAGE_FORMAT": "SQLITE",
+            "STORAGE_DATABASE_PATH": str(tmp_path),
+        }
+        with patch.dict(os.environ, env, clear=False):
+            result = check_storage_readiness()
+        assert result.status == "error"
+
     def test_existing_non_writable_file_errors(self, tmp_path: Path) -> None:
         """An existing but read-only database file reports an error."""
         _health_cache.cache.clear()
