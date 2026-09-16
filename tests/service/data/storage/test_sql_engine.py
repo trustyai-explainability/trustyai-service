@@ -48,9 +48,9 @@ class TestPoolKwargsFromEnv:
         with patch.dict(os.environ, env, clear=False):
             kwargs = eng.pool_kwargs_from_env()
         assert kwargs["pool_size"] == 1
-        assert kwargs["max_overflow"] == 2  # noqa: PLR2004 -- exact value under test
-        assert kwargs["pool_timeout"] == 3  # noqa: PLR2004 -- exact value under test
-        assert kwargs["pool_recycle"] == 4  # noqa: PLR2004 -- exact value under test
+        assert kwargs["max_overflow"] == 2
+        assert kwargs["pool_timeout"] == 3
+        assert kwargs["pool_recycle"] == 4
 
     def test_invalid_env_falls_back_to_default(self) -> None:
         """A non-integer env value falls back to the default."""
@@ -84,7 +84,7 @@ class TestUrlBuilders:
         assert url.drivername == "postgresql+psycopg"
         assert url.username == "u"
         assert url.host == "h"
-        assert url.port == 5432  # noqa: PLR2004 -- exact port under test
+        assert url.port == 5432
         assert url.database == "db"
 
     def test_mariadb_url(self) -> None:
