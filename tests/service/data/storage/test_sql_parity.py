@@ -145,6 +145,38 @@ async def test_append(storage: SQLStorage) -> None:
 
 
 @pytest.mark.asyncio
+async def test_append_with_reordered_columns_raises(storage: SQLStorage) -> None:
+    """Appending with the same names in a different order is refused."""
+    _, cols, name = await _store(storage, 1, 4, 3)
+    reordered = [cols[1], cols[0], cols[2]]
+    with pytest.raises(ValueError, match="Column mismatch"):
+        await storage.write_data(name, np.arange(3).reshape(1, 3), reordered)
+    # The rejected append leaves the dataset untouched.
+    assert await storage.dataset_rows(name) == 4  # noqa: PLR2004 -- row count under test
+
+
+@pytest.mark.asyncio
+async def test_append_with_renamed_column_raises(storage: SQLStorage) -> None:
+    """Appending under a different column name is refused."""
+    _, cols, name = await _store(storage, 1, 2, 3)
+    renamed = [*cols[:-1], "something_else"]
+    with pytest.raises(ValueError, match="Column mismatch"):
+        await storage.write_data(name, np.arange(3).reshape(1, 3), renamed)
+
+
+@pytest.mark.asyncio
+async def test_append_after_name_mapping_uses_original_names(
+    storage: SQLStorage,
+) -> None:
+    """An alias does not change which column names an append must supply."""
+    data, cols, name = await _store(storage, 2, 2, 3)
+    await storage.apply_name_mapping(name, {cols[0]: "aliased"})
+    more = np.arange(100, 103).reshape(1, 3)
+    await storage.write_data(name, more, cols)
+    assert np.array_equal(await storage.read_data(name), np.vstack([data, more]))
+
+
+@pytest.mark.asyncio
 async def test_big_insert(storage: SQLStorage) -> None:
     """A 5000-row dataset round-trips."""
     data, _, name = await _store(storage, 0, BIG_INSERT_ROWS, 10)

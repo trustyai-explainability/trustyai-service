@@ -258,6 +258,16 @@ class SQLStorage(StorageInterface):
                 )
                 raise ValueError(msg)
 
+            # Cells are stored positionally, so names that match in count but not
+            # in order would silently file values under the wrong column.
+            stored_names = await self.get_original_column_names(dataset_name)
+            if column_names != stored_names:
+                msg = (
+                    f"Column mismatch: provided column names ({column_names}) do not"
+                    f" match the column names of the existing database ({stored_names})."
+                )
+                raise ValueError(msg)
+
             # validate that the shape of the inbound data is compatible with the stored data shape
             if list(stored_shape[1:]) != list(new_rows.shape[1:]):
                 msg = (
