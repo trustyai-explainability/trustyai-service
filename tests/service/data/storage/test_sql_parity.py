@@ -152,7 +152,7 @@ async def test_append_with_reordered_columns_raises(storage: SQLStorage) -> None
     with pytest.raises(ValueError, match="Column mismatch"):
         await storage.write_data(name, np.arange(3).reshape(1, 3), reordered)
     # The rejected append leaves the dataset untouched.
-    assert await storage.dataset_rows(name) == 4  # noqa: PLR2004 -- row count under test
+    assert await storage.dataset_rows(name) == 4
 
 
 @pytest.mark.asyncio

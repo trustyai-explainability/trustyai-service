@@ -107,7 +107,7 @@ class TestPostgresConnectionManager:
             pass
 
         call_kwargs = mock_connect.call_args[1]
-        assert call_kwargs["connect_timeout"] == 2  # noqa: PLR2004 -- exact timeout value under test
+        assert call_kwargs["connect_timeout"] == 2
 
     @patch("trustyai_service.service.data.storage.postgres.utils.psycopg.connect")
     def test_connect_without_timeout_omits_kwarg(self, mock_connect: MagicMock) -> None:
