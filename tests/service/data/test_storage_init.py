@@ -1066,3 +1066,35 @@ class TestTLSPolicy:
             pytest.raises(ValueError, match="requires authenticated TLS"),
         ):
             PostgreSQLConfig().validate()
+
+    @pytest.mark.parametrize("config_cls", [MariaDBConfig, PostgreSQLConfig])
+    def test_empty_ca_path_is_rejected(self, config_cls: type) -> None:
+        """An empty DATABASE_TLS_CA_CERT resolves to '.' and must not pass."""
+        env = {**self.BASE_ENV, "DATABASE_TLS_CA_CERT": ""}
+        with (
+            patch.dict(os.environ, env, clear=True),
+            pytest.raises(ValueError, match="requires authenticated TLS"),
+        ):
+            config_cls().validate()
+
+    @pytest.mark.parametrize("config_cls", [MariaDBConfig, PostgreSQLConfig])
+    def test_directory_ca_path_is_rejected(self, config_cls: type) -> None:
+        """A directory is not a usable CA bundle."""
+        with tempfile.TemporaryDirectory() as ca_dir:
+            env = {**self.BASE_ENV, "DATABASE_TLS_CA_CERT": ca_dir}
+            with (
+                patch.dict(os.environ, env, clear=True),
+                pytest.raises(ValueError, match="requires authenticated TLS"),
+            ):
+                config_cls().validate()
+
+    @pytest.mark.parametrize("config_cls", [MariaDBConfig, PostgreSQLConfig])
+    def test_empty_ca_path_yields_no_ssl_ca(self, config_cls: type) -> None:
+        """An empty CA path gives ssl_ca=None, never an empty string."""
+        env = {
+            **self.BASE_ENV,
+            "DATABASE_TLS_CA_CERT": "",
+            "DATABASE_ALLOW_INSECURE_TLS": "true",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            assert config_cls().ssl_ca is None

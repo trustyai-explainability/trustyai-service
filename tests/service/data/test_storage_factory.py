@@ -1,6 +1,7 @@
 """Tests for storage backend factory."""
 
 import os
+from importlib.util import find_spec
 from unittest.mock import patch
 
 import pytest
@@ -29,8 +30,10 @@ class TestGetStorageInterface:
             get_storage_interface()
 
 
+# find_spec instead of importorskip: importorskip raises at module import and
+# would skip the PVC/MariaDB tests above along with the SQLite ones.
 @pytest.mark.skipif(
-    not pytest.importorskip("sqlalchemy", reason="sqlalchemy not installed"),
+    find_spec("sqlalchemy") is None,
     reason="sqlalchemy not installed",
 )
 class TestGetStorageInterfaceSQLite:

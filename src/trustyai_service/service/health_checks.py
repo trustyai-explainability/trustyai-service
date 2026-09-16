@@ -361,13 +361,17 @@ def _check_sqlite_storage() -> HealthCheck:
         return HealthCheck("Storage readiness", STATUS_OK)
 
     db_file = Path(path)
-    # An existing database file must itself be writable; a writable parent is
-    # not sufficient (SQLite writes fail on a read-only existing file).
+    parent = db_file.parent
+    # SQLite writes rollback-journal / WAL files next to the database, so the
+    # parent directory must be writable and searchable in both cases. An
+    # existing database must additionally be a regular, writable file.
+    parent_usable = parent.is_dir() and os.access(parent, os.W_OK | os.X_OK)
     if db_file.exists():
-        target_writable = os.access(db_file, os.W_OK)
+        target_writable = (
+            db_file.is_file() and os.access(db_file, os.W_OK) and parent_usable
+        )
     else:
-        parent = db_file.parent
-        target_writable = parent.exists() and os.access(parent, os.W_OK)
+        target_writable = parent_usable
 
     if not target_writable:
         return HealthCheck(

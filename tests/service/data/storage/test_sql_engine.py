@@ -58,6 +58,22 @@ class TestPoolKwargsFromEnv:
             kwargs = eng.pool_kwargs_from_env()
         assert kwargs["pool_size"] == DEFAULT_POOL_SIZE
 
+    @pytest.mark.parametrize("value", ["0", "-1"])
+    def test_pool_size_below_one_is_clamped(self, value: str) -> None:
+        """pool_size=0 would make QueuePool unlimited, so it is clamped to 1."""
+        with patch.dict(os.environ, {"DATABASE_POOL_SIZE": value}, clear=False):
+            kwargs = eng.pool_kwargs_from_env()
+        assert kwargs["pool_size"] == 1
+
+    def test_zero_pool_size_engine_keeps_a_limit(self) -> None:
+        """An engine built with DATABASE_POOL_SIZE=0 still has a bounded pool."""
+        with patch.dict(os.environ, {"DATABASE_POOL_SIZE": "0"}, clear=False):
+            engine = eng.build_engine(eng.postgres_url("u", "p", "h", 5432, "db"))
+        try:
+            assert engine.pool.size() == 1
+        finally:
+            engine.dispose()
+
 
 class TestUrlBuilders:
     """URL builders produce the expected driver + components."""
