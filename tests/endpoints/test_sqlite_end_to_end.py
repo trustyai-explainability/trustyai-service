@@ -71,9 +71,21 @@ class TestSQLiteEndToEnd(unittest.TestCase):
         from trustyai_service.service.data import (  # noqa: PLC0415 -- reload for isolation
             storage,
         )
+        from trustyai_service.service.data.shared_data_source import (  # noqa: PLC0415
+            reset_shared_data_source,
+        )
+        from trustyai_service.service.prometheus.shared_prometheus_scheduler import (  # noqa: PLC0415
+            SharedPrometheusScheduler,
+        )
 
-        self.storage_interface = storage.get_global_storage_interface(force_reload=True)
+        storage.GlobalStorageInterface.reset()
+        reset_shared_data_source()
+        SharedPrometheusScheduler.reset()
+        self.storage_interface = storage.get_global_storage_interface()
         self.addCleanup(storage.GlobalStorageInterface.reset)
+        self.addCleanup(reset_shared_data_source)
+        self.addCleanup(SharedPrometheusScheduler.reset)
+        self.addCleanup(self.storage_interface._engine.dispose)
 
         # Recreate the app so it binds to the fresh storage interface.
         reload(trustyai_service.main)
@@ -173,7 +185,11 @@ class TestSQLiteEndToEnd(unittest.TestCase):
         # The model shows up in the service info endpoints.
         info = self.client.get(routes.INFO)
         assert info.status_code == HTTPStatus.OK
-        assert model_name in info.json()
+        model_info = info.json()[model_name]
+        assert "error" not in model_info, model_info
+        assert model_info["data"]["observations"] == n_rows
+        assert len(model_info["data"]["inputSchema"]["items"]) == 2
+        assert len(model_info["data"]["outputSchema"]["items"]) == 1
 
         names = self.client.get(routes.INFO_NAMES)
         assert names.status_code == HTTPStatus.OK
