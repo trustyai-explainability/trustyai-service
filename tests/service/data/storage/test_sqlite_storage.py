@@ -1,14 +1,16 @@
 """SQLite-backend-specific tests (in-process, no server required).
 
 Covers behaviors not exercised by the shared parity suite: file-backed
-persistence across instances, StaticPool for in-memory, the column-type
+persistence across instances, in-memory concurrency and isolation, the column-type
 no-op defaults, the deserialization-error path, and reset semantics.
 """
 
 from __future__ import annotations
 
+import asyncio
 import os
 import stat
+from threading import Event
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
@@ -18,11 +20,12 @@ import pytest
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from sqlalchemy import Connection
+
 pytest.importorskip("sqlalchemy")
 
-from sqlalchemy import insert
+from sqlalchemy import event, insert
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.pool import StaticPool
 
 from trustyai_service.endpoints.consumer import (
     KServeInferenceRequest,
@@ -38,10 +41,96 @@ from trustyai_service.service.health_checks import (
 
 
 @pytest.mark.asyncio
-async def test_memory_uses_static_pool() -> None:
-    """In-memory SQLite uses StaticPool so all connections share one DB."""
+async def test_memory_instances_are_independent() -> None:
+    """Sharing a connection within one storage must not share another's data."""
+    first, second = SQLiteStorage(":memory:"), SQLiteStorage(":memory:")
+    try:
+        await first.write_data("ds", np.array([[1]]), ["x"])
+        assert await first.list_all_datasets() == ["ds"]
+        assert await second.list_all_datasets() == []
+    finally:
+        first._engine.dispose()
+        second._engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("backend", ["memory", "file"])
+async def test_discovery_cannot_rollback_a_write(
+    backend: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Discovery during an insert must not undo a successfully written row."""
+    path = ":memory:" if backend == "memory" else str(tmp_path / "concurrent.sqlite")
+    storage = SQLiteStorage(path)
+    await storage.write_data("model_inputs", np.array([[1]]), ["x"])
+    reader_ready, start_read, reader_done = Event(), Event(), Event()
+    original_discovery = storage._list_all_datasets_sync
+
+    def concurrent_discovery() -> list[str]:
+        reader_ready.set()
+        assert start_read.wait(5)
+        try:
+            return original_discovery()
+        finally:
+            reader_done.set()
+
+    def pause_after_insert(
+        _conn: Connection, _cursor: object, statement: str, *_args: object
+    ) -> None:
+        if statement.startswith("INSERT INTO trustyai_v2_dataset_"):
+            start_read.set()
+            # Allow the reader to complete if it can share the writer's
+            # connection. Safe serialization instead keeps it waiting until
+            # this transaction commits; the writer must not wait indefinitely.
+            reader_done.wait(0.5)
+
+    monkeypatch.setattr(storage, "_list_all_datasets_sync", concurrent_discovery)
+    event.listen(storage._engine, "after_cursor_execute", pause_after_insert)
+    discovery = asyncio.create_task(storage.list_all_datasets())
+    try:
+        assert await asyncio.to_thread(reader_ready.wait, 5)
+        await storage.write_data("model_inputs", np.array([[2]]), ["x"])
+        assert await discovery == ["model_inputs"]
+        assert await storage.dataset_rows("model_inputs") == 2
+        np.testing.assert_array_equal(
+            await storage.read_data("model_inputs"), np.array([[1], [2]])
+        )
+    finally:
+        start_read.set()
+        try:
+            await discovery
+        finally:
+            event.remove(storage._engine, "after_cursor_execute", pause_after_insert)
+            storage._engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_failed_write_releases_the_memory_connection() -> None:
+    """A rolled-back write must leave the shared connection usable by a reader."""
     storage = SQLiteStorage(":memory:")
-    assert isinstance(storage._engine.pool, StaticPool)
+    await storage.write_data("ds", np.array([[1]]), ["x"])
+
+    def fail_after_insert(
+        _conn: Connection, _cursor: object, statement: str, *_args: object
+    ) -> None:
+        if statement.startswith("INSERT INTO trustyai_v2_dataset_"):
+            msg = "simulated write failure"
+            raise RuntimeError(msg)
+
+    try:
+        event.listen(storage._engine, "after_cursor_execute", fail_after_insert)
+        try:
+            with pytest.raises(RuntimeError, match="simulated write failure"):
+                await storage.write_data("ds", np.array([[2]]), ["x"])
+        finally:
+            event.remove(storage._engine, "after_cursor_execute", fail_after_insert)
+        assert await asyncio.wait_for(storage.list_all_datasets(), timeout=5) == ["ds"]
+        await storage.write_data("ds", np.array([[3]]), ["x"])
+        assert await storage.dataset_rows("ds") == 2
+        np.testing.assert_array_equal(
+            await storage.read_data("ds"), np.array([[1], [3]])
+        )
+    finally:
+        storage._engine.dispose()
 
 
 @pytest.mark.asyncio

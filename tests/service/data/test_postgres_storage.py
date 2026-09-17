@@ -15,6 +15,7 @@ import numpy as np
 import pytest
 
 pytest.importorskip("psycopg")
+from tests.service.data.storage.sql_test_resources import SQLTestResources
 from trustyai_service.service.data.modelmesh_parser import PartialPayload
 from trustyai_service.service.data.storage.postgres.postgres import PostgreSQLStorage
 
@@ -37,21 +38,9 @@ class TestPostgreSQLStorage(unittest.TestCase):
             5432,
             "trustyai-database",
         )
-        self.original_datasets = set(asyncio.run(self.storage.list_all_datasets()))
-
-    def tearDown(self) -> None:
-        """Delete only the datasets this test created.
-
-        The documented local setup uses a persistent volume, so resetting the
-        whole database here would destroy data that predates the test run.
-        """
-
-        async def _delete_new_datasets() -> None:
-            current = set(await self.storage.list_all_datasets())
-            for dataset_name in current - self.original_datasets:
-                await self.storage.delete_dataset(dataset_name)
-
-        asyncio.run(_delete_new_datasets())
+        self.names = SQLTestResources()
+        self.addCleanup(self.storage._engine.dispose)
+        self.addCleanup(lambda: asyncio.run(self.names.cleanup(self.storage)))
 
     async def _store_dataset(
         self,
@@ -64,7 +53,7 @@ class TestPostgreSQLStorage(unittest.TestCase):
         n_cols = seed + 10 if n_cols is None else n_cols
         dataset = np.arange(0, n_rows * n_cols).reshape(n_rows, n_cols)
         column_names = [alphabet[i] for i in range(dataset.shape[1])]
-        dataset_name = f"dataset_{alphabet[seed]}"
+        dataset_name = self.names.dataset(f"dataset_{alphabet[seed]}")
         await self.storage.write_data(dataset_name, dataset, column_names)
         return dataset, column_names, dataset_name
 
@@ -129,7 +118,7 @@ class TestPostgreSQLStorage(unittest.TestCase):
         """Verify storage and retrieval of single-column vector datasets."""
         original_dataset = np.arange(0, 10)
         column_names = ["single_column"]
-        dataset_name = "dataset_single_row"
+        dataset_name = self.names.dataset("dataset_single_row")
         await self.storage.write_data(dataset_name, original_dataset, column_names)
         retrieved_full_dataset = await self.storage.read_data(dataset_name)
         transposed_dataset = retrieved_full_dataset.reshape(-1)
@@ -147,7 +136,11 @@ class TestPostgreSQLStorage(unittest.TestCase):
             _, _, dataset_name = await self._store_dataset(dataset_idx)
             stored_names.add(dataset_name)
 
-        listed = set(await self.storage.list_all_datasets()) - self.original_datasets
+        listed = {
+            name
+            for name in await self.storage.list_all_datasets()
+            if name.startswith(self.names.prefix)
+        }
         assert listed == stored_names
 
     async def _test_name_mapping(self) -> None:
@@ -193,7 +186,7 @@ class TestPostgreSQLStorage(unittest.TestCase):
 
     async def _test_partial_payload(self) -> None:
         """Verify partial-payload persist / get / delete roundtrip."""
-        payload_id = "req-123"
+        payload_id = self.names.payload("req-123")
         payload = PartialPayload(data="dGVzdA==")  # base64 for "test"
 
         await self.storage.persist_partial_payload(payload, payload_id, is_input=True)
