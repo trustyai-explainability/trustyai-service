@@ -136,6 +136,9 @@ jobs:
         run: mariadb -u trustyai --password=trustyai -D trustyai-database -h 127.0.0.1 < tests/resources/legacy_database_dump.sql  # pragma: allowlist secret
 
       - name: Run tests with pytest
+        env:
+          # A missing driver/server must fail the live schema-race gate, not skip it.
+          TRUSTYAI_REQUIRE_LIVE_SQL_TESTS: "1"
         run: uv run pytest tests/ -v --cov=src --cov-report=xml
 
       - name: Upload coverage to Codecov

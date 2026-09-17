@@ -6,10 +6,10 @@ intended for **local development, tests, and single-instance deployments only**
 -- it cannot satisfy multi-pod concurrent writes on shared storage. Use the
 PostgreSQL backend for production multi-replica deployments.
 
-For an in-memory database (``:memory:``) a :class:`~sqlalchemy.pool.StaticPool`
-with ``check_same_thread=False`` keeps every connection pointed at the same
-in-memory database, so operations offloaded via ``asyncio.to_thread`` see the
-same data.
+For an in-memory database (``:memory:``), a :class:`~sqlalchemy.pool.QueuePool`
+limited to one connection keeps every operation pointed at the same database.
+Each checkout is exclusive until its transaction and connection are closed,
+so threaded model discovery cannot roll back an overlapping writer's work.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 
 from sqlalchemy import create_engine
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import QueuePool
 
 from trustyai_service.service.data.storage.sql.base import SQLStorage
 from trustyai_service.service.data.storage.sql.engine import sqlite_url
@@ -45,7 +45,9 @@ class SQLiteStorage(SQLStorage):
             engine = create_engine(
                 sqlite_url(path),
                 connect_args={"check_same_thread": False},
-                poolclass=StaticPool,
+                poolclass=QueuePool,
+                pool_size=1,
+                max_overflow=0,
             )
         else:
             engine = create_engine(
