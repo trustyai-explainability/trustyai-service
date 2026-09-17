@@ -2,6 +2,7 @@
 
 import logging
 import uuid
+from concurrent.futures.process import BrokenProcessPool
 from http import HTTPStatus
 from typing import Any, Literal
 
@@ -19,6 +20,7 @@ from trustyai_service.core.metrics.drift.mmd import (
 )
 from trustyai_service.endpoints import routes
 from trustyai_service.endpoints.metrics.drift.validation import validate_drift_request
+from trustyai_service.service.compute.mmd_executor import run_in_mmd_executor
 from trustyai_service.service.data.datasources.data_source import DataSource
 from trustyai_service.service.data.shared_data_source import get_shared_data_source
 from trustyai_service.service.payloads.metrics.base_metric_request import (
@@ -144,7 +146,8 @@ async def compute_mmd(
     current_data = current_df[valid_features].to_numpy()
 
     try:
-        result = MMD.compute(
+        result = await run_in_mmd_executor(
+            MMD.compute,
             reference_data=reference_data,
             current_data=current_data,
             method=request.method,
@@ -163,6 +166,18 @@ async def compute_mmd(
         raise HTTPException(
             status_code=HTTPStatus.BAD_REQUEST,
             detail=str(e),
+        ) from e
+    except BrokenProcessPool as e:
+        logger.exception("MMD worker process crashed while computing %s", METRIC_NAME)
+        raise HTTPException(
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+            detail="MMD computation failed due to an internal worker crash. Check server logs for details.",
+        ) from e
+    except TimeoutError as e:
+        logger.exception("MMD worker process timed out while computing %s", METRIC_NAME)
+        raise HTTPException(
+            status_code=HTTPStatus.GATEWAY_TIMEOUT,
+            detail="MMD computation timed out. Check server logs for details.",
         ) from e
     except Exception as e:  # Broad catch intentional: endpoint catch-all for unknown computation errors
         logger.exception("Error computing %s", METRIC_NAME)
@@ -433,7 +448,8 @@ async def calculate_mmd_metric(
     current_data = batch[fit_columns].to_numpy()
 
     seed = getattr(request, "seed", None)
-    result = MMD.compute(
+    result = await run_in_mmd_executor(
+        MMD.compute,
         reference_data=reference_data,
         current_data=current_data,
         method=method,
