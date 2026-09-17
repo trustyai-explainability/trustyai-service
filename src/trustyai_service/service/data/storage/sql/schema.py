@@ -21,6 +21,9 @@ Type mapping rationale (preserves the layout written by the raw-SQL backends):
 
 from __future__ import annotations
 
+import sqlite3
+from typing import TYPE_CHECKING
+
 from sqlalchemy import (
     JSON,
     BigInteger,
@@ -33,6 +36,17 @@ from sqlalchemy import (
     Table,
 )
 from sqlalchemy.dialects import mysql, postgresql
+from sqlalchemy.exc import DBAPIError
+
+if TYPE_CHECKING:
+    from sqlalchemy import Engine
+
+_SCHEMA_CREATE_ATTEMPTS = 3
+_MARIADB_TABLE_EXISTS = 1050
+_POSTGRES_CATALOG_UNIQUE_CONSTRAINTS = {
+    "pg_class_relname_nsp_index",
+    "pg_type_typname_nsp_index",
+}
 
 # Auto-increment integer primary key, dialect-correct on every backend.
 _AUTOINCREMENT_PK = BigInteger().with_variant(Integer, "sqlite")
@@ -47,6 +61,51 @@ _BLOB = (
 
 # JSON metadata document. JSONB on PostgreSQL for indexability + parity.
 _JSON = JSON().with_variant(postgresql.JSONB(), "postgresql")
+
+
+def _is_concurrent_table_creation(error: DBAPIError) -> bool:
+    """Recognize duplicate DDL objects without treating data conflicts as races."""
+    if not (error.statement or "").lstrip().upper().startswith("CREATE TABLE "):
+        return False
+    original = error.orig
+    if getattr(original, "errno", None) == _MARIADB_TABLE_EXISTS:
+        return True
+    sqlstate = getattr(original, "sqlstate", None)
+    if sqlstate == "42P07":  # PostgreSQL duplicate_table
+        return True
+    if sqlstate == "23505":  # Concurrent CREATE can collide in system catalogs.
+        diagnostic = getattr(original, "diag", None)
+        return (
+            getattr(diagnostic, "constraint_name", None)
+            in _POSTGRES_CATALOG_UNIQUE_CONSTRAINTS
+        )
+    return (
+        isinstance(original, sqlite3.OperationalError)
+        and getattr(original, "sqlite_errorcode", None) == sqlite3.SQLITE_ERROR
+        and str(original).startswith("table ")
+        and str(original).endswith(" already exists")
+    )
+
+
+def create_schema(metadata: MetaData, engine: Engine) -> None:
+    """Create startup tables, tolerating another instance creating them first.
+
+    ``checkfirst`` and ``CREATE`` are separate operations. A competing process
+    can create either table between them. Retry the complete existence check in
+    a fresh transaction after a duplicate-object error, including on PostgreSQL
+    where the failed DDL aborts the preceding transaction.
+    """
+    for attempt in range(_SCHEMA_CREATE_ATTEMPTS):
+        try:
+            metadata.create_all(engine, checkfirst=True)
+        except DBAPIError as error:
+            if (
+                attempt == _SCHEMA_CREATE_ATTEMPTS - 1
+                or not _is_concurrent_table_creation(error)
+            ):
+                raise
+        else:
+            return
 
 
 def make_metadata() -> MetaData:
