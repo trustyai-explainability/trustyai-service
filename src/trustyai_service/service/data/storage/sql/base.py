@@ -98,7 +98,7 @@ class SQLStorage(StorageInterface):
         self._payloads = schema.build_partial_payload_table(
             self._metadata, self.partial_payload_table
         )
-        self._metadata.create_all(self._engine, checkfirst=True)
+        schema.create_schema(self._metadata, self._engine)
 
     # === INTERNAL HELPER FUNCTIONS ================================================================
     def _build_table_name(self, index: int) -> str:

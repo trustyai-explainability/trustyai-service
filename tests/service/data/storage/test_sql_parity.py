@@ -22,6 +22,7 @@ import pytest
 
 pytest.importorskip("sqlalchemy")
 
+from tests.service.data.storage.sql_test_resources import SQLTestResources
 from trustyai_service.service.data.modelmesh_parser import PartialPayload
 
 if TYPE_CHECKING:
@@ -103,42 +104,43 @@ _FACTORIES = {
 }
 
 
+@pytest.fixture
+def names() -> SQLTestResources:
+    """Allocate resource names owned by this test."""
+    return SQLTestResources()
+
+
 @pytest.fixture(params=_available_backends())
-def storage(request: pytest.FixtureRequest) -> Iterator[SQLStorage]:
-    """Yield a SQL storage backend, removing what the test created afterward."""
+def storage(
+    request: pytest.FixtureRequest, names: SQLTestResources
+) -> Iterator[SQLStorage]:
+    """Yield a backend and clean up only this test's registered resources."""
     backend = _FACTORIES[request.param]()
-    if request.param == "sqlite":
-        # In-memory SQLite is discarded with the object; nothing to clean up.
+    try:
         yield backend
-        return
-
-    # A live server may hold datasets that predate the test run, so only the
-    # datasets this test creates are removed. Resetting the whole database
-    # would destroy a developer's local data.
-    original = set(asyncio.run(backend.list_all_datasets()))
-    yield backend
-
-    async def _delete_new_datasets() -> None:
-        for dataset_name in set(await backend.list_all_datasets()) - original:
-            await backend.delete_dataset(dataset_name)
-
-    asyncio.run(_delete_new_datasets())
+    finally:
+        try:
+            asyncio.run(names.cleanup(backend))
+        finally:
+            backend._engine.dispose()
 
 
 async def _store(
-    storage: SQLStorage, seed: int, n_rows: int, n_cols: int
+    storage: SQLStorage, names: SQLTestResources, seed: int, n_rows: int, n_cols: int
 ) -> tuple[np.ndarray, list[str], str]:
     dataset = np.arange(0, n_rows * n_cols).reshape(n_rows, n_cols)
     column_names = [ALPHABET[i] for i in range(n_cols)]
-    dataset_name = f"dataset_{ALPHABET[seed]}"
+    dataset_name = names.dataset(f"dataset_{ALPHABET[seed]}")
     await storage.write_data(dataset_name, dataset, column_names)
     return dataset, column_names, dataset_name
 
 
 @pytest.mark.asyncio
-async def test_retrieve_full_and_partial(storage: SQLStorage) -> None:
+async def test_retrieve_full_and_partial(
+    storage: SQLStorage, names: SQLTestResources
+) -> None:
     """Full read plus a LIMIT/OFFSET window match the original array."""
-    data, _, name = await _store(storage, 3, 9, 4)
+    data, _, name = await _store(storage, names, 3, 9, 4)
     assert np.array_equal(await storage.read_data(name), data)
     assert await storage.dataset_shape(name) == data.shape
     assert await storage.dataset_rows(name) == data.shape[0]
@@ -147,9 +149,9 @@ async def test_retrieve_full_and_partial(storage: SQLStorage) -> None:
 
 
 @pytest.mark.asyncio
-async def test_append(storage: SQLStorage) -> None:
+async def test_append(storage: SQLStorage, names: SQLTestResources) -> None:
     """Appending rows extends the dataset and preserves order."""
-    data, cols, name = await _store(storage, 1, 5, 3)
+    data, cols, name = await _store(storage, names, 1, 5, 3)
     more = np.arange(100, 109).reshape(3, 3)
     await storage.write_data(name, more, cols)
     assert await storage.dataset_rows(name) == len(data) + len(more)
@@ -157,9 +159,11 @@ async def test_append(storage: SQLStorage) -> None:
 
 
 @pytest.mark.asyncio
-async def test_append_with_reordered_columns_raises(storage: SQLStorage) -> None:
+async def test_append_with_reordered_columns_raises(
+    storage: SQLStorage, names: SQLTestResources
+) -> None:
     """Appending with the same names in a different order is refused."""
-    _, cols, name = await _store(storage, 1, 4, 3)
+    _, cols, name = await _store(storage, names, 1, 4, 3)
     reordered = [cols[1], cols[0], cols[2]]
     with pytest.raises(ValueError, match="Column mismatch"):
         await storage.write_data(name, np.arange(3).reshape(1, 3), reordered)
@@ -168,9 +172,11 @@ async def test_append_with_reordered_columns_raises(storage: SQLStorage) -> None
 
 
 @pytest.mark.asyncio
-async def test_append_with_renamed_column_raises(storage: SQLStorage) -> None:
+async def test_append_with_renamed_column_raises(
+    storage: SQLStorage, names: SQLTestResources
+) -> None:
     """Appending under a different column name is refused."""
-    _, cols, name = await _store(storage, 1, 2, 3)
+    _, cols, name = await _store(storage, names, 1, 2, 3)
     renamed = [*cols[:-1], "something_else"]
     with pytest.raises(ValueError, match="Column mismatch"):
         await storage.write_data(name, np.arange(3).reshape(1, 3), renamed)
@@ -178,10 +184,10 @@ async def test_append_with_renamed_column_raises(storage: SQLStorage) -> None:
 
 @pytest.mark.asyncio
 async def test_append_after_name_mapping_uses_original_names(
-    storage: SQLStorage,
+    storage: SQLStorage, names: SQLTestResources
 ) -> None:
     """An alias does not change which column names an append must supply."""
-    data, cols, name = await _store(storage, 2, 2, 3)
+    data, cols, name = await _store(storage, names, 2, 2, 3)
     await storage.apply_name_mapping(name, {cols[0]: "aliased"})
     more = np.arange(100, 103).reshape(1, 3)
     await storage.write_data(name, more, cols)
@@ -189,45 +195,54 @@ async def test_append_after_name_mapping_uses_original_names(
 
 
 @pytest.mark.asyncio
-async def test_big_insert(storage: SQLStorage) -> None:
+async def test_big_insert(storage: SQLStorage, names: SQLTestResources) -> None:
     """A 5000-row dataset round-trips."""
-    data, _, name = await _store(storage, 0, BIG_INSERT_ROWS, 10)
+    data, _, name = await _store(storage, names, 0, BIG_INSERT_ROWS, 10)
     assert np.array_equal(await storage.read_data(name), data)
     assert await storage.dataset_rows(name) == BIG_INSERT_ROWS
 
 
 @pytest.mark.asyncio
-async def test_single_row(storage: SQLStorage) -> None:
+async def test_single_row(storage: SQLStorage, names: SQLTestResources) -> None:
     """A single-row dataset round-trips."""
-    data, _, name = await _store(storage, 0, 1, 10)
+    data, _, name = await _store(storage, names, 0, 1, 10)
     assert np.array_equal(await storage.read_data(name, 0, 1), data)
 
 
 @pytest.mark.asyncio
-async def test_vector_reshaped_to_column(storage: SQLStorage) -> None:
+async def test_vector_reshaped_to_column(
+    storage: SQLStorage, names: SQLTestResources
+) -> None:
     """A 1-D vector is stored as a single column."""
     data = np.arange(0, 10)
-    await storage.write_data("vec", data, ["single_column"])
-    assert np.array_equal((await storage.read_data("vec")).reshape(-1), data)
-    assert await storage.dataset_rows("vec") == len(data)
-    assert await storage.dataset_cols("vec") == 1
+    name = names.dataset("vec")
+    await storage.write_data(name, data, ["single_column"])
+    assert np.array_equal((await storage.read_data(name)).reshape(-1), data)
+    assert await storage.dataset_rows(name) == len(data)
+    assert await storage.dataset_cols(name) == 1
 
 
 @pytest.mark.asyncio
-async def test_list_all_datasets(storage: SQLStorage) -> None:
+async def test_list_all_datasets(storage: SQLStorage, names: SQLTestResources) -> None:
     """All written dataset names are listed."""
-    original = set(await storage.list_all_datasets())
-    names = set()
+    stored_names = set()
     for i in range(1, 5):
-        _, _, name = await _store(storage, i, 3, 3)
-        names.add(name)
-    assert set(await storage.list_all_datasets()) - original == names
+        _, _, name = await _store(storage, names, i, 3, 3)
+        stored_names.add(name)
+    listed = {
+        name
+        for name in await storage.list_all_datasets()
+        if name.startswith(names.prefix)
+    }
+    assert listed == stored_names
 
 
 @pytest.mark.asyncio
-async def test_name_mapping_apply_and_clear(storage: SQLStorage) -> None:
+async def test_name_mapping_apply_and_clear(
+    storage: SQLStorage, names: SQLTestResources
+) -> None:
     """Aliases apply, originals persist, and clearing resets aliases."""
-    _, cols, name = await _store(storage, 2, 4, 4)
+    _, cols, name = await _store(storage, names, 2, 4, 4)
     mapping = {c: "aliased_" + c for i, c in enumerate(cols) if i % 2 == 0}
     expected = [mapping.get(c, c) for c in cols]
     await storage.apply_name_mapping(name, mapping)
@@ -238,52 +253,64 @@ async def test_name_mapping_apply_and_clear(storage: SQLStorage) -> None:
 
 
 @pytest.mark.asyncio
-async def test_delete_dataset(storage: SQLStorage) -> None:
+async def test_delete_dataset(storage: SQLStorage, names: SQLTestResources) -> None:
     """A dataset can be deleted."""
-    _, _, name = await _store(storage, 2, 3, 3)
+    _, _, name = await _store(storage, names, 2, 3, 3)
     assert await storage.dataset_exists(name)
     await storage.delete_dataset(name)
     assert not await storage.dataset_exists(name)
 
 
 @pytest.mark.asyncio
-async def test_missing_dataset_raises(storage: SQLStorage) -> None:
+async def test_missing_dataset_raises(
+    storage: SQLStorage, names: SQLTestResources
+) -> None:
     """Operations on an unknown dataset raise ValueError."""
     with pytest.raises(ValueError, match="does not exist"):
-        await storage.read_data("nope")
+        await storage.read_data(names.dataset("nope"))
 
 
 @pytest.mark.asyncio
-async def test_write_empty_raises(storage: SQLStorage) -> None:
+async def test_write_empty_raises(storage: SQLStorage, names: SQLTestResources) -> None:
     """Writing zero rows raises ValueError."""
     with pytest.raises(ValueError, match="No data provided"):
-        await storage.write_data("empty", np.array([]), ["a"])
+        await storage.write_data(names.dataset("empty"), np.array([]), ["a"])
 
 
 @pytest.mark.asyncio
-async def test_partial_payload_roundtrip(storage: SQLStorage) -> None:
+async def test_partial_payload_roundtrip(
+    storage: SQLStorage, names: SQLTestResources
+) -> None:
     """Partial-payload persist / get / delete round-trips."""
+    payload_id = names.payload("req-1")
     payload = PartialPayload(data="dGVzdA==")
-    await storage.persist_partial_payload(payload, "req-1", is_input=True)
-    got = await storage.get_partial_payload("req-1", is_input=True, is_modelmesh=True)
+    await storage.persist_partial_payload(payload, payload_id, is_input=True)
+    got = await storage.get_partial_payload(
+        payload_id, is_input=True, is_modelmesh=True
+    )
     assert got is not None
     assert got.data == payload.data
-    await storage.delete_partial_payload("req-1", is_input=True)
+    await storage.delete_partial_payload(payload_id, is_input=True)
     assert (
-        await storage.get_partial_payload("req-1", is_input=True, is_modelmesh=True)
+        await storage.get_partial_payload(payload_id, is_input=True, is_modelmesh=True)
         is None
     )
 
 
 @pytest.mark.asyncio
-async def test_get_known_models_and_metadata(storage: SQLStorage) -> None:
+async def test_get_known_models_and_metadata(
+    storage: SQLStorage, names: SQLTestResources
+) -> None:
     """Known models are derived from dataset suffixes; metadata is assembled."""
+    model_id = names.prefix + "mymodel"
     await storage.write_data(
-        "mymodel_inputs", np.arange(6).reshape(2, 3), ["a", "b", "c"]
+        names.dataset("mymodel_inputs"), np.arange(6).reshape(2, 3), ["a", "b", "c"]
     )
-    await storage.write_data("mymodel_outputs", np.arange(2).reshape(2, 1), ["y"])
-    assert "mymodel" in await storage.get_known_models()
-    meta = await storage.get_metadata("mymodel")
-    assert meta["modelId"] == "mymodel"
+    await storage.write_data(
+        names.dataset("mymodel_outputs"), np.arange(2).reshape(2, 1), ["y"]
+    )
+    assert model_id in await storage.get_known_models()
+    meta = await storage.get_metadata(model_id)
+    assert meta["modelId"] == model_id
     assert meta["inputData"]["columnNames"] == ["a", "b", "c"]
     assert meta["outputData"]["shape"] == [2, 1]
