@@ -20,7 +20,7 @@ from trustyai_service.service.constants import (
 from trustyai_service.service.data.datasources.data_source import DataSource
 from trustyai_service.service.data.model_data import ModelData
 from trustyai_service.service.data.shared_data_source import get_shared_data_source
-from trustyai_service.service.data.storage import get_storage_interface
+from trustyai_service.service.data.storage import get_global_storage_interface
 from trustyai_service.service.payloads.service.schema import Schema
 from trustyai_service.service.prometheus.prometheus_scheduler import PrometheusScheduler
 from trustyai_service.service.prometheus.shared_prometheus_scheduler import (
@@ -29,8 +29,6 @@ from trustyai_service.service.prometheus.shared_prometheus_scheduler import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-storage_interface = get_storage_interface()
 
 
 def _build_readable_schema(
@@ -90,6 +88,7 @@ async def get_service_info() -> dict[str, dict]:
     """
     try:
         logger.info("Retrieving service info")
+        storage_interface = get_global_storage_interface()
 
         # Get all known models from shared data source
         data_source = get_data_source()
@@ -283,6 +282,7 @@ async def get_inference_ids(
 
     model_data = ModelData(model)
     metadata_dataset = model + METADATA_SUFFIX
+    storage_interface = get_global_storage_interface()
 
     if not await storage_interface.dataset_exists(metadata_dataset):
         raise HTTPException(
@@ -333,6 +333,7 @@ async def get_column_names() -> dict[str, dict]:
     """Get the current name mappings for all models."""
     try:
         logger.info("Retrieving name mappings for all models")
+        storage_interface = get_global_storage_interface()
 
         # Get all known models from shared data source
         data_source = get_data_source()
@@ -457,6 +458,7 @@ async def get_column_names() -> dict[str, dict]:
 async def apply_column_names(name_mapping: NameMapping) -> dict[str, str]:
     """Apply a set of human-readable column names to a particular inference."""
     logger.info("Applying column names for model: %s", name_mapping.modelId)
+    storage_interface = get_global_storage_interface()
 
     model_id = name_mapping.modelId
     input_dataset_name = model_id + INPUT_SUFFIX
@@ -527,6 +529,7 @@ async def remove_column_names(
 ) -> dict[str, str]:
     """Remove any column names that have been applied to a particular inference."""
     logger.info("Removing column names for model: %s", model_id)
+    storage_interface = get_global_storage_interface()
 
     input_dataset_name = model_id + INPUT_SUFFIX
     output_dataset_name = model_id + OUTPUT_SUFFIX
@@ -612,6 +615,7 @@ async def _ensure_model_exists(
     Checks storage directly instead of relying on data_source.get_known_models()
     cache, which may be empty after service restart.
     """
+    storage_interface = get_global_storage_interface()
     # Check if at least one of the model's datasets exists
     input_dataset = model_id + INPUT_SUFFIX
     output_dataset = model_id + OUTPUT_SUFFIX
@@ -803,6 +807,7 @@ async def _persist_metadata(
         best-effort restore. This mitigates data loss but is not atomic.
         Proper fix requires storage interface to support transactional replace.
     """
+    storage_interface = get_global_storage_interface()
     metadata_dataset = model_id + METADATA_SUFFIX
 
     # Backup existing metadata if it exists

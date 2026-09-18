@@ -14,10 +14,11 @@ client = TestClient(app)
 class TestApplyColumnNames:
     """Tests for POST /info/names endpoint."""
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @pytest.mark.asyncio
-    async def test_apply_valid_mapping(self, mock_storage: MagicMock) -> None:
+    async def test_apply_valid_mapping(self, mock_get_storage: MagicMock) -> None:
         """Valid input/output mappings are applied successfully."""
+        mock_storage = mock_get_storage.return_value
         mock_storage.dataset_exists = AsyncMock(return_value=True)
         mock_storage.get_original_column_names = AsyncMock(
             side_effect=lambda ds: ["f1", "f2"] if "inputs" in ds else ["out1"]
@@ -37,10 +38,13 @@ class TestApplyColumnNames:
         assert "successfully applied" in response.json()["message"]
         assert mock_storage.apply_name_mapping.call_count == 2
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @pytest.mark.asyncio
-    async def test_apply_invalid_input_column(self, mock_storage: MagicMock) -> None:
+    async def test_apply_invalid_input_column(
+        self, mock_get_storage: MagicMock
+    ) -> None:
         """Mapping with non-existent input column returns 400."""
+        mock_storage = mock_get_storage.return_value
         mock_storage.dataset_exists = AsyncMock(return_value=True)
         mock_storage.get_original_column_names = AsyncMock(return_value=["f1", "f2"])
 
@@ -57,10 +61,13 @@ class TestApplyColumnNames:
         assert "nonexistent" in response.json()["detail"]
         mock_storage.apply_name_mapping.assert_not_called()
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @pytest.mark.asyncio
-    async def test_apply_invalid_output_column(self, mock_storage: MagicMock) -> None:
+    async def test_apply_invalid_output_column(
+        self, mock_get_storage: MagicMock
+    ) -> None:
         """Mapping with non-existent output column returns 400."""
+        mock_storage = mock_get_storage.return_value
         mock_storage.dataset_exists = AsyncMock(return_value=True)
         mock_storage.get_original_column_names = AsyncMock(
             side_effect=lambda ds: ["f1"] if "inputs" in ds else ["out1"]
@@ -78,10 +85,11 @@ class TestApplyColumnNames:
         assert "No output found" in response.json()["detail"]
         assert "bad_col" in response.json()["detail"]
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @pytest.mark.asyncio
-    async def test_apply_model_not_found(self, mock_storage: MagicMock) -> None:
+    async def test_apply_model_not_found(self, mock_get_storage: MagicMock) -> None:
         """Mapping for unknown model returns 400."""
+        mock_storage = mock_get_storage.return_value
         mock_storage.dataset_exists = AsyncMock(return_value=False)
 
         response = client.post(
@@ -99,10 +107,11 @@ class TestApplyColumnNames:
 class TestRemoveColumnNames:
     """Tests for DELETE /info/names endpoint."""
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @pytest.mark.asyncio
-    async def test_delete_mapping_success(self, mock_storage: MagicMock) -> None:
+    async def test_delete_mapping_success(self, mock_get_storage: MagicMock) -> None:
         """Clearing name mappings succeeds with plain string body."""
+        mock_storage = mock_get_storage.return_value
         mock_storage.dataset_exists = AsyncMock(return_value=True)
         mock_storage.clear_name_mapping = AsyncMock()
 
@@ -117,10 +126,11 @@ class TestRemoveColumnNames:
         assert "successfully cleared" in response.json()["message"]
         assert mock_storage.clear_name_mapping.call_count == 2
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @pytest.mark.asyncio
-    async def test_delete_model_not_found(self, mock_storage: MagicMock) -> None:
+    async def test_delete_model_not_found(self, mock_get_storage: MagicMock) -> None:
         """Clearing mappings for unknown model returns 400."""
+        mock_storage = mock_get_storage.return_value
         mock_storage.dataset_exists = AsyncMock(return_value=False)
 
         response = client.request(

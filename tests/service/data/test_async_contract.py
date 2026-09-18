@@ -9,6 +9,7 @@ import pytest
 CLASSES = [
     ("trustyai_service.service.data.storage.maria.maria", "MariaDBStorage"),
     ("trustyai_service.service.data.storage.pvc", "PVCStorage"),
+    ("trustyai_service.service.data.storage.postgres.postgres", "PostgreSQLStorage"),
 ]
 
 SYNC_ALLOWED = {

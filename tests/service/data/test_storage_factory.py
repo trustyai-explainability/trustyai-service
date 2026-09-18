@@ -1,12 +1,18 @@
 """Tests for storage backend factory."""
 
 import os
+from importlib.util import find_spec
 from unittest.mock import patch
 
 import pytest
 
 from trustyai_service.service.data.storage import get_storage_interface
 from trustyai_service.service.data.storage.pvc import PVCStorage
+
+# The optional-dependency guards below use find_spec rather than
+# pytest.importorskip: importorskip is evaluated while pytest imports this
+# module, so a missing package would skip every test in the file instead of
+# only the class that needs it.
 
 
 class TestGetStorageInterface:
@@ -30,7 +36,26 @@ class TestGetStorageInterface:
 
 
 @pytest.mark.skipif(
-    not pytest.importorskip("mariadb", reason="mariadb not installed"),
+    find_spec("sqlalchemy") is None,
+    reason="sqlalchemy not installed",
+)
+class TestGetStorageInterfaceSQLite:
+    """Tests for SQLite storage format routing (requires sqlalchemy)."""
+
+    def test_sqlite_format_creates_sqlite(self) -> None:
+        """SQLITE format returns an in-memory SQLiteStorage by default."""
+        from trustyai_service.service.data.storage.sqlite.sqlite import (  # noqa: PLC0415
+            SQLiteStorage,
+        )
+
+        env = {"SERVICE_STORAGE_FORMAT": "SQLITE", "STORAGE_DATABASE_PATH": ":memory:"}
+        with patch.dict(os.environ, env, clear=False):
+            storage = get_storage_interface()
+            assert isinstance(storage, SQLiteStorage)
+
+
+@pytest.mark.skipif(
+    find_spec("mariadb") is None,
     reason="mariadb not installed",
 )
 class TestGetStorageInterfaceMariaDB:
@@ -48,6 +73,7 @@ class TestGetStorageInterfaceMariaDB:
 
         env = {
             "SERVICE_STORAGE_FORMAT": "MARIA",
+            "DATABASE_ALLOW_INSECURE_TLS": "true",
             "DATABASE_USERNAME": "user",
             "DATABASE_PASSWORD": "pass",  # pragma: allowlist secret
             "DATABASE_HOST": "localhost",
@@ -70,6 +96,7 @@ class TestGetStorageInterfaceMariaDB:
 
         env = {
             "SERVICE_STORAGE_FORMAT": "DATABASE",
+            "DATABASE_ALLOW_INSECURE_TLS": "true",
             "DATABASE_USERNAME": "user",
             "DATABASE_PASSWORD": "pass",  # pragma: allowlist secret
             "DATABASE_HOST": "localhost",
@@ -79,3 +106,57 @@ class TestGetStorageInterfaceMariaDB:
         with patch.dict(os.environ, env, clear=False):
             storage = get_storage_interface()
             assert isinstance(storage, MariaDBStorage)
+
+
+@pytest.mark.skipif(
+    find_spec("psycopg") is None,
+    reason="psycopg not installed",
+)
+class TestGetStorageInterfacePostgres:
+    """Tests for PostgreSQL storage format routing (requires psycopg package)."""
+
+    @patch(
+        "trustyai_service.service.data.storage.postgres.postgres.PostgreSQLStorage.__init__",
+        return_value=None,
+    )
+    def test_postgresql_format_creates_postgres(self, _mock_init: object) -> None:
+        """POSTGRESQL format returns PostgreSQLStorage."""
+        from trustyai_service.service.data.storage.postgres.postgres import (  # noqa: PLC0415
+            PostgreSQLStorage,
+        )
+
+        env = {
+            "SERVICE_STORAGE_FORMAT": "POSTGRESQL",
+            "DATABASE_ALLOW_INSECURE_TLS": "true",
+            "DATABASE_USERNAME": "user",
+            "DATABASE_PASSWORD": "pass",  # pragma: allowlist secret
+            "DATABASE_HOST": "localhost",
+            "DATABASE_PORT": "5432",
+            "DATABASE_DATABASE": "testdb",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            storage = get_storage_interface()
+            assert isinstance(storage, PostgreSQLStorage)
+
+    @patch(
+        "trustyai_service.service.data.storage.postgres.postgres.PostgreSQLStorage.__init__",
+        return_value=None,
+    )
+    def test_postgres_alias_creates_postgres(self, _mock_init: object) -> None:
+        """POSTGRES is accepted as an alias for POSTGRESQL."""
+        from trustyai_service.service.data.storage.postgres.postgres import (  # noqa: PLC0415
+            PostgreSQLStorage,
+        )
+
+        env = {
+            "SERVICE_STORAGE_FORMAT": "POSTGRES",
+            "DATABASE_ALLOW_INSECURE_TLS": "true",
+            "DATABASE_USERNAME": "user",
+            "DATABASE_PASSWORD": "pass",  # pragma: allowlist secret
+            "DATABASE_HOST": "localhost",
+            "DATABASE_PORT": "5432",
+            "DATABASE_DATABASE": "testdb",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            storage = get_storage_interface()
+            assert isinstance(storage, PostgreSQLStorage)

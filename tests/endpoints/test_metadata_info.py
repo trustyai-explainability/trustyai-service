@@ -149,7 +149,7 @@ class TestGetInfoEndpoint:
     """Tests for GET /info endpoint."""
 
     @patch("trustyai_service.endpoints.metadata.get_prometheus_scheduler")
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @patch("trustyai_service.endpoints.metadata.get_data_source")
     def test_info_returns_empty_when_no_models(
         self,
@@ -166,15 +166,16 @@ class TestGetInfoEndpoint:
         assert response.json() == {}
 
     @patch("trustyai_service.endpoints.metadata.get_prometheus_scheduler")
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @patch("trustyai_service.endpoints.metadata.get_data_source")
     def test_info_single_model_full_metadata(
         self,
         mock_get_ds: MagicMock,
-        mock_storage: MagicMock,
+        mock_get_storage: MagicMock,
         mock_sched: MagicMock,
     ) -> None:
         """Single model returns complete metadata structure."""
+        mock_storage = mock_get_storage.return_value
         meta = _make_mock_metadata()
         mock_get_ds.return_value = _make_mock_data_source(
             known_models={"model-a"},
@@ -211,15 +212,16 @@ class TestGetInfoEndpoint:
         assert "scheduledMetadata" in metrics
 
     @patch("trustyai_service.endpoints.metadata.get_prometheus_scheduler")
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @patch("trustyai_service.endpoints.metadata.get_data_source")
     def test_info_includes_schemas_with_name_mapping(
         self,
         mock_get_ds: MagicMock,
-        mock_storage: MagicMock,
+        mock_get_storage: MagicMock,
         mock_sched: MagicMock,
     ) -> None:
         """Aliased column names appear in inputSchema.nameMapping."""
+        mock_storage = mock_get_storage.return_value
         meta = _make_mock_metadata()
         mock_get_ds.return_value = _make_mock_data_source(
             known_models={"test-model"},
@@ -242,15 +244,16 @@ class TestGetInfoEndpoint:
         assert data["outputSchema"]["nameMapping"] == {}
 
     @patch("trustyai_service.endpoints.metadata.get_prometheus_scheduler")
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @patch("trustyai_service.endpoints.metadata.get_data_source")
     def test_info_multiple_models(
         self,
         mock_get_ds: MagicMock,
-        mock_storage: MagicMock,
+        mock_get_storage: MagicMock,
         mock_sched: MagicMock,
     ) -> None:
         """Multiple models each get their own metadata block."""
+        mock_storage = mock_get_storage.return_value
         meta_a = _make_mock_metadata(input_tensor="in_a", output_tensor="out_a")
         meta_b = _make_mock_metadata(input_tensor="in_b", output_tensor="out_b")
         mock_get_ds.return_value = _make_mock_data_source(
@@ -274,15 +277,16 @@ class TestGetInfoEndpoint:
         assert body["beta"]["data"]["observations"] == 20
 
     @patch("trustyai_service.endpoints.metadata.get_prometheus_scheduler")
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @patch("trustyai_service.endpoints.metadata.get_data_source")
     def test_info_scheduled_metrics_counted(
         self,
         mock_get_ds: MagicMock,
-        mock_storage: MagicMock,
+        mock_get_storage: MagicMock,
         mock_sched: MagicMock,
     ) -> None:
         """Scheduled metric requests are counted per model."""
+        mock_storage = mock_get_storage.return_value
         meta = _make_mock_metadata()
         mock_get_ds.return_value = _make_mock_data_source(
             known_models={"my-model"},
@@ -316,15 +320,16 @@ class TestGetInfoEndpoint:
         assert "dir" not in scheduled
 
     @patch("trustyai_service.endpoints.metadata.get_prometheus_scheduler")
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @patch("trustyai_service.endpoints.metadata.get_data_source")
     def test_info_uses_model_id_attr_fallback(
         self,
         mock_get_ds: MagicMock,
-        mock_storage: MagicMock,
+        mock_get_storage: MagicMock,
         mock_sched: MagicMock,
     ) -> None:
         """Scheduler request checked via modelId attr when model_id absent."""
+        mock_storage = mock_get_storage.return_value
         meta = _make_mock_metadata()
         mock_get_ds.return_value = _make_mock_data_source(
             known_models={"m1"},
@@ -351,15 +356,16 @@ class TestGetInfoEndpoint:
         assert scheduled["drift"] == 1
 
     @patch("trustyai_service.endpoints.metadata.get_prometheus_scheduler")
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @patch("trustyai_service.endpoints.metadata.get_data_source")
     def test_info_per_model_error_does_not_break_response(
         self,
         mock_get_ds: MagicMock,
-        mock_storage: MagicMock,
+        mock_get_storage: MagicMock,
         mock_sched: MagicMock,
     ) -> None:
         """If one model fails, others still appear and the failing model gets a fallback entry."""
+        mock_storage = mock_get_storage.return_value
         meta_ok = _make_mock_metadata()
         ds = _make_mock_data_source(
             known_models={"good", "bad"},
@@ -404,15 +410,16 @@ class TestGetInfoEndpoint:
         assert "error" in body["bad"]
 
     @patch("trustyai_service.endpoints.metadata.get_prometheus_scheduler")
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @patch("trustyai_service.endpoints.metadata.get_data_source")
     def test_info_scheduler_error_does_not_break_response(
         self,
         mock_get_ds: MagicMock,
-        mock_storage: MagicMock,
+        mock_get_storage: MagicMock,
         mock_sched: MagicMock,
     ) -> None:
         """Scheduler errors are silently handled; metadata still returned."""
+        mock_storage = mock_get_storage.return_value
         meta = _make_mock_metadata()
         mock_get_ds.return_value = _make_mock_data_source(
             known_models={"m"},
@@ -450,15 +457,16 @@ class TestGetInfoEndpoint:
         assert "Error retrieving service info" in response.json()["detail"]
 
     @patch("trustyai_service.endpoints.metadata.get_prometheus_scheduler")
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @patch("trustyai_service.endpoints.metadata.get_data_source")
     def test_info_none_metadata_uses_defaults(
         self,
         mock_get_ds: MagicMock,
-        mock_storage: MagicMock,
+        mock_get_storage: MagicMock,
         mock_sched: MagicMock,
     ) -> None:
         """When get_metadata returns None, default tensor names and empty schemas are used."""
+        mock_storage = mock_get_storage.return_value
         mock_get_ds.return_value = _make_mock_data_source(
             known_models={"null-meta"},
             metadata_map={"null-meta": None},
@@ -486,7 +494,7 @@ class TestGetInfoEndpoint:
 class TestGetInfoNames:
     """Tests for GET /info/names endpoint."""
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @patch("trustyai_service.endpoints.metadata.get_data_source")
     def test_names_empty_when_no_models(
         self,
@@ -501,14 +509,15 @@ class TestGetInfoNames:
         assert response.status_code == 200
         assert response.json() == {}
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @patch("trustyai_service.endpoints.metadata.get_data_source")
     def test_names_no_mapping_returns_empty_dicts(
         self,
         mock_get_ds: MagicMock,
-        mock_storage: MagicMock,
+        mock_get_storage: MagicMock,
     ) -> None:
         """When original == aliased names, mappings are empty."""
+        mock_storage = mock_get_storage.return_value
         mock_get_ds.return_value = _make_mock_data_source(
             known_models={"mod1"},
         )
@@ -524,14 +533,15 @@ class TestGetInfoNames:
         assert body["mod1"]["inputMapping"] == {}
         assert body["mod1"]["outputMapping"] == {}
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @patch("trustyai_service.endpoints.metadata.get_data_source")
     def test_names_with_input_and_output_mappings(
         self,
         mock_get_ds: MagicMock,
-        mock_storage: MagicMock,
+        mock_get_storage: MagicMock,
     ) -> None:
         """Aliased columns show up as mappings in both input and output."""
+        mock_storage = mock_get_storage.return_value
         mock_get_ds.return_value = _make_mock_data_source(
             known_models={"mapped-model"},
         )
@@ -553,14 +563,15 @@ class TestGetInfoNames:
         assert body["inputMapping"] == {"feat1": "Feature 1"}
         assert body["outputMapping"] == {"pred": "Prediction"}
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @patch("trustyai_service.endpoints.metadata.get_data_source")
     def test_names_dataset_not_found(
         self,
         mock_get_ds: MagicMock,
-        mock_storage: MagicMock,
+        mock_get_storage: MagicMock,
     ) -> None:
         """Missing datasets still return model entry with empty mappings."""
+        mock_storage = mock_get_storage.return_value
         mock_get_ds.return_value = _make_mock_data_source(
             known_models={"orphan"},
         )
@@ -573,14 +584,15 @@ class TestGetInfoNames:
         assert body["inputMapping"] == {}
         assert body["outputMapping"] == {}
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @patch("trustyai_service.endpoints.metadata.get_data_source")
     def test_names_none_column_names_handled(
         self,
         mock_get_ds: MagicMock,
-        mock_storage: MagicMock,
+        mock_get_storage: MagicMock,
     ) -> None:
         """None returned from column name methods yields empty mappings."""
+        mock_storage = mock_get_storage.return_value
         mock_get_ds.return_value = _make_mock_data_source(
             known_models={"none-cols"},
         )
@@ -595,14 +607,15 @@ class TestGetInfoNames:
         assert body["inputMapping"] == {}
         assert body["outputMapping"] == {}
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @patch("trustyai_service.endpoints.metadata.get_data_source")
     def test_names_per_model_error_skipped(
         self,
         mock_get_ds: MagicMock,
-        mock_storage: MagicMock,
+        mock_get_storage: MagicMock,
     ) -> None:
         """A per-model error is silently skipped; other models still returned."""
+        mock_storage = mock_get_storage.return_value
         mock_get_ds.return_value = _make_mock_data_source(
             known_models={"ok-model", "bad-model"},
         )
@@ -640,14 +653,15 @@ class TestGetInfoNames:
         assert response.status_code == 500
         assert "Error retrieving name mappings" in response.json()["detail"]
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @patch("trustyai_service.endpoints.metadata.get_data_source")
     def test_names_input_error_does_not_block_output(
         self,
         mock_get_ds: MagicMock,
-        mock_storage: MagicMock,
+        mock_get_storage: MagicMock,
     ) -> None:
         """Error reading input names does not prevent output names from appearing."""
+        mock_storage = mock_get_storage.return_value
         mock_get_ds.return_value = _make_mock_data_source(
             known_models={"partial"},
         )
@@ -690,12 +704,13 @@ class TestGetInfoNames:
 class TestPostInfoNames:
     """Tests for POST /info/names endpoint."""
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     def test_apply_name_mapping_success(
         self,
-        mock_storage: MagicMock,
+        mock_get_storage: MagicMock,
     ) -> None:
         """Applying name mappings returns success message."""
+        mock_storage = mock_get_storage.return_value
         mock_storage.dataset_exists = AsyncMock(return_value=True)
         mock_storage.apply_name_mapping = AsyncMock()
         mock_storage.get_original_column_names = AsyncMock(
@@ -714,12 +729,13 @@ class TestPostInfoNames:
         assert "successfully applied" in response.json()["message"]
         assert mock_storage.apply_name_mapping.await_count == 2
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     def test_apply_name_mapping_input_only(
         self,
-        mock_storage: MagicMock,
+        mock_get_storage: MagicMock,
     ) -> None:
         """Mapping with only inputMapping calls apply only for input dataset."""
+        mock_storage = mock_get_storage.return_value
         mock_storage.dataset_exists = AsyncMock(return_value=True)
         mock_storage.apply_name_mapping = AsyncMock()
         mock_storage.get_original_column_names = AsyncMock(return_value=["col_a"])
@@ -738,12 +754,13 @@ class TestPostInfoNames:
             {"col_a": "Column A"},
         )
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     def test_apply_name_mapping_output_only(
         self,
-        mock_storage: MagicMock,
+        mock_get_storage: MagicMock,
     ) -> None:
         """Mapping with only outputMapping calls apply only for output dataset."""
+        mock_storage = mock_get_storage.return_value
         mock_storage.dataset_exists = AsyncMock(return_value=True)
         mock_storage.apply_name_mapping = AsyncMock()
         mock_storage.get_original_column_names = AsyncMock(return_value=["pred"])
@@ -761,12 +778,13 @@ class TestPostInfoNames:
             {"pred": "Prediction"},
         )
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     def test_apply_name_mapping_unknown_model(
         self,
-        mock_storage: MagicMock,
+        mock_get_storage: MagicMock,
     ) -> None:
         """Nonexistent model datasets returns 400."""
+        mock_storage = mock_get_storage.return_value
         mock_storage.dataset_exists = AsyncMock(return_value=False)
 
         payload = {
@@ -793,12 +811,13 @@ class TestPostInfoNames:
 
         assert response.status_code == 422
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     def test_apply_name_mapping_empty_mappings_still_succeeds(
         self,
-        mock_storage: MagicMock,
+        mock_get_storage: MagicMock,
     ) -> None:
         """Empty inputMapping and outputMapping still returns success."""
+        mock_storage = mock_get_storage.return_value
         mock_storage.dataset_exists = AsyncMock(return_value=True)
         mock_storage.apply_name_mapping = AsyncMock()
 
@@ -814,12 +833,13 @@ class TestPostInfoNames:
         # No apply calls since mappings are empty
         mock_storage.apply_name_mapping.assert_not_awaited()
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     def test_apply_name_mapping_storage_error_returns_500(
         self,
-        mock_storage: MagicMock,
+        mock_get_storage: MagicMock,
     ) -> None:
         """Storage failure during apply returns 500."""
+        mock_storage = mock_get_storage.return_value
         mock_storage.dataset_exists = AsyncMock(return_value=True)
         mock_storage.apply_name_mapping = AsyncMock(
             side_effect=RuntimeError("write failed"),
@@ -836,12 +856,13 @@ class TestPostInfoNames:
         assert response.status_code == 500
         assert "Error applying column names" in response.json()["detail"]
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     def test_apply_partial_existence_input_only(
         self,
-        mock_storage: MagicMock,
+        mock_get_storage: MagicMock,
     ) -> None:
         """Only input dataset exists; output mapping provided but skipped."""
+        mock_storage = mock_get_storage.return_value
 
         async def exists_side_effect(ds: str) -> bool:
             return "inputs" in ds
@@ -874,12 +895,13 @@ class TestPostInfoNames:
 class TestDeleteInfoNames:
     """Tests for DELETE /info/names endpoint."""
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     def test_remove_name_mapping_success(
         self,
-        mock_storage: MagicMock,
+        mock_get_storage: MagicMock,
     ) -> None:
         """Clearing name mappings returns success message."""
+        mock_storage = mock_get_storage.return_value
         mock_storage.dataset_exists = AsyncMock(return_value=True)
         mock_storage.clear_name_mapping = AsyncMock()
 
@@ -893,12 +915,13 @@ class TestDeleteInfoNames:
         assert "successfully cleared" in response.json()["message"]
         assert mock_storage.clear_name_mapping.await_count == 2
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     def test_remove_name_mapping_unknown_model(
         self,
-        mock_storage: MagicMock,
+        mock_get_storage: MagicMock,
     ) -> None:
         """Nonexistent model datasets returns 400."""
+        mock_storage = mock_get_storage.return_value
         mock_storage.dataset_exists = AsyncMock(return_value=False)
 
         response = client.request(
@@ -922,12 +945,13 @@ class TestDeleteInfoNames:
 
         assert response.status_code == 422
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     def test_remove_name_mapping_storage_error_returns_500(
         self,
-        mock_storage: MagicMock,
+        mock_get_storage: MagicMock,
     ) -> None:
         """Storage failure during clear returns 500."""
+        mock_storage = mock_get_storage.return_value
         mock_storage.dataset_exists = AsyncMock(return_value=True)
         mock_storage.clear_name_mapping = AsyncMock(
             side_effect=RuntimeError("delete failed"),
@@ -942,12 +966,13 @@ class TestDeleteInfoNames:
         assert response.status_code == 500
         assert "Error removing column names" in response.json()["detail"]
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     def test_remove_clears_only_existing_datasets(
         self,
-        mock_storage: MagicMock,
+        mock_get_storage: MagicMock,
     ) -> None:
         """Only calls clear on datasets that actually exist."""
+        mock_storage = mock_get_storage.return_value
 
         async def exists_side_effect(ds: str) -> bool:
             return "outputs" in ds
