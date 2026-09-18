@@ -60,6 +60,7 @@ class _Provider:
 def test_model_provider_is_lazy_and_receives_transport(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Create the real-model provider lazily with deployment transport settings."""
     provider = _Provider()
     captured: dict[str, object] = {}
 
@@ -87,6 +88,7 @@ def test_model_provider_is_lazy_and_receives_transport(
 def test_model_rejects_stored_feature_width_before_prediction(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Reject a stored target whose feature width disagrees with model metadata."""
     provider = _Provider()
 
     def connect(*_args: object, **_kwargs: object) -> _Provider:
@@ -106,6 +108,8 @@ def test_model_rejects_stored_feature_width_before_prediction(
 
 
 def test_surrogate_does_not_construct_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep explicit surrogate execution independent from HTTP provider creation."""
+
     def fail_connect(*_args: object, **_kwargs: object) -> None:
         raise AssertionError
 
@@ -120,6 +124,7 @@ def test_surrogate_does_not_construct_provider(monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_surrogate_requires_stored_targets() -> None:
+    """Require stored output labels before constructing a surrogate execution."""
     with pytest.raises(ValueError, match="stored organic labels"):
         execution_module.create_execution(
             _config(PredictionSource.SURROGATE), _data(), 5

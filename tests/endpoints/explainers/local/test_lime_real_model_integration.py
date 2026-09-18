@@ -42,6 +42,7 @@ def _enabled_client() -> TestClient:
 
 
 def test_lime_model_and_explicit_surrogate_use_distinct_paths() -> None:
+    """Verify LIME uses the provider only for the real-model source."""
     storage = LocalStorage()
     with (
         FakeKServe() as fake,

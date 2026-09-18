@@ -90,6 +90,7 @@ def _provider(client: _Client) -> KServeV2HttpPredictionProvider:
 
 
 def test_provider_batches_and_preserves_response_rows() -> None:
+    """Split oversized requests while preserving every response row."""
     client = _Client()
     provider = _provider(client)
     result = provider.predict(np.ones((5, 2), dtype=float))
@@ -100,17 +101,20 @@ def test_provider_batches_and_preserves_response_rows() -> None:
 
 
 def test_provider_normalizes_flat_scalar_response_shape() -> None:
+    """Normalize a KServe scalar output tensor to a column matrix."""
     provider = _provider(_FlatScalarClient())
     result = provider.predict(np.ones((2, 2), dtype=float))
     assert result.shape == (2, 1)
 
 
 def test_transport_config_requires_positive_batch_size() -> None:
-    with pytest.raises(ValueError):
+    """Reject a non-positive inference batch size."""
+    with pytest.raises(ValueError, match="max_batch_size"):
         HttpTransportConfig(headers={}, max_batch_size=0)
 
 
 def test_unlisted_host_is_a_request_error_before_client_creation() -> None:
+    """Reject an endpoint outside the configured deployment host allowlist."""
     spec = KServeModelSpec(
         "http://model.example", "m", None, None, None, TaskType.REGRESSION
     )
@@ -123,6 +127,7 @@ def test_unlisted_host_is_a_request_error_before_client_creation() -> None:
 
 
 def test_integer_inputs_must_be_integral_and_in_range() -> None:
+    """Reject integer tensors containing fractional or out-of-range values."""
     client = _Client()
     spec = KServeModelSpec(
         "http://model.example", "m", None, None, None, TaskType.REGRESSION

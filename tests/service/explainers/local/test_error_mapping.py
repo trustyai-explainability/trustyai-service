@@ -31,4 +31,5 @@ from trustyai_service.service.explainers.local.model_provider import (
 def test_provider_error_codes_map_to_stable_statuses(
     error: Exception, status: int
 ) -> None:
+    """Map every public local-explanation error to its stable HTTP status."""
     assert map_error(error).status_code == status

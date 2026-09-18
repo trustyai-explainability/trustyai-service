@@ -5,6 +5,8 @@ import pytest
 
 from trustyai_service.service.data.local_explanation import load_local_explanation_data
 
+_MISSING_OUTPUTS = "missing outputs"
+
 
 class _Storage:
     def __init__(
@@ -32,7 +34,7 @@ class _Storage:
         values = self.metadata if name.endswith("_metadata") else self.inputs
         if name.endswith("_outputs"):
             if self.outputs is None:
-                raise ValueError("missing outputs")
+                raise ValueError(_MISSING_OUTPUTS)
             values = self.outputs
         end = None if n_rows is None else start_row + n_rows
         return values[start_row:end]
@@ -51,6 +53,7 @@ def _metadata() -> np.ndarray:
 
 @pytest.mark.asyncio
 async def test_loader_excludes_target_and_synthetic_rows() -> None:
+    """Exclude the target and synthetic rows from the background population."""
     storage = _Storage(_metadata(), np.array([[9, 9], [1, 2], [3, 4]], dtype=float))
     data = await load_local_explanation_data(
         "m",
@@ -65,6 +68,7 @@ async def test_loader_excludes_target_and_synthetic_rows() -> None:
 
 @pytest.mark.asyncio
 async def test_loader_rejects_duplicate_prediction_ids() -> None:
+    """Reject ambiguous storage when more than one row matches the target ID."""
     metadata = _metadata()
     metadata[1, 0] = "target"
     storage = _Storage(metadata, np.ones((3, 2)))
@@ -76,6 +80,7 @@ async def test_loader_rejects_duplicate_prediction_ids() -> None:
 
 @pytest.mark.asyncio
 async def test_model_mode_does_not_require_outputs() -> None:
+    """Allow real-model loading when stored prediction outputs are absent."""
     storage = _Storage(_metadata(), np.ones((3, 2)))
     data = await load_local_explanation_data(
         "m", "target", include_targets=False, storage_interface=storage
@@ -85,6 +90,7 @@ async def test_model_mode_does_not_require_outputs() -> None:
 
 @pytest.mark.asyncio
 async def test_surrogate_mode_requires_stored_outputs() -> None:
+    """Require stored outputs when loading data for surrogate execution."""
     storage = _Storage(_metadata(), np.ones((3, 2)))
     with pytest.raises(ValueError, match="output labels"):
         await load_local_explanation_data(
@@ -94,6 +100,7 @@ async def test_surrogate_mode_requires_stored_outputs() -> None:
 
 @pytest.mark.asyncio
 async def test_loader_rejects_string_features() -> None:
+    """Reject string-valued features instead of silently coercing them."""
     storage = _Storage(_metadata(), np.array([["1", "2"], ["3", "4"], ["5", "6"]]))
     with pytest.raises(ValueError, match="must be numeric"):
         await load_local_explanation_data(
@@ -103,6 +110,7 @@ async def test_loader_rejects_string_features() -> None:
 
 @pytest.mark.asyncio
 async def test_loader_scans_non_aligned_storage_chunks_without_gaps() -> None:
+    """Scan reverse storage chunks without skipping rows at chunk boundaries."""
     rows = 2501
     metadata = np.empty((rows, 4), dtype=object)
     metadata[:, 0] = ["target" if index == 0 else f"p-{index}" for index in range(rows)]

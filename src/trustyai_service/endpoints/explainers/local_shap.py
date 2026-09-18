@@ -6,9 +6,8 @@ import asyncio
 import logging
 import time
 from enum import StrEnum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import numpy as np
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
@@ -25,6 +24,7 @@ from trustyai_service.service.data.local_explanation import load_local_explanati
 from trustyai_service.service.explainers.local.error_mapping import map_error
 from trustyai_service.service.explainers.local.execution import (
     LocalExecutionSpec,
+    PredictionExecution,
     create_prediction_execution,
 )
 from trustyai_service.service.explainers.local.model_provider import (
@@ -37,17 +37,26 @@ from trustyai_service.service.explainers.local.prediction_adapter import (
 from trustyai_service.service.explainers.local.types import PredictionSource, TaskType
 from trustyai_service.service.explainers.local.worker import run_local_worker
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    import numpy as np
+
 router = APIRouter()
 logger = logging.getLogger(__name__)
 _BINARY_CLASS_COUNT = 2
 
 
 class LinkType(StrEnum):
+    """Output link applied by KernelSHAP."""
+
     LOGIT = "LOGIT"
     IDENTITY = "IDENTITY"
 
 
 class RegularizerType(StrEnum):
+    """Feature-selection regularization supported by KernelSHAP."""
+
     AUTO = "AUTO"
     AIC = "AIC"
     BIC = "BIC"
@@ -56,6 +65,8 @@ class RegularizerType(StrEnum):
 
 
 class SHAPExplainerConfig(BaseModel):
+    """Configuration for KernelSHAP sampling and output selection."""
+
     n_samples: int = Field(300, ge=1, le=100_000)
     n_training_rows: int = Field(10_000, ge=1, le=100_000)
     timeout: int = Field(300, ge=1, le=3600)
@@ -68,17 +79,59 @@ class SHAPExplainerConfig(BaseModel):
 
 
 class SHAPExplanationConfig(BaseModel):
+    """Combined model and KernelSHAP configuration."""
+
     model: LocalExplanationModelConfig
     explainer: SHAPExplainerConfig | None = None
 
 
 class SHAPExplanationRequest(BaseModel):
+    """Request for one local KernelSHAP explanation."""
+
     predictionId: str = Field(min_length=1)
     config: SHAPExplanationConfig
 
 
+def _select_shap_predict(
+    execution: PredictionExecution,
+    prediction: np.ndarray,
+    instance: np.ndarray,
+    task: TaskType,
+    config: SHAPExplainerConfig,
+) -> tuple[Callable[[np.ndarray], np.ndarray], int | None]:
+    """Select and validate the scalar output KernelSHAP should explain."""
+    predict_fn = execution.predict_fn
+    if task is not TaskType.CLASSIFICATION:
+        selected_predict = selected_scalar_callable(predict_fn, link=config.link.value)
+        selected_predict(instance.reshape(1, -1))
+        return selected_predict, None
+    if prediction.shape[1] == 1 and config.single_probability:
+        selected_label = 1
+    elif prediction.shape[1] == _BINARY_CLASS_COUNT:
+        selected_label = config.class_index if config.class_index is not None else 1
+    elif config.class_index is None:
+        msg = "class_index is required for multi-class SHAP"
+        raise ProviderInvalidRequestError(msg)
+    else:
+        selected_label = config.class_index
+    if selected_label >= prediction.shape[1] and not (
+        prediction.shape[1] == 1 and selected_label == 1
+    ):
+        msg = "class_index is invalid for model output"
+        raise ProviderInvalidRequestError(msg)
+    selected_predict = selected_class_callable(
+        predict_fn,
+        selected_label,
+        link=config.link.value,
+        single_probability=config.single_probability,
+    )
+    selected_predict(instance.reshape(1, -1))
+    return selected_predict, selected_label
+
+
 @router.post(routes.EXPLAINER_LOCAL_SHAP)
 async def local_shap_explanation(request: SHAPExplanationRequest) -> dict[str, Any]:
+    """Compute a local KernelSHAP explanation using a model or surrogate."""
     if not _SHAP_AVAILABLE:
         raise HTTPException(503, "SHAP dependency is unavailable")
     config = request.config.explainer or SHAPExplainerConfig()
@@ -162,41 +215,9 @@ async def local_shap_explanation(request: SHAPExplanationRequest) -> dict[str, A
         )
         try:
             prediction = execution.predict_fn(data.instance.reshape(1, -1))
-            selected_predict = execution.predict_fn
-            selected_label = None
-            if model.task is TaskType.CLASSIFICATION:
-                if prediction.shape[1] == 1 and config.single_probability:
-                    selected_label = 1
-                elif prediction.shape[1] == _BINARY_CLASS_COUNT:
-                    selected_label = (
-                        config.class_index if config.class_index is not None else 1
-                    )
-                elif config.class_index is None:
-                    raise ProviderInvalidRequestError(
-                        "class_index is required for multi-class SHAP"
-                    )
-                else:
-                    selected_label = config.class_index
-                if selected_label >= prediction.shape[1] and not (
-                    prediction.shape[1] == 1 and selected_label == 1
-                ):
-                    raise ProviderInvalidRequestError(
-                        "class_index is invalid for model output"
-                    )
-
-                selected_predict = selected_class_callable(
-                    execution.predict_fn,
-                    selected_label,
-                    link=config.link.value,
-                    single_probability=config.single_probability,
-                )
-                # Validate the selected target before SHAP creates any samples.
-                selected_predict(data.instance.reshape(1, -1))
-            else:
-                selected_predict = selected_scalar_callable(
-                    execution.predict_fn, link=config.link.value
-                )
-                selected_predict(data.instance.reshape(1, -1))
+            selected_predict, selected_label = _select_shap_predict(
+                execution, prediction, data.instance, model.task, config
+            )
 
             reg = (
                 "num_features(10)"

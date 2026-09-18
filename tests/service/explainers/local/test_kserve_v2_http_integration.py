@@ -68,6 +68,7 @@ class _Handler(BaseHTTPRequestHandler):
 
 
 def test_provider_uses_real_loopback_kserve_http() -> None:
+    """Exercise metadata negotiation and batched inference over a real socket."""
     _Handler.metadata_calls = 0
     _Handler.infer_calls = []
     try:

@@ -33,6 +33,7 @@ class _Explainer:
 
 
 def test_lime_core_preserves_explicit_class_selection() -> None:
+    """Return the selected classification output without changing its identity."""
     result = compute_lime_explanation(
         _Explainer(),
         np.array([1.0, 2.0]),

@@ -5,11 +5,14 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class ErrorResponse:
+    """HTTP-neutral status and safe detail for an explainer failure."""
+
     status_code: int
     detail: str
 
 
 def map_error(error: Exception) -> ErrorResponse:
+    """Map an internal provider or execution error to response semantics."""
     code = getattr(error, "code", None)
     if code in {"unavailable", "dependency_unavailable"}:
         return ErrorResponse(503, "Model provider is unavailable")

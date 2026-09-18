@@ -37,6 +37,8 @@ logger = logging.getLogger(__name__)
 
 
 class LimeExplainerConfig(BaseModel):
+    """Configuration for LIME sampling and confidence estimation."""
+
     num_samples: int = Field(5000, ge=1, le=100_000)
     n_training_rows: int = Field(10_000, ge=1, le=100_000)
     num_features: int = Field(10, ge=1, le=1000)
@@ -48,16 +50,22 @@ class LimeExplainerConfig(BaseModel):
 
 
 class LimeExplanationConfig(BaseModel):
+    """Combined model and LIME configuration."""
+
     model: LocalExplanationModelConfig
     explainer: LimeExplainerConfig | None = None
 
 
 class LimeExplanationRequest(BaseModel):
+    """Request for one local LIME explanation."""
+
     predictionId: str = Field(min_length=1)
     config: LimeExplanationConfig
 
 
 class LIMEFeatureAttribution(BaseModel):
+    """One feature's LIME weight and optional confidence bounds."""
+
     feature_name: str
     importance: float
     confidence_lower: float | None = None
@@ -65,6 +73,8 @@ class LIMEFeatureAttribution(BaseModel):
 
 
 class LIMEExplanationResponse(BaseModel):
+    """Serialized local LIME explanation response."""
+
     prediction_id: str
     model: str
     prediction_source: PredictionSource
@@ -78,10 +88,23 @@ class LIMEExplanationResponse(BaseModel):
     class_index: int | None = None
 
 
+def _select_lime_label(
+    prediction: np.ndarray, task: TaskType, class_index: int | None
+) -> int | None:
+    """Validate or infer the LIME class label for one model prediction."""
+    if task is not TaskType.CLASSIFICATION:
+        return None
+    if class_index is not None and not 0 <= class_index < prediction.shape[1]:
+        msg = "class_index is invalid for model output"
+        raise ProviderInvalidRequestError(msg)
+    return class_index if class_index is not None else int(np.argmax(prediction[0]))
+
+
 @router.post(routes.EXPLAINER_LOCAL_LIME, response_model=LIMEExplanationResponse)
 async def local_lime_explanation(
     request: LimeExplanationRequest,
 ) -> LIMEExplanationResponse:
+    """Compute a local LIME explanation using a model or explicit surrogate."""
     if not _LIME_AVAILABLE:
         raise HTTPException(503, "LIME dependency is unavailable")
     config = request.config.explainer or LimeExplainerConfig()
@@ -177,20 +200,9 @@ async def local_lime_explanation(
                 seed=config.seed,
             )
             prediction = execution.predict_fn(data.instance.reshape(1, -1))
-            selected_label = None
-            if model.task is TaskType.CLASSIFICATION:
-                if (
-                    config.class_index is not None
-                    and not 0 <= config.class_index < prediction.shape[1]
-                ):
-                    raise ProviderInvalidRequestError(
-                        "class_index is invalid for model output"
-                    )
-                selected_label = (
-                    config.class_index
-                    if config.class_index is not None
-                    else int(np.argmax(prediction[0]))
-                )
+            selected_label = _select_lime_label(
+                prediction, model.task, config.class_index
+            )
             result = compute_lime_explanation(
                 algorithm,
                 data.instance.astype(float),

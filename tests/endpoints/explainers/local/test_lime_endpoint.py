@@ -1,5 +1,7 @@
 """LIME endpoint response and source-selection contract tests."""
 
+from collections.abc import Callable
+
 import numpy as np
 import pytest
 from fastapi import FastAPI
@@ -26,6 +28,7 @@ class _Execution:
 async def test_lime_classification_response_keeps_raw_prediction(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Preserve the raw classification vector alongside LIME's selected value."""
     app = FastAPI()
     app.include_router(local_lime.router)
     data = LocalExplanationData(
@@ -33,28 +36,36 @@ async def test_lime_classification_response_keeps_raw_prediction(
     )
     monkeypatch.setattr(local_lime, "_LIME_AVAILABLE", True)
 
-    async def load(*args, **kwargs):
+    async def load(*_args: object, **_kwargs: object) -> LocalExplanationData:
         return data
 
     monkeypatch.setattr(local_lime, "load_local_explanation_data", load)
+
+    def execution_factory(*_args: object, **_kwargs: object) -> _Execution:
+        return _Execution()
+
+    monkeypatch.setattr(local_lime, "create_prediction_execution", execution_factory)
+
+    def explainer_factory(*_args: object, **_kwargs: object) -> object:
+        return object()
+
+    monkeypatch.setattr(local_lime, "create_lime_explainer", explainer_factory)
+
+    def explanation(
+        *_args: object, **_kwargs: object
+    ) -> tuple[list[tuple[str, float]], float, float, float]:
+        return [("f0", 0.2)], 0.9, 0.8, 0.1
+
+    monkeypatch.setattr(local_lime, "compute_lime_explanation", explanation)
+
+    def confidence_intervals(*_args: object, **_kwargs: object) -> tuple[None, None]:
+        return None, None
+
     monkeypatch.setattr(
-        local_lime, "create_prediction_execution", lambda *args, **kwargs: _Execution()
-    )
-    monkeypatch.setattr(
-        local_lime, "create_lime_explainer", lambda *args, **kwargs: object()
-    )
-    monkeypatch.setattr(
-        local_lime,
-        "compute_lime_explanation",
-        lambda *args, **kwargs: ([("f0", 0.2)], 0.9, 0.8, 0.1),
-    )
-    monkeypatch.setattr(
-        local_lime,
-        "compute_lime_confidence_intervals",
-        lambda *args, **kwargs: (None, None),
+        local_lime, "compute_lime_confidence_intervals", confidence_intervals
     )
 
-    async def run(function, _duration):
+    async def run(function: Callable[[], object], _duration: float) -> object:
         return function()
 
     monkeypatch.setattr(local_lime, "run_local_worker", run)

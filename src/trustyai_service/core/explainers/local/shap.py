@@ -31,8 +31,10 @@ def compute_shap_result(
     link: str,
     l1_reg: str | float,
 ) -> ShapExplanationResult:
+    """Compute attributions and prediction values in the requested link space."""
     if shap is None:
-        raise RuntimeError("SHAP dependency is unavailable")
+        msg = "SHAP dependency is unavailable"
+        raise RuntimeError(msg)
     summary = shap.kmeans(background, min(n_samples, max(1, len(background) // 2)))
     explainer = shap.KernelExplainer(predict_fn, summary, link=link)
     raw_values = np.asarray(
@@ -44,13 +46,16 @@ def compute_shap_result(
     while values.ndim > 1 and values.shape[0] == 1:
         values = values[0]
     if values.ndim != 1 or values.size != instance.size:
-        raise RuntimeError("SHAP returned multi-output or malformed attributions")
+        msg = "SHAP returned multi-output or malformed attributions"
+        raise RuntimeError(msg)
     expected = np.asarray(explainer.expected_value).reshape(-1)
     if expected.size != 1 or not np.isfinite(expected[0]):
-        raise RuntimeError("SHAP returned a malformed base value")
+        msg = "SHAP returned a malformed base value"
+        raise RuntimeError(msg)
     raw_prediction = np.asarray(predict_fn(instance.reshape(1, -1))).reshape(-1)
     if raw_prediction.size != 1 or not np.isfinite(raw_prediction[0]):
-        raise RuntimeError("Prediction callable returned a malformed scalar")
+        msg = "Prediction callable returned a malformed scalar"
+        raise RuntimeError(msg)
     linked_prediction = float(
         np.asarray(explainer.link.f(raw_prediction)).reshape(-1)[0]
     )
@@ -70,8 +75,10 @@ def compute_shap_values(
     link: str,
     l1_reg: str | float,
 ) -> tuple[np.ndarray, float]:
+    """Compute SHAP attributions and the expected model value."""
     if shap is None:
-        raise RuntimeError("SHAP dependency is unavailable")
+        msg = "SHAP dependency is unavailable"
+        raise RuntimeError(msg)
     result = compute_shap_result(
         instance,
         background,

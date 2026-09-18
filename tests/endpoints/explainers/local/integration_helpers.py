@@ -5,20 +5,24 @@ from __future__ import annotations
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any
+from typing import Any, ClassVar, Self
 
 import numpy as np
 import pytest
 
 
 class FakeKServeHandler(BaseHTTPRequestHandler):
+    """Minimal KServe V2 HTTP server used by endpoint integration tests."""
+
     metadata_calls = 0
-    infer_calls: list[dict[str, Any]] = []
+    infer_calls: ClassVar[list[dict[str, Any]]] = []
 
     def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+        """Suppress noisy standard-library HTTP server access logs."""
         del format, args
 
     def do_GET(self) -> None:
+        """Serve the fake model metadata contract."""
         type(self).metadata_calls += 1
         payload = {
             "name": "m",
@@ -28,6 +32,7 @@ class FakeKServeHandler(BaseHTTPRequestHandler):
         self._write(payload)
 
     def do_POST(self) -> None:
+        """Serve deterministic predictions for the submitted tensor."""
         length = int(self.headers["Content-Length"])
         body = json.loads(self.rfile.read(length))
         type(self).infer_calls.append(body)
@@ -58,7 +63,10 @@ class FakeKServeHandler(BaseHTTPRequestHandler):
 
 
 class FakeKServe:
-    def __enter__(self) -> "FakeKServe":
+    """Manage the lifetime of the loopback fake KServe server."""
+
+    def __enter__(self) -> Self:
+        """Start the loopback server and return this context manager."""
         FakeKServeHandler.metadata_calls = 0
         FakeKServeHandler.infer_calls = []
         try:
@@ -71,13 +79,17 @@ class FakeKServe:
         return self
 
     def __exit__(self, *_exc: object) -> None:
+        """Stop the loopback server and join its worker thread."""
         self.server.shutdown()
         self.thread.join(timeout=5)
         self.server.server_close()
 
 
 class LocalStorage:
+    """Small in-memory storage implementation for endpoint tests."""
+
     def __init__(self) -> None:
+        """Initialize one target, organic background, and synthetic row."""
         self.metadata = np.array(
             [
                 ["target", "t", 0, []],
@@ -94,17 +106,21 @@ class LocalStorage:
         self.outputs = np.array([[1.0], [0.25], [0.25], [99.0]], dtype=float)
 
     async def dataset_exists(self, _name: str) -> bool:
+        """Report that all local-explanation datasets are available."""
         return True
 
     async def dataset_rows(self, _name: str) -> int:
+        """Return the number of stored input rows."""
         return len(self.inputs)
 
     async def get_aliased_column_names(self, name: str) -> list[str]:
+        """Return stable feature or output names for the requested dataset."""
         return ["f0", "f1"] if name.endswith("_inputs") else ["score"]
 
     async def read_data(
         self, name: str, start_row: int = 0, n_rows: int | None = None
     ) -> np.ndarray:
+        """Read a bounded slice from the requested in-memory dataset."""
         values = self.metadata
         if name.endswith("_inputs"):
             values = self.inputs

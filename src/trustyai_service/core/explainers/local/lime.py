@@ -19,9 +19,11 @@ def create_lime_explainer(
     *,
     kernel_width: float = 0.75,
     seed: int | None = None,
-):
+) -> object:
+    """Create a LIME tabular explainer for the supplied background data."""
     if LimeTabularExplainer is None:
-        raise RuntimeError("LIME dependency is unavailable")
+        msg = "LIME dependency is unavailable"
+        raise RuntimeError(msg)
     return LimeTabularExplainer(
         training_data,
         feature_names=feature_names,
@@ -41,6 +43,7 @@ def compute_lime_explanation(
     num_features: int,
     label: int | None = None,
 ) -> tuple[list[tuple[str, float]], float, float, float]:
+    """Compute feature weights and prediction details for one instance."""
     explanation = explainer.explain_instance(
         instance, predict_fn, num_samples=num_samples, num_features=num_features
     )

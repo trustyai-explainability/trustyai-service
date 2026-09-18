@@ -17,6 +17,7 @@ from trustyai_service.service.explainers.local.types import TaskType
 
 
 def test_transport_headers_are_copied() -> None:
+    """Copy deployment headers so later caller mutation cannot alter transport."""
     headers = {"Authorization": "Bearer secret"}
     config = HttpTransportConfig(headers=headers, allowed_hosts=frozenset({"m"}))
     headers["Authorization"] = "changed"
@@ -33,10 +34,12 @@ def test_transport_headers_are_copied() -> None:
 def test_base_url_normalization_preserves_safe_prefix(
     value: str, expected: str
 ) -> None:
+    """Normalize schemes and prefixes without changing safe URL components."""
     assert normalize_base_url(value) == expected
 
 
 def test_metadata_url_uses_encoded_path_segments() -> None:
+    """Encode model and version path segments when requesting metadata."""
     requests: list[str] = []
 
     class Client:

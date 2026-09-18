@@ -11,6 +11,7 @@ from trustyai_service.core.explainers.local.shap import (
 
 @pytest.mark.skipif(not _SHAP_AVAILABLE, reason="SHAP extra is unavailable")
 def test_shap_result_keeps_link_space_prediction_and_base_value() -> None:
+    """Expose both raw explanation values and the linked prediction consistently."""
     background = np.array([[0.1, 0.2], [0.2, 0.1]])
     instance = np.array([0.3, 0.4])
 

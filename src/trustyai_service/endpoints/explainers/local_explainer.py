@@ -27,15 +27,21 @@ class ModelConfig(BaseModel):
 
 
 class CounterfactualExplainerConfig(BaseModel):
+    """Configuration placeholder for the not-yet-implemented explainer."""
+
     n_samples: int = 100
 
 
 class CounterfactualExplanationConfig(BaseModel):
+    """Request model placeholder for counterfactual explanations."""
+
     model: ModelConfig
     explainer: CounterfactualExplainerConfig | None = None
 
 
 class CounterfactualExplanationRequest(BaseModel):
+    """Request model placeholder for counterfactual explanations."""
+
     predictionId: str
     config: CounterfactualExplanationConfig
     goals: dict[str, str] | None = None
@@ -46,6 +52,8 @@ class CounterfactualExplanationRequest(BaseModel):
 async def local_counterfactual_explanation(
     request: CounterfactualExplanationRequest,
 ) -> dict[str, Any]:
+    """Return a stable not-implemented response for this legacy route."""
+    del request
     raise HTTPException(
         HTTPStatus.NOT_IMPLEMENTED,
         "Local Counterfactual explanation is not yet implemented",
@@ -53,6 +61,8 @@ async def local_counterfactual_explanation(
 
 
 class TSSaliencyExplainerConfig(BaseModel):
+    """Configuration placeholder for the not-yet-implemented explainer."""
+
     timeout: int = 10
     mu: float = 0.01
     n_samples: int = 50
@@ -62,11 +72,15 @@ class TSSaliencyExplainerConfig(BaseModel):
 
 
 class TSSaliencyExplanationConfig(BaseModel):
+    """Request model placeholder for time-series saliency explanations."""
+
     model: ModelConfig
     explainer: TSSaliencyExplainerConfig | None = None
 
 
 class TSSaliencyExplanationRequest(BaseModel):
+    """Request model placeholder for time-series saliency explanations."""
+
     predictionIds: list[str]
     config: TSSaliencyExplanationConfig
 
@@ -75,6 +89,8 @@ class TSSaliencyExplanationRequest(BaseModel):
 async def local_tssaliency_explanation(
     request: TSSaliencyExplanationRequest,
 ) -> dict[str, Any]:
+    """Return a stable not-implemented response for this legacy route."""
+    del request
     raise HTTPException(
         HTTPStatus.NOT_IMPLEMENTED,
         "Local TSSaliency explanation is not yet implemented",

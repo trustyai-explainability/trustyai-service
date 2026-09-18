@@ -6,6 +6,9 @@ from urllib.parse import urlsplit
 
 from .model_provider import HttpTransportConfig, ProviderConfigurationError
 
+_MAX_PORT = 65_535
+_MAX_BATCH_SIZE = 100_000
+
 
 def _host_entry(value: str) -> str:
     value = value.strip().lower().rstrip(".")
@@ -22,11 +25,11 @@ def _host_entry(value: str) -> str:
             host = f"[{host}]"
         port = parsed.port
     except ValueError as exc:
-        raise ProviderConfigurationError(
-            "Invalid outbound host allowlist entry"
-        ) from exc
-    if port is not None and not 1 <= port <= 65535:
-        raise ProviderConfigurationError("Invalid outbound host allowlist port")
+        msg = "Invalid outbound host allowlist entry"
+        raise ProviderConfigurationError(msg) from exc
+    if port is not None and not 1 <= port <= _MAX_PORT:
+        msg = "Invalid outbound host allowlist port"
+        raise ProviderConfigurationError(msg)
     return f"{host}:{port}" if port is not None else host
 
 
@@ -42,24 +45,27 @@ def get_transport_config() -> HttpTransportConfig:
     )
     verify: bool | str = os.getenv("TRUSTYAI_EXPLAINER_CA_BUNDLE", "") or True
     if isinstance(verify, str) and not Path(verify).is_file():
-        raise ProviderConfigurationError("Configured CA bundle is unreadable")
+        msg = "Configured CA bundle is unreadable"
+        raise ProviderConfigurationError(msg)
     cert_path = os.getenv("TRUSTYAI_EXPLAINER_CLIENT_CERT", "")
     key_path = os.getenv("TRUSTYAI_EXPLAINER_CLIENT_KEY", "")
     if bool(cert_path) != bool(key_path):
-        raise ProviderConfigurationError(
-            "Client certificate and key must be configured together"
-        )
+        msg = "Client certificate and key must be configured together"
+        raise ProviderConfigurationError(msg)
     cert = (cert_path, key_path) if cert_path and key_path else None
     if cert and (not Path(cert_path).is_file() or not Path(key_path).is_file()):
-        raise ProviderConfigurationError("Configured client certificate is unreadable")
+        msg = "Configured client certificate is unreadable"
+        raise ProviderConfigurationError(msg)
     token = os.getenv("TRUSTYAI_EXPLAINER_AUTH_TOKEN", "")
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     try:
         batch = int(os.getenv("TRUSTYAI_EXPLAINER_MAX_BATCH_SIZE", "1024"))
     except ValueError as exc:
-        raise ProviderConfigurationError("Invalid model batch size") from exc
-    if not 1 <= batch <= 100_000:
-        raise ProviderConfigurationError("Invalid model batch size")
+        msg = "Invalid model batch size"
+        raise ProviderConfigurationError(msg) from exc
+    if not 1 <= batch <= _MAX_BATCH_SIZE:
+        msg = "Invalid model batch size"
+        raise ProviderConfigurationError(msg)
     return HttpTransportConfig(
         headers=headers,
         verify=verify,
