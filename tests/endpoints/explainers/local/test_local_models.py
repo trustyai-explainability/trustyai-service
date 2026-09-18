@@ -7,6 +7,7 @@ from trustyai_service.endpoints.explainers.local_explainer import (
     LocalExplanationModelConfig,
     ModelConfig,
 )
+from trustyai_service.endpoints.explainers.local_lime import LimeExplanationRequest
 from trustyai_service.service.explainers.local.types import PredictionSource, TaskType
 
 
@@ -46,7 +47,7 @@ def test_model_url_must_be_http_without_credentials(value: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "value", ["", ".", "..", "model/name", "model%name", "model\nname"]
+    "value", ["", ".", "..", "model/name", "model%name", "model\nname", "model\x7f"]
 )
 def test_model_segments_are_path_safe(value: str) -> None:
     """Reject model names that could escape the KServe URL path."""
@@ -56,6 +57,40 @@ def test_model_segments_are_path_safe(value: str) -> None:
             model_name=value,
             task=TaskType.REGRESSION,
         )
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "http://model.example/path?token=secret",
+        "http://model.example/path#fragment",
+        "http://model.example/%2fprivate",
+        "http://model.example/path\x7f",
+    ],
+)
+def test_model_url_rejects_unsafe_components(value: str) -> None:
+    """Reject URL components that could alter the provider request target."""
+    with pytest.raises(ValidationError):
+        LocalExplanationModelConfig(
+            base_url=value, model_name="credit-model", task=TaskType.REGRESSION
+        )
+
+
+def test_prediction_id_rejects_control_characters_and_excessive_length() -> None:
+    """Bound and sanitize IDs before storage lookups and structured logging."""
+    base = {
+        "config": {
+            "model": {
+                "base_url": "http://model.example",
+                "model_name": "credit-model",
+                "task": "REGRESSION",
+            }
+        }
+    }
+    with pytest.raises(ValidationError):
+        LimeExplanationRequest(predictionId="target\n", **base)
+    with pytest.raises(ValidationError):
+        LimeExplanationRequest(predictionId="x" * 513, **base)
 
 
 def test_placeholder_model_contract_remains_unchanged() -> None:

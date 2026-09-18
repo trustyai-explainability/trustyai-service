@@ -8,6 +8,8 @@ from .model_provider import HttpTransportConfig, ProviderConfigurationError
 
 _MAX_PORT = 65_535
 _MAX_BATCH_SIZE = 100_000
+_CONTROL_CHAR_LIMIT = 32
+_DEL_CHAR = 127
 
 
 def _invalid_allowlist() -> None:
@@ -18,6 +20,13 @@ def _host_entry(value: str) -> str:
     value = value.strip().lower().rstrip(".")
     if not value:
         return ""
+    if any(
+        ord(character) < _CONTROL_CHAR_LIMIT
+        or ord(character) == _DEL_CHAR
+        or character in "\\%"
+        for character in value
+    ):
+        _invalid_allowlist()
     try:
         parsed = urlsplit(f"//{value}")
         if (
@@ -67,6 +76,12 @@ def get_transport_config() -> HttpTransportConfig:
         msg = "Configured client certificate is unreadable"
         raise ProviderConfigurationError(msg)
     token = os.getenv("TRUSTYAI_EXPLAINER_AUTH_TOKEN", "")
+    if any(
+        ord(character) < _CONTROL_CHAR_LIMIT or ord(character) == _DEL_CHAR
+        for character in token
+    ):
+        msg = "Configured model authorization token contains control characters"
+        raise ProviderConfigurationError(msg)
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     try:
         batch = int(os.getenv("TRUSTYAI_EXPLAINER_MAX_BATCH_SIZE", "1024"))

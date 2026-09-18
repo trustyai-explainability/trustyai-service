@@ -16,6 +16,8 @@ class FakeKServeHandler(BaseHTTPRequestHandler):
 
     metadata_calls = 0
     infer_calls: ClassVar[list[dict[str, Any]]] = []
+    metadata_paths: ClassVar[list[str]] = []
+    infer_paths: ClassVar[list[str]] = []
     classification = False
 
     def log_message(self, format: str, *args: object) -> None:  # noqa: A002
@@ -25,9 +27,11 @@ class FakeKServeHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         """Serve the fake model metadata contract."""
         type(self).metadata_calls += 1
+        type(self).metadata_paths.append(self.path)
         output_shape = [-1, 2] if type(self).classification else [-1, 1]
         payload = {
             "name": "m",
+            "versions": ["v1"],
             "inputs": [{"name": "input", "datatype": "FP32", "shape": [-1, 2]}],
             "outputs": [{"name": "output", "datatype": "FP32", "shape": output_shape}],
         }
@@ -35,6 +39,7 @@ class FakeKServeHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         """Serve deterministic predictions for the submitted tensor."""
+        type(self).infer_paths.append(self.path)
         length = int(self.headers["Content-Length"])
         body = json.loads(self.rfile.read(length))
         type(self).infer_calls.append(body)
@@ -79,6 +84,8 @@ class FakeKServe:
         """Start the loopback server and return this context manager."""
         FakeKServeHandler.metadata_calls = 0
         FakeKServeHandler.infer_calls = []
+        FakeKServeHandler.metadata_paths = []
+        FakeKServeHandler.infer_paths = []
         FakeKServeHandler.classification = self.classification
         try:
             self.server = ThreadingHTTPServer(("127.0.0.1", 0), FakeKServeHandler)

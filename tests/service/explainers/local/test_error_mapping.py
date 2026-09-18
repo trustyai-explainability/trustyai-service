@@ -19,6 +19,7 @@ from trustyai_service.service.explainers.local.model_provider import (
 @pytest.mark.parametrize(
     ("error", "status"),
     [
+        (ImportError("optional dependency is broken"), 503),
         (DependencyUnavailableError(), 503),
         (ProviderUnavailableError(), 503),
         (ProviderDeadlineError(), 504),

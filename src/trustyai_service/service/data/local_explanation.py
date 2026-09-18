@@ -1,5 +1,6 @@
 """Bounded, schema-aware storage loading for local explanations."""
 
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from typing import cast
 
@@ -13,7 +14,9 @@ from trustyai_service.service.constants import (
     OUTPUT_SUFFIX,
     SYNTHETIC_TAG,
 )
+from trustyai_service.service.data.exceptions import StorageReadError
 from trustyai_service.service.data.storage import get_global_storage_interface
+from trustyai_service.service.data.storage.exceptions import StorageError
 from trustyai_service.service.explainers.local.model_provider import (
     LocalDataError,
     LocalDataNotFoundError,
@@ -54,6 +57,8 @@ class _BackgroundSpec:
     output_dataset: str | None
     target_index: int
     training_rows: int
+    input_width: int
+    output_names: list[str]
 
 
 def _text(value: object) -> str:
@@ -94,16 +99,35 @@ def _numeric_rows(value: object, *, name: str) -> np.ndarray:
     return result
 
 
-def _chunk_matrix(value: object, row_count: int, *, name: str) -> np.ndarray:
+def _chunk_matrix(
+    value: object,
+    row_count: int | None,
+    *,
+    name: str,
+    column_count: int | None = None,
+) -> np.ndarray:
     if value is None:
         msg = f"Stored {name} data is unavailable"
         raise LocalDataError(msg)
     array = np.asarray(value)
     if array.ndim == 1:
-        array = (
-            array.reshape(-1, 1) if len(array) == row_count else array.reshape(1, -1)
-        )
-    if array.ndim != _MATRIX_RANK or len(array) != row_count:
+        if row_count is None:
+            if column_count is None or len(array) % column_count != 0:
+                msg = f"Stored {name} rows are misaligned"
+                raise LocalDataError(msg)
+            row_count = len(array) // column_count
+        if row_count == 1:
+            array = array.reshape(1, -1)
+        elif len(array) == row_count:
+            array = array.reshape(row_count, 1)
+        elif len(array) % row_count == 0:
+            array = array.reshape(row_count, -1)
+        else:
+            msg = f"Stored {name} rows are misaligned"
+            raise LocalDataError(msg)
+    if array.ndim != _MATRIX_RANK or (
+        row_count is not None and len(array) != row_count
+    ):
         msg = f"Stored {name} rows are misaligned"
         raise LocalDataError(msg)
     return array
@@ -149,9 +173,16 @@ async def _load_background(
     input_chunks: list[np.ndarray] = []
     output_chunks: list[np.ndarray] = []
     selected = 0
-    offsets, has_count = await _background_offsets(storage, spec.input_dataset)
+    offsets, has_count, total_rows = await _background_offsets(
+        storage, spec.input_dataset
+    )
     for offset in offsets:
-        chunk = await _read_background_chunk(storage, spec, offset, selected)
+        expected_rows = (
+            min(_CHUNK_SIZE, total_rows - offset) if total_rows is not None else None
+        )
+        chunk = await _read_background_chunk(
+            storage, spec, offset, selected, expected_rows=expected_rows
+        )
         if chunk is None:
             continue
         input_matrix, output_matrix, selected_indices = chunk
@@ -175,7 +206,7 @@ async def _load_background(
 
 async def _background_offsets(
     storage: object, input_dataset: str
-) -> tuple[range, bool]:
+) -> tuple[range, bool, int | None]:
     """Return newest-first chunk offsets when the backend exposes row counts."""
     has_count = True
     try:
@@ -189,8 +220,10 @@ async def _background_offsets(
     total_rows = min(total_rows, _MAX_SCAN_ROWS)
     if has_count and total_rows:
         first = ((total_rows - 1) // _CHUNK_SIZE) * _CHUNK_SIZE
-        return range(first, -1, -_CHUNK_SIZE), True
-    return range(0, _MAX_SCAN_ROWS, _CHUNK_SIZE), False
+        return range(first, -1, -_CHUNK_SIZE), True, total_rows
+    if has_count:
+        return range(0), False, 0
+    return range(0, _MAX_SCAN_ROWS, _CHUNK_SIZE), False, None
 
 
 async def _read_background_chunk(
@@ -198,26 +231,33 @@ async def _read_background_chunk(
     spec: _BackgroundSpec,
     offset: int,
     selected: int,
+    *,
+    expected_rows: int | None,
 ) -> tuple[np.ndarray, np.ndarray | None, list[int]] | None:
     """Read, validate, and filter one storage chunk."""
     input_chunk = await storage.read_data(
         spec.input_dataset, start_row=offset, n_rows=_CHUNK_SIZE
     )
+    if input_chunk is None or len(input_chunk) == 0:
+        return None
     metadata_chunk = await storage.read_data(
         spec.metadata_dataset, start_row=offset, n_rows=_CHUNK_SIZE
     )
-    if input_chunk is None or len(input_chunk) == 0:
-        return None
-    if metadata_chunk is None or len(metadata_chunk) != len(input_chunk):
-        msg = "Stored input and metadata rows are misaligned"
-        raise LocalDataError(msg)
     input_matrix = _numeric_rows(
-        _chunk_matrix(input_chunk, len(input_chunk), name="input"), name="input"
+        _chunk_matrix(
+            input_chunk,
+            expected_rows,
+            name="input",
+            column_count=spec.input_width,
+        ),
+        name="input",
     )
-    output_matrix = await _read_output_chunk(storage, spec, offset, len(input_chunk))
+    row_count = len(input_matrix)
+    metadata_matrix = _chunk_matrix(metadata_chunk, row_count, name="metadata")
+    output_matrix = await _read_output_chunk(storage, spec, offset, row_count)
     remaining = max(0, spec.training_rows - selected)
     selected_indices: list[int] = []
-    for index, metadata in enumerate(np.asarray(metadata_chunk)):
+    for index, metadata in enumerate(metadata_matrix):
         absolute = offset + index
         if absolute == spec.target_index or _synthetic(
             metadata[METADATA_TAGS_COL] if len(metadata) > METADATA_TAGS_COL else []
@@ -238,12 +278,13 @@ async def _read_output_chunk(
     output_chunk = await storage.read_data(
         spec.output_dataset, start_row=offset, n_rows=_CHUNK_SIZE
     )
-    if output_chunk is None or len(output_chunk) != row_count:
-        msg = "Stored input and output rows are misaligned"
-        raise LocalDataError(msg)
-    return _numeric_rows(
+    output_matrix = _numeric_rows(
         _chunk_matrix(output_chunk, row_count, name="output"), name="output"
     )
+    if output_matrix.shape[1] != len(spec.output_names):
+        msg = "Stored output columns do not match their aliases"
+        raise LocalDataError(msg)
+    return output_matrix
 
 
 async def load_local_explanation_data(
@@ -287,6 +328,7 @@ async def load_local_explanation_data(
     )
     output_dataset = model + OUTPUT_SUFFIX if include_stored_output else None
     output_names = await _load_output_context(storage, output_dataset, input_rows)
+    input_tensor_name, output_tensor_name = await _tensor_name_hints(storage, model)
     background, targets = await _load_background(
         storage,
         _BackgroundSpec(
@@ -295,6 +337,8 @@ async def load_local_explanation_data(
             output_dataset=output_dataset,
             target_index=row_index,
             training_rows=max_background_rows,
+            input_width=len(feature_names),
+            output_names=output_names,
         ),
     )
     return LocalExplanationData(
@@ -305,9 +349,55 @@ async def load_local_explanation_data(
         background=background,
         background_output=targets,
         output_names=output_names,
-        input_tensor_name="input",
-        output_tensor_name="output",
+        input_tensor_name=input_tensor_name,
+        output_tensor_name=output_tensor_name,
     )
+
+
+async def _tensor_name_hints(
+    storage: object, model: str
+) -> tuple[str | None, str | None]:
+    """Read persisted tensor names when a backend exposes them as metadata."""
+    getter = getattr(storage, "get_metadata", None)
+    if not callable(getter):
+        return "input", "output"
+    try:
+        metadata_getter = cast("Callable[[str], Awaitable[object]]", getter)
+        metadata = await metadata_getter(model)
+    except (
+        AttributeError,
+        KeyError,
+        TypeError,
+        ValueError,
+        StorageReadError,
+        StorageError,
+    ):
+        return "input", "output"
+    if metadata is None:
+        return "input", "output"
+    if isinstance(metadata, Mapping):
+        input_name = metadata.get("inputTensorName") or metadata.get(
+            "input_tensor_name"
+        )
+        output_name = metadata.get("outputTensorName") or metadata.get(
+            "output_tensor_name"
+        )
+    else:
+        input_name = getattr(metadata, "input_tensor_name", None)
+        output_name = getattr(metadata, "output_tensor_name", None)
+        if input_name is None:
+            getter = getattr(metadata, "get_input_tensor_name", None)
+            input_name = getter() if callable(getter) else None
+        if output_name is None:
+            getter = getattr(metadata, "get_output_tensor_name", None)
+            output_name = getter() if callable(getter) else None
+    try:
+        return (
+            _text(input_name) if input_name else "input",
+            _text(output_name) if output_name else "output",
+        )
+    except (UnicodeDecodeError, TypeError, ValueError):
+        return "input", "output"
 
 
 def _resolve_loader_options(
@@ -396,5 +486,12 @@ async def _load_output_context(
     ]
     if not output_names or len(set(output_names)) != len(output_names):
         msg = "Stored output aliases are missing or ambiguous"
+        raise LocalDataError(msg)
+    sample = _numeric_rows(
+        await storage.read_data(output_dataset, start_row=0, n_rows=1),
+        name="output",
+    )
+    if sample.shape[1] != len(output_names):
+        msg = "Stored output columns do not match their aliases"
         raise LocalDataError(msg)
     return output_names

@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib
 import json
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Iterator, Mapping
 from numbers import Integral
 from typing import NoReturn, Protocol, cast
 from urllib.parse import quote, urlsplit, urlunsplit
@@ -43,9 +43,11 @@ _NUMERIC = frozenset(
     }
 )
 _MAX_RESPONSE_ELEMENTS = 10_000_000
+_MAX_REQUEST_ELEMENTS = 10_000_000
 _MAX_RESPONSE_BYTES = 64 * 1024 * 1024
 _MAX_PORT = 65_535
 _CONTROL_CHAR_LIMIT = 32
+_DEL_CHAR = 127
 _MATRIX_RANK = 2
 _HTTP_BAD_REQUEST = 400
 _HTTP_REDIRECT = 300
@@ -65,6 +67,79 @@ class _HttpClient(Protocol):
     def post(self, url: str, **kwargs: object) -> _HttpResponse: ...
 
     def close(self) -> None: ...
+
+
+class _StreamResponse(Protocol):
+    status_code: int
+
+    def iter_bytes(self) -> Iterator[bytes]: ...
+
+
+class _StreamContext(Protocol):
+    def __enter__(self) -> _StreamResponse: ...
+
+    def __exit__(self, *args: object) -> None: ...
+
+
+class _BufferedResponse:
+    """Small response implementation used after bounded streaming reads."""
+
+    def __init__(self, status_code: int, content: bytes) -> None:
+        self.status_code = status_code
+        self.content = content
+
+    def json(self) -> object:
+        """Decode the bounded response body as JSON."""
+        return json.loads(self.content)
+
+
+def _bounded_stream_content(response: _StreamResponse) -> bytes:
+    """Read a streamed response without exceeding the provider byte limit."""
+    content = bytearray()
+    size = 0
+    for chunk in response.iter_bytes():
+        if not isinstance(chunk, bytes):
+            msg = "Model response contains invalid bytes"
+            raise ProviderInvalidResponseError(msg)
+        size += len(chunk)
+        if size > _MAX_RESPONSE_BYTES:
+            msg = "Model response is too large"
+            raise ProviderInvalidResponseError(msg)
+        content.extend(chunk)
+    return bytes(content)
+
+
+def _check_materialized_response(response: _HttpResponse) -> None:
+    """Enforce the response limit for test doubles and non-streaming clients."""
+    content = getattr(response, "content", None)
+    if content is not None and len(content) > _MAX_RESPONSE_BYTES:
+        msg = "Model response is too large"
+        raise ProviderInvalidResponseError(msg)
+
+
+def _request_bounded(
+    client: _HttpClient,
+    method: str,
+    url: str,
+    timeout_seconds: float,
+    **kwargs: object,
+) -> _HttpResponse:
+    """Issue one request and bound the response before parsing JSON."""
+    stream = cast(
+        "Callable[..., _StreamContext] | None", getattr(client, "stream", None)
+    )
+    if callable(stream):
+        with stream(method, url, timeout=timeout_seconds, **kwargs) as response:
+            status_code = int(response.status_code)
+            if status_code >= _HTTP_REDIRECT:
+                return _BufferedResponse(status_code, b"")
+            return _BufferedResponse(status_code, _bounded_stream_content(response))
+    if method == "GET":
+        response = client.get(url, timeout=timeout_seconds, **kwargs)
+    else:
+        response = client.post(url, timeout=timeout_seconds, **kwargs)
+    _check_materialized_response(response)
+    return response
 
 
 def _invalid_response(message: str) -> NoReturn:
@@ -121,7 +196,11 @@ def _timeout_error(error: Exception) -> bool:
 
 def normalize_base_url(value: str) -> str:
     """Validate and normalize a KServe HTTP server root."""
-    parsed = urlsplit(value)
+    try:
+        parsed = urlsplit(value)
+    except ValueError as exc:
+        msg = "base_url must be an HTTP(S) URL"
+        raise ProviderInvalidRequestError(msg) from exc
     if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
         msg = "base_url must be an HTTP(S) URL"
         raise ProviderInvalidRequestError(msg)
@@ -133,8 +212,17 @@ def normalize_base_url(value: str) -> str:
     if parsed.username or parsed.password or parsed.query or parsed.fragment:
         msg = "base_url must not contain credentials, query, or fragment"
         raise ProviderInvalidRequestError(msg)
+    if any(
+        ord(char) < _CONTROL_CHAR_LIMIT or ord(char) == _DEL_CHAR or char in "\\%"
+        for char in parsed.netloc
+    ):
+        msg = "base_url contains an unsafe authority"
+        raise ProviderInvalidRequestError(msg)
     if (
-        any(ord(char) < _CONTROL_CHAR_LIMIT for char in parsed.path)
+        any(
+            ord(char) < _CONTROL_CHAR_LIMIT or ord(char) == _DEL_CHAR
+            for char in parsed.path
+        )
         or "%" in parsed.path
     ):
         msg = "base_url contains an unsafe path"
@@ -152,7 +240,9 @@ def _segment(value: str, label: str) -> str:
         not value
         or value in {".", ".."}
         or any(char in value for char in "/\\%")
-        or any(ord(char) < _CONTROL_CHAR_LIMIT for char in value)
+        or any(
+            ord(char) < _CONTROL_CHAR_LIMIT or ord(char) == _DEL_CHAR for char in value
+        )
     ):
         msg = f"Invalid {label}"
         raise ProviderInvalidRequestError(msg)
@@ -164,6 +254,12 @@ def _allowlist_entry(value: str) -> str:
     raw = str(value).strip().lower().rstrip(".")
     if not raw:
         msg = "empty allowlist entry"
+        _invalid_response(msg)
+    if any(
+        ord(char) < _CONTROL_CHAR_LIMIT or ord(char) == _DEL_CHAR or char in "\\%"
+        for char in raw
+    ):
+        msg = "allowlist entry contains unsafe characters"
         _invalid_response(msg)
     parsed = urlsplit(f"//{raw}")
     if parsed.path not in ("", "/") or parsed.query or parsed.fragment:
@@ -179,6 +275,59 @@ def _allowlist_entry(value: str) -> str:
         _invalid_response(msg)
     normalized_host = f"[{host}]" if ":" in host else host
     return f"{normalized_host}:{port}" if port is not None else normalized_host
+
+
+def _validate_model_endpoint(
+    spec: KServeModelSpec, transport: HttpTransportConfig
+) -> str:
+    """Validate the model endpoint against deployment transport policy."""
+    base = normalize_base_url(spec.base_url)
+    parsed_base = urlsplit(base)
+    host = (parsed_base.hostname or "").lower().rstrip(".")
+    try:
+        effective_port = parsed_base.port or (
+            443 if parsed_base.scheme == "https" else 80
+        )
+    except ValueError as exc:
+        msg = "base_url has an invalid port"
+        raise ProviderInvalidRequestError(msg) from exc
+    if not transport.allowed_hosts:
+        msg = "Outbound model host allowlist is required"
+        raise ProviderConfigurationError(msg)
+    if transport.follow_redirects or transport.trust_env:
+        msg = "Redirects and ambient proxy settings must remain disabled"
+        raise ProviderConfigurationError(msg)
+    try:
+        entries = {_allowlist_entry(entry) for entry in transport.allowed_hosts}
+    except (TypeError, ValueError) as exc:
+        msg = "Invalid outbound host allowlist"
+        raise ProviderConfigurationError(msg) from exc
+    normalized_host = f"[{host}]" if ":" in host else host
+    host_ok = normalized_host in entries or host in entries
+    host_ok = host_ok or f"{normalized_host}:{effective_port}" in entries
+    if not host_ok:
+        msg = "Model host is not in the outbound allowlist"
+        raise ProviderInvalidRequestError(msg)
+    return base
+
+
+def _create_http_client(
+    client_type: type, transport: HttpTransportConfig, timeout_seconds: float
+) -> object:
+    """Construct the optional client and classify configuration failures."""
+    try:
+        return client_type(
+            headers=dict(transport.headers),
+            verify=transport.verify,
+            cert=transport.cert,
+            follow_redirects=transport.follow_redirects,
+            trust_env=transport.trust_env,
+            timeout=timeout_seconds,
+        )
+    except (OSError, TypeError, ValueError) as exc:
+        raise ProviderConfigurationError from exc
+    except Exception as exc:
+        raise ProviderUnavailableError from exc
 
 
 def _shape(value: object) -> tuple[int, ...]:
@@ -215,10 +364,15 @@ def _tensor_list(
 def _validate_model_version(
     payload: Mapping[str, object], spec: KServeModelSpec
 ) -> None:
-    if spec.model_version is None or "versions" not in payload:
+    if "versions" not in payload:
         return
     versions = payload["versions"]
-    if not isinstance(versions, list) or spec.model_version not in versions:
+    if not isinstance(versions, list) or any(
+        not isinstance(version, str) or not version for version in versions
+    ):
+        msg = "Model metadata versions must be a list"
+        raise ProviderUnsupportedModelError(msg)
+    if spec.model_version is not None and spec.model_version not in versions:
         msg = "Requested model version was not found"
         raise ProviderInvalidRequestError(msg)
 
@@ -236,6 +390,9 @@ def _select_tensor(
         if selector is None or tensor.get("name") == selector
     ]
     if not selected:
+        if selector is None:
+            msg = f"Model {label} metadata is missing"
+            raise ProviderUnsupportedModelError(msg)
         msg = f"Requested model {label} tensor was not found"
         raise ProviderInvalidRequestError(msg)
     if len(selected) != 1:
@@ -318,7 +475,9 @@ def _metadata_response(
     client: _HttpClient, url: str, timeout_seconds: float
 ) -> _HttpResponse:
     try:
-        response = client.get(url, timeout=max(0.001, timeout_seconds))
+        response = _request_bounded(client, "GET", url, max(0.001, timeout_seconds))
+    except ProviderError:
+        raise
     except Exception as exc:
         if _timeout_error(exc):
             raise ProviderDeadlineError from exc
@@ -357,10 +516,14 @@ def _prediction_layout(
 
 
 def _inference_body(
-    metadata: PredictionMetadata, chunk: np.ndarray, row_shape: tuple[int, ...]
+    metadata: PredictionMetadata,
+    chunk: np.ndarray,
+    row_shape: tuple[int, ...],
+    *,
+    output_name: str | None = None,
 ) -> dict[str, object]:
     shape = [len(chunk), *row_shape] if row_shape else [len(chunk)]
-    return {
+    body: dict[str, object] = {
         "inputs": [
             {
                 "name": metadata.input_name,
@@ -370,6 +533,9 @@ def _inference_body(
             }
         ]
     }
+    if output_name is not None:
+        body["outputs"] = [{"name": output_name}]
+    return body
 
 
 def _validate_inference_status(response: _HttpResponse) -> None:
@@ -421,7 +587,12 @@ def _decode_output_tensor(
     if selected.get("datatype") != metadata.output_datatype:
         _invalid_response("response datatype mismatch")
     out_shape = _shape(selected["shape"])
-    data = np.asarray(selected["data"])
+    raw_data = selected.get("data")
+    if isinstance(raw_data, (list, tuple)) and len(raw_data) > _MAX_RESPONSE_ELEMENTS:
+        _invalid_response("model output is too large")
+    data = np.asarray(raw_data)
+    if data.size > _MAX_RESPONSE_ELEMENTS:
+        _invalid_response("model output is too large")
     if data.dtype.kind not in "bfiu":
         _invalid_response("model output must be numeric")
     data = data.astype(float)
@@ -452,10 +623,11 @@ def _decode_inference_response(
         )
         if payload.get("model_name") != spec.model_name:
             _invalid_response("response model name mismatch")
-        if spec.model_version is not None and payload.get("model_version") not in {
-            None,
-            spec.model_version,
-        }:
+        if (
+            spec.model_version is not None
+            and "model_version" in payload
+            and payload["model_version"] != spec.model_version
+        ):
             _invalid_response("response model version mismatch")
         outputs = _tensor_list(payload, "outputs")
         selected_outputs = [
@@ -525,48 +697,12 @@ class KServeV2HttpPredictionProvider:
         transport: HttpTransportConfig,
     ) -> KServeV2HttpPredictionProvider:
         """Connect, negotiate metadata, and construct a bounded provider."""
-        base = normalize_base_url(spec.base_url)
-        parsed_base = urlsplit(base)
-        host = (parsed_base.hostname or "").lower().rstrip(".")
-        try:
-            effective_port = parsed_base.port or (
-                443 if parsed_base.scheme == "https" else 80
-            )
-        except ValueError as exc:
-            msg = "base_url has an invalid port"
-            raise ProviderInvalidRequestError(msg) from exc
-        if not transport.allowed_hosts:
-            msg = "Outbound model host allowlist is required"
-            raise ProviderConfigurationError(msg)
-        if transport.follow_redirects or transport.trust_env:
-            msg = "Redirects and ambient proxy settings must remain disabled"
-            raise ProviderConfigurationError(msg)
-        try:
-            entries = {_allowlist_entry(entry) for entry in transport.allowed_hosts}
-        except (TypeError, ValueError) as exc:
-            msg = "Invalid outbound host allowlist"
-            raise ProviderConfigurationError(msg) from exc
-        normalized_host = f"[{host}]" if ":" in host else host
-        host_ok = normalized_host in entries or host in entries
-        host_ok = host_ok or f"{normalized_host}:{effective_port}" in entries
-        if not host_ok:
-            msg = "Model host is not in the outbound allowlist"
-            raise ProviderInvalidRequestError(msg)
+        base = _validate_model_endpoint(spec, transport)
         try:
             client_type = _load_http_client()
         except ImportError as exc:
             raise DependencyUnavailableError from exc
-        try:
-            client = client_type(
-                headers=dict(transport.headers),
-                verify=transport.verify,
-                cert=transport.cert,
-                follow_redirects=transport.follow_redirects,
-                trust_env=transport.trust_env,
-                timeout=timeout_seconds,
-            )
-        except Exception as exc:
-            raise ProviderUnavailableError from exc
+        client = _create_http_client(client_type, transport, timeout_seconds)
         provider = None
         metadata_started = time.monotonic()
         try:
@@ -642,6 +778,9 @@ class KServeV2HttpPredictionProvider:
         ):
             msg = "Model inputs must be a finite numeric matrix"
             raise ProviderInvalidRequestError(msg)
+        if values.size > _MAX_REQUEST_ELEMENTS:
+            msg = "Model input request is too large"
+            raise ProviderInvalidRequestError(msg)
         _validate_input_datatype(values, self._metadata.input_datatype)
         row_shape, batch_limit = _prediction_layout(
             self._metadata, values, self._max_batch_size
@@ -656,7 +795,12 @@ class KServeV2HttpPredictionProvider:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise ProviderDeadlineError
-            body = _inference_body(self._metadata, chunk, row_shape)
+            body = _inference_body(
+                self._metadata,
+                chunk,
+                row_shape,
+                output_name=self._spec.output_name,
+            )
             response = self._post_inference(body, remaining)
             chunks.append(
                 _decode_inference_response(
@@ -672,13 +816,17 @@ class KServeV2HttpPredictionProvider:
     ) -> _HttpResponse:
         started = time.monotonic()
         try:
-            response = cast("_HttpClient", self._client).post(
+            response = _request_bounded(
+                cast("_HttpClient", self._client),
+                "POST",
                 self._infer_url(),
+                timeout_seconds,
                 json=body,
                 headers={"Content-Type": "application/json"},
-                timeout=timeout_seconds,
             )
             self._inference_batch_count += 1
+        except ProviderError:
+            raise
         except Exception as exc:
             if _timeout_error(exc):
                 raise ProviderDeadlineError from exc

@@ -20,7 +20,13 @@ def _request(
     class_index: int | None = None,
     link: str | None = None,
 ) -> dict:
-    model = {"model_name": "m", "task": task}
+    model = {
+        "model_name": "m",
+        "model_version": "v1",
+        "input_name": "input",
+        "output_name": "output",
+        "task": task,
+    }
     if source is not None:
         model["prediction_source"] = source
     else:
@@ -76,6 +82,12 @@ def test_shap_model_and_explicit_surrogate_use_distinct_paths() -> None:
             assert payload["linked_prediction_output"] == payload["prediction_output"]
             assert FakeKServeHandler.metadata_calls >= 1
             assert FakeKServeHandler.infer_calls
+            assert FakeKServeHandler.metadata_paths[-1] == "/v2/models/m/versions/v1"
+            assert FakeKServeHandler.infer_paths
+            assert all(
+                call["outputs"] == [{"name": "output"}]
+                for call in FakeKServeHandler.infer_calls
+            )
             model_call_count = len(FakeKServeHandler.infer_calls)
 
             surrogate = client.post(
@@ -128,10 +140,8 @@ def test_shap_classification_model_supports_logit_link() -> None:
             payload = response.json()
             assert payload["prediction_source"] == "MODEL"
             assert payload["class_index"] == 1
-            assert len(payload["prediction_output"]) == 2
-            assert (
-                payload["linked_prediction_output"] != payload["prediction_output"][1]
-            )
+            assert payload["prediction_output"] == 0.75
+            assert payload["linked_prediction_output"] != payload["prediction_output"]
             assert FakeKServeHandler.infer_calls
         finally:
             client.close()

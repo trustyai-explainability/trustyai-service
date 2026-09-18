@@ -9,8 +9,32 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from trustyai_service.endpoints import routes
+from trustyai_service.endpoints.explainers.local_lime import (
+    LimeExplainerConfig,
+    LimeExplanationConfig,
+    LimeExplanationRequest,
+    LIMEExplanationResponse,
+    LIMEFeatureAttribution,
+    local_lime_explanation,
+)
+from trustyai_service.endpoints.explainers.local_lime import (
+    router as lime_router,
+)
 from trustyai_service.endpoints.explainers.local_models import (
     LocalExplanationModelConfig,
+)
+from trustyai_service.endpoints.explainers.local_shap import (
+    LinkType,
+    RegularizerType,
+    SHAPExplainerConfig,
+    SHAPExplanationConfig,
+    SHAPExplanationRequest,
+    SHAPExplanationResponse,
+    SHAPFeatureAttribution,
+    local_shap_explanation,
+)
+from trustyai_service.endpoints.explainers.local_shap import (
+    router as shap_router,
 )
 
 router = APIRouter()
@@ -97,32 +121,6 @@ async def local_tssaliency_explanation(
     )
 
 
-# Keep algorithm orchestration out of this shared contract module.  Imports are
-# intentionally at the end so the child routers can import the contract above
-# without a circular initialization failure.
-from trustyai_service.endpoints.explainers.local_lime import (  # noqa: E402
-    LimeExplainerConfig,
-    LimeExplanationConfig,
-    LimeExplanationRequest,
-    LIMEExplanationResponse,
-    LIMEFeatureAttribution,
-    local_lime_explanation,
-)
-from trustyai_service.endpoints.explainers.local_lime import (  # noqa: E402
-    router as lime_router,
-)
-from trustyai_service.endpoints.explainers.local_shap import (  # noqa: E402
-    LinkType,
-    RegularizerType,
-    SHAPExplainerConfig,
-    SHAPExplanationConfig,
-    SHAPExplanationRequest,
-    local_shap_explanation,
-)
-from trustyai_service.endpoints.explainers.local_shap import (  # noqa: E402
-    router as shap_router,
-)
-
 __all__ += [
     "LIMEExplanationResponse",
     "LIMEFeatureAttribution",
@@ -134,6 +132,8 @@ __all__ += [
     "SHAPExplainerConfig",
     "SHAPExplanationConfig",
     "SHAPExplanationRequest",
+    "SHAPExplanationResponse",
+    "SHAPFeatureAttribution",
     "local_lime_explanation",
     "local_shap_explanation",
 ]

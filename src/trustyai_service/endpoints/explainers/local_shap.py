@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-import importlib
 import logging
 import time
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from trustyai_service.core.explainers.local.shap import (
     _SHAP_AVAILABLE,
@@ -18,6 +17,13 @@ from trustyai_service.core.explainers.local.shap import (
     compute_shap_result,
 )
 from trustyai_service.endpoints import routes
+from trustyai_service.endpoints.explainers.local_models import (
+    MAX_PREDICTION_ID_LENGTH,
+    LocalExplanationModelConfig,
+)
+from trustyai_service.endpoints.explainers.local_models import (
+    validate_prediction_id as validate_prediction_id_value,
+)
 from trustyai_service.service.data.local_explanation import load_local_explanation_data
 from trustyai_service.service.explainers.local.error_mapping import map_error
 from trustyai_service.service.explainers.local.execution import (
@@ -39,14 +45,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     import numpy as np
-
-    from trustyai_service.endpoints.explainers.local_models import (
-        LocalExplanationModelConfig,
-    )
-else:
-    LocalExplanationModelConfig = importlib.import_module(
-        "trustyai_service.endpoints.explainers.local_models"
-    ).LocalExplanationModelConfig
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -94,8 +92,39 @@ class SHAPExplanationConfig(BaseModel):
 class SHAPExplanationRequest(BaseModel):
     """Request for one local KernelSHAP explanation."""
 
-    predictionId: str = Field(min_length=1)
+    predictionId: str = Field(min_length=1, max_length=MAX_PREDICTION_ID_LENGTH)
     config: SHAPExplanationConfig
+
+    @field_validator("predictionId")
+    @classmethod
+    def validate_prediction_id(cls, value: str) -> str:
+        """Reject control characters before the ID is logged or queried."""
+        return validate_prediction_id_value(value)
+
+
+class SHAPFeatureAttribution(BaseModel):
+    """One feature's KernelSHAP attribution and optional confidence bounds."""
+
+    feature_name: str
+    importance: float
+    confidence_lower: float | None = None
+    confidence_upper: float | None = None
+
+
+class SHAPExplanationResponse(BaseModel):
+    """Serialized local KernelSHAP explanation response."""
+
+    prediction_id: str
+    model: str
+    prediction_source: PredictionSource
+    task: TaskType
+    output_name: str | None = None
+    prediction_output: float | None = None
+    class_index: int | None = None
+    shap_base_value: float
+    base_value: float
+    linked_prediction_output: float
+    attributions: list[SHAPFeatureAttribution]
 
 
 def _select_shap_predict(
@@ -104,14 +133,17 @@ def _select_shap_predict(
     instance: np.ndarray,
     task: TaskType,
     config: SHAPExplainerConfig,
-) -> tuple[Callable[[np.ndarray], np.ndarray], int | None]:
+) -> tuple[Callable[[np.ndarray], np.ndarray], int | None, float]:
     """Select and validate the scalar output KernelSHAP should explain."""
     predict_fn = execution.predict_fn
     if task is not TaskType.CLASSIFICATION:
         selected_predict = selected_scalar_callable(predict_fn, link=config.link.value)
-        selected_predict(instance.reshape(1, -1))
-        return selected_predict, None
-    if prediction.shape[1] == 1 and config.single_probability:
+        selected_output = selected_predict(instance.reshape(1, -1))
+        return selected_predict, None, float(selected_output[0])
+    if prediction.shape[1] == 1:
+        if not config.single_probability or config.class_index not in {None, 1}:
+            msg = "One-column classification requires class_index=1 and single_probability=true"
+            raise ProviderInvalidRequestError(msg)
         selected_label = 1
     elif prediction.shape[1] == _BINARY_CLASS_COUNT:
         selected_label = config.class_index if config.class_index is not None else 1
@@ -131,12 +163,14 @@ def _select_shap_predict(
         link=config.link.value,
         single_probability=config.single_probability,
     )
-    selected_predict(instance.reshape(1, -1))
-    return selected_predict, selected_label
+    selected_output = selected_predict(instance.reshape(1, -1))
+    return selected_predict, selected_label, float(selected_output[0])
 
 
-@router.post(routes.EXPLAINER_LOCAL_SHAP)
-async def local_shap_explanation(request: SHAPExplanationRequest) -> dict[str, Any]:
+@router.post(routes.EXPLAINER_LOCAL_SHAP, response_model=SHAPExplanationResponse)
+async def local_shap_explanation(
+    request: SHAPExplanationRequest,
+) -> SHAPExplanationResponse:
     """Compute a local KernelSHAP explanation using a model or surrogate."""
     if not _SHAP_AVAILABLE:
         raise HTTPException(503, "SHAP dependency is unavailable")
@@ -188,7 +222,7 @@ async def local_shap_explanation(request: SHAPExplanationRequest) -> dict[str, A
         np.ndarray | None,
         np.ndarray | None,
         PredictionSource,
-        float | list[float] | None,
+        float | None,
         int | None,
         str | None,
         float,
@@ -211,7 +245,7 @@ async def local_shap_explanation(request: SHAPExplanationRequest) -> dict[str, A
         )
         try:
             prediction = execution.predict_fn(data.instance.reshape(1, -1))
-            selected_predict, selected_label = _select_shap_predict(
+            selected_predict, selected_label, selected_output = _select_shap_predict(
                 execution, prediction, data.instance, model.task, config
             )
 
@@ -237,19 +271,13 @@ async def local_shap_explanation(request: SHAPExplanationRequest) -> dict[str, A
                 config.link.value.lower(),
                 reg,
             )
-            output_value = prediction.reshape(-1)
-            serialized_output = (
-                float(output_value[0])
-                if output_value.size == 1
-                else output_value.astype(float).tolist()
-            )
             return (
                 result.values,
                 result.base_value,
                 lower,
                 upper,
                 execution.source,
-                serialized_output,
+                selected_output,
                 selected_label,
                 execution.resolved_output_name,
                 result.linked_prediction,
@@ -311,30 +339,34 @@ async def local_shap_explanation(request: SHAPExplanationRequest) -> dict[str, A
             "final_status": 200,
         },
     )
-    return {
-        "prediction_id": request.predictionId,
-        "model": model.model_name,
-        "prediction_source": source,
-        "task": model.task,
-        "output_name": output_name,
-        "prediction_output": prediction_output,
-        "class_index": class_index,
-        "shap_base_value": base,
-        "base_value": base,
-        "linked_prediction_output": linked_prediction_output,
-        "attributions": [
-            {
-                "feature_name": name,
-                "importance": float(value),
-                "confidence_lower": float(lower[index])
-                if lower is not None and index < len(lower)
-                else None,
-                "confidence_upper": float(upper[index])
-                if upper is not None and index < len(upper)
-                else None,
-            }
+    return SHAPExplanationResponse(
+        prediction_id=request.predictionId,
+        model=model.model_name,
+        prediction_source=source,
+        task=model.task,
+        output_name=output_name,
+        prediction_output=prediction_output,
+        class_index=class_index,
+        shap_base_value=base,
+        base_value=base,
+        linked_prediction_output=linked_prediction_output,
+        attributions=[
+            SHAPFeatureAttribution(
+                feature_name=name,
+                importance=float(value),
+                confidence_lower=(
+                    float(lower[index])
+                    if lower is not None and index < len(lower)
+                    else None
+                ),
+                confidence_upper=(
+                    float(upper[index])
+                    if upper is not None and index < len(upper)
+                    else None
+                ),
+            )
             for index, (name, value) in enumerate(
                 zip(data.feature_names, values, strict=False)
             )
         ],
-    }
+    )

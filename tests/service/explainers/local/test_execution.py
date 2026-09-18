@@ -17,7 +17,12 @@ from trustyai_service.service.explainers.local.model_provider import (
 from trustyai_service.service.explainers.local.types import PredictionSource, TaskType
 
 
-def _data(*, targets: np.ndarray | None = None, width: int = 2) -> LocalExplanationData:
+def _data(
+    *,
+    targets: np.ndarray | None = None,
+    width: int = 2,
+    output_names: list[str] | None = None,
+) -> LocalExplanationData:
     return LocalExplanationData(
         model_id="m",
         prediction_id="p",
@@ -25,6 +30,7 @@ def _data(*, targets: np.ndarray | None = None, width: int = 2) -> LocalExplanat
         feature_names=[f"f{i}" for i in range(width)],
         background=np.ones((3, width)),
         background_output=targets,
+        output_names=[] if output_names is None else output_names,
     )
 
 
@@ -153,4 +159,17 @@ def test_surrogate_requires_stored_targets() -> None:
     with pytest.raises(ValueError, match="stored organic labels"):
         execution_module.create_execution(
             _config(PredictionSource.SURROGATE), _data(), 5
+        )
+
+
+def test_surrogate_rejects_output_alias_width_mismatch() -> None:
+    """Reject a stored output matrix whose aliases cannot select its columns."""
+    with pytest.raises(ValueError, match="columns"):
+        execution_module.create_execution(
+            _config(PredictionSource.SURROGATE),
+            _data(
+                targets=np.array([[0.0], [1.0], [0.0]]),
+                output_names=["score", "other"],
+            ),
+            5,
         )

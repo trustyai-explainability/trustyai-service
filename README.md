@@ -154,9 +154,9 @@ rank-two tensors with a leading batch dimension are supported; string/categorica
 and higher-rank tensors are rejected. `task` is required because tensor shape
 alone cannot distinguish classification from regression. LIME returns the raw
 deployed `prediction_output` separately from its local linear prediction. SHAP
-returns the raw output, selected `class_index` when applicable, and its base and
-linked prediction in the requested link space (`shap_base_value` and
-`linked_prediction_output`). `LOGIT` requires finite values
+returns the selected scalar raw output, selected `class_index` when applicable,
+and its base and linked prediction in the requested link space
+(`shap_base_value` and `linked_prediction_output`). `LOGIT` requires finite values
 strictly inside `(0, 1)`. Redirects and ambient proxy settings are disabled, and
 metadata/inference calls share the explanation deadline and configured batch cap.
 The explainability feature flags remain disabled by default; installing the

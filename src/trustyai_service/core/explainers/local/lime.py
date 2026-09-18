@@ -1,16 +1,32 @@
 """Pure LIME computation against any synchronous prediction callable."""
 
 from collections.abc import Callable
+from importlib import import_module, util
 from typing import cast
 
 import numpy as np
 
-try:
-    from lime.lime_tabular import LimeTabularExplainer
-except ImportError:  # Optional explainability extra
-    LimeTabularExplainer = None  # type: ignore[assignment,misc]
 
-_LIME_AVAILABLE = LimeTabularExplainer is not None
+def _optional_module_available(name: str) -> bool:
+    """Report whether an optional distribution is installed without importing it."""
+    try:
+        return util.find_spec(name) is not None
+    except (ImportError, ModuleNotFoundError, ValueError):
+        return False
+
+
+_LIME_AVAILABLE = _optional_module_available("lime")
+
+
+def _load_lime_explainer() -> Callable[..., object]:
+    """Load LIME only when an explanation is actually requested."""
+    try:
+        module = import_module("lime.lime_tabular")
+        explainer = module.LimeTabularExplainer
+    except (AttributeError, ImportError) as exc:
+        msg = "LIME dependency is unavailable"
+        raise ImportError(msg) from exc
+    return cast("Callable[..., object]", explainer)
 
 
 def _required_option(options: dict[str, object], name: str) -> object:
@@ -61,10 +77,8 @@ def create_lime_explainer(
     seed: int | None = None,
 ) -> object:
     """Create a LIME tabular explainer for the supplied background data."""
-    if LimeTabularExplainer is None:
-        msg = "LIME dependency is unavailable"
-        raise RuntimeError(msg)
-    return LimeTabularExplainer(
+    explainer = _load_lime_explainer()
+    return explainer(
         training_data,
         feature_names=feature_names,
         mode=mode,

@@ -2,16 +2,30 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from importlib import import_module, util
 from typing import cast
 
 import numpy as np
 
-try:
-    import shap
-except ImportError:  # Optional explainability extra
-    shap = None  # type: ignore[assignment]
 
-_SHAP_AVAILABLE = shap is not None
+def _optional_module_available(name: str) -> bool:
+    """Report whether an optional distribution is installed without importing it."""
+    try:
+        return util.find_spec(name) is not None
+    except (ImportError, ModuleNotFoundError, ValueError):
+        return False
+
+
+_SHAP_AVAILABLE = _optional_module_available("shap")
+
+
+def _load_shap_module() -> object:
+    """Load SHAP only when an explanation is actually requested."""
+    try:
+        return import_module("shap")
+    except ImportError as exc:
+        msg = "SHAP dependency is unavailable"
+        raise ImportError(msg) from exc
 
 
 def _required_option(options: dict[str, object], name: str) -> object:
@@ -78,11 +92,11 @@ def compute_shap_result(
 ) -> ShapExplanationResult:
     """Compute attributions and prediction values in the requested link space."""
     n_samples, link, l1_reg = _shap_options(options)
-    if shap is None:
-        msg = "SHAP dependency is unavailable"
-        raise RuntimeError(msg)
-    summary = shap.kmeans(background, min(n_samples, max(1, len(background) // 2)))
-    explainer = shap.KernelExplainer(predict_fn, summary, link=link)
+    shap_module = _load_shap_module()
+    summary = shap_module.kmeans(
+        background, min(n_samples, max(1, len(background) // 2))
+    )
+    explainer = shap_module.KernelExplainer(predict_fn, summary, link=link)
     raw_values = np.asarray(
         explainer.shap_values(
             instance.reshape(1, -1), nsamples=n_samples, l1_reg=l1_reg, silent=True
@@ -119,9 +133,6 @@ def compute_shap_values(
     **options: object,
 ) -> tuple[np.ndarray, float]:
     """Compute SHAP attributions and the expected model value."""
-    if shap is None:
-        msg = "SHAP dependency is unavailable"
-        raise RuntimeError(msg)
     result = compute_shap_result(instance, background, predict_fn, **options)
     return result.values, result.base_value
 

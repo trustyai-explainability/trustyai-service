@@ -72,9 +72,11 @@ class PredictionExecution:
 
     def close(self) -> None:
         """Close the provider exactly once, if this execution owns one."""
-        if not self._closed and self.provider is not None:
-            self.provider.close()
+        if self._closed:
+            return
         self._closed = True
+        if self.provider is not None:
+            self.provider.close()
 
 
 def create_prediction_execution(
@@ -147,6 +149,9 @@ def _create_surrogate_execution(
 def _select_surrogate_target(
     spec: LocalExecutionSpec, data: LocalExplanationData, targets: np.ndarray
 ) -> tuple[np.ndarray, str | None]:
+    if targets.ndim == _MATRIX_RANK and len(data.output_names) != targets.shape[1]:
+        msg = "Stored output columns do not match their aliases"
+        raise LocalDataError(msg)
     if targets.ndim == 1:
         if len(data.output_names) > 1 or (
             spec.output_name is not None
@@ -168,6 +173,9 @@ def _select_surrogate_target(
             msg = "Requested stored output was not found"
             raise LocalDataError(msg)
         selected_index = data.output_names.index(spec.output_name)
+    if selected_index >= targets.shape[1]:
+        msg = "Requested stored output was not found"
+        raise LocalDataError(msg)
     return targets[:, selected_index], data.output_names[selected_index]
 
 

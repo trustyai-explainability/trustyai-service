@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-import importlib
 import logging
 import time
-from typing import TYPE_CHECKING
 
 import numpy as np
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from trustyai_service.core.explainers.local.lime import (
     _LIME_AVAILABLE,
@@ -19,6 +17,13 @@ from trustyai_service.core.explainers.local.lime import (
     create_lime_explainer,
 )
 from trustyai_service.endpoints import routes
+from trustyai_service.endpoints.explainers.local_models import (
+    MAX_PREDICTION_ID_LENGTH,
+    LocalExplanationModelConfig,
+)
+from trustyai_service.endpoints.explainers.local_models import (
+    validate_prediction_id as validate_prediction_id_value,
+)
 from trustyai_service.service.data.local_explanation import load_local_explanation_data
 from trustyai_service.service.explainers.local.error_mapping import map_error
 from trustyai_service.service.explainers.local.execution import (
@@ -30,15 +35,6 @@ from trustyai_service.service.explainers.local.model_provider import (
 )
 from trustyai_service.service.explainers.local.types import PredictionSource, TaskType
 from trustyai_service.service.explainers.local.worker import run_local_worker
-
-if TYPE_CHECKING:
-    from trustyai_service.endpoints.explainers.local_models import (
-        LocalExplanationModelConfig,
-    )
-else:
-    LocalExplanationModelConfig = importlib.import_module(
-        "trustyai_service.endpoints.explainers.local_models"
-    ).LocalExplanationModelConfig
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -67,8 +63,14 @@ class LimeExplanationConfig(BaseModel):
 class LimeExplanationRequest(BaseModel):
     """Request for one local LIME explanation."""
 
-    predictionId: str = Field(min_length=1)
+    predictionId: str = Field(min_length=1, max_length=MAX_PREDICTION_ID_LENGTH)
     config: LimeExplanationConfig
+
+    @field_validator("predictionId")
+    @classmethod
+    def validate_prediction_id(cls, value: str) -> str:
+        """Reject control characters before the ID is logged or queried."""
+        return validate_prediction_id_value(value)
 
 
 class LIMEFeatureAttribution(BaseModel):

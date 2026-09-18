@@ -13,6 +13,8 @@ class ErrorResponse:
 
 def map_error(error: Exception) -> ErrorResponse:
     """Map an internal provider or execution error to response semantics."""
+    if isinstance(error, ImportError):
+        return ErrorResponse(503, "Local explainer dependency is unavailable")
     code = getattr(error, "code", None)
     fixed_responses = {
         "unavailable": ErrorResponse(503, "Model provider is unavailable"),
