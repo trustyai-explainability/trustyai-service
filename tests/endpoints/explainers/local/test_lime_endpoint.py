@@ -9,6 +9,9 @@ from fastapi.testclient import TestClient
 
 from trustyai_service.endpoints.explainers import local_lime
 from trustyai_service.service.data.local_explanation import LocalExplanationData
+from trustyai_service.service.explainers.local.model_provider import (
+    LocalDataNotFoundError,
+)
 from trustyai_service.service.explainers.local.types import PredictionSource
 
 
@@ -89,3 +92,38 @@ async def test_lime_classification_response_keeps_raw_prediction(
     assert payload["class_index"] == 1
     assert payload["prediction_output"] == pytest.approx([0.2, 0.8])
     assert payload["local_prediction"] == pytest.approx(0.8)
+
+
+@pytest.mark.parametrize(
+    ("error", "status"),
+    [
+        (LocalDataNotFoundError("stored data is missing"), 404),
+        (ValueError("backend"), 500),
+    ],
+)
+def test_lime_data_loading_uses_shared_error_mapping(
+    monkeypatch: pytest.MonkeyPatch, error: Exception, status: int
+) -> None:
+    """Map data-loading failures through the endpoint-neutral policy."""
+    app = FastAPI()
+    app.include_router(local_lime.router)
+    monkeypatch.setattr(local_lime, "_LIME_AVAILABLE", True)
+
+    async def load(*_args: object, **_kwargs: object) -> LocalExplanationData:
+        raise error
+
+    monkeypatch.setattr(local_lime, "load_local_explanation_data", load)
+    response = TestClient(app).post(
+        "/explainers/local/lime",
+        json={
+            "predictionId": "target",
+            "config": {
+                "model": {
+                    "base_url": "http://model.example",
+                    "model_name": "m",
+                    "task": "REGRESSION",
+                }
+            },
+        },
+    )
+    assert response.status_code == status, response.text

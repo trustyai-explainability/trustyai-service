@@ -13,6 +13,10 @@ from trustyai_service.service.constants import (
     SYNTHETIC_TAG,
 )
 from trustyai_service.service.data.storage import get_global_storage_interface
+from trustyai_service.service.explainers.local.model_provider import (
+    LocalDataError,
+    LocalDataNotFoundError,
+)
 
 _CHUNK_SIZE = 1000
 _MAX_SCAN_ROWS = 1_000_000
@@ -60,13 +64,13 @@ def _text(value: object) -> str:
 def _rows(value: object, *, name: str) -> np.ndarray:
     if value is None:
         msg = f"Stored {name} data is unavailable"
-        raise ValueError(msg)
+        raise LocalDataError(msg)
     array = np.asarray(value)
     if array.ndim == 1:
         array = array.reshape(1, -1)
     if array.ndim != _MATRIX_RANK or not len(array):
         msg = f"Stored {name} data must be a non-empty matrix"
-        raise ValueError(msg)
+        raise LocalDataError(msg)
     return array
 
 
@@ -77,22 +81,22 @@ def _numeric_rows(value: object, *, name: str) -> np.ndarray:
     # so prevents malformed payloads from becoming valid model features.
     if array.dtype.kind not in "biuf":
         msg = f"Stored {name} data must be numeric"
-        raise ValueError(msg)
+        raise LocalDataError(msg)
     try:
         result = array.astype(float)
     except (TypeError, ValueError) as exc:
         msg = f"Stored {name} data must be numeric"
-        raise ValueError(msg) from exc
+        raise LocalDataError(msg) from exc
     if not np.isfinite(result).all():
         msg = f"Stored {name} data must be finite"
-        raise ValueError(msg)
+        raise LocalDataError(msg)
     return result
 
 
 def _chunk_matrix(value: object, row_count: int, *, name: str) -> np.ndarray:
     if value is None:
         msg = f"Stored {name} data is unavailable"
-        raise ValueError(msg)
+        raise LocalDataError(msg)
     array = np.asarray(value)
     if array.ndim == 1:
         array = (
@@ -100,7 +104,7 @@ def _chunk_matrix(value: object, row_count: int, *, name: str) -> np.ndarray:
         )
     if array.ndim != _MATRIX_RANK or len(array) != row_count:
         msg = f"Stored {name} rows are misaligned"
-        raise ValueError(msg)
+        raise LocalDataError(msg)
     return array
 
 
@@ -125,15 +129,15 @@ async def _metadata_matches(
         for index, row in enumerate(matrix):
             if len(row) <= METADATA_ID_COL:
                 msg = "Stored metadata is missing prediction IDs"
-                raise ValueError(msg)
+                raise LocalDataError(msg)
             if _text(row[METADATA_ID_COL]) == prediction_id:
                 matches.append(offset + index)
     if len(matches) > 1:
         msg = "Prediction ID is ambiguous"
-        raise ValueError(msg)
+        raise LocalDataError(msg)
     if not matches:
         msg = "Prediction ID was not found"
-        raise ValueError(msg)
+        raise LocalDataError(msg)
     return matches[0]
 
 
@@ -159,7 +163,7 @@ async def _load_background(
             break
     if not input_chunks:
         msg = "No organic background data is available"
-        raise ValueError(msg)
+        raise LocalDataError(msg)
     ordered_inputs = input_chunks[::-1] if has_count else input_chunks
     ordered_outputs = output_chunks[::-1] if has_count else output_chunks
     background = np.concatenate(ordered_inputs, axis=0)
@@ -205,7 +209,7 @@ async def _read_background_chunk(
         return None
     if metadata_chunk is None or len(metadata_chunk) != len(input_chunk):
         msg = "Stored input and metadata rows are misaligned"
-        raise ValueError(msg)
+        raise LocalDataError(msg)
     input_matrix = _numeric_rows(
         _chunk_matrix(input_chunk, len(input_chunk), name="input"), name="input"
     )
@@ -235,7 +239,7 @@ async def _read_output_chunk(
     )
     if output_chunk is None or len(output_chunk) != row_count:
         msg = "Stored input and output rows are misaligned"
-        raise ValueError(msg)
+        raise LocalDataError(msg)
     return _numeric_rows(
         _chunk_matrix(output_chunk, row_count, name="output"), name="output"
     )
@@ -303,15 +307,15 @@ def _resolve_loader_options(
         )
     elif n_training_rows is not None and max_background_rows != n_training_rows:
         msg = "max_background_rows and n_training_rows disagree"
-        raise ValueError(msg)
+        raise LocalDataError(msg)
     if max_background_rows < 1:
         msg = "max_background_rows must be positive"
-        raise ValueError(msg)
+        raise LocalDataError(msg)
     if include_stored_output is None:
         include_stored_output = bool(include_targets)
     elif include_targets is not None and include_stored_output != include_targets:
         msg = "include_stored_output and include_targets disagree"
-        raise ValueError(msg)
+        raise LocalDataError(msg)
     return max_background_rows, include_stored_output
 
 
@@ -321,12 +325,23 @@ async def _load_target_context(
     """Load and validate the target row and its input aliases."""
     if not await storage.dataset_exists(metadata_name):
         msg = "No stored data exists for the requested model"
-        raise LookupError(msg)
+        raise LocalDataNotFoundError(msg)
+    if not await storage.dataset_exists(input_name):
+        msg = "No stored data exists for the requested model"
+        raise LocalDataNotFoundError(msg)
     metadata_rows = await storage.dataset_rows(metadata_name)
     input_rows = await storage.dataset_rows(input_name)
+    if (
+        not isinstance(metadata_rows, int)
+        or not isinstance(input_rows, int)
+        or metadata_rows < 0
+        or input_rows < 0
+    ):
+        msg = "Stored dataset row counts are invalid"
+        raise LocalDataError(msg)
     if metadata_rows != input_rows:
         msg = "Stored input and metadata rows are misaligned"
-        raise ValueError(msg)
+        raise LocalDataError(msg)
     row_index = await _metadata_matches(
         storage, metadata_name, prediction_id, metadata_rows
     )
@@ -335,14 +350,14 @@ async def _load_target_context(
     ]
     if not feature_names or len(set(feature_names)) != len(feature_names):
         msg = "Stored input aliases are missing or ambiguous"
-        raise ValueError(msg)
+        raise LocalDataError(msg)
     instance = _numeric_rows(
         await storage.read_data(input_name, start_row=row_index, n_rows=1),
         name="input",
     )
     if instance.shape[1] != len(feature_names):
         msg = "Stored input columns do not match their aliases"
-        raise ValueError(msg)
+        raise LocalDataError(msg)
     return input_rows, row_index, feature_names, instance
 
 
@@ -354,14 +369,15 @@ async def _load_output_context(
         return []
     if not await storage.dataset_exists(output_dataset):
         msg = "Stored output labels are unavailable"
-        raise ValueError(msg)
-    if await storage.dataset_rows(output_dataset) != input_rows:
+        raise LocalDataError(msg)
+    output_rows = await storage.dataset_rows(output_dataset)
+    if not isinstance(output_rows, int) or output_rows != input_rows:
         msg = "Stored input and output rows are misaligned"
-        raise ValueError(msg)
+        raise LocalDataError(msg)
     output_names = [
         _text(name) for name in await storage.get_aliased_column_names(output_dataset)
     ]
     if not output_names or len(set(output_names)) != len(output_names):
         msg = "Stored output aliases are missing or ambiguous"
-        raise ValueError(msg)
+        raise LocalDataError(msg)
     return output_names

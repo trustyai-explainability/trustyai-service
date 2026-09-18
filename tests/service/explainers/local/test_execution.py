@@ -107,6 +107,31 @@ def test_model_rejects_stored_feature_width_before_prediction(
     assert provider.closed
 
 
+def test_model_rejects_dynamic_scalar_width_before_prediction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Treat KServe's dynamic scalar shape as a one-feature input contract."""
+    provider = _Provider()
+    provider.metadata = PredictionMetadata(
+        "input", "output", "FP32", "FP32", (-1,), (-1, 1)
+    )
+
+    def connect(*_args: object, **_kwargs: object) -> _Provider:
+        return provider
+
+    monkeypatch.setattr(KServeV2HttpPredictionProvider, "connect", connect)
+    with pytest.raises(ValueError, match="feature width"):
+        execution_module.create_execution(
+            _config(PredictionSource.MODEL),
+            _data(width=2),
+            5,
+            transport=HttpTransportConfig(
+                headers={}, allowed_hosts=frozenset({"model.example"})
+            ),
+        )
+    assert provider.closed
+
+
 def test_surrogate_does_not_construct_provider(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep explicit surrogate execution independent from HTTP provider creation."""
 

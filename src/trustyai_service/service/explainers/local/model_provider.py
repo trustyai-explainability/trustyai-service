@@ -126,6 +126,12 @@ class LocalDataError(ValueError):
     code = "data_invalid"
 
 
+class LocalDataNotFoundError(LocalDataError):
+    """Stored model data required for a local explanation is missing."""
+
+    code = "data_missing"
+
+
 class LocalExecutionError(RuntimeError):
     """Unexpected local algorithm or estimator failure."""
 

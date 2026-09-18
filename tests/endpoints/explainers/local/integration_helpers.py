@@ -16,6 +16,7 @@ class FakeKServeHandler(BaseHTTPRequestHandler):
 
     metadata_calls = 0
     infer_calls: ClassVar[list[dict[str, Any]]] = []
+    classification = False
 
     def log_message(self, format: str, *args: object) -> None:  # noqa: A002
         """Suppress noisy standard-library HTTP server access logs."""
@@ -24,10 +25,11 @@ class FakeKServeHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         """Serve the fake model metadata contract."""
         type(self).metadata_calls += 1
+        output_shape = [-1, 2] if type(self).classification else [-1, 1]
         payload = {
             "name": "m",
             "inputs": [{"name": "input", "datatype": "FP32", "shape": [-1, 2]}],
-            "outputs": [{"name": "output", "datatype": "FP32", "shape": [-1, 1]}],
+            "outputs": [{"name": "output", "datatype": "FP32", "shape": output_shape}],
         }
         self._write(payload)
 
@@ -38,7 +40,11 @@ class FakeKServeHandler(BaseHTTPRequestHandler):
         type(self).infer_calls.append(body)
         tensor = body["inputs"][0]
         rows = np.asarray(tensor["data"], dtype=float).reshape(tensor["shape"])
-        values = (rows.sum(axis=1) / 4.0).reshape(-1, 1)
+        if type(self).classification:
+            probability = np.clip(0.5 + rows[:, 0] / 8.0, 0.1, 0.9)
+            values = np.column_stack((1.0 - probability, probability))
+        else:
+            values = (rows.sum(axis=1) / 4.0).reshape(-1, 1)
         self._write(
             {
                 "model_name": "m",
@@ -46,7 +52,7 @@ class FakeKServeHandler(BaseHTTPRequestHandler):
                     {
                         "name": "output",
                         "datatype": "FP32",
-                        "shape": [len(values), 1],
+                        "shape": list(values.shape),
                         "data": values.reshape(-1).tolist(),
                     }
                 ],
@@ -65,10 +71,15 @@ class FakeKServeHandler(BaseHTTPRequestHandler):
 class FakeKServe:
     """Manage the lifetime of the loopback fake KServe server."""
 
+    def __init__(self, *, classification: bool = False) -> None:
+        """Configure the fake model's output task for one test server."""
+        self.classification = classification
+
     def __enter__(self) -> Self:
         """Start the loopback server and return this context manager."""
         FakeKServeHandler.metadata_calls = 0
         FakeKServeHandler.infer_calls = []
+        FakeKServeHandler.classification = self.classification
         try:
             self.server = ThreadingHTTPServer(("127.0.0.1", 0), FakeKServeHandler)
         except PermissionError:

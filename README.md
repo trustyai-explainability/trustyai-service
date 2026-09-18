@@ -166,6 +166,12 @@ optional dependencies alone does not enable either route. Install them with:
 uv sync --extra explainability
 ```
 
+LIME and SHAP enforce bounded request work: generated samples and organic
+background rows are each capped at `100000`, LIME features are capped at
+`1000`, and explanation timeouts are limited to `1` through `3600` seconds.
+Confidence intervals use the same model callable and count against the
+explanation deadline.
+
 <!-- markdownlint-disable MD013 -->
 | Environment Variable | Default | Description |
 | -------- | ------- | ----------- |

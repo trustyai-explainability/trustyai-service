@@ -183,8 +183,9 @@ def _create_model_execution(
         remaining,
         transport if transport is not None else get_transport_config(),
     )
+    input_shape = provider.metadata.input_shape
     expected_width = (
-        provider.metadata.input_shape[-1] if provider.metadata.input_shape else None
+        1 if input_shape == (-1,) else input_shape[-1] if input_shape else None
     )
     if (
         expected_width is not None

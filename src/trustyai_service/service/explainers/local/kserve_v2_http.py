@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+from numbers import Integral
 from typing import Any
 from urllib.parse import quote, urlsplit, urlunsplit
 
@@ -45,6 +46,7 @@ _MAX_PORT = 65_535
 _CONTROL_CHAR_LIMIT = 32
 _MATRIX_RANK = 2
 _HTTP_BAD_REQUEST = 400
+_HTTP_REDIRECT = 300
 _HTTP_SERVER_ERROR = 500
 
 
@@ -150,6 +152,20 @@ def _allowlist_entry(value: str) -> str:
         raise ValueError(msg)
     normalized_host = f"[{host}]" if ":" in host else host
     return f"{normalized_host}:{port}" if port is not None else normalized_host
+
+
+def _shape(value: object) -> tuple[int, ...]:
+    """Parse a KServe shape without silently coercing malformed dimensions."""
+    if not isinstance(value, list):
+        msg = "tensor shape must be a JSON list"
+        raise TypeError(msg)
+    if any(
+        isinstance(dimension, bool) or not isinstance(dimension, Integral)
+        for dimension in value
+    ):
+        msg = "tensor dimensions must be integers"
+        raise TypeError(msg)
+    return tuple(int(dimension) for dimension in value)
 
 
 class KServeV2HttpPredictionProvider:
@@ -283,7 +299,9 @@ class KServeV2HttpPredictionProvider:
             raise ProviderUnavailableError
         if response.status_code >= _HTTP_BAD_REQUEST:
             msg = "Model metadata request was rejected"
-            raise ProviderInvalidRequestError(msg)
+            raise ProviderInvalidResponseError(msg)
+        if response.status_code >= _HTTP_REDIRECT:
+            raise ProviderInvalidResponseError
         try:
             payload = response.json()
             if payload.get("name") != spec.model_name:
@@ -333,8 +351,8 @@ class KServeV2HttpPredictionProvider:
                 msg = "Only numeric tensors are supported"
                 raise ProviderUnsupportedModelError(msg)
             in_shape, out_shape = (
-                tuple(int(x) for x in inp.get("shape", [])),
-                tuple(int(x) for x in out.get("shape", [])),
+                _shape(inp.get("shape", [])),
+                _shape(out.get("shape", [])),
             )
             if (
                 not in_shape
@@ -477,7 +495,7 @@ class KServeV2HttpPredictionProvider:
                 raise ProviderUnavailableError
             if response.status_code in {401, 403, 404, 408, 429}:
                 raise ProviderUnavailableError
-            if response.status_code >= _HTTP_BAD_REQUEST:
+            if response.status_code >= _HTTP_REDIRECT:
                 msg = "Model inference request was rejected"
                 raise ProviderInvalidResponseError(msg)
             try:
@@ -510,8 +528,15 @@ class KServeV2HttpPredictionProvider:
                 if selected.get("datatype") != self._metadata.output_datatype:
                     msg = "response datatype mismatch"
                     raise ValueError(msg)
-                out_shape = tuple(int(x) for x in selected["shape"])
+                out_shape = _shape(selected["shape"])
                 data = np.asarray(selected["data"])
+                if data.dtype.kind not in "bfiu":
+                    msg = "model output must be numeric"
+                    raise ValueError(msg)
+                data = data.astype(float)
+                if not np.isfinite(data).all():
+                    msg = "model output must be finite"
+                    raise ValueError(msg)
                 expected = int(np.prod(out_shape))
                 metadata_shape = self._metadata.output_shape
                 if len(out_shape) not in {1, _MATRIX_RANK}:
@@ -541,7 +566,7 @@ class KServeV2HttpPredictionProvider:
                     or not valid_shape
                     or not representation_ok
                     or data.dtype.kind not in "bfiu"
-                    or not np.isfinite(data.astype(float)).all()
+                    or not np.isfinite(data).all()
                 ):
                     msg = "output shape mismatch"
                     raise ValueError(msg)

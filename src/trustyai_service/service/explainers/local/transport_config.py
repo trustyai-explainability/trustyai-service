@@ -16,7 +16,13 @@ def _host_entry(value: str) -> str:
         return ""
     try:
         parsed = urlsplit(f"//{value}")
-        if parsed.path not in ("", "/") or parsed.username or parsed.password:
+        if (
+            parsed.path not in ("", "/")
+            or parsed.query
+            or parsed.fragment
+            or parsed.username
+            or parsed.password
+        ):
             raise ValueError
         host = parsed.hostname
         if not host:

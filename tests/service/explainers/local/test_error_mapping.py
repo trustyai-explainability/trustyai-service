@@ -6,6 +6,7 @@ from trustyai_service.service.explainers.local.error_mapping import map_error
 from trustyai_service.service.explainers.local.model_provider import (
     DependencyUnavailableError,
     LocalDataError,
+    LocalDataNotFoundError,
     LocalExecutionError,
     ProviderConfigurationError,
     ProviderDeadlineError,
@@ -25,6 +26,7 @@ from trustyai_service.service.explainers.local.model_provider import (
         (ProviderInvalidResponseError(), 502),
         (ProviderConfigurationError(), 500),
         (LocalDataError("invalid stored data"), 400),
+        (LocalDataNotFoundError("stored data is missing"), 404),
         (LocalExecutionError("training failed"), 500),
     ],
 )

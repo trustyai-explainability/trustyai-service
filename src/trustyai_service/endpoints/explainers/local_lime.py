@@ -136,28 +136,18 @@ async def local_lime_explanation(
             },
         )
         raise HTTPException(504, "Explanation exceeded its deadline") from exc
-    except LookupError as exc:
+    except Exception as exc:
+        mapped = map_error(exc)
         logger.warning(
             "local_explanation_failed",
             extra={
                 "explainer": "LIME",
                 "model_name": model.model_name,
                 "prediction_id": request.predictionId,
-                "final_status": 404,
+                "final_status": mapped.status_code,
             },
         )
-        raise HTTPException(404, str(exc)) from exc
-    except ValueError as exc:
-        logger.warning(
-            "local_explanation_failed",
-            extra={
-                "explainer": "LIME",
-                "model_name": model.model_name,
-                "prediction_id": request.predictionId,
-                "final_status": 400,
-            },
-        )
-        raise HTTPException(400, str(exc)) from exc
+        raise HTTPException(mapped.status_code, mapped.detail) from exc
 
     def compute() -> tuple[
         list[tuple[str, float]],

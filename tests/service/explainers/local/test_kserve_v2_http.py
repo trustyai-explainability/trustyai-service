@@ -13,6 +13,7 @@ from trustyai_service.service.explainers.local.model_provider import (
     KServeModelSpec,
     PredictionMetadata,
     ProviderInvalidRequestError,
+    ProviderInvalidResponseError,
 )
 from trustyai_service.service.explainers.local.types import TaskType
 
@@ -107,6 +108,48 @@ def test_provider_normalizes_flat_scalar_response_shape() -> None:
     assert result.shape == (2, 1)
 
 
+def test_provider_rejects_redirect_response() -> None:
+    """Treat an unexpected redirect as an upstream contract failure."""
+
+    class RedirectClient:
+        def post(self, _url: str, **_kwargs: object) -> object:
+            return type("Response", (), {"status_code": 302})()
+
+        def close(self) -> None:
+            return None
+
+    provider = _provider(RedirectClient())
+    with pytest.raises(ProviderInvalidResponseError):
+        provider.predict(np.ones((1, 2), dtype=float))
+
+
+def test_provider_rejects_non_finite_output() -> None:
+    """Reject NaN model outputs before they reach an explainer."""
+
+    class NonFiniteClient(_Client):
+        def post(self, _url: str, **kwargs: object) -> _Response:
+            body = kwargs["json"]
+            assert isinstance(body, dict)
+            rows = body["inputs"][0]["shape"][0]
+            return _Response(
+                {
+                    "model_name": "m",
+                    "outputs": [
+                        {
+                            "name": "output",
+                            "datatype": "FP32",
+                            "shape": [rows, 1],
+                            "data": [float("nan")] * rows,
+                        }
+                    ],
+                }
+            )
+
+    provider = _provider(NonFiniteClient())
+    with pytest.raises(ProviderInvalidResponseError):
+        provider.predict(np.ones((1, 2), dtype=float))
+
+
 def test_transport_config_requires_positive_batch_size() -> None:
     """Reject a non-positive inference batch size."""
     with pytest.raises(ValueError, match="max_batch_size"):
@@ -123,6 +166,25 @@ def test_unlisted_host_is_a_request_error_before_client_creation() -> None:
             spec,
             1,
             HttpTransportConfig(headers={}, allowed_hosts=frozenset({"other.example"})),
+        )
+
+
+@pytest.mark.parametrize("status_code", [302, 400, 422])
+def test_metadata_contract_statuses_are_upstream_response_errors(
+    status_code: int,
+) -> None:
+    """Map redirects and request-contract 4xx responses to upstream errors."""
+
+    class Client:
+        def get(self, _url: str, **_kwargs: object) -> object:
+            return type("Response", (), {"status_code": status_code})()
+
+    spec = KServeModelSpec(
+        "http://model.example", "m", None, None, None, TaskType.REGRESSION
+    )
+    with pytest.raises(ProviderInvalidResponseError):
+        KServeV2HttpPredictionProvider._from_metadata(
+            Client(), spec, 2, "http://model.example", 1
         )
 
 

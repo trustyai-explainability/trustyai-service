@@ -10,6 +10,9 @@ from fastapi.testclient import TestClient
 from trustyai_service.core.explainers.local.shap import ShapExplanationResult
 from trustyai_service.endpoints.explainers import local_shap
 from trustyai_service.service.data.local_explanation import LocalExplanationData
+from trustyai_service.service.explainers.local.model_provider import (
+    LocalDataNotFoundError,
+)
 from trustyai_service.service.explainers.local.types import PredictionSource
 
 
@@ -82,3 +85,32 @@ def test_shap_response_exposes_raw_and_linked_outputs(
     assert payload["prediction_output"] == 0.65
     assert payload["shap_base_value"] == 0.3
     assert payload["linked_prediction_output"] == 0.7
+
+
+def test_shap_missing_data_uses_shared_error_mapping(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Map missing stored data to the shared 404 response."""
+    app = FastAPI()
+    app.include_router(local_shap.router)
+    monkeypatch.setattr(local_shap, "_SHAP_AVAILABLE", True)
+    error = LocalDataNotFoundError("stored data is missing")
+
+    async def load(*_args: object, **_kwargs: object) -> LocalExplanationData:
+        raise error
+
+    monkeypatch.setattr(local_shap, "load_local_explanation_data", load)
+    response = TestClient(app).post(
+        "/explainers/local/shap",
+        json={
+            "predictionId": "target",
+            "config": {
+                "model": {
+                    "base_url": "http://model.example",
+                    "model_name": "m",
+                    "task": "REGRESSION",
+                }
+            },
+        },
+    )
+    assert response.status_code == 404, response.text
