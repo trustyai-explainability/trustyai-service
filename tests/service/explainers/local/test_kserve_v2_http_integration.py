@@ -75,6 +75,7 @@ def test_provider_uses_real_loopback_kserve_http() -> None:
         server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
     except PermissionError:
         pytest.skip("loopback socket binding is unavailable in this environment")
+        return
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
