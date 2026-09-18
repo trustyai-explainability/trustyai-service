@@ -571,12 +571,10 @@ def _output_shape_is_valid(
         valid_shape = out_shape == (chunk_size, *metadata_shape[1:]) or (
             metadata_shape[1:] == (1,) and out_shape == (chunk_size,)
         )
-    scalar_output = (len(metadata_shape) == 1 and metadata_shape[0] in {-1, 1}) or (
-        len(metadata_shape) == _MATRIX_RANK and metadata_shape[1] == 1
-    )
-    return valid_shape and (
-        data.shape == out_shape or (scalar_output and data.ndim == 1)
-    )
+    # KServe V2 commonly serializes tensor data as one flat JSON list even
+    # when the declared tensor shape is rank two.  The element-count and
+    # declared-shape checks above still enforce the contract before reshape.
+    return valid_shape and (data.shape == out_shape or data.ndim == 1)
 
 
 def _decode_output_tensor(

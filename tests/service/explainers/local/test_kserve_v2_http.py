@@ -81,14 +81,39 @@ class _FlatScalarClient(_Client):
         )
 
 
-def _provider(client: _Client) -> KServeV2HttpPredictionProvider:
+class _FlatClassificationClient(_Client):
+    def post(self, _url: str, **kwargs: object) -> _Response:
+        body = kwargs["json"]
+        assert isinstance(body, dict)
+        self.posts.append(body)
+        rows = body["inputs"][0]["shape"][0]
+        return _Response(
+            {
+                "model_name": "m",
+                "outputs": [
+                    {
+                        "name": "output",
+                        "datatype": "FP32",
+                        "shape": [rows, 2],
+                        "data": [0.25, 0.75] * rows,
+                    }
+                ],
+            }
+        )
+
+
+def _provider(
+    client: _Client,
+    *,
+    output_shape: tuple[int, ...] = (-1, 1),
+) -> KServeV2HttpPredictionProvider:
     spec = KServeModelSpec(
         "http://model.example", "m", None, "input", "output", TaskType.REGRESSION
     )
     return KServeV2HttpPredictionProvider(
         client,
         metadata=PredictionMetadata(
-            "input", "output", "FP32", "FP32", (-1, 2), (-1, 1)
+            "input", "output", "FP32", "FP32", (-1, 2), output_shape
         ),
         spec=spec,
         max_batch_size=2,
@@ -115,6 +140,14 @@ def test_provider_normalizes_flat_scalar_response_shape() -> None:
     provider = _provider(_FlatScalarClient())
     result = provider.predict(np.ones((2, 2), dtype=float))
     assert result.shape == (2, 1)
+
+
+def test_provider_normalizes_flat_matrix_response_shape() -> None:
+    """Normalize flat KServe data for a multi-column output tensor."""
+    provider = _provider(_FlatClassificationClient(), output_shape=(-1, 2))
+    result = provider.predict(np.ones((2, 2), dtype=float))
+    assert result.shape == (2, 2)
+    np.testing.assert_allclose(result, [[0.25, 0.75], [0.25, 0.75]])
 
 
 def test_provider_rejects_redirect_response() -> None:

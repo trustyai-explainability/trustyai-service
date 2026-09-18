@@ -20,17 +20,18 @@ def _request(
     class_index: int | None = None,
     link: str | None = None,
 ) -> dict:
-    model = {
-        "model_name": "m",
-        "model_version": "v1",
-        "input_name": "input",
-        "output_name": "output",
-        "task": task,
-    }
-    if source is not None:
-        model["prediction_source"] = source
+    model = {"model_name": "m", "task": task}
+    if source is None:
+        model.update(
+            {
+                "base_url": base_url,
+                "model_version": "v1",
+                "input_name": "input",
+                "output_name": "output",
+            }
+        )
     else:
-        model["base_url"] = base_url
+        model["prediction_source"] = source
     explainer: dict[str, object] = {
         "n_samples": 8,
         "n_training_rows": 2,
