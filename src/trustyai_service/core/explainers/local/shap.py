@@ -2,6 +2,7 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import cast
 
 import numpy as np
 
@@ -11,6 +12,53 @@ except ImportError:  # Optional explainability extra
     shap = None  # type: ignore[assignment]
 
 _SHAP_AVAILABLE = shap is not None
+
+
+def _required_option(options: dict[str, object], name: str) -> object:
+    try:
+        return options.pop(name)
+    except KeyError as exc:
+        msg = f"Missing required keyword argument: {name}"
+        raise TypeError(msg) from exc
+
+
+def _reject_options(options: dict[str, object]) -> None:
+    if options:
+        names = ", ".join(sorted(options))
+        msg = f"Unexpected keyword argument(s): {names}"
+        raise TypeError(msg)
+
+
+def _resolve_arguments(
+    args: tuple[object, ...],
+    options: dict[str, object],
+    names: tuple[str, ...],
+    required: int,
+) -> dict[str, object]:
+    if len(args) > len(names):
+        msg = f"Expected at most {len(names)} positional arguments"
+        raise TypeError(msg)
+    values: dict[str, object] = {}
+    for index, name in enumerate(names):
+        if index < len(args):
+            if name in options:
+                msg = f"Multiple values for argument: {name}"
+                raise TypeError(msg)
+            values[name] = args[index]
+        elif name in options:
+            values[name] = options.pop(name)
+        elif index < required:
+            msg = f"Missing required argument: {name}"
+            raise TypeError(msg)
+    return values
+
+
+def _shap_options(options: dict[str, object]) -> tuple[int, str, str | float]:
+    n_samples = cast("int", _required_option(options, "n_samples"))
+    link = cast("str", _required_option(options, "link"))
+    l1_reg = cast("str | float", _required_option(options, "l1_reg"))
+    _reject_options(options)
+    return n_samples, link, l1_reg
 
 
 @dataclass(frozen=True)
@@ -26,12 +74,10 @@ def compute_shap_result(
     instance: np.ndarray,
     background: np.ndarray,
     predict_fn: Callable[[np.ndarray], np.ndarray],
-    *,
-    n_samples: int,
-    link: str,
-    l1_reg: str | float,
+    **options: object,
 ) -> ShapExplanationResult:
     """Compute attributions and prediction values in the requested link space."""
+    n_samples, link, l1_reg = _shap_options(options)
     if shap is None:
         msg = "SHAP dependency is unavailable"
         raise RuntimeError(msg)
@@ -70,38 +116,43 @@ def compute_shap_values(
     instance: np.ndarray,
     background: np.ndarray,
     predict_fn: Callable[[np.ndarray], np.ndarray],
-    *,
-    n_samples: int,
-    link: str,
-    l1_reg: str | float,
+    **options: object,
 ) -> tuple[np.ndarray, float]:
     """Compute SHAP attributions and the expected model value."""
     if shap is None:
         msg = "SHAP dependency is unavailable"
         raise RuntimeError(msg)
-    result = compute_shap_result(
-        instance,
-        background,
-        predict_fn,
-        n_samples=n_samples,
-        link=link,
-        l1_reg=l1_reg,
-    )
+    result = compute_shap_result(instance, background, predict_fn, **options)
     return result.values, result.base_value
 
 
 def compute_confidence_intervals(
-    instance: np.ndarray,
-    background: np.ndarray,
-    predict_fn: Callable[[np.ndarray], np.ndarray],
-    confidence: float,
-    n_samples: int,
-    link: str,
-    l1_reg: str | float,
-    n_bootstrap: int = 50,
-    seed: int | None = None,
+    *args: object,
+    **options: object,
 ) -> tuple[np.ndarray | None, np.ndarray | None]:
     """Estimate SHAP attribution bounds by bootstrap resampling."""
+    names = (
+        "instance",
+        "background",
+        "predict_fn",
+        "confidence",
+        "n_samples",
+        "link",
+        "l1_reg",
+        "n_bootstrap",
+        "seed",
+    )
+    arguments = _resolve_arguments(args, options, names, required=7)
+    instance = cast("np.ndarray", arguments["instance"])
+    background = cast("np.ndarray", arguments["background"])
+    predict_fn = cast("Callable[[np.ndarray], np.ndarray]", arguments["predict_fn"])
+    confidence = cast("float", arguments["confidence"])
+    n_samples = cast("int", arguments["n_samples"])
+    link = cast("str", arguments["link"])
+    l1_reg = cast("str | float", arguments["l1_reg"])
+    n_bootstrap = cast("int", arguments.pop("n_bootstrap", 50))
+    seed = cast("int | None", arguments.pop("seed", None))
+    _reject_options(options)
     if confidence >= 1.0:
         return None, None
     rng = np.random.default_rng(seed)

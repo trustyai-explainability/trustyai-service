@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 import time
+from collections.abc import Mapping
 from numbers import Integral
-from typing import Any
+from typing import NoReturn, Protocol, cast
 from urllib.parse import quote, urlsplit, urlunsplit
 
 import numpy as np
@@ -50,6 +52,31 @@ _HTTP_REDIRECT = 300
 _HTTP_SERVER_ERROR = 500
 
 
+class _HttpResponse(Protocol):
+    status_code: int
+    content: bytes
+
+    def json(self) -> object: ...
+
+
+class _HttpClient(Protocol):
+    def get(self, url: str, **kwargs: object) -> _HttpResponse: ...
+
+    def post(self, url: str, **kwargs: object) -> _HttpResponse: ...
+
+    def close(self) -> None: ...
+
+
+def _invalid_response(message: str) -> NoReturn:
+    raise ValueError(message)
+
+
+def _load_http_client() -> type:
+    """Load the optional HTTP client only when MODEL execution is requested."""
+    module = importlib.import_module("httpx2")
+    return cast("type", module.Client)
+
+
 def _validate_input_datatype(values: np.ndarray, datatype: str) -> None:
     if datatype == "BOOL":
         if not np.all(np.isin(values, [0, 1])):
@@ -72,18 +99,18 @@ def _validate_output_datatype(values: np.ndarray, datatype: str) -> None:
     if datatype == "BOOL":
         if not np.all(np.isin(values, [0, 1])):
             msg = "Boolean model outputs are invalid"
-            raise ValueError(msg)
+            _invalid_response(msg)
         return
     if datatype.startswith(("INT", "UINT")):
         if not np.equal(values, np.floor(values)).all():
             msg = "Integer model outputs are not integral"
-            raise ValueError(msg)
+            _invalid_response(msg)
         bits = int(datatype.removeprefix("UINT").removeprefix("INT"))
         lower = 0 if datatype.startswith("UINT") else -(2 ** (bits - 1))
         upper = 2**bits - 1 if datatype.startswith("UINT") else 2 ** (bits - 1) - 1
         if np.any(values < lower) or np.any(values > upper):
             msg = "Integer model outputs are out of range"
-            raise ValueError(msg)
+            _invalid_response(msg)
 
 
 def _timeout_error(error: Exception) -> bool:
@@ -137,19 +164,19 @@ def _allowlist_entry(value: str) -> str:
     raw = str(value).strip().lower().rstrip(".")
     if not raw:
         msg = "empty allowlist entry"
-        raise ValueError(msg)
+        _invalid_response(msg)
     parsed = urlsplit(f"//{raw}")
     if parsed.path not in ("", "/") or parsed.query or parsed.fragment:
         msg = "allowlist entry must be a host and optional port"
-        raise ValueError(msg)
+        _invalid_response(msg)
     host = parsed.hostname
     if not host or parsed.username or parsed.password:
         msg = "invalid allowlist host"
-        raise ValueError(msg)
+        _invalid_response(msg)
     port = parsed.port
     if port is not None and not 1 <= port <= _MAX_PORT:
         msg = "invalid allowlist port"
-        raise ValueError(msg)
+        _invalid_response(msg)
     normalized_host = f"[{host}]" if ":" in host else host
     return f"{normalized_host}:{port}" if port is not None else normalized_host
 
@@ -168,12 +195,294 @@ def _shape(value: object) -> tuple[int, ...]:
     return tuple(int(dimension) for dimension in value)
 
 
+def _mapping(value: object, message: str) -> Mapping[str, object]:
+    if not isinstance(value, Mapping):
+        _invalid_response(message)
+    return value
+
+
+def _tensor_list(
+    payload: Mapping[str, object], name: str
+) -> list[Mapping[str, object]]:
+    value = payload.get(name) or []
+    if not isinstance(value, list) or any(
+        not isinstance(item, Mapping) for item in value
+    ):
+        _invalid_response(f"model metadata {name} must be a list of tensors")
+    return cast("list[Mapping[str, object]]", value)
+
+
+def _validate_model_version(
+    payload: Mapping[str, object], spec: KServeModelSpec
+) -> None:
+    if spec.model_version is None or "versions" not in payload:
+        return
+    versions = payload["versions"]
+    if not isinstance(versions, list) or spec.model_version not in versions:
+        msg = "Requested model version was not found"
+        raise ProviderInvalidRequestError(msg)
+
+
+def _select_tensor(
+    tensors: list[Mapping[str, object]],
+    selector: str | None,
+    label: str,
+    *,
+    require_single: bool = False,
+) -> Mapping[str, object]:
+    selected = [
+        tensor
+        for tensor in tensors
+        if selector is None or tensor.get("name") == selector
+    ]
+    if not selected:
+        msg = f"Requested model {label} tensor was not found"
+        raise ProviderInvalidRequestError(msg)
+    if len(selected) != 1:
+        msg = f"Model {label} metadata is ambiguous"
+        if require_single:
+            msg = (
+                f"Model {label} metadata is ambiguous or has multiple required tensors"
+            )
+        raise ProviderUnsupportedModelError(msg)
+    return selected[0]
+
+
+def _validate_tensor_shapes(
+    input_shape: tuple[int, ...], output_shape: tuple[int, ...]
+) -> None:
+    if (
+        not input_shape
+        or not output_shape
+        or len(input_shape) > _MATRIX_RANK
+        or len(output_shape) > _MATRIX_RANK
+    ):
+        msg = "Only flat rank-one or rank-two tensors are supported"
+        raise ProviderUnsupportedModelError(msg)
+    if any(
+        dimension == 0 or dimension < -1 for dimension in input_shape + output_shape
+    ):
+        msg = "Tensor dimensions must be positive or -1"
+        raise ProviderUnsupportedModelError(msg)
+    if any(dimension == -1 for dimension in input_shape[1:]) or any(
+        dimension == -1 for dimension in output_shape[1:]
+    ):
+        msg = "Only a leading dynamic batch dimension is supported"
+        raise ProviderUnsupportedModelError(msg)
+    if len(input_shape) == _MATRIX_RANK and input_shape[0] not in {-1, 1}:
+        msg = "Fixed model batches other than one are unsupported"
+        raise ProviderUnsupportedModelError(msg)
+    if len(output_shape) == _MATRIX_RANK and output_shape[0] not in {-1, 1}:
+        msg = "Fixed model batches other than one are unsupported"
+        raise ProviderUnsupportedModelError(msg)
+
+
+def _metadata_from_payload(
+    payload_value: object, spec: KServeModelSpec
+) -> PredictionMetadata:
+    payload = _mapping(payload_value, "model metadata must be a JSON object")
+    if payload.get("name") != spec.model_name:
+        msg = "Model metadata name does not match the request"
+        raise ProviderUnsupportedModelError(msg)
+    _validate_model_version(payload, spec)
+    inputs = _tensor_list(payload, "inputs")
+    outputs = _tensor_list(payload, "outputs")
+    if len(inputs) != 1:
+        msg = "Model input metadata is ambiguous or has multiple required inputs"
+        raise ProviderUnsupportedModelError(msg)
+    input_tensor = _select_tensor(inputs, spec.input_name, "input", require_single=True)
+    output_tensor = _select_tensor(outputs, spec.output_name, "output")
+    input_datatype = input_tensor.get("datatype")
+    output_datatype = output_tensor.get("datatype")
+    if input_datatype not in _NUMERIC or output_datatype not in _NUMERIC:
+        msg = "Only numeric tensors are supported"
+        raise ProviderUnsupportedModelError(msg)
+    input_name = input_tensor.get("name")
+    output_name = output_tensor.get("name")
+    if not isinstance(input_name, str) or not isinstance(output_name, str):
+        _invalid_response("model tensor names must be strings")
+    input_shape = _shape(input_tensor.get("shape", []))
+    output_shape = _shape(output_tensor.get("shape", []))
+    _validate_tensor_shapes(input_shape, output_shape)
+    return PredictionMetadata(
+        input_name,
+        output_name,
+        cast("str", input_datatype),
+        cast("str", output_datatype),
+        input_shape,
+        output_shape,
+    )
+
+
+def _metadata_response(
+    client: _HttpClient, url: str, timeout_seconds: float
+) -> _HttpResponse:
+    try:
+        response = client.get(url, timeout=max(0.001, timeout_seconds))
+    except Exception as exc:
+        if _timeout_error(exc):
+            raise ProviderDeadlineError from exc
+        raise ProviderUnavailableError from exc
+    if (
+        response.status_code in {401, 403, 404, 408, 429}
+        or response.status_code >= _HTTP_SERVER_ERROR
+    ):
+        raise ProviderUnavailableError
+    if response.status_code >= _HTTP_BAD_REQUEST:
+        msg = "Model metadata request was rejected"
+        raise ProviderInvalidResponseError(msg)
+    if response.status_code >= _HTTP_REDIRECT:
+        raise ProviderInvalidResponseError
+    return response
+
+
+def _prediction_layout(
+    metadata: PredictionMetadata, values: np.ndarray, max_batch_size: int
+) -> tuple[tuple[int, ...], int]:
+    row_shape = (
+        metadata.input_shape[1:]
+        if len(metadata.input_shape) == _MATRIX_RANK
+        else (() if metadata.input_shape == (-1,) else metadata.input_shape)
+    )
+    if row_shape and row_shape[0] > 0 and values.shape[1] != row_shape[-1]:
+        msg = "Input feature width does not match model metadata"
+        raise ProviderInvalidRequestError(msg)
+    if metadata.input_shape == (-1,) and values.shape[1] != 1:
+        msg = "Dynamic scalar input metadata requires one feature"
+        raise ProviderInvalidRequestError(msg)
+    fixed_batch = (
+        len(metadata.input_shape) == _MATRIX_RANK and metadata.input_shape[0] == 1
+    ) or (len(metadata.output_shape) == _MATRIX_RANK and metadata.output_shape[0] == 1)
+    return row_shape, 1 if fixed_batch else max_batch_size
+
+
+def _inference_body(
+    metadata: PredictionMetadata, chunk: np.ndarray, row_shape: tuple[int, ...]
+) -> dict[str, object]:
+    shape = [len(chunk), *row_shape] if row_shape else [len(chunk)]
+    return {
+        "inputs": [
+            {
+                "name": metadata.input_name,
+                "shape": shape,
+                "datatype": metadata.input_datatype,
+                "data": chunk.reshape(-1).tolist(),
+            }
+        ]
+    }
+
+
+def _validate_inference_status(response: _HttpResponse) -> None:
+    if response.status_code >= _HTTP_SERVER_ERROR:
+        raise ProviderUnavailableError
+    if response.status_code in {401, 403, 404, 408, 429}:
+        raise ProviderUnavailableError
+    if response.status_code >= _HTTP_REDIRECT:
+        msg = "Model inference request was rejected"
+        raise ProviderInvalidResponseError(msg)
+
+
+def _output_shape_is_valid(
+    data: np.ndarray,
+    out_shape: tuple[int, ...],
+    metadata_shape: tuple[int, ...],
+    chunk_size: int,
+) -> bool:
+    if not out_shape or len(out_shape) not in {1, _MATRIX_RANK}:
+        return False
+    expected = int(np.prod(out_shape))
+    if expected > _MAX_RESPONSE_ELEMENTS or data.size != expected:
+        return False
+    if out_shape[0] != chunk_size:
+        return False
+    if len(metadata_shape) == 1 and metadata_shape[0] == -1:
+        valid_shape = out_shape == (chunk_size,)
+    elif len(metadata_shape) == 1:
+        valid_shape = out_shape == (chunk_size, metadata_shape[0]) or (
+            metadata_shape[0] == 1 and out_shape == (chunk_size,)
+        )
+    else:
+        valid_shape = out_shape == (chunk_size, *metadata_shape[1:]) or (
+            metadata_shape[1:] == (1,) and out_shape == (chunk_size,)
+        )
+    scalar_output = (len(metadata_shape) == 1 and metadata_shape[0] in {-1, 1}) or (
+        len(metadata_shape) == _MATRIX_RANK and metadata_shape[1] == 1
+    )
+    return valid_shape and (
+        data.shape == out_shape or (scalar_output and data.ndim == 1)
+    )
+
+
+def _decode_output_tensor(
+    selected: Mapping[str, object],
+    metadata: PredictionMetadata,
+    chunk_size: int,
+) -> np.ndarray:
+    if selected.get("datatype") != metadata.output_datatype:
+        _invalid_response("response datatype mismatch")
+    out_shape = _shape(selected["shape"])
+    data = np.asarray(selected["data"])
+    if data.dtype.kind not in "bfiu":
+        _invalid_response("model output must be numeric")
+    data = data.astype(float)
+    if not np.isfinite(data).all():
+        _invalid_response("model output must be finite")
+    if not _output_shape_is_valid(data, out_shape, metadata.output_shape, chunk_size):
+        _invalid_response("output shape mismatch")
+    _validate_output_datatype(data, metadata.output_datatype)
+    scalar_output = (
+        len(metadata.output_shape) == 1 and metadata.output_shape[0] in {-1, 1}
+    ) or (len(metadata.output_shape) == _MATRIX_RANK and metadata.output_shape[1] == 1)
+    return data.reshape(chunk_size, 1) if scalar_output else data.reshape(out_shape)
+
+
+def _decode_inference_response(
+    response: _HttpResponse,
+    metadata: PredictionMetadata,
+    spec: KServeModelSpec,
+    chunk_size: int,
+) -> np.ndarray:
+    _validate_inference_status(response)
+    try:
+        content = getattr(response, "content", None)
+        if content is not None and len(content) > _MAX_RESPONSE_BYTES:
+            _invalid_response("model response is too large")
+        payload = _mapping(
+            response.json(), "model inference response must be a JSON object"
+        )
+        if payload.get("model_name") != spec.model_name:
+            _invalid_response("response model name mismatch")
+        if spec.model_version is not None and payload.get("model_version") not in {
+            None,
+            spec.model_version,
+        }:
+            _invalid_response("response model version mismatch")
+        outputs = _tensor_list(payload, "outputs")
+        selected_outputs = [
+            item for item in outputs if item.get("name") == metadata.output_name
+        ]
+        if len(selected_outputs) != 1:
+            _invalid_response("selected output is missing or duplicated")
+        return _decode_output_tensor(selected_outputs[0], metadata, chunk_size)
+    except ProviderError:
+        raise
+    except (
+        AttributeError,
+        StopIteration,
+        KeyError,
+        TypeError,
+        ValueError,
+        json.JSONDecodeError,
+    ) as exc:
+        raise ProviderInvalidResponseError from exc
+
+
 class KServeV2HttpPredictionProvider:
     """One metadata-negotiated KServe V2 client for one explanation."""
 
     def __init__(
         self,
-        client: Any,
+        client: object,
         metadata: PredictionMetadata,
         spec: KServeModelSpec,
         max_batch_size: int,
@@ -244,11 +553,11 @@ class KServeV2HttpPredictionProvider:
             msg = "Model host is not in the outbound allowlist"
             raise ProviderInvalidRequestError(msg)
         try:
-            import httpx2
+            client_type = _load_http_client()
         except ImportError as exc:
             raise DependencyUnavailableError from exc
         try:
-            client = httpx2.Client(
+            client = client_type(
                 headers=dict(transport.headers),
                 verify=transport.verify,
                 cert=transport.cert,
@@ -265,20 +574,22 @@ class KServeV2HttpPredictionProvider:
                 client, spec, transport.max_batch_size, base, timeout_seconds
             )
             provider.record_metadata_latency(time.monotonic() - metadata_started)
-            return provider
         except Exception:
             client.close()
             raise
+        else:
+            return provider
 
     @classmethod
     def _from_metadata(
         cls,
-        client: Any,
+        client: object,
         spec: KServeModelSpec,
         max_batch_size: int,
         base: str,
         timeout_seconds: float,
     ) -> KServeV2HttpPredictionProvider:
+        http_client = cast("_HttpClient", client)
         model = _segment(spec.model_name, "model name")
         version = (
             f"/versions/{_segment(spec.model_version, 'model version')}"
@@ -286,106 +597,12 @@ class KServeV2HttpPredictionProvider:
             else ""
         )
         url = f"{base}/v2/models/{model}{version}"
+        response = _metadata_response(http_client, url, timeout_seconds)
         try:
-            response = client.get(url, timeout=max(0.001, timeout_seconds))
-        except Exception as exc:
-            if _timeout_error(exc):
-                raise ProviderDeadlineError from exc
-            raise ProviderUnavailableError from exc
-        if (
-            response.status_code in {401, 403, 404, 408, 429}
-            or response.status_code >= _HTTP_SERVER_ERROR
-        ):
-            raise ProviderUnavailableError
-        if response.status_code >= _HTTP_BAD_REQUEST:
-            msg = "Model metadata request was rejected"
-            raise ProviderInvalidResponseError(msg)
-        if response.status_code >= _HTTP_REDIRECT:
-            raise ProviderInvalidResponseError
-        try:
-            payload = response.json()
-            if payload.get("name") != spec.model_name:
-                msg = "Model metadata name does not match the request"
-                raise ProviderUnsupportedModelError(msg)
-            inputs = payload.get("inputs") or []
-            outputs = payload.get("outputs") or []
-            if spec.model_version is not None and "versions" in payload:
-                versions = payload["versions"]
-                if not isinstance(versions, list) or spec.model_version not in versions:
-                    msg = "Requested model version was not found"
-                    raise ProviderInvalidRequestError(msg)
-            if len(inputs) != 1:
-                msg = (
-                    "Model input metadata is ambiguous or has multiple required inputs"
-                )
-                raise ProviderUnsupportedModelError(msg)
-            selected_inputs = [
-                item
-                for item in inputs
-                if spec.input_name is None or item.get("name") == spec.input_name
-            ]
-            selected_outputs = [
-                item
-                for item in outputs
-                if spec.output_name is None or item.get("name") == spec.output_name
-            ]
-            if not selected_inputs:
-                msg = "Requested model input tensor was not found"
-                raise ProviderInvalidRequestError(msg)
-            if not selected_outputs:
-                msg = "Requested model output tensor was not found"
-                raise ProviderInvalidRequestError(msg)
-            if len(selected_inputs) != 1:
-                msg = (
-                    "Model input metadata is ambiguous or has multiple required inputs"
-                )
-                raise ProviderUnsupportedModelError(msg)
-            if len(selected_outputs) != 1:
-                msg = "Model output metadata is ambiguous"
-                raise ProviderUnsupportedModelError(msg)
-            inp, out = selected_inputs[0], selected_outputs[0]
-            if (
-                inp.get("datatype") not in _NUMERIC
-                or out.get("datatype") not in _NUMERIC
-            ):
-                msg = "Only numeric tensors are supported"
-                raise ProviderUnsupportedModelError(msg)
-            in_shape, out_shape = (
-                _shape(inp.get("shape", [])),
-                _shape(out.get("shape", [])),
-            )
-            if (
-                not in_shape
-                or not out_shape
-                or len(in_shape) > _MATRIX_RANK
-                or len(out_shape) > _MATRIX_RANK
-            ):
-                msg = "Only flat rank-one or rank-two tensors are supported"
-                raise ProviderUnsupportedModelError(msg)
-            if any(x == 0 or x < -1 for x in in_shape + out_shape):
-                msg = "Tensor dimensions must be positive or -1"
-                raise ProviderUnsupportedModelError(msg)
-            if any(x == -1 for x in in_shape[1:]) or any(
-                x == -1 for x in out_shape[1:]
-            ):
-                msg = "Only a leading dynamic batch dimension is supported"
-                raise ProviderUnsupportedModelError(msg)
-            if len(in_shape) == _MATRIX_RANK and in_shape[0] not in {-1, 1}:
-                msg = "Fixed model batches other than one are unsupported"
-                raise ProviderUnsupportedModelError(msg)
-            if len(out_shape) == _MATRIX_RANK and out_shape[0] not in {-1, 1}:
-                msg = "Fixed model batches other than one are unsupported"
-                raise ProviderUnsupportedModelError(msg)
+            metadata = _metadata_from_payload(response.json(), spec)
             return cls(
                 client,
-                PredictionMetadata(
-                    inp["name"],
-                    out["name"],
-                    inp["datatype"],
-                    out["datatype"],
-                    in_shape,
-                    out_shape,
-                ),
+                metadata,
                 spec,
                 max_batch_size,
                 timeout_seconds,
@@ -426,173 +643,53 @@ class KServeV2HttpPredictionProvider:
             msg = "Model inputs must be a finite numeric matrix"
             raise ProviderInvalidRequestError(msg)
         _validate_input_datatype(values, self._metadata.input_datatype)
-        row_shape = (
-            self._metadata.input_shape[1:]
-            if len(self._metadata.input_shape) == _MATRIX_RANK
-            else (
-                ()
-                if self._metadata.input_shape == (-1,)
-                else self._metadata.input_shape
-            )
+        row_shape, batch_limit = _prediction_layout(
+            self._metadata, values, self._max_batch_size
         )
-        if row_shape and row_shape[0] > 0 and values.shape[1] != row_shape[-1]:
-            msg = "Input feature width does not match model metadata"
-            raise ProviderInvalidRequestError(msg)
-        if self._metadata.input_shape == (-1,) and values.shape[1] != 1:
-            msg = "Dynamic scalar input metadata requires one feature"
-            raise ProviderInvalidRequestError(msg)
         effective_timeout = (
             self._default_timeout if timeout_seconds is None else timeout_seconds
         )
         deadline = time.monotonic() + effective_timeout
         chunks: list[np.ndarray] = []
-        batch_limit = (
-            1
-            if (
-                (
-                    len(self._metadata.input_shape) == _MATRIX_RANK
-                    and self._metadata.input_shape[0] == 1
-                )
-                or (
-                    len(self._metadata.output_shape) == _MATRIX_RANK
-                    and self._metadata.output_shape[0] == 1
-                )
-            )
-            else self._max_batch_size
-        )
         for start in range(0, len(values), batch_limit):
             chunk = values[start : start + batch_limit]
-            remaining = None if deadline is None else deadline - time.monotonic()
+            remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise ProviderDeadlineError
-            shape = [len(chunk), *row_shape] if row_shape else [len(chunk)]
-            body = {
-                "inputs": [
-                    {
-                        "name": self._metadata.input_name,
-                        "shape": shape,
-                        "datatype": self._metadata.input_datatype,
-                        "data": chunk.reshape(-1).tolist(),
-                    }
-                ]
-            }
-            started = time.monotonic()
-            try:
-                response = self._client.post(
-                    self._infer_url(),
-                    json=body,
-                    headers={"Content-Type": "application/json"},
-                    timeout=remaining,
+            body = _inference_body(self._metadata, chunk, row_shape)
+            response = self._post_inference(body, remaining)
+            chunks.append(
+                _decode_inference_response(
+                    response, self._metadata, self._spec, len(chunk)
                 )
-                self._inference_batch_count += 1
-            except Exception as exc:
-                if _timeout_error(exc):
-                    raise ProviderDeadlineError from exc
-                raise ProviderUnavailableError from exc
-            finally:
-                self._provider_latency += time.monotonic() - started
-            if response.status_code >= _HTTP_SERVER_ERROR:
-                raise ProviderUnavailableError
-            if response.status_code in {401, 403, 404, 408, 429}:
-                raise ProviderUnavailableError
-            if response.status_code >= _HTTP_REDIRECT:
-                msg = "Model inference request was rejected"
-                raise ProviderInvalidResponseError(msg)
-            try:
-                content = getattr(response, "content", None)
-                if content is not None and len(content) > _MAX_RESPONSE_BYTES:
-                    msg = "model response is too large"
-                    raise ValueError(msg)
-                payload = response.json()
-                if payload.get("model_name") != self._spec.model_name:
-                    msg = "response model name mismatch"
-                    raise ValueError(msg)
-                if self._spec.model_version is not None and payload.get(
-                    "model_version"
-                ) not in {
-                    None,
-                    self._spec.model_version,
-                }:
-                    msg = "response model version mismatch"
-                    raise ValueError(msg)
-                outputs = payload.get("outputs") or []
-                selected_outputs = [
-                    item
-                    for item in outputs
-                    if item.get("name") == self._metadata.output_name
-                ]
-                if len(selected_outputs) != 1:
-                    msg = "selected output is missing or duplicated"
-                    raise ValueError(msg)
-                selected = selected_outputs[0]
-                if selected.get("datatype") != self._metadata.output_datatype:
-                    msg = "response datatype mismatch"
-                    raise ValueError(msg)
-                out_shape = _shape(selected["shape"])
-                data = np.asarray(selected["data"])
-                if data.dtype.kind not in "bfiu":
-                    msg = "model output must be numeric"
-                    raise ValueError(msg)
-                data = data.astype(float)
-                if not np.isfinite(data).all():
-                    msg = "model output must be finite"
-                    raise ValueError(msg)
-                expected = int(np.prod(out_shape))
-                metadata_shape = self._metadata.output_shape
-                if len(out_shape) not in {1, _MATRIX_RANK}:
-                    msg = "unsupported output rank"
-                    raise ValueError(msg)
-                if len(metadata_shape) == 1 and metadata_shape[0] == -1:
-                    valid_shape = out_shape == (len(chunk),)
-                elif len(metadata_shape) == 1:
-                    valid_shape = out_shape == (len(chunk), metadata_shape[0]) or (
-                        metadata_shape[0] == 1 and out_shape == (len(chunk),)
-                    )
-                else:
-                    valid_shape = out_shape == (len(chunk), *metadata_shape[1:]) or (
-                        metadata_shape[1:] == (1,) and out_shape == (len(chunk),)
-                    )
-                scalar_output = (
-                    len(metadata_shape) == 1 and metadata_shape[0] in {-1, 1}
-                ) or (len(metadata_shape) == _MATRIX_RANK and metadata_shape[1] == 1)
-                representation_ok = data.shape == out_shape or (
-                    scalar_output and data.ndim == 1 and data.size == expected
-                )
-                if (
-                    not out_shape
-                    or data.size != expected
-                    or expected > _MAX_RESPONSE_ELEMENTS
-                    or out_shape[0] != len(chunk)
-                    or not valid_shape
-                    or not representation_ok
-                    or data.dtype.kind not in "bfiu"
-                    or not np.isfinite(data).all()
-                ):
-                    msg = "output shape mismatch"
-                    raise ValueError(msg)
-                _validate_output_datatype(
-                    data.astype(float), self._metadata.output_datatype
-                )
-                chunks.append(
-                    data.reshape(len(chunk), 1)
-                    if scalar_output
-                    else data.reshape(out_shape)
-                )
-            except (
-                AttributeError,
-                StopIteration,
-                KeyError,
-                TypeError,
-                ValueError,
-                json.JSONDecodeError,
-            ) as exc:
-                raise ProviderInvalidResponseError from exc
+            )
         if not chunks:
             return np.empty((0, 1), dtype=float)
         return np.concatenate(chunks, axis=0)
+
+    def _post_inference(
+        self, body: dict[str, object], timeout_seconds: float
+    ) -> _HttpResponse:
+        started = time.monotonic()
+        try:
+            response = cast("_HttpClient", self._client).post(
+                self._infer_url(),
+                json=body,
+                headers={"Content-Type": "application/json"},
+                timeout=timeout_seconds,
+            )
+            self._inference_batch_count += 1
+        except Exception as exc:
+            if _timeout_error(exc):
+                raise ProviderDeadlineError from exc
+            raise ProviderUnavailableError from exc
+        else:
+            return response
+        finally:
+            self._provider_latency += time.monotonic() - started
 
     def close(self) -> None:
         """Close the underlying HTTP client exactly once."""
         if not self._closed:
             self._closed = True
-            self._client.close()
+            cast("_HttpClient", self._client).close()

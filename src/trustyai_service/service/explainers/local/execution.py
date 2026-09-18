@@ -1,8 +1,10 @@
 """Select a real model or an explicitly requested local surrogate."""
 
+import importlib
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import cast
 
 import numpy as np
 
@@ -15,12 +17,31 @@ from .model_provider import (
     LocalExecutionError,
     PredictionMetadata,
     PredictionProvider,
+    ProviderConfigurationError,
+    ProviderDeadlineError,
 )
 from .prediction_adapter import prediction_callable
 from .transport_config import get_transport_config
 from .types import PredictionSource, TaskType
 
 _MATRIX_RANK = 2
+
+
+def _load_surrogate_builder() -> Callable[[np.ndarray, np.ndarray, str], object]:
+    """Load the surrogate builder only for explicit SURROGATE execution."""
+    module = importlib.import_module("trustyai_service.core.explainers.local.surrogate")
+    return cast(
+        "Callable[[np.ndarray, np.ndarray, str], object]",
+        module.build_surrogate,
+    )
+
+
+def _load_model_provider() -> type:
+    """Load the HTTP provider only for MODEL execution."""
+    module = importlib.import_module(
+        "trustyai_service.service.explainers.local.kserve_v2_http"
+    )
+    return cast("type", module.KServeV2HttpPredictionProvider)
 
 
 @dataclass(frozen=True)
@@ -84,8 +105,6 @@ def _create_surrogate_execution(
     *,
     allow_single_probability: bool,
 ) -> PredictionExecution:
-    from trustyai_service.core.explainers.local.surrogate import build_surrogate
-
     if data.background_output is None:
         msg = "Surrogate mode requires stored organic labels"
         raise LocalDataError(msg)
@@ -103,7 +122,9 @@ def _create_surrogate_execution(
             msg = "Surrogate classification labels must be discrete"
             raise LocalDataError(msg)
     try:
-        estimator = build_surrogate(data.background, selected_targets, spec.task.value)
+        estimator = _load_surrogate_builder()(
+            data.background, selected_targets, spec.task.value
+        )
     except Exception as exc:
         msg = "Local surrogate training failed"
         raise LocalExecutionError(msg) from exc
@@ -160,12 +181,8 @@ def _create_model_execution(
 ) -> PredictionExecution:
     remaining = deadline - time.monotonic()
     if remaining <= 0:
-        from .model_provider import ProviderDeadlineError
-
         raise ProviderDeadlineError
     if spec.base_url is None:
-        from .model_provider import ProviderConfigurationError
-
         msg = "MODEL execution requires a base URL"
         raise ProviderConfigurationError(msg)
     kserve_spec = KServeModelSpec(
@@ -176,9 +193,7 @@ def _create_model_execution(
         output_name=spec.output_name,
         task=spec.task,
     )
-    from .kserve_v2_http import KServeV2HttpPredictionProvider
-
-    provider = KServeV2HttpPredictionProvider.connect(
+    provider = _load_model_provider().connect(
         kserve_spec,
         remaining,
         transport if transport is not None else get_transport_config(),
@@ -202,8 +217,6 @@ def _create_model_execution(
     def predict(values: np.ndarray) -> np.ndarray:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            from .model_provider import ProviderDeadlineError
-
             raise ProviderDeadlineError
         return provider.predict(values, timeout_seconds=remaining)
 

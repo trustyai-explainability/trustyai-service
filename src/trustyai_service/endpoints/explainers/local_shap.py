@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import logging
 import time
 from enum import StrEnum
@@ -17,9 +18,6 @@ from trustyai_service.core.explainers.local.shap import (
     compute_shap_result,
 )
 from trustyai_service.endpoints import routes
-from trustyai_service.endpoints.explainers.local_models import (
-    LocalExplanationModelConfig,
-)
 from trustyai_service.service.data.local_explanation import load_local_explanation_data
 from trustyai_service.service.explainers.local.error_mapping import map_error
 from trustyai_service.service.explainers.local.execution import (
@@ -41,6 +39,14 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     import numpy as np
+
+    from trustyai_service.endpoints.explainers.local_models import (
+        LocalExplanationModelConfig,
+    )
+else:
+    LocalExplanationModelConfig = importlib.import_module(
+        "trustyai_service.endpoints.explainers.local_models"
+    ).LocalExplanationModelConfig
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

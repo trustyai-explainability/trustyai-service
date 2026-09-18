@@ -1,6 +1,7 @@
 """Bounded, schema-aware storage loading for local explanations."""
 
 from dataclasses import dataclass, field
+from typing import cast
 
 import numpy as np
 
@@ -248,14 +249,30 @@ async def _read_output_chunk(
 async def load_local_explanation_data(
     model: str,
     prediction_id: str,
-    max_background_rows: int | None = None,
-    *,
-    include_stored_output: bool | None = None,
-    include_targets: bool | None = None,
-    n_training_rows: int | None = None,
-    storage_interface: object | None = None,
+    *args: object,
+    **options: object,
 ) -> LocalExplanationData:
     """Load and validate one target row plus bounded background data."""
+    if len(args) > 1:
+        msg = "Expected at most one positional argument after prediction_id"
+        raise TypeError(msg)
+    if args and "max_background_rows" in options:
+        msg = "Multiple values for argument: max_background_rows"
+        raise TypeError(msg)
+    max_background_rows = cast(
+        "int | None",
+        args[0] if args else options.pop("max_background_rows", None),
+    )
+    include_stored_output = cast(
+        "bool | None", options.pop("include_stored_output", None)
+    )
+    include_targets = cast("bool | None", options.pop("include_targets", None))
+    n_training_rows = cast("int | None", options.pop("n_training_rows", None))
+    storage_interface = cast("object | None", options.pop("storage_interface", None))
+    if options:
+        names = ", ".join(sorted(options))
+        msg = f"Unexpected keyword argument(s): {names}"
+        raise TypeError(msg)
     max_background_rows, include_stored_output = _resolve_loader_options(
         max_background_rows,
         include_stored_output=include_stored_output,

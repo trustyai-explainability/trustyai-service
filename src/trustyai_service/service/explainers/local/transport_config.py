@@ -10,6 +10,10 @@ _MAX_PORT = 65_535
 _MAX_BATCH_SIZE = 100_000
 
 
+def _invalid_allowlist() -> None:
+    raise ValueError
+
+
 def _host_entry(value: str) -> str:
     value = value.strip().lower().rstrip(".")
     if not value:
@@ -23,10 +27,10 @@ def _host_entry(value: str) -> str:
             or parsed.username
             or parsed.password
         ):
-            raise ValueError
+            _invalid_allowlist()
         host = parsed.hostname
         if not host:
-            raise ValueError
+            _invalid_allowlist()
         if ":" in host:
             host = f"[{host}]"
         port = parsed.port

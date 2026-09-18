@@ -1,6 +1,7 @@
 """Pure LIME computation against any synchronous prediction callable."""
 
 from collections.abc import Callable
+from typing import cast
 
 import numpy as np
 
@@ -10,6 +11,45 @@ except ImportError:  # Optional explainability extra
     LimeTabularExplainer = None  # type: ignore[assignment,misc]
 
 _LIME_AVAILABLE = LimeTabularExplainer is not None
+
+
+def _required_option(options: dict[str, object], name: str) -> object:
+    try:
+        return options.pop(name)
+    except KeyError as exc:
+        msg = f"Missing required keyword argument: {name}"
+        raise TypeError(msg) from exc
+
+
+def _reject_options(options: dict[str, object]) -> None:
+    if options:
+        names = ", ".join(sorted(options))
+        msg = f"Unexpected keyword argument(s): {names}"
+        raise TypeError(msg)
+
+
+def _resolve_arguments(
+    args: tuple[object, ...],
+    options: dict[str, object],
+    names: tuple[str, ...],
+    required: int,
+) -> dict[str, object]:
+    if len(args) > len(names):
+        msg = f"Expected at most {len(names)} positional arguments"
+        raise TypeError(msg)
+    values: dict[str, object] = {}
+    for index, name in enumerate(names):
+        if index < len(args):
+            if name in options:
+                msg = f"Multiple values for argument: {name}"
+                raise TypeError(msg)
+            values[name] = args[index]
+        elif name in options:
+            values[name] = options.pop(name)
+        elif index < required:
+            msg = f"Missing required argument: {name}"
+            raise TypeError(msg)
+    return values
 
 
 def create_lime_explainer(
@@ -38,12 +78,13 @@ def compute_lime_explanation(
     explainer: object,
     instance: np.ndarray,
     predict_fn: Callable[[np.ndarray], np.ndarray],
-    *,
-    num_samples: int,
-    num_features: int,
-    label: int | None = None,
+    **options: object,
 ) -> tuple[list[tuple[str, float]], float, float, float]:
     """Compute feature weights and prediction details for one instance."""
+    num_samples = cast("int", _required_option(options, "num_samples"))
+    num_features = cast("int", _required_option(options, "num_features"))
+    label = cast("int | None", options.pop("label", None))
+    _reject_options(options)
     explanation = explainer.explain_instance(
         instance, predict_fn, num_samples=num_samples, num_features=num_features
     )
@@ -71,20 +112,38 @@ def compute_lime_explanation(
 
 
 def compute_lime_confidence_intervals(
-    training_data: np.ndarray,
-    feature_names: list[str],
-    mode: str,
-    instance: np.ndarray,
-    predict_fn: Callable[[np.ndarray], np.ndarray],
-    confidence: float,
-    num_samples: int = 5000,
-    num_features: int = 10,
-    kernel_width: float = 0.75,
-    n_bootstrap: int = 50,
-    seed: int | None = None,
-    label: int | None = None,
+    *args: object,
+    **options: object,
 ) -> tuple[dict[str, float] | None, dict[str, float] | None]:
     """Estimate LIME attribution bounds by bootstrap resampling."""
+    names = (
+        "training_data",
+        "feature_names",
+        "mode",
+        "instance",
+        "predict_fn",
+        "confidence",
+        "num_samples",
+        "num_features",
+        "kernel_width",
+        "n_bootstrap",
+        "seed",
+        "label",
+    )
+    values = _resolve_arguments(args, options, names, required=6)
+    training_data = cast("np.ndarray", values["training_data"])
+    feature_names = cast("list[str]", values["feature_names"])
+    mode = cast("str", values["mode"])
+    instance = cast("np.ndarray", values["instance"])
+    predict_fn = cast("Callable[[np.ndarray], np.ndarray]", values["predict_fn"])
+    confidence = cast("float", values["confidence"])
+    num_samples = cast("int", values.pop("num_samples", 5000))
+    num_features = cast("int", values.pop("num_features", 10))
+    kernel_width = cast("float", values.pop("kernel_width", 0.75))
+    n_bootstrap = cast("int", values.pop("n_bootstrap", 50))
+    seed = cast("int | None", values.pop("seed", None))
+    label = cast("int | None", values.pop("label", None))
+    _reject_options(options)
     if confidence >= 1.0:
         return None, None
     rng = np.random.default_rng(seed)
