@@ -1,0 +1,114 @@
+"""Fixtures for true FastAPI-to-KServe local explainer integration tests."""
+
+from __future__ import annotations
+
+import json
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Any
+
+import numpy as np
+import pytest
+
+
+class FakeKServeHandler(BaseHTTPRequestHandler):
+    metadata_calls = 0
+    infer_calls: list[dict[str, Any]] = []
+
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+        del format, args
+
+    def do_GET(self) -> None:
+        type(self).metadata_calls += 1
+        payload = {
+            "name": "m",
+            "inputs": [{"name": "input", "datatype": "FP32", "shape": [-1, 2]}],
+            "outputs": [{"name": "output", "datatype": "FP32", "shape": [-1, 1]}],
+        }
+        self._write(payload)
+
+    def do_POST(self) -> None:
+        length = int(self.headers["Content-Length"])
+        body = json.loads(self.rfile.read(length))
+        type(self).infer_calls.append(body)
+        tensor = body["inputs"][0]
+        rows = np.asarray(tensor["data"], dtype=float).reshape(tensor["shape"])
+        values = (rows.sum(axis=1) / 4.0).reshape(-1, 1)
+        self._write(
+            {
+                "model_name": "m",
+                "outputs": [
+                    {
+                        "name": "output",
+                        "datatype": "FP32",
+                        "shape": [len(values), 1],
+                        "data": values.reshape(-1).tolist(),
+                    }
+                ],
+            }
+        )
+
+    def _write(self, payload: dict[str, Any]) -> None:
+        encoded = json.dumps(payload).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.end_headers()
+        self.wfile.write(encoded)
+
+
+class FakeKServe:
+    def __enter__(self) -> "FakeKServe":
+        FakeKServeHandler.metadata_calls = 0
+        FakeKServeHandler.infer_calls = []
+        try:
+            self.server = ThreadingHTTPServer(("127.0.0.1", 0), FakeKServeHandler)
+        except PermissionError:
+            pytest.skip("loopback socket binding is unavailable in this environment")
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.base_url = f"http://127.0.0.1:{self.server.server_port}"
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self.server.shutdown()
+        self.thread.join(timeout=5)
+        self.server.server_close()
+
+
+class LocalStorage:
+    def __init__(self) -> None:
+        self.metadata = np.array(
+            [
+                ["target", "t", 0, []],
+                ["organic-1", "t", 0, []],
+                ["organic-2", "t", 0, []],
+                ["synthetic", "t", 0, "_trustyai_synthetic"],
+            ],
+            dtype=object,
+        )
+        self.inputs = np.array(
+            [[2.0, 2.0], [1.0, 0.0], [0.0, 1.0], [99.0, 99.0]],
+            dtype=float,
+        )
+        self.outputs = np.array([[1.0], [0.25], [0.25], [99.0]], dtype=float)
+
+    async def dataset_exists(self, _name: str) -> bool:
+        return True
+
+    async def dataset_rows(self, _name: str) -> int:
+        return len(self.inputs)
+
+    async def get_aliased_column_names(self, name: str) -> list[str]:
+        return ["f0", "f1"] if name.endswith("_inputs") else ["score"]
+
+    async def read_data(
+        self, name: str, start_row: int = 0, n_rows: int | None = None
+    ) -> np.ndarray:
+        values = self.metadata
+        if name.endswith("_inputs"):
+            values = self.inputs
+        elif name.endswith("_outputs"):
+            values = self.outputs
+        end = None if n_rows is None else start_row + n_rows
+        return values[start_row:end]

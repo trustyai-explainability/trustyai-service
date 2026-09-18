@@ -47,6 +47,7 @@ test = [
 # Note: grpcio/grpcio-tools removed - incompatible with protobuf v7, unused (protoc used instead)
 mariadb = ["mariadb>=1.1,<1.2", "javaobj-py3>=0.5,<0.7"]
 mmd = ["goodpoints>=0.6.3,<0.7"]
+explainability = ["lime>=0.2,<0.3", "shap>=0.46,<0.48", "httpx2>=2.0"]
 
 [tool.hatch.version]
 source = "vcs"
@@ -105,6 +106,10 @@ ignore = [
 "src/trustyai_service/endpoints/consumer/__init__.py" = ["C901"]
 "src/trustyai_service/endpoints/consumer/consumer_endpoint.py" = ["BLE001", "C901", "PLR0912", "PLR0913", "PLR0915"]
 "src/trustyai_service/endpoints/explainers/*.py" = ["N815"]
+"src/trustyai_service/endpoints/explainers/local_explainer.py" = ["ARG001", "C901", "D101", "D102", "D103", "EM101", "PLR0915", "TC002", "TRY003", "UP037"]
+"src/trustyai_service/endpoints/explainers/local_lime.py" = ["C901", "D101", "D103", "EM101", "TC001", "TRY003"]
+"src/trustyai_service/endpoints/explainers/local_shap.py" = ["C901", "D101", "D103", "EM101", "PLR0915", "TC001", "TC002", "TRY003"]
+"src/trustyai_service/endpoints/explainers/local_models.py" = ["D102", "EM101", "TRY003", "UP037"]
 "src/trustyai_service/endpoints/metadata.py" = ["N815", "BLE001", "C901"]
 "src/trustyai_service/endpoints/metrics/**/*.py" = ["N815"]
 "src/trustyai_service/endpoints/metrics/fairness/group/*.py" = ["BLE001", "TRY300", "TRY301"]
@@ -113,6 +118,11 @@ ignore = [
 "src/trustyai_service/service/health_checks.py" = ["TRY301"]
 "src/trustyai_service/endpoints/metrics/drift/kolmogorov_smirnov_streaming.py" = ["RUF001", "RUF002", "RUF003", "TRY301"]
 "src/trustyai_service/service/config/registry.py" = ["PLR0913"]
+"src/trustyai_service/service/data/local_explanation.py" = ["C901", "D101", "D103", "EM101", "EM102", "PLR0912", "PLR0913", "PLR0915", "PLR2004", "TRY003"]
+"src/trustyai_service/service/explainers/local/*.py" = ["ANN401", "C901", "D101", "D102", "D103", "D105", "D107", "EM101", "EM102", "PLC0415", "PLR0912", "PLR0913", "PLR0915", "PLR2004", "RET504", "SIM102", "TRY003", "TRY300", "TRY301"]
+"src/trustyai_service/core/explainers/local/lime.py" = ["ANN201", "D103", "EM101", "PLR0913", "TRY003"]
+"src/trustyai_service/core/explainers/local/shap.py" = ["D103", "EM101", "PLR0913", "TRY003"]
+"src/trustyai_service/core/explainers/local/surrogate.py" = ["ANN401"]
 # === TEST FILES ===
 "tests/**" = ["S101", "PT019", "SLF001", "PLR2004"]
 "tests/service/test_health_checks.py" = ["S106", "ANN001", "FBT003"]
@@ -126,6 +136,14 @@ ignore = [
 "tests/endpoints/test_upload_endpoint_maria.py" = ["S105"]
 "tests/endpoints/test_upload_endpoint_pvc.py" = ["PLR0913"]
 "tests/service/data/test_utils.py" = ["PLR0913", "UP037"]  # UP037: Keep quoted annotations for optional protobuf imports
+"tests/service/explainers/local/*.py" = ["B017", "D103", "PT011"]
+"tests/core/explainers/local/*.py" = ["D103"]
+"tests/endpoints/explainers/local/test_local_models.py" = ["D103"]
+"tests/endpoints/explainers/local/integration_helpers.py" = ["ARG002", "D101", "D102", "D105", "D107", "PYI034", "RUF012", "UP037"]
+"tests/endpoints/explainers/local/test_lime_real_model_integration.py" = ["D103"]
+"tests/endpoints/explainers/local/test_shap_real_model_integration.py" = ["D103"]
+"tests/endpoints/explainers/local/test_*_endpoint.py" = ["ANN", "ARG", "D103"]
+"tests/service/data/test_local_explanation.py" = ["D103", "EM101", "TRY003"]
 "tests/service/data/storage/test_pvc_storage.py" = ["PLC0415"]
 "tests/service/data/storage/maria/*.py" = ["ANN", "ARG002"]  # Pytest style: no test method annotations, setup-only fixtures
 
@@ -155,8 +173,11 @@ ignore-missing-imports = [
     "hypercorn.*",
     "isodate.*",
     "javaobj.*",
+    "lime.*",
     "mariadb.*",
     "prometheus_client.*",
+    "shap.*",
+    "httpx2.*",
     "starlette.*",
     "libcst.*",
     # Test dependencies
