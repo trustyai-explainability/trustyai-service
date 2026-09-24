@@ -1,7 +1,7 @@
-"""Local explainer endpoint for instance-level explanation requests."""
+"""Local explainer router and unfinished local route placeholders."""
 
-import logging
-from enum import StrEnum
+from __future__ import annotations
+
 from http import HTTPStatus
 from typing import Any
 
@@ -10,138 +10,32 @@ from pydantic import BaseModel
 
 from trustyai_service.endpoints import routes
 
-router = APIRouter()
-logger = logging.getLogger(__name__)
+_placeholder_router = APIRouter()
 
 
 class ModelConfig(BaseModel):
-    """Model configuration for explainer requests."""
+    """Placeholder model contract for unfinished local explainers."""
 
     target: str
     name: str
     version: str | None = None
 
 
-class LimeExplainerConfig(BaseModel):
-    """LIME explainer configuration parameters."""
-
-    n_samples: int = 300
-    timeout: int = 10
-    separable_dataset_ratio: float = 0.9
-    retries: int = 3
-    adaptive_variance: bool = True
-    penalize_balance_sparse: bool = True
-    proximity_filter: bool = True
-    proximity_threshold: float = 0.83
-    proximity_kernel_width: float = 0.5
-    encoding_cluster_threshold: float = 0.07
-    encoding_gaussian_filter_width: float = 0.07
-    normalize_weights: bool = False
-    high_score_feature_zones: bool = True
-    feature_selection: bool = True
-    n_features: int = 10
-    track_counterfactuals: bool = False
-    use_wlr_model: bool = True
-    filter_interpretable: bool = False
-
-
-class LimeExplanationConfig(BaseModel):
-    """LIME explanation configuration."""
-
-    model: ModelConfig
-    explainer: LimeExplainerConfig | None = None
-
-
-class LimeExplanationRequest(BaseModel):
-    """LIME explanation request."""
-
-    predictionId: str
-    config: LimeExplanationConfig
-
-
-@router.post(routes.EXPLAINER_LOCAL_LIME)
-async def local_lime_explanation(request: LimeExplanationRequest) -> dict[str, Any]:
-    """Compute a LIME explanation."""
-    logger.info(
-        "Computing LIME explanation for prediction: %s",
-        request.predictionId,
-    )
-    raise HTTPException(
-        status_code=HTTPStatus.NOT_IMPLEMENTED,
-        detail="Local LIME explanation is not yet implemented",
-    )
-
-
-class LinkType(StrEnum):
-    """SHAP link function types."""
-
-    LOGIT = "LOGIT"
-    IDENTITY = "IDENTITY"
-
-
-class RegularizerType(StrEnum):
-    """SHAP regularizer types."""
-
-    AUTO = "AUTO"
-    AIC = "AIC"
-    BIC = "BIC"
-    TOP_N_FEATURES = "TOP_N_FEATURES"
-    NONE = "NONE"
-
-
-class SHAPExplainerConfig(BaseModel):
-    """SHAP explainer configuration parameters."""
-
-    n_samples: int = 300
-    timeout: int = 10
-    link: LinkType = LinkType.IDENTITY
-    regularizer: RegularizerType = RegularizerType.AUTO
-    confidence: float = 0.95
-    track_counterfactuals: bool = False
-
-
-class SHAPExplanationConfig(BaseModel):
-    """SHAP explanation configuration."""
-
-    model: ModelConfig
-    explainer: SHAPExplainerConfig | None = None
-
-
-class SHAPExplanationRequest(BaseModel):
-    """SHAP explanation request."""
-
-    predictionId: str
-    config: SHAPExplanationConfig
-
-
-@router.post(routes.EXPLAINER_LOCAL_SHAP)
-async def local_shap_explanation(request: SHAPExplanationRequest) -> dict[str, Any]:
-    """Compute a SHAP explanation."""
-    logger.info(
-        "Computing SHAP explanation for prediction: %s",
-        request.predictionId,
-    )
-    raise HTTPException(
-        status_code=HTTPStatus.NOT_IMPLEMENTED,
-        detail="Local SHAP explanation is not yet implemented",
-    )
-
-
 class CounterfactualExplainerConfig(BaseModel):
-    """Counterfactual explainer configuration parameters."""
+    """Configuration placeholder for the unfinished counterfactual route."""
 
     n_samples: int = 100
 
 
 class CounterfactualExplanationConfig(BaseModel):
-    """Counterfactual explanation configuration."""
+    """Request model placeholder for counterfactual explanations."""
 
     model: ModelConfig
     explainer: CounterfactualExplainerConfig | None = None
 
 
 class CounterfactualExplanationRequest(BaseModel):
-    """Counterfactual explanation request."""
+    """Request model placeholder for counterfactual explanations."""
 
     predictionId: str
     config: CounterfactualExplanationConfig
@@ -149,15 +43,12 @@ class CounterfactualExplanationRequest(BaseModel):
     explanationConfig: CounterfactualExplanationConfig | None = None
 
 
-@router.post(routes.EXPLAINER_LOCAL_CF)
+@_placeholder_router.post(routes.EXPLAINER_LOCAL_CF)
 async def local_counterfactual_explanation(
     request: CounterfactualExplanationRequest,
 ) -> dict[str, Any]:
-    """Compute a Counterfactual explanation."""
-    logger.info(
-        "Computing Counterfactual explanation for prediction: %s",
-        request.predictionId,
-    )
+    """Return a stable not-implemented response for the placeholder route."""
+    del request
     raise HTTPException(
         status_code=HTTPStatus.NOT_IMPLEMENTED,
         detail="Local Counterfactual explanation is not yet implemented",
@@ -165,7 +56,7 @@ async def local_counterfactual_explanation(
 
 
 class TSSaliencyExplainerConfig(BaseModel):
-    """Time series saliency explainer configuration parameters."""
+    """Configuration placeholder for the unfinished time-series route."""
 
     timeout: int = 10
     mu: float = 0.01
@@ -176,29 +67,38 @@ class TSSaliencyExplainerConfig(BaseModel):
 
 
 class TSSaliencyExplanationConfig(BaseModel):
-    """Time series saliency explanation configuration."""
+    """Request model placeholder for time-series saliency explanations."""
 
     model: ModelConfig
     explainer: TSSaliencyExplainerConfig | None = None
 
 
 class TSSaliencyExplanationRequest(BaseModel):
-    """Time series saliency explanation request."""
+    """Request model placeholder for time-series saliency explanations."""
 
     predictionIds: list[str]
     config: TSSaliencyExplanationConfig
 
 
-@router.post(routes.EXPLAINER_LOCAL_TSSALIENCY)
+@_placeholder_router.post(routes.EXPLAINER_LOCAL_TSSALIENCY)
 async def local_tssaliency_explanation(
     request: TSSaliencyExplanationRequest,
 ) -> dict[str, Any]:
-    """Compute a TSSaliency explanation."""
-    logger.info(
-        "Computing TSSaliency explanation for predictions: %s",
-        request.predictionIds,
-    )
+    """Return a stable not-implemented response for the placeholder route."""
+    del request
     raise HTTPException(
         status_code=HTTPStatus.NOT_IMPLEMENTED,
         detail="Local TSSaliency explanation is not yet implemented",
     )
+
+
+def build_router() -> APIRouter:
+    """Build a fresh local router containing only shared placeholders."""
+    local_router = APIRouter()
+    local_router.include_router(_placeholder_router)
+    return local_router
+
+
+router = build_router()
+
+__all__ = ["build_router", "router"]
