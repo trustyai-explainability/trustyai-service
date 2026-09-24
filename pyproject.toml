@@ -18,6 +18,8 @@ dependencies = [
     "protobuf>=7,<8",        # Security: Resolves CVE-2026-0994 (HIGH - Buffer overflow)
     "h5py>=3.13,<4",
     "isodate>=0.7,<0.8",
+    "httpcore2>=2.0,<2.13",
+    "httpx2>=2.0,<2.13",
 ]
 
 [dependency-groups]
@@ -26,7 +28,6 @@ dev = [
     "pyrefly>=0.61",
     "bandit[toml]>=1.9.4",
     "bandit-sarif-formatter>=1.1.1",
-    "httpx2>=2.0",
 ]
 types = [
     "pandas-stubs>=2.3.3",

@@ -1594,6 +1594,8 @@ source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
     { name = "h5py" },
+    { name = "httpcore2" },
+    { name = "httpx2" },
     { name = "hypercorn" },
     { name = "isodate" },
     { name = "numpy" },
@@ -1619,7 +1621,6 @@ mmd = [
 dev = [
     { name = "bandit" },
     { name = "bandit-sarif-formatter" },
-    { name = "httpx2" },
     { name = "pyrefly" },
     { name = "ruff" },
 ]
@@ -1643,6 +1644,8 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.116,<0.142" },
     { name = "goodpoints", marker = "extra == 'mmd'", specifier = ">=0.6.3,<0.7" },
     { name = "h5py", specifier = ">=3.13,<4" },
+    { name = "httpcore2", specifier = ">=2.0,<2.13" },
+    { name = "httpx2", specifier = ">=2.0,<2.13" },
     { name = "hypercorn", specifier = ">=0.18,<0.19" },
     { name = "isodate", specifier = ">=0.7,<0.8" },
     { name = "javaobj-py3", marker = "extra == 'mariadb'", specifier = ">=0.5,<0.7" },
@@ -1662,7 +1665,6 @@ provides-extras = ["mariadb", "mmd"]
 dev = [
     { name = "bandit", extras = ["toml"], specifier = ">=1.9.4" },
     { name = "bandit-sarif-formatter", specifier = ">=1.1.1" },
-    { name = "httpx2", specifier = ">=2.0" },
     { name = "pyrefly", specifier = ">=0.61" },
     { name = "ruff", specifier = ">=0.15.10,<0.17" },
 ]
