@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from trustyai_service.endpoints import routes
+from trustyai_service.service.config import feature_flags
 
 _placeholder_router = APIRouter()
 
@@ -93,9 +94,20 @@ async def local_tssaliency_explanation(
 
 
 def build_router() -> APIRouter:
-    """Build a fresh local router containing only shared placeholders."""
+    """Build a fresh local router using the current application flags."""
     local_router = APIRouter()
     local_router.include_router(_placeholder_router)
+    enabled = (
+        feature_flags.ENDPOINTS["explainer"]
+        and feature_flags.ENDPOINTS["explainer_local"]
+    )
+    if enabled:
+        # Keep optional LIME imports out of feature-disabled service startup.
+        from trustyai_service.endpoints.explainers.local_lime import (  # noqa: PLC0415
+            router as lime_router,
+        )
+
+        local_router.include_router(lime_router)
     return local_router
 
 
