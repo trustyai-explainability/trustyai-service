@@ -11,10 +11,13 @@
 #
 # Top-level build deps:
 #   hatchling + hatch-vcs: build backend (pyproject.toml build-system.requires)
+#   setuptools + wheel: source-distribution backends used with --no-build-isolation
 #   cython, numpy: required before --no-build-isolation installs in requirements.txt
 #     (extension packages call cython/numpy at compile time)
 
 hatchling
 hatch-vcs
+setuptools
+wheel
 cython
 numpy
