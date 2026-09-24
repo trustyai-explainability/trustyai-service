@@ -41,6 +41,7 @@ from trustyai_service.service.data.modelmesh_parser import (
 )
 from trustyai_service.service.data.shared_data_source import get_shared_data_source
 from trustyai_service.service.data.storage import get_global_storage_interface
+from trustyai_service.service.data.storage.model_locks import get_model_lock
 from trustyai_service.service.payloads.values.data_type import DataType
 from trustyai_service.service.utils import list_utils
 from trustyai_service.service.validation import validate_data_tag
@@ -217,27 +218,33 @@ async def write_reconciled_data(
     :param tags: List of tags to associate with the data
     :param id_: Request ID for this inference
     """
-    storage_interface = get_global_storage_interface()
+    async with get_model_lock(model_id):
+        storage_interface = get_global_storage_interface()
 
-    iso_time = datetime.now(UTC).isoformat()
-    unix_timestamp = time.time()
-    metadata = np.array(
-        [[None, iso_time, unix_timestamp, tags]] * len(input_array), dtype="O"
-    )
-    metadata[:, 0] = [f"{id_}_{i}" for i in range(len(input_array))]
-    metadata_names = ["id", "iso_time", "unix_timestamp", "tags"]
+        iso_time = datetime.now(UTC).isoformat()
+        unix_timestamp = time.time()
+        metadata = np.array(
+            [[None, iso_time, unix_timestamp, tags]] * len(input_array), dtype="O"
+        )
+        metadata[:, 0] = [f"{id_}_{i}" for i in range(len(input_array))]
+        metadata_names = ["id", "iso_time", "unix_timestamp", "tags"]
 
-    input_dataset = model_id + INPUT_SUFFIX
-    output_dataset = model_id + OUTPUT_SUFFIX
-    metadata_dataset = model_id + METADATA_SUFFIX
+        input_dataset = model_id + INPUT_SUFFIX
+        output_dataset = model_id + OUTPUT_SUFFIX
+        metadata_dataset = model_id + METADATA_SUFFIX
 
-    await asyncio.gather(
-        storage_interface.write_data(input_dataset, input_array, input_names),
-        storage_interface.write_data(output_dataset, output_array, output_names),
-        storage_interface.write_data(metadata_dataset, metadata, metadata_names),
-    )
+        async with asyncio.TaskGroup() as task_group:
+            task_group.create_task(
+                storage_interface.write_data(input_dataset, input_array, input_names)
+            )
+            task_group.create_task(
+                storage_interface.write_data(output_dataset, output_array, output_names)
+            )
+            task_group.create_task(
+                storage_interface.write_data(metadata_dataset, metadata, metadata_names)
+            )
 
-    shapes = await ModelData(model_id).shapes()
+        shapes = await ModelData(model_id).shapes()
     logger.info(
         "Successfully reconciled inference %s, consisting of %s rows from %s.",
         id_,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -16,6 +17,7 @@ class GlobalStorageInterface:
     """Singleton holder for global storage interface."""
 
     _instance: MariaDBStorage | PVCStorage | None = None
+    _lock = threading.Lock()
 
     @classmethod
     def get(cls, *, force_reload: bool = False) -> MariaDBStorage | PVCStorage:
@@ -24,14 +26,16 @@ class GlobalStorageInterface:
         :param force_reload: If True, force recreation of the storage interface
         :return: Storage interface instance (PVCStorage or MariaDBStorage)
         """
-        if cls._instance is None or force_reload:
-            cls._instance = get_storage_interface()
-        return cls._instance
+        with cls._lock:
+            if cls._instance is None or force_reload:
+                cls._instance = get_storage_interface()
+            return cls._instance
 
     @classmethod
     def reset(cls) -> None:
         """Reset singleton instance (useful for testing)."""
-        cls._instance = None
+        with cls._lock:
+            cls._instance = None
 
 
 def get_global_storage_interface(
