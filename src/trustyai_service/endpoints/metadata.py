@@ -21,6 +21,7 @@ from trustyai_service.service.data.datasources.data_source import DataSource
 from trustyai_service.service.data.model_data import ModelData
 from trustyai_service.service.data.shared_data_source import get_shared_data_source
 from trustyai_service.service.data.storage import get_storage_interface
+from trustyai_service.service.data.storage.model_locks import get_model_lock
 from trustyai_service.service.payloads.service.schema import Schema
 from trustyai_service.service.prometheus.prometheus_scheduler import PrometheusScheduler
 from trustyai_service.service.prometheus.shared_prometheus_scheduler import (
@@ -243,6 +244,7 @@ class InferenceIdResponse(BaseModel):
 METADATA_ID_COL = 0
 METADATA_TIMESTAMP_COL = 1
 METADATA_TAGS_COL = 3
+
 
 _VALID_INFERENCE_TYPES = frozenset({"all", "organic"})
 
@@ -692,21 +694,22 @@ async def _get_tag_counts_for_model(
     data_source: DataSource,
 ) -> dict[str, int]:
     """Return a Counter-style dict mapping tag name to row count."""
-    await _ensure_model_exists(model_id, data_source)
+    async with get_model_lock(model_id):
+        await _ensure_model_exists(model_id, data_source)
 
-    metadata, metadata_names = await _read_metadata(model_id)
-    if metadata is None or len(metadata) == 0:
-        return {}
+        metadata, metadata_names = await _read_metadata(model_id)
+        if metadata is None or len(metadata) == 0:
+            return {}
 
-    tags_col = _find_tags_column(metadata_names)
-    if tags_col < 0:
-        return {}
+        tags_col = _find_tags_column(metadata_names)
+        if tags_col < 0:
+            return {}
 
-    counter: Counter[str] = Counter()
-    for row in metadata:
-        counter.update(_extract_tags(row[tags_col]))
+        counter: Counter[str] = Counter()
+        for row in metadata:
+            counter.update(_extract_tags(row[tags_col]))
 
-    return dict(counter)
+        return dict(counter)
 
 
 @router.post(routes.INFO_TAGS)
@@ -718,9 +721,6 @@ async def apply_tags(data_tagging: DataTagging) -> dict:
     """
     model_id = data_tagging.modelId
     logger.info("Applying tags for model: %s", model_id)
-
-    data_source = get_data_source()
-    await _ensure_model_exists(model_id, data_source)
 
     if not data_tagging.dataTagging:
         raise HTTPException(
@@ -736,23 +736,27 @@ async def apply_tags(data_tagging: DataTagging) -> dict:
                 detail=validation_msg,
             )
 
-    metadata, metadata_names = await _read_metadata(model_id)
-    if metadata is None or len(metadata) == 0:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail=f"Model {model_id} has no observation data to tag",
-        )
+    data_source = get_data_source()
+    async with get_model_lock(model_id):
+        await _ensure_model_exists(model_id, data_source)
 
-    tags_col = _find_tags_column(metadata_names)
-    if tags_col < 0:
-        raise HTTPException(
-            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
-            detail="Metadata dataset is missing the 'tags' column",
-        )
+        metadata, metadata_names = await _read_metadata(model_id)
+        if metadata is None or len(metadata) == 0:
+            raise HTTPException(
+                status_code=HTTPStatus.BAD_REQUEST,
+                detail=f"Model {model_id} has no observation data to tag",
+            )
 
-    applied = _apply_tags_to_metadata(data_tagging.dataTagging, metadata, tags_col)
+        tags_col = _find_tags_column(metadata_names)
+        if tags_col < 0:
+            raise HTTPException(
+                status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+                detail="Metadata dataset is missing the 'tags' column",
+            )
 
-    await _persist_metadata(model_id, metadata, metadata_names)
+        applied = _apply_tags_to_metadata(data_tagging.dataTagging, metadata, tags_col)
+
+        await _persist_metadata(model_id, metadata, metadata_names)
 
     logger.info("Successfully applied tags to model=%s: %s", model_id, applied)
     return {"message": "Datapoints successfully tagged.", "applied": applied}
@@ -793,15 +797,10 @@ async def _persist_metadata(
 ) -> None:
     """Replace the metadata dataset for a model with backup/restore on failure.
 
-    .. warning::
-        Not safe for concurrent tag requests on the same model — last write wins.
-        Storage interface lacks atomic compare-and-swap. Concurrent requests
-        should be serialized at the application layer.
-
     .. note::
-        Backs up existing metadata before delete. If write fails, attempts
-        best-effort restore. This mitigates data loss but is not atomic.
-        Proper fix requires storage interface to support transactional replace.
+        Callers serialize this read-modify-write through the per-model lock.
+        The backup/restore sequence is still not atomic if the storage backend
+        fails during replacement.
     """
     metadata_dataset = model_id + METADATA_SUFFIX
 
