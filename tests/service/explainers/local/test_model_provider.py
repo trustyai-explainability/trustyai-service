@@ -23,7 +23,7 @@ from trustyai_service.service.explainers.local.model_provider import (
     ProviderUnavailableError,
     ProviderUnsupportedModelError,
 )
-from trustyai_service.service.explainers.local.types import PredictionSource, TaskType
+from trustyai_service.service.explainers.local.types import TaskType
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -40,10 +40,8 @@ def _metadata() -> PredictionMetadata:
     )
 
 
-def test_prediction_source_and_task_type_use_stable_values() -> None:
+def test_task_type_uses_stable_values() -> None:
     """Keep the public enum values stable for request and service boundaries."""
-    assert PredictionSource.MODEL.value == "MODEL"
-    assert PredictionSource.SURROGATE.value == "SURROGATE"
     assert TaskType.REGRESSION.value == "REGRESSION"
     assert TaskType.CLASSIFICATION.value == "CLASSIFICATION"
 
