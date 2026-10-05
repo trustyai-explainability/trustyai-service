@@ -4,23 +4,24 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import time
 from pathlib import Path
+from unittest.mock import Mock
 
+import numpy as np
 import pytest
 
+from trustyai_service.service.data.local_explanation import LocalExplanationData
+from trustyai_service.service.explainers.local import execution as execution_module
 from trustyai_service.service.explainers.local.model_provider import (
     HttpTransportConfig,
+    PredictionMetadata,
     ProviderConfigurationError,
 )
 from trustyai_service.service.explainers.local.transport_config import (
     get_transport_config,
 )
-from trustyai_service.service.explainers.local.types import PredictionSource
-
-
-def _factory(source: PredictionSource) -> HttpTransportConfig | None:
-    """Resolve deployment settings for one prediction source."""
-    return get_transport_config(source)
+from trustyai_service.service.explainers.local.types import TaskType
 
 
 def _set_model_allowlist(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -42,7 +43,7 @@ def test_model_transport_defaults_to_empty_headers_and_normal_tls(
     ):
         monkeypatch.delenv(name, raising=False)
 
-    config = _factory(PredictionSource.MODEL)
+    config = get_transport_config()
 
     assert dict(config.headers) == {}
     assert config.verify is True
@@ -61,7 +62,7 @@ def test_batch_limit_must_be_positive_integer(
     monkeypatch.setenv("TRUSTYAI_EXPLAINER_MAX_BATCH_SIZE", value)
 
     with pytest.raises(ProviderConfigurationError, match="batch size"):
-        _factory(PredictionSource.MODEL)
+        get_transport_config()
 
 
 def test_batch_limit_is_read_at_execution_creation(
@@ -71,7 +72,7 @@ def test_batch_limit_is_read_at_execution_creation(
     _set_model_allowlist(monkeypatch)
     monkeypatch.setenv("TRUSTYAI_EXPLAINER_MAX_BATCH_SIZE", "7")
 
-    config = _factory(PredictionSource.MODEL)
+    config = get_transport_config()
 
     assert config.max_batch_size == 7
 
@@ -88,10 +89,10 @@ def test_client_certificate_and_key_are_required_as_a_pair(
 
     monkeypatch.setenv("TRUSTYAI_EXPLAINER_CLIENT_CERT", str(cert))
     with pytest.raises(ProviderConfigurationError, match="certificate and key"):
-        _factory(PredictionSource.MODEL)
+        get_transport_config()
 
     monkeypatch.setenv("TRUSTYAI_EXPLAINER_CLIENT_KEY", str(key))
-    config = _factory(PredictionSource.MODEL)
+    config = get_transport_config()
     assert config.cert == (str(cert), str(key))
 
 
@@ -104,7 +105,7 @@ def test_configured_ca_bundle_is_used_for_tls_verification(
     ca_bundle.write_text("ca bundle")
     monkeypatch.setenv("TRUSTYAI_EXPLAINER_CA_BUNDLE", str(ca_bundle))
 
-    config = _factory(PredictionSource.MODEL)
+    config = get_transport_config()
 
     assert config.verify == str(ca_bundle)
 
@@ -116,13 +117,13 @@ def test_model_requires_a_non_empty_host_allowlist(
     monkeypatch.delenv("TRUSTYAI_EXPLAINER_ALLOWED_HOSTS", raising=False)
 
     with pytest.raises(ProviderConfigurationError, match="allowlist"):
-        _factory(PredictionSource.MODEL)
+        get_transport_config()
 
 
-def test_model_is_the_default_prediction_source(
+def test_transport_config_always_resolves_the_deployed_model(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Resolve MODEL transport settings when no prediction source is supplied."""
+    """Resolve deployed-model settings through the argument-free transport API."""
     _set_model_allowlist(monkeypatch)
 
     config = get_transport_config()
@@ -137,7 +138,7 @@ def test_allowlist_matches_hosts_case_insensitively(
     """Normalize host case before comparing a model URL authority."""
     monkeypatch.setenv("TRUSTYAI_EXPLAINER_ALLOWED_HOSTS", "MODEL.EXAMPLE.")
 
-    config = _factory(PredictionSource.MODEL)
+    config = get_transport_config()
 
     assert config.allowed_hosts == frozenset({"model.example"})
     assert config.allows_url("https://MoDeL.ExAmPlE/v2/models/m")
@@ -164,7 +165,7 @@ def test_allowlist_rejects_an_unlisted_hostname(
 ) -> None:
     """Keep URL matching constrained to the configured deployment hosts."""
     _set_model_allowlist(monkeypatch)
-    config = _factory(PredictionSource.MODEL)
+    config = get_transport_config()
 
     assert not config.allows_url("https://other.example/v2/models/m")
 
@@ -174,7 +175,7 @@ def test_allowlist_explicit_port_matches_only_that_port(
 ) -> None:
     """Require an explicit allowlist port to equal the URL authority port."""
     monkeypatch.setenv("TRUSTYAI_EXPLAINER_ALLOWED_HOSTS", "model.example:8443")
-    config = _factory(PredictionSource.MODEL)
+    config = get_transport_config()
 
     assert config.allows_url("https://model.example:8443/v2/models/m")
     assert not config.allows_url("https://model.example:443/v2/models/m")
@@ -187,7 +188,7 @@ def test_allowlist_normalizes_trailing_dot_before_explicit_port(
     """Normalize a DNS trailing dot on the parsed host before retaining its port."""
     monkeypatch.setenv("TRUSTYAI_EXPLAINER_ALLOWED_HOSTS", "model.example.:8443")
 
-    config = _factory(PredictionSource.MODEL)
+    config = get_transport_config()
 
     assert config.allowed_hosts == frozenset({"model.example:8443"})
     assert config.allows_url("https://model.example:8443/v2/models/m")
@@ -200,7 +201,7 @@ def test_allowlist_normalizes_default_ports(
     monkeypatch.setenv(
         "TRUSTYAI_EXPLAINER_ALLOWED_HOSTS", "model.example:80,secure.example:443"
     )
-    config = _factory(PredictionSource.MODEL)
+    config = get_transport_config()
 
     assert config.allows_url("http://model.example/v2/models/m")
     assert config.allows_url("http://model.example:80/v2/models/m")
@@ -218,7 +219,7 @@ def test_private_host_allowlist_requires_general_host_allowlist(
     )
 
     with pytest.raises(ProviderConfigurationError, match=r"Private.*allowlist"):
-        _factory(PredictionSource.MODEL)
+        get_transport_config()
 
 
 def test_private_host_allowlist_is_read_at_execution_creation(
@@ -233,7 +234,7 @@ def test_private_host_allowlist_is_read_at_execution_creation(
         "TRUSTYAI_EXPLAINER_ALLOWED_PRIVATE_HOSTS", "private.model.example"
     )
 
-    config = _factory(PredictionSource.MODEL)
+    config = get_transport_config()
 
     assert config.allowed_private_hosts == frozenset({"private.model.example"})
     assert config.allows_private_url("https://private.model.example/v2/models/m")
@@ -245,7 +246,7 @@ def test_allowlist_normalizes_ipv6_brackets(
 ) -> None:
     """Use one bracketed representation for IPv6 host authorities."""
     monkeypatch.setenv("TRUSTYAI_EXPLAINER_ALLOWED_HOSTS", "[2001:DB8::1]:8443,[::1]")
-    config = _factory(PredictionSource.MODEL)
+    config = get_transport_config()
 
     assert config.allowed_hosts == frozenset({"[2001:db8::1]:8443", "[::1]"})
     assert config.allows_url("https://[2001:db8::1]:8443/v2/models/m")
@@ -270,7 +271,7 @@ def test_allowlist_rejects_non_authority_and_wildcard_entries(
     monkeypatch.setenv("TRUSTYAI_EXPLAINER_ALLOWED_HOSTS", value)
 
     with pytest.raises(ProviderConfigurationError, match="allowlist"):
-        _factory(PredictionSource.MODEL)
+        get_transport_config()
 
 
 @pytest.mark.parametrize(
@@ -284,7 +285,7 @@ def test_allowlist_rejects_boundary_whitespace_and_control_characters(
     monkeypatch.setenv("TRUSTYAI_EXPLAINER_ALLOWED_HOSTS", value)
 
     with pytest.raises(ProviderConfigurationError, match="allowlist"):
-        _factory(PredictionSource.MODEL)
+        get_transport_config()
 
 
 @pytest.mark.parametrize(
@@ -301,7 +302,7 @@ def test_allowlist_matching_rejects_unsafe_url_authorities(
 ) -> None:
     """Do not treat credentials or unsupported URL schemes as model authorities."""
     _set_model_allowlist(monkeypatch)
-    config = _factory(PredictionSource.MODEL)
+    config = get_transport_config()
 
     assert not config.allows_url(url)
 
@@ -320,7 +321,7 @@ def test_allowlist_matching_rejects_boundary_whitespace_and_control_characters(
 ) -> None:
     """Reject unsafe URL characters before urlsplit can normalize them away."""
     _set_model_allowlist(monkeypatch)
-    config = _factory(PredictionSource.MODEL)
+    config = get_transport_config()
 
     assert not config.allows_url(url)
 
@@ -332,7 +333,7 @@ def test_bearer_token_is_a_service_level_header(
     _set_model_allowlist(monkeypatch)
     monkeypatch.setenv("TRUSTYAI_EXPLAINER_AUTH_TOKEN", "secret-token")
 
-    config = _factory(PredictionSource.MODEL)
+    config = get_transport_config()
 
     assert dict(config.headers) == {"Authorization": "Bearer secret-token"}
 
@@ -364,25 +365,108 @@ def test_bearer_token_without_an_allowlist_fails_without_leaking_the_secret(
     monkeypatch.setenv("TRUSTYAI_EXPLAINER_AUTH_TOKEN", credential_value)
 
     with pytest.raises(ProviderConfigurationError) as raised:
-        _factory(PredictionSource.MODEL)
+        get_transport_config()
 
     assert credential_value not in str(raised.value)
 
 
-def test_surrogate_does_not_resolve_transport_configuration(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Skip all deployment transport reads for an explicit provider-free source."""
-
-    def fail_getenv(*_args: object, **_kwargs: object) -> str:
-        pytest.fail("SURROGATE resolved deployment transport settings")
-
-    monkeypatch.setattr(
-        "trustyai_service.service.explainers.local.transport_config.os.getenv",
-        fail_getenv,
+def _model_execution() -> execution_module.PredictionExecution:
+    """Create a model execution using deployment transport settings."""
+    spec = execution_module.LocalExecutionSpec(
+        base_url="https://model.example",
+        model_name="credit-model",
+        model_version=None,
+        input_name=None,
+        output_name=None,
+        task=TaskType.REGRESSION,
+    )
+    data = LocalExplanationData(
+        model_id="model",
+        prediction_id="prediction",
+        instance=np.ones(2),
+        feature_names=["first", "second"],
+        background=np.ones((3, 2)),
+    )
+    return execution_module.create_prediction_execution(
+        spec, data, time.monotonic() + 5, None
     )
 
-    assert get_transport_config(PredictionSource.SURROGATE) is None
+
+def test_model_runtime_resolves_configured_transport_before_provider_creation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Resolve deployment settings before loading or connecting the provider."""
+    _set_model_allowlist(monkeypatch)
+    monkeypatch.setenv("TRUSTYAI_EXPLAINER_AUTH_TOKEN", "secret-token")
+    monkeypatch.setenv("TRUSTYAI_EXPLAINER_MAX_BATCH_SIZE", "7")
+    events: list[str] = []
+    configured_transport: list[HttpTransportConfig] = []
+    provider = Mock()
+    provider.metadata = PredictionMetadata(
+        input_name="features",
+        output_name="score",
+        input_datatype="FP32",
+        output_datatype="FP32",
+        input_shape=(-1, 2),
+        output_shape=(-1, 1),
+    )
+    provider_type = Mock()
+    provider_type.connect.return_value = provider
+    model_spec_type = Mock()
+
+    def resolve_transport() -> HttpTransportConfig:
+        """Record successful resolution through the model-only API."""
+        transport = get_transport_config()
+        configured_transport.append(transport)
+        events.append("transport")
+        return transport
+
+    def load_provider() -> tuple[type, type]:
+        """Record provider loading after transport resolution."""
+        events.append("provider")
+        return provider_type, model_spec_type
+
+    monkeypatch.setattr(execution_module, "get_transport_config", resolve_transport)
+    monkeypatch.setattr(execution_module, "_load_model_provider", load_provider)
+
+    execution = _model_execution()
+    try:
+        assert events == ["transport", "provider"]
+        provider_type.connect.assert_called_once()
+        transport = provider_type.connect.call_args.args[1]
+        assert transport is configured_transport[0]
+        assert transport.allowed_hosts == frozenset({"model.example"})
+        assert dict(transport.headers) == {"Authorization": "Bearer secret-token"}
+        assert transport.max_batch_size == 7
+        assert transport.verify is True
+        assert transport.follow_redirects is False
+        assert transport.trust_env is False
+        assert execution.provider is provider
+    finally:
+        execution.close()
+    provider.close.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    ("setting", "value", "message"),
+    [
+        ("TRUSTYAI_EXPLAINER_ALLOWED_HOSTS", "", "allowlist"),
+        ("TRUSTYAI_EXPLAINER_MAX_BATCH_SIZE", "0", "batch size"),
+    ],
+)
+def test_invalid_transport_configuration_prevents_provider_creation(
+    monkeypatch: pytest.MonkeyPatch, setting: str, value: str, message: str
+) -> None:
+    """Fail configuration validation before loading the deployed-model provider."""
+    _set_model_allowlist(monkeypatch)
+    monkeypatch.setenv(setting, value)
+    load_provider = Mock()
+    monkeypatch.setattr(execution_module, "_load_model_provider", load_provider)
+
+    with pytest.raises(ProviderConfigurationError, match=message):
+        _model_execution()
+
+    load_provider.assert_not_called()
 
 
 def test_transport_config_import_does_not_import_optional_http_integrations() -> None:
