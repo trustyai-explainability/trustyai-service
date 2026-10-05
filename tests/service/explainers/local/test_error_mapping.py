@@ -15,6 +15,7 @@ from trustyai_service.service.explainers.local.model_provider import (
     ProviderDeadlineError,
     ProviderInvalidRequestError,
     ProviderInvalidResponseError,
+    ProviderRequestLimitError,
     ProviderUnavailableError,
     ProviderUnsupportedModelError,
 )
@@ -123,3 +124,17 @@ def test_typed_errors_use_allowlisted_messages(
     assert mapped.detail == detail
     assert str(error) not in mapped.detail
     assert mapped.as_http_detail() == {"code": code, "message": detail}
+
+
+def test_request_limit_errors_expose_their_safe_actionable_detail() -> None:
+    """Expose only explicitly designated request-limit guidance to clients."""
+    message = (
+        "SHAP request exceeds the memory budget; reduce n_samples or n_training_rows"
+    )
+
+    mapped = map_error(ProviderRequestLimitError(message))
+
+    assert mapped.code == "invalid_request"
+    assert mapped.status_code == 400
+    assert mapped.detail == message
+    assert mapped.as_http_detail() == {"code": "invalid_request", "message": message}
