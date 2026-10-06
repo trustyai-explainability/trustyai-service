@@ -222,6 +222,14 @@ class ProviderInvalidRequestError(ProviderError):
         super().__init__(self.code, message)
 
 
+class ProviderRequestLimitError(ProviderInvalidRequestError):
+    """A deterministic request limit with a safe client-facing detail."""
+
+    def __init__(self, message: str) -> None:
+        """Create a request-limit error with an explicitly safe detail."""
+        super().__init__(message)
+
+
 class ProviderUnavailableError(ProviderError):
     """The upstream model endpoint is unavailable."""
 

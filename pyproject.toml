@@ -48,6 +48,12 @@ test = [
 # Note: grpcio/grpcio-tools removed - incompatible with protobuf v7, unused (protoc used instead)
 mariadb = ["mariadb>=1.1,<1.2", "javaobj-py3>=0.5,<0.7"]
 mmd = ["goodpoints>=0.6.3,<0.7"]
+lime = ["lime>=0.2,<0.3"]
+# SHAP 0.52 requires the Intel-macOS Numba line, which has no CPython 3.14
+# wheels. Keep the base project installable there and fail the optional feature closed.
+shap = [
+    "shap>=0.52,<0.53; (sys_platform != 'darwin' or platform_machine != 'x86_64' or python_version < '3.14')"
+]
 
 [tool.hatch.version]
 source = "vcs"

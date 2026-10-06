@@ -7,7 +7,7 @@ HTTP adapters serialize :class:`ErrorResponse` as
 from dataclasses import dataclass
 from enum import StrEnum
 
-from .model_provider import ProviderError
+from .model_provider import ProviderError, ProviderRequestLimitError
 
 
 class LocalErrorCode(StrEnum):
@@ -118,4 +118,7 @@ def map_error(error: Exception) -> ErrorResponse:
     """Return endpoint-neutral mapping data without constructing a web response."""
     code = _code_for_error(error)
     status_code, generic_detail = _MAPPED_ERRORS[code]
-    return ErrorResponse(status_code=status_code, detail=generic_detail, code=code)
+    detail = (
+        str(error) if isinstance(error, ProviderRequestLimitError) else generic_detail
+    )
+    return ErrorResponse(status_code=status_code, detail=detail, code=code)
