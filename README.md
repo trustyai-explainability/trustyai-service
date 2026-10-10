@@ -99,6 +99,80 @@ podman run -p 8080:8080 trustyai:latest
 
 ## Configuration
 
+### Local model explainers
+
+Local LIME and KernelSHAP explanations use a deployed KServe V2 HTTP model by
+default. Requests must provide an HTTP(S) `base_url`, `model_name`, and explicit
+`task` (`CLASSIFICATION` or `REGRESSION`). The outbound model host must also be
+listed in the deployment-level `TRUSTYAI_EXPLAINER_ALLOWED_HOSTS` allowlist;
+requests fail closed when it is missing. A host outside a configured allowlist
+is rejected as a client error; it never selects a different prediction source.
+
+`prediction_source: SURROGATE` is an explicit opt-in for the stored-data random
+forest path. It does not contact a model endpoint and does not require
+`base_url`. Model transport settings are deployment-owned and are never accepted
+from the explanation body: `TRUSTYAI_EXPLAINER_AUTH_TOKEN` (Bearer only),
+`TRUSTYAI_EXPLAINER_MAX_BATCH_SIZE` (default `1024`),
+`TRUSTYAI_EXPLAINER_ALLOWED_HOSTS`, `TRUSTYAI_EXPLAINER_CA_BUNDLE`,
+`TRUSTYAI_EXPLAINER_CLIENT_CERT`, and `TRUSTYAI_EXPLAINER_CLIENT_KEY`.
+
+For example, the default real-model request is:
+
+```json
+{
+  "predictionId": "row-123",
+  "config": {
+    "model": {
+      "base_url": "https://inference.example",
+      "model_name": "credit-model",
+      "model_version": "v1",
+      "task": "CLASSIFICATION"
+    }
+  }
+}
+```
+
+The explicit local fallback is:
+
+```json
+{
+  "predictionId": "row-123",
+  "config": {
+    "model": {
+      "model_name": "credit-model",
+      "prediction_source": "SURROGATE",
+      "task": "REGRESSION"
+    }
+  }
+}
+```
+
+Only numeric flat tabular tensors are supported: one input tensor and one
+selected numeric output tensor. Tensor selectors (`input_name` and `output_name`)
+are optional only when the upstream metadata is unambiguous. Rank-one and
+rank-two tensors with a leading batch dimension are supported; string/categorical
+and higher-rank tensors are rejected. `task` is required because tensor shape
+alone cannot distinguish classification from regression. LIME returns the raw
+deployed `prediction_output` separately from its local linear prediction. SHAP
+returns the selected scalar raw output, selected `class_index` when applicable,
+and its base and linked prediction in the requested link space
+(`shap_base_value` and `linked_prediction_output`). `LOGIT` requires finite values
+strictly inside `(0, 1)`. Redirects and ambient proxy settings are disabled, and
+metadata/inference calls share the explanation deadline and configured batch cap.
+The explainability feature flags remain disabled by default; installing the
+optional dependencies alone does not enable either route. Install them with:
+
+```bash
+uv sync --extra explainability
+```
+
+LIME and SHAP enforce bounded request work: generated samples and organic
+background rows are each capped at `100000`, LIME features are capped at
+`1000`, and explanation timeouts are limited to `1` through `3600` seconds.
+Confidence intervals use the same model callable and count against the
+explanation deadline.
+
+<!-- markdownlint-disable MD013 -->
 | Environment Variable | Default | Description |
 | -------- | ------- | ----------- |
 | `SERVICE_STORAGE_FORMAT` | `PVC` | Storage backend (`PVC` or `MARIA`) |
@@ -107,11 +181,17 @@ podman run -p 8080:8080 trustyai:latest
 | `SSL_PORT` | `4443` | HTTPS listener port |
 | `TLS_CERT_FILE` | `/etc/tls/internal/tls.crt` | TLS certificate path |
 | `TLS_KEY_FILE` | `/etc/tls/internal/tls.key` | TLS private key path |
+| `TRUSTYAI_EXPLAINER_ALLOWED_HOSTS` | — | Required comma-separated outbound model host allowlist for MODEL requests |
+| `TRUSTYAI_EXPLAINER_MAX_BATCH_SIZE` | `1024` | Maximum rows per KServe inference request |
+| `TRUSTYAI_EXPLAINER_CA_BUNDLE` | system trust store | Optional CA bundle path |
+| `TRUSTYAI_EXPLAINER_CLIENT_CERT` / `TRUSTYAI_EXPLAINER_CLIENT_KEY` | — | Optional mutual-TLS client certificate and key, configured together |
+| `TRUSTYAI_EXPLAINER_AUTH_TOKEN` | — | Optional deployment-owned Bearer token; never logged or returned |
 | `DATABASE_HOST` | — | MariaDB hostname |
 | `DATABASE_PORT` | `3306` | MariaDB port |
 | `DATABASE_USERNAME` | — | MariaDB username |
 | `DATABASE_PASSWORD` | — | MariaDB password |
 | `DATABASE_DATABASE` | — | MariaDB database name |
+<!-- markdownlint-enable MD013 -->
 
 TLS is enabled automatically when both the certificate and key
 files are present.

@@ -47,6 +47,7 @@ test = [
 # Note: grpcio/grpcio-tools removed - incompatible with protobuf v7, unused (protoc used instead)
 mariadb = ["mariadb>=1.1,<1.2", "javaobj-py3>=0.5,<0.7"]
 mmd = ["goodpoints>=0.6.3,<0.7"]
+explainability = ["lime>=0.2,<0.3", "shap>=0.46,<0.48", "httpx2>=2.0"]
 
 [tool.hatch.version]
 source = "vcs"
@@ -119,7 +120,6 @@ ignore = [
 "tests/service/config/*.py" = ["D102"]
 "tests/core/metrics/test_fairness.py" = ["N803", "N806"]
 "tests/core/metrics/drift/test_greenwald_khanna_quantile_sketch.py" = ["RUF001", "RUF002", "RUF003"]
-"tests/core/explainers/local/factory.py" = ["PLR0913"]
 "tests/endpoints/explainers/local/factory.py" = ["PLR0913"]
 "tests/endpoints/metrics/drift/factory.py" = ["PLR0913", "C901", "PLR0915"]
 "tests/endpoints/metrics/fairness/group/factory.py" = ["PLR0913", "PLC0415"]
@@ -155,8 +155,11 @@ ignore-missing-imports = [
     "hypercorn.*",
     "isodate.*",
     "javaobj.*",
+    "lime.*",
     "mariadb.*",
     "prometheus_client.*",
+    "shap.*",
+    "httpx2.*",
     "starlette.*",
     "libcst.*",
     # Test dependencies
