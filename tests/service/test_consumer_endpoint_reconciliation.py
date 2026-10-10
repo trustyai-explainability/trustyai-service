@@ -460,12 +460,93 @@ class TestWriteReconciledDataMetadata(unittest.TestCase):
 
         assert real_metadata.get_observations() == 10
 
+    async def _test_metadata_cache_update_happens_under_model_lock(self) -> None:
+        """Keep model metadata bookkeeping serialized with the dataset writes."""
+        events: list[str] = []
+
+        model_lock = mock.AsyncMock()
+        model_lock.__aenter__.side_effect = lambda: events.append("enter") or model_lock
+        model_lock.__aexit__.side_effect = lambda *_args: events.append("exit")
+
+        metadata = mock.Mock()
+        metadata.set_recorded_inferences.side_effect = lambda **_kwargs: events.append(
+            "set_recorded_inferences"
+        )
+        metadata.increment_observations.side_effect = lambda _observations: (
+            events.append("increment_observations")
+        )
+        metadata.get_observations.side_effect = lambda: (
+            events.append("get_observations") or 5
+        )
+
+        mock_storage = mock.AsyncMock()
+        mock_data_source = mock.AsyncMock()
+        mock_data_source.metadata_cache = {"test-model": metadata}
+        mock_storage.write_data = mock.AsyncMock(
+            side_effect=lambda *_args, **_kwargs: events.append("write")
+        )
+        mock_storage.delete_partial_payload = mock.AsyncMock(
+            side_effect=lambda *_args, **_kwargs: events.append("delete_partial")
+        )
+        mock_data_source.add_model_to_known = mock.AsyncMock(
+            side_effect=lambda *_args, **_kwargs: events.append("add_model")
+        )
+        mock_data_source.get_known_models = mock.AsyncMock(
+            side_effect=lambda *_args, **_kwargs: (
+                events.append("get_known_models") or {"test-model"}
+            )
+        )
+        mock_data_source.get_metadata = mock.AsyncMock(
+            side_effect=lambda *_args, **_kwargs: (
+                events.append("get_metadata") or metadata
+            )
+        )
+
+        with (
+            mock.patch(
+                "trustyai_service.endpoints.consumer.consumer_endpoint.get_global_storage_interface",
+                return_value=mock_storage,
+            ),
+            mock.patch(
+                "trustyai_service.endpoints.consumer.consumer_endpoint.get_data_source",
+                return_value=mock_data_source,
+            ),
+            mock.patch(
+                "trustyai_service.endpoints.consumer.consumer_endpoint.get_model_lock",
+                return_value=model_lock,
+            ),
+            mock.patch(
+                "trustyai_service.endpoints.consumer.consumer_endpoint.ModelData",
+            ) as mock_model_data,
+        ):
+            mock_model_data.return_value.shapes = mock.AsyncMock(
+                side_effect=lambda: events.append("shapes") or [(5, 3), (5, 1), (5, 4)]
+            )
+
+            await write_reconciled_data(
+                input_array=np.zeros((5, 3)),
+                input_names=["f1", "f2", "f3"],
+                output_array=np.zeros((5, 1)),
+                output_names=["out"],
+                model_id="test-model",
+                tags=["tag1"],
+                id_="req-lock-scope",
+            )
+
+        assert events.index("get_metadata") < events.index("exit")
+        assert events.index("increment_observations") < events.index("exit")
+
 
 TestWriteReconciledDataMetadata.test_cache_miss_no_double_count = (  # type: ignore[attr-defined]
     lambda self: run_async_test(self._test_cache_miss_no_double_count())
 )
 TestWriteReconciledDataMetadata.test_cache_hit_increments = (  # type: ignore[attr-defined]
     lambda self: run_async_test(self._test_cache_hit_increments())
+)
+TestWriteReconciledDataMetadata.test_metadata_cache_update_happens_under_model_lock = (  # type: ignore[attr-defined]
+    lambda self: run_async_test(
+        self._test_metadata_cache_update_happens_under_model_lock()
+    )
 )
 
 
