@@ -152,6 +152,7 @@ ignore-missing-imports = [
     "aif360.*",
     "fastapi.*",
     "fastapi_utils.*",
+    "goodpoints.*",
     "hypercorn.*",
     "isodate.*",
     "javaobj.*",

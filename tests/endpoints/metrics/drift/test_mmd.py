@@ -1,10 +1,14 @@
 """Tests for MMD drift detection endpoint."""
 
+from collections.abc import Callable, Generator
+from concurrent.futures.process import BrokenProcessPool
 from http import HTTPStatus
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
 import pandas as pd
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -23,6 +27,23 @@ app.include_router(router)
 client = TestClient(app)
 
 MODULE_PATH = "trustyai_service.endpoints.metrics.drift.mmd"
+
+
+async def _run_inline(func: Callable[..., Any], **kwargs: Any) -> Any:  # noqa: ANN401
+    """Call func(**kwargs) directly instead of submitting it to a process pool."""
+    return func(**kwargs)
+
+
+@pytest.fixture(autouse=True)
+def _inline_mmd_executor() -> Generator[None]:
+    """Run MMD computations inline instead of via the real process pool.
+
+    These tests don't start the app's lifespan (and therefore never call
+    start_mmd_executor()), so without this fixture every compute/schedule
+    test would fail with "MMD process pool not started".
+    """
+    with patch(f"{MODULE_PATH}.run_in_mmd_executor", side_effect=_run_inline):
+        yield
 
 
 class TestMMDEndpoints:
@@ -283,6 +304,66 @@ class TestMMDEndpoints:
         expected_status_code=HTTPStatus.BAD_REQUEST,
         expected_error_substring="not found in data",
     )
+
+    def test_compute_worker_process_crash_returns_500(self) -> None:
+        """A crashed MMD worker process returns 500 with a clear message."""
+        sample_df = pd.DataFrame(
+            {"feature1": np.random.default_rng(0).standard_normal(50)}
+        )
+
+        with (
+            patch(f"{MODULE_PATH}.get_data_source") as mock_ds,
+            patch(
+                f"{MODULE_PATH}.run_in_mmd_executor",
+                side_effect=BrokenProcessPool("worker died"),
+            ),
+        ):
+            mock_data_source = MagicMock()
+            mock_data_source.get_dataframe_by_tag = AsyncMock(return_value=sample_df)
+            mock_data_source.get_organic_dataframe = AsyncMock(return_value=sample_df)
+            mock_ds.return_value = mock_data_source
+
+            response = client.post(
+                routes.DRIFT_MMD.compute,
+                json={
+                    "modelId": "test-model",
+                    "referenceTag": "baseline",
+                    "fitColumns": ["feature1"],
+                },
+            )
+
+            assert response.status_code == HTTPStatus.INTERNAL_SERVER_ERROR
+            assert "worker crash" in response.json()["detail"].lower()
+
+    def test_compute_worker_process_timeout_returns_504(self) -> None:
+        """A hung MMD worker process returns 504 with a clear message."""
+        sample_df = pd.DataFrame(
+            {"feature1": np.random.default_rng(0).standard_normal(50)}
+        )
+
+        with (
+            patch(f"{MODULE_PATH}.get_data_source") as mock_ds,
+            patch(
+                f"{MODULE_PATH}.run_in_mmd_executor",
+                side_effect=TimeoutError("worker timed out"),
+            ),
+        ):
+            mock_data_source = MagicMock()
+            mock_data_source.get_dataframe_by_tag = AsyncMock(return_value=sample_df)
+            mock_data_source.get_organic_dataframe = AsyncMock(return_value=sample_df)
+            mock_ds.return_value = mock_data_source
+
+            response = client.post(
+                routes.DRIFT_MMD.compute,
+                json={
+                    "modelId": "test-model",
+                    "referenceTag": "baseline",
+                    "fitColumns": ["feature1"],
+                },
+            )
+
+            assert response.status_code == HTTPStatus.GATEWAY_TIMEOUT
+            assert "timed out" in response.json()["detail"].lower()
 
     test_delete_invalid_uuid = factory.make_delete_endpoint_error_test(
         metric_name="MMD",
