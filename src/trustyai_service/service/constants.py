@@ -4,6 +4,7 @@
 INPUT_SUFFIX = "_inputs"
 OUTPUT_SUFFIX = "_outputs"
 METADATA_SUFFIX = "_metadata"
+METADATA_ID_COL = 0  # Column index of the prediction ID in metadata datasets
 PROTECTED_DATASET_SUFFIX = "trustyai_internal_"
 PARTIAL_PAYLOAD_DATASET_NAME = "partial_payloads"
 GROUND_TRUTH_SUFFIX = "-ground-truths"
