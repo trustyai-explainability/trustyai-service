@@ -359,6 +359,7 @@ def compute_lime_confidence_intervals(  # noqa: PLR0913
     n_bootstrap: int = 50,
     seed: int | None,
     label: int | None,
+    deadline_check: Callable[[], float] | None = None,
 ) -> LIMEConfidenceIntervalResult:
     """Estimate LIME feature-weight bounds by repeated seeded explanations."""
     confidence_value = _validate_confidence(confidence)
@@ -376,6 +377,8 @@ def compute_lime_confidence_intervals(  # noqa: PLR0913
     successful = 0
 
     for _ in range(bootstrap_count):
+        if deadline_check is not None:
+            deadline_check()
         iteration_seed = int(rng.integers(0, 2**32 - 1))
         try:
             with _seeded_explainer(

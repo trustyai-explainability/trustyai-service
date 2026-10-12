@@ -304,10 +304,10 @@ def test_non_finite_core_result_is_not_serialized(
     assert response.json()["detail"]["code"] == "execution_failed"
 
 
-def test_lime_allocation_guard_maps_to_resource_exhausted(
+def test_lime_allocation_guard_maps_to_invalid_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Return a bounded resource error instead of an opaque HTTP 500."""
+    """Return actionable client guidance for a deterministic allocation limit."""
     execution = _FakeExecution()
     _install_successful_worker(monkeypatch, execution=execution)
 
@@ -321,8 +321,11 @@ def test_lime_allocation_guard_maps_to_resource_exhausted(
         json=_payload(explainer={"confidence": 1.0}),
     )
 
-    assert response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
-    assert response.json()["detail"]["code"] == "resource_exhausted"
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert response.json()["detail"] == {
+        "code": "invalid_request",
+        "message": "LIME request exceeds the memory budget; reduce num_samples or n_training_rows",
+    }
 
 
 def test_model_uses_one_worker_execution_and_preserves_provider_counters(

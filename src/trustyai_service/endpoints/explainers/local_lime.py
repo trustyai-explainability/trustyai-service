@@ -35,7 +35,6 @@ from trustyai_service.service.explainers.local.error_mapping import (
     ErrorResponse,
     LocalDataError,
     LocalDataNotFoundError,
-    LocalWorkerCapacityError,
     map_error,
 )
 from trustyai_service.service.explainers.local.execution import (
@@ -46,6 +45,7 @@ from trustyai_service.service.explainers.local.execution import (
 from trustyai_service.service.explainers.local.model_provider import (
     ProviderDeadlineError,
     ProviderInvalidRequestError,
+    ProviderRequestLimitError,
 )
 from trustyai_service.service.explainers.local.observability import (
     LocalExplanationObservability,
@@ -61,6 +61,9 @@ _LOADER_MISSING_DATA_DETAIL = "No stored data exists for the requested model"
 _CLASS_INDEX_TASK_DETAIL = "class_index is only valid for classification"
 _CLASS_INDEX_INVALID_DETAIL = "class_index is invalid for model output"
 _WIDER_CLASS_DETAIL = "class_index is required for wider classification output"
+_LIME_ALLOCATION_DETAIL = (
+    "LIME request exceeds the memory budget; reduce num_samples or n_training_rows"
+)
 _BINARY_CLASS_COUNT = 2
 _LOADER_DATA_ERROR_PREFIXES = (
     "No organic background data",
@@ -328,6 +331,7 @@ def _worker(
                 n_bootstrap=config.n_bootstrap,
                 seed=config.seed,
                 label=selected_class,
+                deadline_check=lambda: _remaining(deadline),
             )
             lower_bounds = confidence.lower_bounds
             upper_bounds = confidence.upper_bounds
@@ -364,7 +368,7 @@ def _raise_http_error(error: Exception) -> None:
 def _map_algorithm_error(error: Exception) -> Exception:
     """Translate bounded core resource failures to the endpoint error contract."""
     if isinstance(error, LIMEAllocationError):
-        return LocalWorkerCapacityError()
+        return ProviderRequestLimitError(_LIME_ALLOCATION_DETAIL)
     return error
 
 

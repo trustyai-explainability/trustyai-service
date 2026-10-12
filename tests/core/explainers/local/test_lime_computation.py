@@ -136,6 +136,7 @@ def test_core_signatures_make_algorithm_options_keyword_only() -> None:
         "n_bootstrap",
         "seed",
         "label",
+        "deadline_check",
     ):
         assert (
             confidence_signature.parameters[name].kind is inspect.Parameter.KEYWORD_ONLY
@@ -356,6 +357,60 @@ def test_confidence_intervals_are_deterministic_for_a_seed() -> None:
     lower, upper = first
     assert lower == first.lower_bounds
     assert upper == first.upper_bounds
+
+
+def test_confidence_checks_deadline_before_each_bootstrap_fit() -> None:
+    """Stop before starting another fit when the deadline callback expires."""
+
+    class CountingExplainer:
+        feature_names = ("f0",)
+        mode = "regression"
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def explain_instance(
+            self,
+            data_row: np.ndarray,
+            predict_fn: Callable[[np.ndarray], np.ndarray],
+            **kwargs: object,
+        ) -> _FakeExplanation:
+            """Record each started fit and return a deterministic explanation."""
+            del data_row, kwargs
+            self.calls += 1
+            predict_fn(np.zeros((1, 1)))
+            return _FakeExplanation()
+
+    class DeadlineReachedError(RuntimeError):
+        """Mark the first expired bootstrap deadline."""
+
+    explainer = CountingExplainer()
+    checks = 0
+
+    def check_deadline() -> float:
+        """Allow one fit, then stop before the next fit begins."""
+        nonlocal checks
+        checks += 1
+        if checks == 2:
+            raise DeadlineReachedError
+        return 1.0
+
+    with pytest.raises(DeadlineReachedError):
+        compute_lime_confidence_intervals(
+            explainer,
+            np.zeros(1),
+            lambda values: values[:, :1],
+            num_samples=10,
+            num_features=1,
+            confidence=0.9,
+            n_bootstrap=3,
+            seed=3,
+            label=None,
+            deadline_check=check_deadline,
+        )
+
+    assert checks == 2
+    assert explainer.calls == 1
 
 
 def test_confidence_one_disables_bootstrap() -> None:
