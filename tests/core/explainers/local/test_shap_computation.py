@@ -91,12 +91,66 @@ def test_core_signatures_use_only_the_shared_callable_and_keyword_options() -> N
         "confidence",
         "n_bootstrap",
         "seed",
+        "deadline_check",
     ):
         assert (
             confidence_signature.parameters[name].kind is inspect.Parameter.KEYWORD_ONLY
         )
     assert confidence_signature.parameters["n_bootstrap"].default == 50
     assert confidence_signature.parameters["seed"].default is inspect.Parameter.empty
+
+
+def test_confidence_checks_deadline_before_each_bootstrap_fit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Stop before starting another fit when the deadline callback expires."""
+    background, instance = _background_and_instance()
+    calls = 0
+
+    def fake_compute(
+        *_args: object,
+        **_kwargs: object,
+    ) -> ShapExplanationResult:
+        """Record each started fit and return a deterministic result."""
+        nonlocal calls
+        calls += 1
+        return ShapExplanationResult(
+            values=np.asarray([1.0, 2.0, 3.0]),
+            base_value=0.0,
+            linked_prediction=0.0,
+        )
+
+    class DeadlineReachedError(RuntimeError):
+        """Mark the first expired bootstrap deadline."""
+
+    monkeypatch.setattr(shap_core, "_compute_shap_result", fake_compute)
+    checks = 0
+
+    def check_deadline() -> float:
+        """Allow one fit, then stop before the next fit begins."""
+        nonlocal checks
+        checks += 1
+        if checks == 2:
+            raise DeadlineReachedError
+        return 1.0
+
+    with pytest.raises(DeadlineReachedError):
+        compute_confidence_intervals(
+            background,
+            instance,
+            _regression_predict,
+            instance_prediction=1.0,
+            n_samples=10,
+            link="identity",
+            l1_reg="bic",
+            confidence=0.9,
+            n_bootstrap=3,
+            seed=1,
+            deadline_check=check_deadline,
+        )
+
+    assert checks == 2
+    assert calls == 1
 
 
 def test_importing_core_does_not_load_optional_or_service_integrations() -> None:

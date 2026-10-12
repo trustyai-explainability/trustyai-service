@@ -435,6 +435,7 @@ def compute_confidence_intervals(  # noqa: PLR0913
     confidence: float,
     n_bootstrap: int = _DEFAULT_BOOTSTRAP_SAMPLES,
     seed: int | None,
+    deadline_check: Callable[[], float] | None = None,
 ) -> tuple[np.ndarray | None, np.ndarray | None]:
     """Estimate KernelSHAP attribution bounds by seeded background resampling."""
     confidence_value = _validate_confidence(confidence)
@@ -456,6 +457,8 @@ def compute_confidence_intervals(  # noqa: PLR0913
     bootstrap_values: list[np.ndarray] = []
 
     for _ in range(bootstrap_count):
+        if deadline_check is not None:
+            deadline_check()
         indexes = rng.integers(0, len(background_array), size=len(background_array))
         sample = background_array[indexes]
         try:

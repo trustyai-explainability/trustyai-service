@@ -470,6 +470,7 @@ def _worker(
                 confidence=config.confidence,
                 n_bootstrap=config.n_bootstrap,
                 seed=config.seed,
+                deadline_check=lambda: _remaining(deadline),
             )
             _remaining(deadline)
         provider_latency, inference_batch_count = _provider_observability(execution)
