@@ -34,6 +34,12 @@ ENV SETUPTOOLS_SCM_PRETEND_VERSION="${VERSION}"
 
 RUN pip install --no-cache-dir --no-deps .
 
+# uv is build tooling inherited from the base image, not a runtime dependency.
+# Remove its bundled crypto and the uvx companion (RHOAIENG-97373).
+RUN /opt/app-root/bin/python -m pip uninstall -y uv && \
+    test ! -e /opt/app-root/bin/uv && \
+    test ! -e /opt/app-root/bin/uvx
+
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONHASHSEED=random
