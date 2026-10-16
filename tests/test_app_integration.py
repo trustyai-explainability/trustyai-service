@@ -379,3 +379,29 @@ class TestPortCollisionGuard:
             ),
         ):
             await run_server()
+
+
+class TestSHAPRouteRegistration:
+    """Tests that SHAP route is registered only when explainer flags are enabled."""
+
+    def test_shap_route_absent_with_default_flags(self) -> None:
+        """SHAP endpoint is NOT registered when explainer flags are at default (disabled)."""
+        response = client.get("/openapi.json")
+        openapi = response.json()
+        assert routes.EXPLAINER_LOCAL_SHAP not in openapi["paths"]
+
+    def test_shap_route_registered_when_explainer_flags_enabled(self) -> None:
+        """SHAP endpoint IS registered when both explainer flags are enabled."""
+        overrides = {"explainer": True, "explainer_local": True}
+        test_client = _build_app_with_flags(overrides)
+        response = test_client.get("/openapi.json")
+        openapi = response.json()
+        assert routes.EXPLAINER_LOCAL_SHAP in openapi["paths"]
+
+    def test_shap_route_absent_when_only_explainer_enabled(self) -> None:
+        """SHAP endpoint is NOT registered when only the top-level explainer flag is on."""
+        overrides = {"explainer": True, "explainer_local": False}
+        test_client = _build_app_with_flags(overrides)
+        response = test_client.get("/openapi.json")
+        openapi = response.json()
+        assert routes.EXPLAINER_LOCAL_SHAP not in openapi["paths"]
