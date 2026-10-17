@@ -1,5 +1,6 @@
 """Utility functions and decorators for MariaDB storage operations."""
 
+import threading
 from collections.abc import Callable, Coroutine
 from types import TracebackType
 from typing import Any
@@ -61,6 +62,7 @@ class MariaConnectionManager:
         self.database = database
         self.ssl_ca = ssl_ca
         self.connect_timeout = connect_timeout
+        self._connections = threading.local()
 
     def __enter__(self) -> tuple[mariadb.Connection, mariadb.Cursor]:
         """Enter context manager and establish database connection."""
@@ -76,8 +78,16 @@ class MariaConnectionManager:
             connect_kwargs["ssl_verify_cert"] = True
         if self.connect_timeout is not None:
             connect_kwargs["connect_timeout"] = self.connect_timeout
-        self.conn = mariadb.connect(**connect_kwargs)
-        return self.conn, self.conn.cursor()
+        connection = mariadb.connect(**connect_kwargs)
+        try:
+            cursor = connection.cursor()
+        except BaseException:
+            connection.close()
+            raise
+        connections = getattr(self._connections, "stack", [])
+        connections.append(connection)
+        self._connections.stack = connections
+        return connection, cursor
 
     def __exit__(
         self,
@@ -86,4 +96,13 @@ class MariaConnectionManager:
         traceback: TracebackType | None,
     ) -> None:
         """Exit context manager and close database connection."""
-        self.conn.close()
+        connections = getattr(self._connections, "stack", None)
+        if not connections:
+            msg = "MariaDB connection context is not active"
+            raise RuntimeError(msg)
+        connection = connections.pop()
+        if connections:
+            self._connections.stack = connections
+        else:
+            del self._connections.stack
+        connection.close()

@@ -1,6 +1,7 @@
 """Tests for GET /info/tags and POST /info/tags endpoints."""
 
 from http import HTTPStatus
+from typing import Self
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
@@ -159,6 +160,57 @@ class TestGetTags:
 
 class TestApplyTags:
     """Tests for POST /info/tags."""
+
+    @patch("trustyai_service.endpoints.metadata.get_model_lock")
+    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_data_source")
+    def test_apply_tags_holds_model_lock_during_replace(
+        self,
+        mock_get_ds: MagicMock,
+        mock_storage: MagicMock,
+        mock_get_lock: MagicMock,
+    ) -> None:
+        """Serialize metadata replacement with model dataset writes."""
+        events: list[str] = []
+
+        class RecordingLock:
+            async def __aenter__(self) -> Self:
+                events.append("enter")
+                return self
+
+            async def __aexit__(self, *_args: object) -> None:
+                events.append("exit")
+
+        mock_get_lock.return_value = RecordingLock()
+        mock_ds = MagicMock()
+        mock_ds.get_known_models = AsyncMock(return_value={"test-model"})
+        mock_get_ds.return_value = mock_ds
+        mock_storage.dataset_exists = AsyncMock(return_value=True)
+        mock_storage.read_data = AsyncMock(return_value=_make_metadata_rows(2))
+        mock_storage.read_column_names = AsyncMock(return_value=METADATA_NAMES)
+        mock_storage.delete_dataset = AsyncMock()
+
+        async def write_data(*_args: object, **_kwargs: object) -> None:
+            events.append("write")
+
+        mock_storage.write_data = AsyncMock(side_effect=write_data)
+
+        with patch(
+            "trustyai_service.endpoints.metadata.ModelData",
+            return_value=_mock_model_data(_make_metadata_rows(2)),
+        ):
+            response = client.post(
+                routes.INFO_TAGS,
+                json={
+                    "modelId": "test-model",
+                    "dataTagging": {"TRAINING": [[0, 1]]},
+                },
+            )
+
+        assert response.status_code == HTTPStatus.OK
+        assert events[0] == "enter"
+        assert events[-1] == "exit"
+        assert "write" in events[1:-1]
 
     @patch("trustyai_service.endpoints.metadata.storage_interface")
     @patch("trustyai_service.endpoints.metadata.get_data_source")

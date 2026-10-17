@@ -612,6 +612,9 @@ class TestPVCVoidTypeEdgeCases(_PVCFixture):
         with pytest.raises(ValueError, match="exceeds existing dataset capacity"):
             _run(self.storage._write_raw_data(name, large_void, ["col"], is_bytes=True))
 
+        # A rejected append must not leave a resized, unwritten row behind.
+        assert _run(self.storage.dataset_rows(name)) == 1
+
     def test_void_type_append_smaller_succeeds(self) -> None:
         """Appending serialized data with smaller/equal void type succeeds via cast."""
         name = "void_compat"

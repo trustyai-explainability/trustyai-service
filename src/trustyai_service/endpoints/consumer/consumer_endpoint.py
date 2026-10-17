@@ -41,6 +41,7 @@ from trustyai_service.service.data.modelmesh_parser import (
 )
 from trustyai_service.service.data.shared_data_source import get_shared_data_source
 from trustyai_service.service.data.storage import get_global_storage_interface
+from trustyai_service.service.data.storage.model_locks import get_model_lock
 from trustyai_service.service.payloads.values.data_type import DataType
 from trustyai_service.service.utils import list_utils
 from trustyai_service.service.validation import validate_data_tag
@@ -217,27 +218,67 @@ async def write_reconciled_data(
     :param tags: List of tags to associate with the data
     :param id_: Request ID for this inference
     """
-    storage_interface = get_global_storage_interface()
+    async with get_model_lock(model_id):
+        storage_interface = get_global_storage_interface()
 
-    iso_time = datetime.now(UTC).isoformat()
-    unix_timestamp = time.time()
-    metadata = np.array(
-        [[None, iso_time, unix_timestamp, tags]] * len(input_array), dtype="O"
-    )
-    metadata[:, 0] = [f"{id_}_{i}" for i in range(len(input_array))]
-    metadata_names = ["id", "iso_time", "unix_timestamp", "tags"]
+        iso_time = datetime.now(UTC).isoformat()
+        unix_timestamp = time.time()
+        metadata = np.array(
+            [[None, iso_time, unix_timestamp, tags]] * len(input_array), dtype="O"
+        )
+        metadata[:, 0] = [f"{id_}_{i}" for i in range(len(input_array))]
+        metadata_names = ["id", "iso_time", "unix_timestamp", "tags"]
 
-    input_dataset = model_id + INPUT_SUFFIX
-    output_dataset = model_id + OUTPUT_SUFFIX
-    metadata_dataset = model_id + METADATA_SUFFIX
+        input_dataset = model_id + INPUT_SUFFIX
+        output_dataset = model_id + OUTPUT_SUFFIX
+        metadata_dataset = model_id + METADATA_SUFFIX
 
-    await asyncio.gather(
-        storage_interface.write_data(input_dataset, input_array, input_names),
-        storage_interface.write_data(output_dataset, output_array, output_names),
-        storage_interface.write_data(metadata_dataset, metadata, metadata_names),
-    )
+        async with asyncio.TaskGroup() as task_group:
+            task_group.create_task(
+                storage_interface.write_data(input_dataset, input_array, input_names)
+            )
+            task_group.create_task(
+                storage_interface.write_data(output_dataset, output_array, output_names)
+            )
+            task_group.create_task(
+                storage_interface.write_data(metadata_dataset, metadata, metadata_names)
+            )
 
-    shapes = await ModelData(model_id).shapes()
+        shapes = await ModelData(model_id).shapes()
+
+        # Add the model and update its in-memory metadata while the model lock is
+        # still held. Otherwise a concurrent first write can observe a cache
+        # populated from a later row count and increment it a second time.
+        data_source = get_data_source()
+        await data_source.add_model_to_known(model_id)
+        known_models = await data_source.get_known_models()
+        logger.info(
+            "Added model %s to known models set. Current known models: %s",
+            model_id,
+            list(known_models),
+        )
+        logger.debug("DataSource instance id: %s", id(data_source))
+
+        # Update metadata: mark inferences recorded and increment observation count.
+        # Only increment if metadata was already cached — on cache miss, get_metadata
+        # reads the correct count from storage (which already includes the new rows).
+        try:
+            was_cached = model_id in data_source.metadata_cache
+            metadata = await data_source.get_metadata(model_id)
+            metadata.set_recorded_inferences(recorded_inferences=True)
+            if was_cached:
+                metadata.increment_observations(len(input_array))
+        except (
+            Exception
+        ) as e:  # Intentional: metadata update is non-critical; continue on failure
+            logger.warning("Could not update metadata for model %s: %s", model_id, e)
+        else:
+            logger.info(
+                "Updated metadata for model %s: recorded_inferences=True, observations=%d",
+                model_id,
+                metadata.get_observations(),
+            )
+
     logger.info(
         "Successfully reconciled inference %s, consisting of %s rows from %s.",
         id_,
@@ -251,37 +292,6 @@ async def write_reconciled_data(
         shapes[1],
         shapes[2],
     )
-
-    # Add model to known models set so it can be discovered by the scheduler
-    data_source = get_data_source()
-    await data_source.add_model_to_known(model_id)
-    known_models = await data_source.get_known_models()
-    logger.info(
-        "Added model %s to known models set. Current known models: %s",
-        model_id,
-        list(known_models),
-    )
-    logger.debug("DataSource instance id: %s", id(data_source))
-
-    # Update metadata: mark inferences recorded and increment observation count.
-    # Only increment if metadata was already cached — on cache miss, get_metadata
-    # reads the correct count from storage (which already includes the new rows).
-    try:
-        was_cached = model_id in data_source.metadata_cache
-        metadata = await data_source.get_metadata(model_id)
-        metadata.set_recorded_inferences(recorded_inferences=True)
-        if was_cached:
-            metadata.increment_observations(len(input_array))
-    except (
-        Exception
-    ) as e:  # Intentional: metadata update is non-critical; continue on failure
-        logger.warning("Could not update metadata for model %s: %s", model_id, e)
-    else:
-        logger.info(
-            "Updated metadata for model %s: recorded_inferences=True, observations=%d",
-            model_id,
-            metadata.get_observations(),
-        )
 
     # Clean up
     await storage_interface.delete_partial_payload(id_, is_input=True)

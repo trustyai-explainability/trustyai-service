@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import threading
+import weakref
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -28,7 +30,10 @@ from trustyai_service.service.constants import (
 from trustyai_service.service.data.exceptions import StorageReadError
 from trustyai_service.service.data.metadata.storage_metadata import StorageMetadata
 from trustyai_service.service.data.modelmesh_parser import PartialPayload
-from trustyai_service.service.data.storage.exceptions import DeserializationError
+from trustyai_service.service.data.storage.exceptions import (
+    DeserializationError,
+    StorageError,
+)
 from trustyai_service.service.payloads.service.schema import Schema
 from trustyai_service.service.payloads.service.schema_item import SchemaItem
 from trustyai_service.service.payloads.values.data_type import DataType
@@ -40,6 +45,7 @@ from trustyai_service.service.serialization import (
 )
 from trustyai_service.service.utils import list_utils
 
+from .locks import ThreadSafeAsyncLock
 from .storage_interface import StorageInterface
 
 logger = logging.getLogger(__name__)
@@ -111,14 +117,22 @@ class PVCStorage(StorageInterface):
         self.one_file_per_dataset = True
         data_dir = Path(self.data_directory)
         if data_dir.exists():
-            self.locks = {
-                entry.name: asyncio.Lock()
+            initial_locks = {
+                str(entry.resolve()): ThreadSafeAsyncLock()
                 for entry in data_dir.iterdir()
                 if self.data_file in entry.name
             }
         else:
-            self.locks = {}
-        self.global_lock = asyncio.Lock()
+            initial_locks = {}
+        # Weak values reclaim locks once no caller or in-flight operation holds
+        # them. Keep locks discovered at startup alive until their dataset is
+        # deleted so eager discovery retains its existing behavior.
+        self.locks: weakref.WeakValueDictionary[str, ThreadSafeAsyncLock] = (
+            weakref.WeakValueDictionary(initial_locks)
+        )
+        self._initial_locks = initial_locks
+        self._locks_lock = threading.Lock()
+        self.global_lock = ThreadSafeAsyncLock()
 
     def _get_filename(self, dataset_name: str) -> str:
         """Get the H5PY filename of a particular dataset.
@@ -148,12 +162,21 @@ class PVCStorage(StorageInterface):
             return normalized_path_str
         return self.data_path
 
-    def get_lock(self, dataset_name: str) -> asyncio.Lock:
+    def get_lock(self, dataset_name: str) -> ThreadSafeAsyncLock:
         """Get the per-document lock to prevent simultaneous read/writes on an individual H5PY file."""
         filename = self._get_filename(dataset_name)
-        if filename not in self.locks:
-            self.locks[filename] = asyncio.Lock()
-        return self.locks[filename]
+        with self._locks_lock:
+            lock = self.locks.get(filename)
+            if lock is None:
+                lock = ThreadSafeAsyncLock()
+                self.locks[filename] = lock
+            return lock
+
+    def _release_initial_lock(self, filename: str, lock: ThreadSafeAsyncLock) -> None:
+        """Release the constructor's strong reference after dataset deletion."""
+        with self._locks_lock:
+            if self._initial_locks.get(filename) is lock:
+                del self._initial_locks[filename]
 
     @staticmethod
     def allocate_valid_dataset_name(dataset_name: str) -> str:
@@ -222,14 +245,6 @@ class PVCStorage(StorageInterface):
         allocated_dataset_name = self.allocate_valid_dataset_name(dataset_name)
         inbound_shape = list(new_rows.shape)
 
-        # use the dataset_shape function to check both existence of dataset + shape retrieval, to reduce file reads
-        try:
-            existing_shape = list(await self.dataset_shape(allocated_dataset_name))
-            dataset_exists = True
-        except MissingH5PYDataError:
-            existing_shape = None
-            dataset_exists = False
-
         # Validate serialized rows don't exceed maximum void type length
         # Note: serialize_rows() now uses dynamic void types, so this check is mainly
         # for existing data or data from other sources
@@ -243,105 +258,123 @@ class PVCStorage(StorageInterface):
             )
             raise ValueError(msg)
 
-        if dataset_exists:  # if we've already got saved inferences for this model
-            if existing_shape[1:] == inbound_shape[1:]:  # shapes match
-                async with self.get_lock(allocated_dataset_name):
-                    with H5PYContext(self, allocated_dataset_name, "a") as db:
-                        dataset = db[allocated_dataset_name]
+        # The existence check, shape check, resize, and write must share one lock.
+        # Otherwise concurrent workers can observe the same row count and overwrite
+        # one another, or race while creating the first dataset for a model.
+        async with self.get_lock(allocated_dataset_name):
+            with H5PYContext(self, allocated_dataset_name, "a") as db:
+                if allocated_dataset_name in db:
+                    dataset = db[allocated_dataset_name]
+                    existing_shape = list(dataset.shape)
+                    if existing_shape[1:] != inbound_shape[1:]:
+                        existing_shape_str = ", ".join(
+                            [":"] + [str(x) for x in existing_shape[1:]]
+                        )
+                        inbound_shape_str = ", ".join(
+                            [":"] + [str(x) for x in inbound_shape[1:]]
+                        )
 
-                        if (
-                            dataset.attrs[BYTES_ATTRIBUTE] != is_bytes
-                        ):  # data storage paradigm mismatch
-                            msg = f"Error when saving inference data for {allocated_dataset_name}: "
-                            if dataset.attrs[BYTES_ATTRIBUTE]:
-                                msg += (
-                                    "Dataset was previously saved as serialized tabular data, but has "
-                                    "now received a purely numeric payload."
-                                )
-                            else:
-                                msg += (
-                                    "Dataset was previously saved as numeric data, but has now received "
-                                    "a serialized tabular payload."
-                                )
-                            logger.error(msg)
+                        msg_0 = (
+                            f"Error when saving inference data for {allocated_dataset_name}: "
+                            f"Mismatch between existing data shape=({existing_shape_str}) vs "
+                            f"inbound data shape=({inbound_shape_str})"
+                        )
+                        raise ValueError(msg_0)
+
+                    if (
+                        dataset.attrs[BYTES_ATTRIBUTE] != is_bytes
+                    ):  # data storage paradigm mismatch
+                        msg = f"Error when saving inference data for {allocated_dataset_name}: "
+                        if dataset.attrs[BYTES_ATTRIBUTE]:
+                            msg += (
+                                "Dataset was previously saved as serialized tabular data, but has "
+                                "now received a purely numeric payload."
+                            )
+                        else:
+                            msg += (
+                                "Dataset was previously saved as numeric data, but has now received "
+                                "a serialized tabular payload."
+                            )
+                        logger.error(msg)
+                        raise ValueError(msg)
+
+                    # === VOID TYPE COMPATIBILITY HANDLING ===
+                    # HDF5 requires all rows in a dataset to have the same dtype. For serialized
+                    # data (void types), this creates a compatibility challenge:
+                    #
+                    # - NEW DATASETS: Created with V{MAX_VOID_TYPE_LENGTH} to accommodate future
+                    #   rows of varying serialized sizes (see line 276 below)
+                    #
+                    # - LEGACY DATASETS: May have smaller void types (e.g., V47) if created before
+                    #   this upgrade. When appending to these datasets:
+                    #   * If new_rows.dtype.itemsize ≤ existing: downcast new data to fit (safe)
+                    #   * If new_rows.dtype.itemsize > existing: REJECT with error (would corrupt data)
+                    #
+                    # MIGRATION PATH for datasets with small void types:
+                    # 1. Read existing data: `data = await storage.read_data(dataset_name)`
+                    # 2. Delete old dataset: `await storage.delete_dataset(dataset_name)`
+                    # 3. Recreate with new data: `await storage.write_data(dataset_name, data, column_names)`
+                    #    (New dataset will automatically use V{MAX_VOID_TYPE_LENGTH})
+                    #
+                    # This preserves backward compatibility while allowing optimal storage for new datasets.
+                    if (
+                        new_rows.dtype != dataset.dtype
+                        and isinstance(new_rows.dtype, np.dtypes.VoidDType)
+                        and isinstance(dataset.dtype.type, type(np.void))
+                    ):
+                        # Prevent silent downcast that would corrupt data
+                        if new_rows.dtype.itemsize > dataset.dtype.itemsize:
+                            msg = (
+                                f"Cannot append rows: serialized data ({new_rows.dtype.itemsize} bytes) "
+                                f"exceeds existing dataset capacity ({dataset.dtype.itemsize} bytes). "
+                                "To fix: migrate dataset using read → delete → write pattern (see comment above)."
+                            )
                             raise ValueError(msg)
+                        # Both are void types with compatible sizes, cast new data to match existing dataset
+                        new_rows = new_rows.astype(dataset.dtype)
 
-                        # add new lines to dataset and write new data
-                        dataset.resize(existing_shape[0] + inbound_shape[0], axis=0)
+                    existing_row_count = existing_shape[0]
+                    try:
+                        dataset.resize(existing_row_count + inbound_shape[0], axis=0)
+                        dataset[existing_row_count:] = new_rows
+                        db.flush()
+                    except BaseException as append_error:
+                        try:
+                            dataset.resize(existing_row_count, axis=0)
+                            db.flush()
+                        except BaseException as rollback_error:
+                            message = (
+                                "Storage is inconsistent for dataset "
+                                f"{allocated_dataset_name}: append failed and rollback failed"
+                            )
+                            logger.exception(message)
+                            raise StorageError(message) from BaseExceptionGroup(
+                                "PVC append and rollback failures",
+                                [append_error, rollback_error],
+                            )
+                        raise
+                    return
 
-                        # === VOID TYPE COMPATIBILITY HANDLING ===
-                        # HDF5 requires all rows in a dataset to have the same dtype. For serialized
-                        # data (void types), this creates a compatibility challenge:
-                        #
-                        # - NEW DATASETS: Created with V{MAX_VOID_TYPE_LENGTH} to accommodate future
-                        #   rows of varying serialized sizes (see line 276 below)
-                        #
-                        # - LEGACY DATASETS: May have smaller void types (e.g., V47) if created before
-                        #   this upgrade. When appending to these datasets:
-                        #   * If new_rows.dtype.itemsize ≤ existing: downcast new data to fit (safe)
-                        #   * If new_rows.dtype.itemsize > existing: REJECT with error (would corrupt data)
-                        #
-                        # MIGRATION PATH for datasets with small void types:
-                        # 1. Read existing data: `data = await storage.read_data(dataset_name)`
-                        # 2. Delete old dataset: `await storage.delete_dataset(dataset_name)`
-                        # 3. Recreate with new data: `await storage.write_data(dataset_name, data, column_names)`
-                        #    (New dataset will automatically use V{MAX_VOID_TYPE_LENGTH})
-                        #
-                        # This preserves backward compatibility while allowing optimal storage for new datasets.
-                        if (
-                            new_rows.dtype != dataset.dtype
-                            and isinstance(new_rows.dtype, np.dtypes.VoidDType)
-                            and isinstance(dataset.dtype.type, type(np.void))
-                        ):
-                            # Prevent silent downcast that would corrupt data
-                            if new_rows.dtype.itemsize > dataset.dtype.itemsize:
-                                msg = (
-                                    f"Cannot append rows: serialized data ({new_rows.dtype.itemsize} bytes) "
-                                    f"exceeds existing dataset capacity ({dataset.dtype.itemsize} bytes). "
-                                    "To fix: migrate dataset using read → delete → write pattern (see comment above)."
-                                )
-                                raise ValueError(msg)
-                            # Both are void types with compatible sizes, cast new data to match existing dataset
-                            new_rows = new_rows.astype(dataset.dtype)
+                # Create the first dataset while holding the same per-dataset lock.
+                max_shape = [None, *list(new_rows.shape)[1:]]
 
-                        dataset[existing_shape[0] :] = new_rows
-            else:
-                existing_shape_str = ", ".join(
-                    [":"] + [str(x) for x in existing_shape[1:]]
+                # For void types, use MAX_VOID_TYPE_LENGTH to ensure future appends
+                # with different sizes can be accommodated
+                dataset_dtype = new_rows.dtype
+                if isinstance(new_rows.dtype, np.dtypes.VoidDType):
+                    dataset_dtype = f"V{MAX_VOID_TYPE_LENGTH}"
+                    # Cast data to match dataset dtype
+                    new_rows = new_rows.astype(dataset_dtype)
+
+                dataset = db.create_dataset(
+                    allocated_dataset_name,
+                    data=new_rows,
+                    maxshape=max_shape,
+                    chunks=True,
+                    dtype=dataset_dtype,
                 )
-                inbound_shape_str = ", ".join(
-                    [":"] + [str(x) for x in inbound_shape[1:]]
-                )
-
-                msg_0 = (
-                    f"Error when saving inference data for {allocated_dataset_name}: "
-                    f"Mismatch between existing data shape=({existing_shape_str}) vs "
-                    f"inbound data shape=({inbound_shape_str})"
-                )
-                raise ValueError(msg_0)
-        else:  # first observation of inferences from this model
-            async with self.get_lock(allocated_dataset_name):
-                with H5PYContext(self, allocated_dataset_name, "a") as db:
-                    # create new dataset
-                    max_shape = [None, *list(new_rows.shape)[1:]]
-
-                    # For void types, use MAX_VOID_TYPE_LENGTH to ensure future appends
-                    # with different sizes can be accommodated
-                    dataset_dtype = new_rows.dtype
-                    if isinstance(new_rows.dtype, np.dtypes.VoidDType):
-                        dataset_dtype = f"V{MAX_VOID_TYPE_LENGTH}"
-                        # Cast data to match dataset dtype
-                        new_rows = new_rows.astype(dataset_dtype)
-
-                    dataset = db.create_dataset(
-                        allocated_dataset_name,
-                        data=new_rows,
-                        maxshape=max_shape,
-                        chunks=True,
-                        dtype=dataset_dtype,
-                    )
-                    dataset.attrs[COLUMN_NAMES_ATTRIBUTE] = column_names
-                    dataset.attrs[BYTES_ATTRIBUTE] = is_bytes
+                dataset.attrs[COLUMN_NAMES_ATTRIBUTE] = column_names
+                dataset.attrs[BYTES_ATTRIBUTE] = is_bytes
 
     async def write_data(
         self, dataset_name: str, new_rows: np.ndarray | list, column_names: list[str]
@@ -404,20 +437,23 @@ class PVCStorage(StorageInterface):
     async def delete_dataset(self, dataset_name: str) -> None:
         """Delete dataset data, ignoring non-existent datasets."""
         allocated_dataset_name = self.allocate_valid_dataset_name(dataset_name)
-        async with self.get_lock(allocated_dataset_name):
-            # Check if HDF5 file exists before opening to prevent phantom file creation
-            # Opening in "a" mode creates the file if it doesn't exist
-            filename = Path(self._get_filename(allocated_dataset_name))
-            if not filename.exists():
-                return
-            try:
-                with H5PYContext(self, allocated_dataset_name, "a") as db:
-                    if allocated_dataset_name in db:
-                        del db[allocated_dataset_name]
-                    if allocated_dataset_name in self.locks:
-                        del self.locks[allocated_dataset_name]
-            except MissingH5PYDataError:
-                pass
+        filename_str = self._get_filename(allocated_dataset_name)
+        lock = self.get_lock(allocated_dataset_name)
+        try:
+            async with lock:
+                # Check if HDF5 file exists before opening to prevent phantom file creation
+                # Opening in "a" mode creates the file if it doesn't exist
+                filename = Path(filename_str)
+                if not filename.exists():
+                    return
+                try:
+                    with H5PYContext(self, allocated_dataset_name, "a") as db:
+                        if allocated_dataset_name in db:
+                            del db[allocated_dataset_name]
+                except MissingH5PYDataError:
+                    pass
+        finally:
+            self._release_initial_lock(filename_str, lock)
 
     async def get_original_column_names(self, dataset_name: str) -> list[str]:
         """Get the original column names associated with this model, prior to any name mapping."""

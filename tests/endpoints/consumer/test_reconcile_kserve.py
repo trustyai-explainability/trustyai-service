@@ -7,6 +7,7 @@ metadata update failure warning, and write_reconciled_data storage calls.
 import asyncio
 import unittest
 from http import HTTPStatus
+from typing import Self
 from unittest import mock
 
 import numpy as np
@@ -248,6 +249,97 @@ class TestWriteReconciledData(unittest.TestCase):
         assert "test-model_inputs" in dataset_names
         assert "test-model_outputs" in dataset_names
         assert "test-model_metadata" in dataset_names
+
+    def test_writes_three_datasets_under_model_lock(self) -> None:
+        """Keep grouped dataset writes inside the model coordination lock."""
+        events: list[str] = []
+
+        class RecordingLock:
+            async def __aenter__(self) -> Self:
+                events.append("enter")
+                return self
+
+            async def __aexit__(self, *_args: object) -> None:
+                events.append("exit")
+
+        async def write_data(*_args: object, **_kwargs: object) -> None:
+            events.append("write")
+
+        self.mock_storage.write_data.side_effect = write_data
+        with mock.patch(
+            "trustyai_service.endpoints.consumer.consumer_endpoint.get_model_lock",
+            return_value=RecordingLock(),
+        ):
+            _run(
+                write_reconciled_data(
+                    np.array([[1.0]]),
+                    ["input"],
+                    np.array([[2.0]]),
+                    ["output"],
+                    model_id="test-model",
+                    tags=["TRAINING"],
+                    id_="lock-1",
+                )
+            )
+
+        assert events[0] == "enter"
+        assert events[-1] == "exit"
+        assert "write" in events[1:-1]
+
+    def test_model_lock_waits_for_cancelled_sibling_writes(self) -> None:
+        """Keep the model lock until all grouped writes finish cancellation."""
+        events: list[str] = []
+        writes_started = asyncio.Event()
+        started_count = 0
+
+        class RecordingLock:
+            async def __aenter__(self) -> Self:
+                events.append("enter")
+                return self
+
+            async def __aexit__(self, *_args: object) -> None:
+                events.append("exit")
+
+        async def write_data(dataset_name: str, *_args: object) -> None:
+            nonlocal started_count
+            started_count += 1
+            if started_count == _EXPECTED_DATASET_WRITES:
+                writes_started.set()
+            await writes_started.wait()
+            try:
+                if dataset_name.endswith("_inputs"):
+                    failure_message = "input write failed"
+                    raise RuntimeError(failure_message)
+                await asyncio.sleep(0)
+            finally:
+                events.append(f"finished:{dataset_name}")
+
+        self.mock_storage.write_data.side_effect = write_data
+        with (
+            mock.patch(
+                "trustyai_service.endpoints.consumer.consumer_endpoint.get_model_lock",
+                return_value=RecordingLock(),
+            ),
+            pytest.raises(ExceptionGroup) as raised,
+        ):
+            _run(
+                write_reconciled_data(
+                    np.array([[1.0]]),
+                    ["input"],
+                    np.array([[2.0]]),
+                    ["output"],
+                    model_id="test-model",
+                    tags=["TRAINING"],
+                    id_="lock-failure-1",
+                )
+            )
+
+        assert any(
+            isinstance(error, RuntimeError) and str(error) == "input write failed"
+            for error in raised.value.exceptions
+        )
+        assert events[-1] == "exit"
+        assert all(event.startswith("finished:") for event in events[1:-1])
 
     def test_deletes_partial_payloads_after_write(self) -> None:
         """Partial payloads are cleaned up after successful write."""

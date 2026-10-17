@@ -8,6 +8,7 @@ decorator. These tests do NOT require a running MariaDB instance.
 from __future__ import annotations
 
 import asyncio
+import threading
 from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, patch
 
@@ -120,6 +121,71 @@ class TestMariaConnectionManager:
             raise RuntimeError(msg)
 
         mock_conn.close.assert_called_once()
+
+    @patch("trustyai_service.service.data.storage.maria.utils.mariadb.connect")
+    def test_connection_closed_if_cursor_creation_fails(
+        self, mock_connect: MagicMock
+    ) -> None:
+        """Connection is closed when cursor setup fails before context entry."""
+        mock_conn = MagicMock()
+        mock_conn.cursor.side_effect = RuntimeError("cursor setup failed")
+        mock_connect.return_value = mock_conn
+
+        mgr = MariaConnectionManager(
+            user="u",
+            password="p",  # noqa: S106 -- test credential
+            host="h",
+            port=3306,
+            database="d",
+        )
+        with pytest.raises(RuntimeError, match="cursor setup failed"), mgr:
+            pass
+
+        mock_conn.close.assert_called_once()
+
+    @patch("trustyai_service.service.data.storage.maria.utils.mariadb.connect")
+    def test_overlapping_contexts_close_their_own_connections(
+        self, mock_connect: MagicMock
+    ) -> None:
+        """Keep connection ownership local when one manager is shared by threads."""
+        first_connection = MagicMock()
+        second_connection = MagicMock()
+        mock_connect.side_effect = [first_connection, second_connection]
+        manager = MariaConnectionManager(
+            user="u",
+            password="p",  # noqa: S106 -- test credential
+            host="h",
+            port=3306,
+            database="d",
+        )
+        first_entered = threading.Event()
+        second_finished = threading.Event()
+        release_first = threading.Event()
+
+        def first_operation() -> None:
+            with manager:
+                first_entered.set()
+                assert second_finished.wait(timeout=1)
+                assert release_first.wait(timeout=1)
+
+        def second_operation() -> None:
+            assert first_entered.wait(timeout=1)
+            with manager:
+                pass
+            second_finished.set()
+            release_first.set()
+
+        first_thread = threading.Thread(target=first_operation)
+        second_thread = threading.Thread(target=second_operation)
+        first_thread.start()
+        second_thread.start()
+        first_thread.join(timeout=1)
+        second_thread.join(timeout=1)
+
+        assert not first_thread.is_alive()
+        assert not second_thread.is_alive()
+        first_connection.close.assert_called_once()
+        second_connection.close.assert_called_once()
 
 
 # ===========================================================================
