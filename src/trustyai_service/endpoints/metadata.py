@@ -13,7 +13,10 @@ from trustyai_service.endpoints import routes
 from trustyai_service.endpoints.data.data_upload import validate_data_tag
 from trustyai_service.service.constants import (
     INPUT_SUFFIX,
+    METADATA_ID_COL,
     METADATA_SUFFIX,
+    METADATA_TAGS_COL,
+    METADATA_TIMESTAMP_COL,
     OUTPUT_SUFFIX,
     SYNTHETIC_TAG,
 )
@@ -238,11 +241,6 @@ class InferenceIdResponse(BaseModel):
     limit: int
     offset: int
 
-
-# Column indices within the metadata array
-METADATA_ID_COL = 0
-METADATA_TIMESTAMP_COL = 1
-METADATA_TAGS_COL = 3
 
 _VALID_INFERENCE_TYPES = frozenset({"all", "organic"})
 

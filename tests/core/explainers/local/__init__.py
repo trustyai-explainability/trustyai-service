@@ -1,1 +1,1 @@
-"""Local explainer core computation tests and factories."""
+"""Tests for pure local explainability algorithms."""
