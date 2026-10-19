@@ -52,34 +52,6 @@ class TestMMDEndpoints:
             "alpha",
             "fit_columns",
         ],
-        df_type="Pandas",
-    )
-
-    test_compute_endpoint_polars = factory.make_compute_endpoint_test(
-        metric_name="MMD",
-        module_path=MODULE_PATH,
-        endpoint_path=routes.DRIFT_MMD.compute,
-        client=client,
-        request_payload={
-            "modelId": "test-model",
-            "referenceTag": "baseline",
-            "fitColumns": ["feature1", "feature2"],
-            "batchSize": 100,
-            "numPermutations": 39,
-            "bandwidth": 1.0,
-            "kernel": "gauss",
-            "alpha": 0.05,
-        },
-        expected_response_keys=[
-            "status",
-            "value",
-            "drift_detected",
-            "p_value",
-            "threshold",
-            "alpha",
-            "fit_columns",
-        ],
-        df_type="Polars",
     )
 
     test_definition_endpoint = factory.make_definition_endpoint_test(

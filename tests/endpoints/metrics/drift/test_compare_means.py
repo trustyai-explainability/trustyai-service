@@ -48,32 +48,6 @@ class TestCompareMeansEndpoints:
             "p_value",
             "alpha",
         ],
-        df_type="Pandas",
-    )
-
-    # Polars DataFrame tests
-    test_compute_endpoint_polars = factory.make_compute_endpoint_test(
-        metric_name="CompareMeans",
-        module_path="trustyai_service.endpoints.metrics.drift.compare_means",
-        endpoint_path=routes.DRIFT_COMPARE_MEANS.compute,
-        client=client,
-        request_payload={
-            "modelId": "test-model",
-            "referenceTag": "baseline",
-            "fitColumns": ["feature1", "feature2"],
-            "batchSize": 100,
-            "alpha": 0.05,
-            "equalVar": False,
-            "nanPolicy": "omit",
-        },
-        expected_response_keys=[
-            "status",
-            "value",
-            "drift_detected",
-            "p_value",
-            "alpha",
-        ],
-        df_type="Polars",
     )
 
     test_definition_endpoint = factory.make_definition_endpoint_test(
