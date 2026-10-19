@@ -9,7 +9,7 @@ Provides encoding/decoding for types that aren't natively JSON-serializable:
 from __future__ import annotations
 
 import base64
-import datetime
+import datetime as dt
 
 import numpy as np
 
@@ -44,9 +44,9 @@ def json_encoder(obj: object) -> object:
     if isinstance(obj, bytes):
         # Use base64 encoding for binary data (JSON can't handle arbitrary bytes)
         return {"__type__": "bytes", "data": base64.b64encode(obj).decode("ascii")}
-    if isinstance(obj, datetime.datetime):
+    if isinstance(obj, dt.datetime):
         return {"__type__": "datetime", "data": obj.isoformat()}
-    if isinstance(obj, datetime.date):
+    if isinstance(obj, dt.date):
         return {"__type__": "date", "data": obj.isoformat()}
     msg = f"Object of type {type(obj).__name__} is not JSON serializable"
     raise TypeError(msg)
@@ -84,7 +84,7 @@ def json_decoder_hook(obj: object) -> object:  # noqa: C901 -- validation requir
                 msg = "Datetime object missing 'data' field"
                 raise ValueError(msg)
             try:
-                return datetime.datetime.fromisoformat(obj["data"])
+                return dt.datetime.fromisoformat(obj["data"])
             except ValueError as e:
                 msg = f"Invalid ISO datetime format: {e}"
                 raise ValueError(msg) from e
@@ -93,7 +93,7 @@ def json_decoder_hook(obj: object) -> object:  # noqa: C901 -- validation requir
                 msg = "Date object missing 'data' field"
                 raise ValueError(msg)
             try:
-                return datetime.date.fromisoformat(obj["data"])
+                return dt.date.fromisoformat(obj["data"])
             except ValueError as e:
                 msg = f"Invalid ISO date format: {e}"
                 raise ValueError(msg) from e
