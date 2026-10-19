@@ -1,7 +1,7 @@
 """Tests for MoariaDB storage."""
 
 import asyncio
-import datetime
+import datetime as dt
 import unittest
 from collections.abc import Coroutine
 from typing import Any
@@ -59,7 +59,7 @@ class TestMariaDBMigration(unittest.TestCase):
         model_1_metadata = await self.storage.read_data("model1_metadata", 0, 1)
         assert np.array_equal(np.array([[0, 1, 2, 3, 4]] * 100), model_1_inputs)
         assert np.array_equal(np.array([0, 1, 2, 3, 4]), model_1_inputs[0])
-        assert model_1_metadata[0][0] == datetime.datetime.fromisoformat(
+        assert model_1_metadata[0][0] == dt.datetime.fromisoformat(
             "2025-06-09 12:19:06.074828",
         )
         assert model_1_metadata[0][1] == "6decea54-91eb-4726-b6f8-a2f1dee8e81b"
