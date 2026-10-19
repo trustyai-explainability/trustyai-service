@@ -20,7 +20,6 @@ from .model_provider import (
     ProviderInvalidRequestError,
     ProviderUnavailableError,
 )
-from .types import PredictionSource
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -328,12 +327,12 @@ def resolve_outbound_address(
     )[0]
 
 
-def _read_transport_config(*, require_allowlist: bool) -> HttpTransportConfig:
-    """Read deployment settings at execution creation."""
+def get_transport_config() -> HttpTransportConfig:
+    """Read deployed-model transport settings at execution creation."""
     allowlist = normalize_host_allowlist(
         os.getenv("TRUSTYAI_EXPLAINER_ALLOWED_HOSTS", "")
     )
-    if require_allowlist and not allowlist:
+    if not allowlist:
         _configuration_error("Outbound model host allowlist is required")
     private_allowlist = normalize_host_allowlist(
         os.getenv("TRUSTYAI_EXPLAINER_ALLOWED_PRIVATE_HOSTS", "")
@@ -382,21 +381,3 @@ def _read_transport_config(*, require_allowlist: bool) -> HttpTransportConfig:
         follow_redirects=False,
         trust_env=False,
     )
-
-
-def get_transport_config(
-    prediction_source: PredictionSource = PredictionSource.MODEL,
-) -> HttpTransportConfig | None:
-    """Resolve deployment transport settings only for MODEL executions."""
-    if prediction_source == PredictionSource.SURROGATE:
-        return None
-    if prediction_source != PredictionSource.MODEL:
-        _configuration_error("Invalid prediction source")
-    return _read_transport_config(require_allowlist=True)
-
-
-def resolve_transport_config(
-    prediction_source: PredictionSource,
-) -> HttpTransportConfig | None:
-    """Resolve transport settings after selecting the prediction source."""
-    return get_transport_config(prediction_source)
