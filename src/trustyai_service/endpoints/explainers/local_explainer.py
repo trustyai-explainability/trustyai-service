@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import importlib
 from http import HTTPStatus
-from typing import Any
+from typing import Any, cast
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from trustyai_service.endpoints import routes
+from trustyai_service.service.config import feature_flags
 
+_lime_placeholder_router = APIRouter()
+_shap_placeholder_router = APIRouter()
 _placeholder_router = APIRouter()
 
 
@@ -28,7 +32,7 @@ class LocalExplanationPlaceholderRequest(BaseModel):
     config: dict[str, Any]
 
 
-@_placeholder_router.post(routes.EXPLAINER_LOCAL_LIME)
+@_lime_placeholder_router.post(routes.EXPLAINER_LOCAL_LIME)
 async def local_lime_explanation(
     request: LocalExplanationPlaceholderRequest,
 ) -> dict[str, Any]:
@@ -40,7 +44,7 @@ async def local_lime_explanation(
     )
 
 
-@_placeholder_router.post(routes.EXPLAINER_LOCAL_SHAP)
+@_shap_placeholder_router.post(routes.EXPLAINER_LOCAL_SHAP)
 async def local_shap_explanation(
     request: LocalExplanationPlaceholderRequest,
 ) -> dict[str, Any]:
@@ -123,9 +127,43 @@ async def local_tssaliency_explanation(
     )
 
 
+def _include_optional_router(
+    local_router: APIRouter,
+    module_name: str,
+    placeholder_router: APIRouter,
+) -> None:
+    """Include an optional algorithm router or its dedicated placeholder."""
+    try:
+        module = importlib.import_module(module_name)
+    except ModuleNotFoundError as error:
+        if error.name != module_name:
+            raise
+        local_router.include_router(placeholder_router)
+    else:
+        local_router.include_router(cast("APIRouter", module.__dict__["router"]))
+
+
 def build_router() -> APIRouter:
-    """Build a fresh local router containing only shared placeholders."""
+    """Build a fresh local router using the current application flags."""
     local_router = APIRouter()
+    enabled = (
+        feature_flags.ENDPOINTS["explainer"]
+        and feature_flags.ENDPOINTS["explainer_local"]
+    )
+    if enabled:
+        _include_optional_router(
+            local_router,
+            "trustyai_service.endpoints.explainers.local_lime",
+            _lime_placeholder_router,
+        )
+        _include_optional_router(
+            local_router,
+            "trustyai_service.endpoints.explainers.local_shap",
+            _shap_placeholder_router,
+        )
+    else:
+        local_router.include_router(_lime_placeholder_router)
+        local_router.include_router(_shap_placeholder_router)
     local_router.include_router(_placeholder_router)
     return local_router
 
