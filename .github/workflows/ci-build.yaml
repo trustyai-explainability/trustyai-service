@@ -37,7 +37,14 @@ jobs:
           grep -A 1 'org.opencontainers.image.base.name=' Containerfile | grep -q 'quay.expires-after=7d' || { echo "::error::Failed to inject quay.expires-after label after base.name line"; exit 1; }
 
       - name: Build image
-        run: docker build -f Containerfile --build-arg VERSION="0.0.0.dev0" -t trustyai-ci:${{ github.event.pull_request.head.sha }} .
+        env:
+          VCS_REF: ${{ github.sha }}
+        run: |
+          docker build -f Containerfile \
+            --build-arg VERSION="0.0.0.dev0" \
+            --build-arg BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+            --build-arg VCS_REF="${VCS_REF}" \
+            -t trustyai-ci:${{ github.event.pull_request.head.sha }} .
 
       - name: Save image
         run: docker save trustyai-ci:${{ github.event.pull_request.head.sha }} | gzip > /tmp/image.tar.gz
@@ -48,7 +55,7 @@ jobs:
           echo "${{ github.event.pull_request.head.sha }}" > /tmp/pr-sha.txt
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ci-build
           path: |

@@ -46,31 +46,6 @@ class TestKSTestStreamingEndpoints:
             "alpha",
             "epsilon",
         ],
-        df_type="Pandas",
-    )
-
-    # Polars DataFrame tests
-    test_compute_endpoint_polars = factory.make_compute_endpoint_test(
-        metric_name="KSTestStreaming",
-        module_path="trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov_streaming",
-        endpoint_path="/metrics/drift/ksteststreaming",
-        client=client,
-        request_payload={
-            "modelId": "test-model",
-            "referenceTag": "baseline",
-            "fitColumns": ["feature1", "feature2"],
-            "batchSize": 100,
-            "epsilon": 0.01,
-        },
-        expected_response_keys=[
-            "status",
-            "value",
-            "drift_detected",
-            "p_value",
-            "alpha",
-            "epsilon",
-        ],
-        df_type="Polars",
     )
 
     test_definition_endpoint = factory.make_definition_endpoint_test(
@@ -408,7 +383,6 @@ class TestKSTestStreamingEndpoints:
             "alpha",
             "epsilon",
         ],
-        df_type="Polars",
     )
 
     # ========================================================================
@@ -512,7 +486,6 @@ class TestApproxKSTestDeprecatedEndpoints:
             "alpha",
             "epsilon",
         ],
-        df_type="Pandas",
     )
 
     # Test deprecated definition endpoint forwards to new endpoint

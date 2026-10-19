@@ -29,7 +29,6 @@ from uuid import uuid4
 
 import numpy as np
 import pandas as pd
-import polars as pl
 from fastapi.testclient import TestClient
 from prometheus_client import CollectorRegistry
 
@@ -55,7 +54,6 @@ def make_compute_endpoint_test(
     client: TestClient,
     request_payload: dict[str, Any],
     expected_response_keys: list[str],
-    df_type: Literal["Pandas", "Polars"] = "Polars",
 ) -> Callable[[], None]:
     """Create a test for the compute endpoint.
 
@@ -67,7 +65,6 @@ def make_compute_endpoint_test(
     :param client: TestClient instance for making requests
     :param request_payload: Request payload dictionary
     :param expected_response_keys: Keys expected in successful response
-    :param df_type: Type of DataFrame to use ("Pandas" or "Polars")
     :return: Test function
     """
 
@@ -75,9 +72,9 @@ def make_compute_endpoint_test(
     @patch(f"{module_path}.get_data_source")
     def test_impl(_: object, mock_ds: MagicMock, mock_shared_ds: MagicMock) -> None:
         """Test compute endpoint returns valid response structure."""
-        # Create sample dataframe (Pandas or Polars based on df_type)
+        # Create sample dataframe
         columns = request_payload.get("fitColumns", ["feature1"])
-        sample_df = _create_sample_dataframe(columns, df_type=df_type)
+        sample_df = _create_sample_dataframe(columns)
 
         # Mock data source
         mock_data_source = MagicMock()
@@ -332,7 +329,6 @@ def make_compute_endpoint_error_test(
     expected_error_substring: str,
     *,
     setup_mocks: bool = True,
-    df_type: Literal["Pandas", "Polars"] = "Polars",
 ) -> Callable[[], None]:
     """Create a test for compute endpoint error cases.
 
@@ -353,7 +349,7 @@ def make_compute_endpoint_error_test(
         """Test compute endpoint error handling."""
         if setup_mocks:
             columns = ["feature1", "feature2"]
-            sample_df = _create_sample_dataframe(columns, df_type=df_type)
+            sample_df = _create_sample_dataframe(columns)
 
             # Mock data source
             mock_data_source = MagicMock()
@@ -779,12 +775,12 @@ def make_compute_empty_reference_data_test(
         mock_data_source = MagicMock()
 
         # Return empty DataFrame for reference data
-        empty_df = pl.DataFrame()
+        empty_df = pd.DataFrame()
         mock_data_source.get_dataframe_by_tag = AsyncMock(return_value=empty_df)
 
         # Return non-empty DataFrame for current data (won't be reached)
         mock_data_source.get_organic_dataframe = AsyncMock(
-            return_value=pl.DataFrame({"feature1": [1.0, 2.0, 3.0]}),
+            return_value=pd.DataFrame({"feature1": [1.0, 2.0, 3.0]}),
         )
         mock_data_source.get_dataframe = AsyncMock(return_value=empty_df)
 
@@ -833,11 +829,11 @@ def make_compute_empty_current_data_test(
         mock_data_source = MagicMock()
 
         # Return non-empty DataFrame for reference data
-        reference_df = pl.DataFrame({"feature1": [1.0, 2.0, 3.0]})
+        reference_df = pd.DataFrame({"feature1": [1.0, 2.0, 3.0]})
         mock_data_source.get_dataframe_by_tag = AsyncMock(return_value=reference_df)
 
         # Return empty DataFrame for current data
-        empty_df = pl.DataFrame()
+        empty_df = pd.DataFrame()
         mock_data_source.get_organic_dataframe = AsyncMock(return_value=empty_df)
         mock_data_source.get_dataframe = AsyncMock(return_value=empty_df)
 
@@ -1244,22 +1240,18 @@ def make_retrieve_default_tags_called_directly_by_prometheus_publisher_test(
 def _create_sample_dataframe(
     columns: list[str],
     n_samples: int = 100,
-    df_type: Literal["Pandas", "Polars"] = "Polars",
-) -> pd.DataFrame | pl.DataFrame:
+) -> pd.DataFrame:
     """Create a sample DataFrame for testing.
 
     :param columns: List of column names
     :param n_samples: Number of samples to generate
-    :param df_type: Type of DataFrame to create ("Pandas" or "Polars")
-    :return: Pandas or Polars DataFrame
+    :return: Pandas DataFrame
     """
     rng = np.random.default_rng()
     data = {}
     for col in columns:
         data[col] = rng.standard_normal(n_samples)
 
-    if df_type == "Polars":
-        return pl.DataFrame(data)
     return pd.DataFrame(data)
 
 

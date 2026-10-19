@@ -4,7 +4,7 @@ Tests custom encoding/decoding for numpy arrays, scalars, binary data, and datet
 """
 
 import base64
-import datetime
+import datetime as dt
 import json
 
 import numpy as np
@@ -62,14 +62,14 @@ class TestJsonEncoder:
 
     def test_encode_datetime(self) -> None:
         """Test encoding datetime objects."""
-        dt = datetime.datetime(2026, 1, 15, 10, 30, 0, tzinfo=datetime.UTC)
-        result = json_encoder(dt)
+        value = dt.datetime(2026, 1, 15, 10, 30, 0, tzinfo=dt.UTC)
+        result = json_encoder(value)
 
-        assert result == {"__type__": "datetime", "data": dt.isoformat()}
+        assert result == {"__type__": "datetime", "data": value.isoformat()}
 
     def test_encode_date(self) -> None:
         """Test encoding date objects."""
-        d = datetime.date(2026, 1, 15)
+        d = dt.date(2026, 1, 15)
         result = json_encoder(d)
 
         assert result == {"__type__": "date", "data": "2026-01-15"}
@@ -139,16 +139,16 @@ class TestJsonDecoderHook:
         encoded = {"__type__": "datetime", "data": "2026-01-15T10:30:00+00:00"}
         result = json_decoder_hook(encoded)
 
-        assert isinstance(result, datetime.datetime)
-        assert result == datetime.datetime(2026, 1, 15, 10, 30, 0, tzinfo=datetime.UTC)
+        assert isinstance(result, dt.datetime)
+        assert result == dt.datetime(2026, 1, 15, 10, 30, 0, tzinfo=dt.UTC)
 
     def test_decode_date(self) -> None:
         """Test decoding ISO 8601 date strings."""
         encoded = {"__type__": "date", "data": "2026-01-15"}
         result = json_decoder_hook(encoded)
 
-        assert isinstance(result, datetime.date)
-        assert result == datetime.date(2026, 1, 15)
+        assert isinstance(result, dt.date)
+        assert result == dt.date(2026, 1, 15)
 
     def test_decode_dict_with_type_but_not_bytes(self) -> None:
         """Test dict with unknown __type__ passes through unchanged."""
@@ -225,7 +225,7 @@ class TestEncoderDecoderRoundtrip:
 
     def test_roundtrip_datetime(self) -> None:
         """Test datetime survives encode/decode roundtrip."""
-        original = datetime.datetime(2026, 1, 15, 10, 30, 0, tzinfo=datetime.UTC)
+        original = dt.datetime(2026, 1, 15, 10, 30, 0, tzinfo=dt.UTC)
 
         encoded = json_encoder(original)
         json_str = json.dumps(encoded)
@@ -235,7 +235,7 @@ class TestEncoderDecoderRoundtrip:
 
     def test_roundtrip_date(self) -> None:
         """Test date survives encode/decode roundtrip."""
-        original = datetime.date(2026, 1, 15)
+        original = dt.date(2026, 1, 15)
 
         encoded = json_encoder(original)
         json_str = json.dumps(encoded)

@@ -86,10 +86,16 @@ Interactive OpenAPI documentation is at
 
 ```bash
 # Minimal (PVC storage only)
-podman build -t trustyai:latest .
+podman build \
+  --build-arg BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+  --build-arg VCS_REF="$(git rev-parse HEAD)" \
+  -t trustyai:latest .
 
 # With MariaDB support
-podman build -t trustyai:latest --build-arg EXTRAS="mariadb" .
+podman build \
+  --build-arg BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+  --build-arg VCS_REF="$(git rev-parse HEAD)" \
+  -t trustyai:latest --build-arg EXTRAS="mariadb" .
 
 # Run
 podman run -p 8080:8080 trustyai:latest
