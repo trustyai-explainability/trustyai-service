@@ -20,17 +20,23 @@ _DEFAULT_POOL_TIMEOUT = 30
 _DEFAULT_POOL_RECYCLE = (
     1800  # recycle connections after 30 min to dodge server idle-kills
 )
+_DEFAULT_SYNCHRONOUS_COMMIT = "on"
 
 
-def _int_env(name: str, default: int) -> int:
-    """Read an integer env var, falling back to ``default`` when unset/invalid."""
+def _int_env(name: str, default: int, *, minimum: int) -> int:
+    """Read and validate an integer env var, using ``default`` only when unset."""
     raw = os.environ.get(name)
     if raw is None:
         return default
     try:
-        return int(raw)
+        value = int(raw)
     except ValueError:
-        return default
+        msg = f"Invalid {name}={raw!r}: must be an integer"
+        raise ValueError(msg) from None
+    if value < minimum:
+        msg = f"Invalid {name}={raw!r}: must be at least {minimum}"
+        raise ValueError(msg)
+    return value
 
 
 def pool_kwargs_from_env() -> dict[str, int]:
@@ -39,15 +45,130 @@ def pool_kwargs_from_env() -> dict[str, int]:
     Env vars: ``DATABASE_POOL_SIZE``, ``DATABASE_MAX_OVERFLOW``,
     ``DATABASE_POOL_TIMEOUT``, ``DATABASE_POOL_RECYCLE``.
     """
+    errors: list[str] = []
+
+    def pool_int(name: str, default: int, *, minimum: int) -> int:
+        try:
+            return _int_env(name, default, minimum=minimum)
+        except ValueError as error:
+            errors.append(str(error))
+            return default
+
+    pool_size = pool_int("DATABASE_POOL_SIZE", _DEFAULT_POOL_SIZE, minimum=1)
+    max_overflow = pool_int("DATABASE_MAX_OVERFLOW", _DEFAULT_MAX_OVERFLOW, minimum=0)
+    pool_timeout = pool_int("DATABASE_POOL_TIMEOUT", _DEFAULT_POOL_TIMEOUT, minimum=1)
+    # SQLAlchemy uses -1 to disable connection recycling.
+    pool_recycle = pool_int("DATABASE_POOL_RECYCLE", _DEFAULT_POOL_RECYCLE, minimum=-1)
+    budget_raw = os.environ.get("DATABASE_MAX_CONNECTIONS_BUDGET")
+    if budget_raw is not None:
+        budget = pool_int("DATABASE_MAX_CONNECTIONS_BUDGET", 0, minimum=1)
+        if budget > 0:
+            pool_ceiling = pool_size + max_overflow
+            if pool_ceiling > budget:
+                errors.append(
+                    f"DATABASE_MAX_CONNECTIONS_BUDGET={budget}: configured pool "
+                    f"ceiling {pool_ceiling} exceeds the per-pod budget"
+                )
+
+    if errors:
+        raise ValueError("; ".join(errors))
+
     return {
-        # QueuePool treats pool_size=0 as "unlimited", which removes the per-pod
-        # connection cap this sizing exists to enforce, so clamp to at least 1.
-        "pool_size": max(1, _int_env("DATABASE_POOL_SIZE", _DEFAULT_POOL_SIZE)),
-        "max_overflow": _int_env("DATABASE_MAX_OVERFLOW", _DEFAULT_MAX_OVERFLOW),
-        "pool_timeout": _int_env("DATABASE_POOL_TIMEOUT", _DEFAULT_POOL_TIMEOUT),
-        "pool_recycle": _int_env("DATABASE_POOL_RECYCLE", _DEFAULT_POOL_RECYCLE),
+        "pool_size": pool_size,
+        "max_overflow": max_overflow,
+        "pool_timeout": pool_timeout,
+        "pool_recycle": pool_recycle,
         "pool_pre_ping": True,
     }
+
+
+def postgres_tuning_from_env() -> dict[str, str | int | None]:
+    """Read and validate PostgreSQL session settings from the environment."""
+    application_name = os.environ.get("DATABASE_APPLICATION_NAME")
+    if application_name is not None and "\x00" in application_name:
+        msg = "Invalid DATABASE_APPLICATION_NAME: NUL characters are not supported"
+        raise ValueError(msg)
+
+    statement_timeout_ms = None
+    if "DATABASE_STATEMENT_TIMEOUT_MS" in os.environ:
+        statement_timeout_ms = _int_env("DATABASE_STATEMENT_TIMEOUT_MS", 0, minimum=0)
+
+    raw_synchronous_commit = os.environ.get(
+        "DATABASE_SYNCHRONOUS_COMMIT", _DEFAULT_SYNCHRONOUS_COMMIT
+    )
+    synchronous_commit = {
+        "1": "on",
+        "true": "on",
+        "yes": "on",
+        "on": "on",
+        "0": "off",
+        "false": "off",
+        "no": "off",
+        "off": "off",
+    }.get(raw_synchronous_commit.strip().lower())
+    if synchronous_commit is None:
+        msg = (
+            "Invalid DATABASE_SYNCHRONOUS_COMMIT="
+            f"{raw_synchronous_commit!r}: must be a boolean (true or false)"
+        )
+        raise ValueError(msg)
+
+    return {
+        "application_name": application_name,
+        "statement_timeout_ms": statement_timeout_ms,
+        "synchronous_commit": synchronous_commit,
+    }
+
+
+def sqlite_pragmas_from_env() -> dict[str, str | int]:
+    """Read and validate configured SQLite pragmas.
+
+    Only explicitly configured pragmas are returned, preserving SQLite's
+    existing defaults when no ConfigMap value is supplied.
+    """
+    pragmas: dict[str, str | int] = {}
+
+    journal_mode = os.environ.get("DATABASE_SQLITE_JOURNAL_MODE")
+    if journal_mode is not None:
+        normalized_mode = journal_mode.strip().upper()
+        if normalized_mode not in {
+            "DELETE",
+            "TRUNCATE",
+            "PERSIST",
+            "MEMORY",
+            "WAL",
+            "OFF",
+        }:
+            msg = (
+                "Invalid DATABASE_SQLITE_JOURNAL_MODE="
+                f"{journal_mode!r}: unsupported SQLite journal mode"
+            )
+            raise ValueError(msg)
+        pragmas["journal_mode"] = normalized_mode
+
+    synchronous = os.environ.get("DATABASE_SQLITE_SYNCHRONOUS")
+    if synchronous is not None:
+        normalized_synchronous = synchronous.strip().upper()
+        synchronous_values = {"OFF": 0, "NORMAL": 1, "FULL": 2, "EXTRA": 3}
+        if normalized_synchronous not in synchronous_values:
+            msg = (
+                "Invalid DATABASE_SQLITE_SYNCHRONOUS="
+                f"{synchronous!r}: expected OFF, NORMAL, FULL, or EXTRA"
+            )
+            raise ValueError(msg)
+        pragmas["synchronous"] = synchronous_values[normalized_synchronous]
+
+    busy_timeout_ms = os.environ.get("DATABASE_SQLITE_BUSY_TIMEOUT_MS")
+    if busy_timeout_ms is not None:
+        pragmas["busy_timeout"] = _int_env(
+            "DATABASE_SQLITE_BUSY_TIMEOUT_MS", 0, minimum=0
+        )
+
+    cache_size_kb = os.environ.get("DATABASE_SQLITE_CACHE_SIZE_KB")
+    if cache_size_kb is not None:
+        pragmas["cache_size"] = -_int_env("DATABASE_SQLITE_CACHE_SIZE_KB", 1, minimum=1)
+
+    return pragmas
 
 
 def build_engine(
@@ -94,9 +215,20 @@ def postgres_connect_args(ssl_ca: str | None) -> dict[str, Any]:
     refuses that unless ``DATABASE_ALLOW_INSECURE_TLS`` is set, so a ``None`` here
     means the deployment opted in explicitly (or is a direct, in-test construction).
     """
+    args: dict[str, Any] = {}
     if ssl_ca:
-        return {"sslmode": "verify-full", "sslrootcert": ssl_ca}
-    return {}
+        args.update({"sslmode": "verify-full", "sslrootcert": ssl_ca})
+
+    tuning = postgres_tuning_from_env()
+    if tuning["application_name"] is not None:
+        args["application_name"] = tuning["application_name"]
+
+    options = []
+    if tuning["statement_timeout_ms"] is not None:
+        options.append(f"-c statement_timeout={tuning['statement_timeout_ms']}")
+    options.append(f"-c synchronous_commit={tuning['synchronous_commit']}")
+    args["options"] = " ".join(options)
+    return args
 
 
 def mariadb_url(

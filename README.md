@@ -120,7 +120,23 @@ podman run -p 8080:8080 trustyai:latest
 | `DATABASE_DATABASE` | — | Database name |
 | `DATABASE_TLS_CA_CERT` | `/etc/tls/db/ca.crt` | CA certificate used to verify the database server |
 | `DATABASE_ALLOW_INSECURE_TLS` | `false` | Allow a database connection with no CA certificate (development only) |
+| `DATABASE_POOL_SIZE` | `5` | Base connection pool size per service pod (must be at least `1`) |
+| `DATABASE_MAX_OVERFLOW` | `10` | Maximum extra pooled connections per pod (must be nonnegative) |
+| `DATABASE_POOL_TIMEOUT` | `30` | Seconds to wait for a pooled connection |
+| `DATABASE_POOL_RECYCLE` | `1800` | Seconds before recycling a connection (`-1` disables recycling) |
+| `DATABASE_MAX_CONNECTIONS_BUDGET` | — | Optional per-pod limit for pool size plus max overflow |
+| `DATABASE_APPLICATION_NAME` | — | PostgreSQL session application name |
+| `DATABASE_STATEMENT_TIMEOUT_MS` | — | Optional PostgreSQL statement timeout in milliseconds (`0` disables it) |
+| `DATABASE_SYNCHRONOUS_COMMIT` | `on` | PostgreSQL session `synchronous_commit` setting (`true`/`false`, `on`/`off`) |
 | `STORAGE_DATABASE_PATH` | `:memory:` | SQLite database path |
+| `DATABASE_SQLITE_JOURNAL_MODE` | SQLite default | SQLite journal mode (`DELETE`, `TRUNCATE`, `PERSIST`, `MEMORY`, `WAL`, or `OFF`) |
+| `DATABASE_SQLITE_SYNCHRONOUS` | SQLite default | SQLite synchronous setting (`OFF`, `NORMAL`, `FULL`, or `EXTRA`) |
+| `DATABASE_SQLITE_BUSY_TIMEOUT_MS` | SQLite default | SQLite lock wait timeout in milliseconds |
+| `DATABASE_SQLITE_CACHE_SIZE_KB` | SQLite default | SQLite page cache size in KiB |
+
+Invalid pool or database tuning values fail startup validation rather than
+silently falling back to defaults. Pool settings apply to PostgreSQL and the
+deprecated MariaDB backend; SQLite settings apply to SQLite connections.
 
 TLS is enabled automatically when both the certificate and key
 files are present.

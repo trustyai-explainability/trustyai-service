@@ -53,6 +53,67 @@ async def test_memory_instances_are_independent() -> None:
         second._engine.dispose()
 
 
+def test_configured_pragmas_apply_to_each_file_connection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ConfigMap pragma values are applied on every new SQLite connection."""
+    path = tmp_path / "configured.sqlite"
+    monkeypatch.setenv("DATABASE_SQLITE_JOURNAL_MODE", "wal")
+    monkeypatch.setenv("DATABASE_SQLITE_SYNCHRONOUS", "FULL")
+    monkeypatch.setenv("DATABASE_SQLITE_BUSY_TIMEOUT_MS", "7000")
+    monkeypatch.setenv("DATABASE_SQLITE_CACHE_SIZE_KB", "4000")
+
+    storage = SQLiteStorage(str(path))
+    try:
+        for _ in range(2):
+            storage._engine.dispose()
+            with storage._engine.connect() as connection:
+                assert (
+                    connection.exec_driver_sql("PRAGMA journal_mode").scalar() == "wal"
+                )
+                assert connection.exec_driver_sql("PRAGMA synchronous").scalar() == 2
+                assert (
+                    connection.exec_driver_sql("PRAGMA busy_timeout").scalar() == 7000
+                )
+                assert connection.exec_driver_sql("PRAGMA cache_size").scalar() == -4000
+    finally:
+        storage._engine.dispose()
+
+
+@pytest.mark.parametrize(
+    ("name", "value", "message"),
+    [
+        (
+            "DATABASE_SQLITE_JOURNAL_MODE",
+            "unsafe",
+            "DATABASE_SQLITE_JOURNAL_MODE='unsafe'",
+        ),
+        (
+            "DATABASE_SQLITE_SYNCHRONOUS",
+            "immediate",
+            "DATABASE_SQLITE_SYNCHRONOUS='immediate'",
+        ),
+        (
+            "DATABASE_SQLITE_BUSY_TIMEOUT_MS",
+            "-1",
+            "DATABASE_SQLITE_BUSY_TIMEOUT_MS='-1'",
+        ),
+        (
+            "DATABASE_SQLITE_CACHE_SIZE_KB",
+            "0",
+            "DATABASE_SQLITE_CACHE_SIZE_KB='0'",
+        ),
+    ],
+)
+def test_invalid_sqlite_pragma_is_rejected(
+    name: str, value: str, message: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Invalid SQLite pragma values fail before opening the database."""
+    monkeypatch.setenv(name, value)
+    with pytest.raises(ValueError, match=message):
+        SQLiteStorage(":memory:")
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("backend", ["memory", "file"])
 async def test_discovery_cannot_rollback_a_write(
