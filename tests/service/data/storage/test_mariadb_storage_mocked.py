@@ -25,10 +25,10 @@ if TYPE_CHECKING:
 
 pytest.importorskip("mariadb")
 
-from trustyai_service.service.data.storage.maria.legacy_maria_reader import (  # noqa: E402
+from trustyai_service.service.data.storage.maria.legacy_maria_reader import (
     LegacyMariaDBStorageReader,
 )
-from trustyai_service.service.data.storage.maria.utils import (  # noqa: E402
+from trustyai_service.service.data.storage.maria.utils import (
     MariaConnectionManager,
     get_clean_column_names,
     require_existing_dataset,
@@ -316,6 +316,7 @@ class TestMariaDBStorageMocked:
             database="testdb",
             ssl_ca="/path/to/ca.crt",
         )
+
     def test_build_table_name(self) -> None:
         """_build_table_name produces the expected format."""
         storage = self._make_storage()
