@@ -18,26 +18,26 @@ from trustyai_service.service.data.storage.pvc import PVCStorage
 # Default location the operator mounts the database CA certificate at.
 DEFAULT_TLS_CA_CERT = "/etc/tls/db/ca.crt"
 
-# Opt-out for authenticated TLS. Without a CA certificate both drivers fall back
-# to an unverified (and, for libpq's `sslmode=prefer`, possibly plaintext)
-# connection, so a database connection is refused unless the deployment says
-# explicitly that it accepts that risk.
+# Optional opt-out of the default no-CA connection behavior. When a CA file is
+# available, database connections verify the server certificate.
 INSECURE_TLS_ENV_VAR = "DATABASE_ALLOW_INSECURE_TLS"
 
 _TRUTHY = ("1", "true", "yes", "on")
 
 
 def _insecure_tls_allowed() -> bool:
-    """Return True when the deployment opted out of authenticated TLS."""
-    return os.environ.get(INSECURE_TLS_ENV_VAR, "").lower() in _TRUTHY
+    """Return True unless the deployment explicitly requires an available CA."""
+    value = os.environ.get(INSECURE_TLS_ENV_VAR)
+    return value is None or value.lower() in _TRUTHY
 
 
 def _resolve_tls_ca() -> tuple[str, str | None]:
     """Return the configured CA path and the same path only if it is a real file.
 
     An empty ``DATABASE_TLS_CA_CERT`` resolves to the current directory, and a
-    directory is not a usable CA bundle, so both must be treated as "no CA"
-    rather than being handed to the driver.
+    directory is not a usable CA bundle, so neither is handed to the driver.
+    Validation separately rejects an unusable path when the variable was
+    explicitly configured and insecure connections were not explicitly allowed.
     """
     ca_path = os.environ.get("DATABASE_TLS_CA_CERT", DEFAULT_TLS_CA_CERT)
     usable = bool(ca_path) and Path(ca_path).is_file()
@@ -45,13 +45,11 @@ def _resolve_tls_ca() -> tuple[str, str | None]:
 
 
 def _tls_error(backend: str, ca_path: str) -> str:
-    """Build the error message for a missing CA certificate."""
+    """Build the error message for a configured but unusable CA certificate."""
     return (
-        f"{backend} storage requires authenticated TLS but no CA certificate was "
-        f"found at '{ca_path}'. Mount the database CA certificate there (or point "
-        f"DATABASE_TLS_CA_CERT at it). For local development against a database "
-        f"without TLS, set {INSECURE_TLS_ENV_VAR}=true to accept an unverified, "
-        f"possibly plaintext connection."
+        f"{backend} storage requires a usable CA certificate at '{ca_path}'. Mount "
+        f"a valid CA certificate there or unset DATABASE_TLS_CA_CERT. A configured "
+        f"CA path will not fall back to an insecure connection."
     )
 
 
@@ -120,6 +118,7 @@ class MariaDBConfig:
             raise ValueError(msg) from e
 
         self.ssl_ca_path, self.ssl_ca = _resolve_tls_ca()
+        self.tls_ca_configured = "DATABASE_TLS_CA_CERT" in os.environ
         self.allow_insecure_tls = _insecure_tls_allowed()
 
     def validate(self) -> None:
@@ -145,7 +144,9 @@ class MariaDBConfig:
         # Fail readiness on malformed pool values or a per-pod connection budget
         # that the configured pool could exceed.
         pool_kwargs_from_env()
-        if self.ssl_ca is None and not self.allow_insecure_tls:
+        if self.ssl_ca is None and (
+            not self.allow_insecure_tls or self.tls_ca_configured
+        ):
             raise ValueError(_tls_error("MariaDB", self.ssl_ca_path))
 
 
@@ -178,6 +179,7 @@ class PostgreSQLConfig:
             raise ValueError(msg) from e
 
         self.ssl_ca_path, self.ssl_ca = _resolve_tls_ca()
+        self.tls_ca_configured = "DATABASE_TLS_CA_CERT" in os.environ
         self.allow_insecure_tls = _insecure_tls_allowed()
 
     def validate(self) -> None:
@@ -204,7 +206,9 @@ class PostgreSQLConfig:
             raise ValueError(msg)
         pool_kwargs_from_env()
         postgres_tuning_from_env()
-        if self.ssl_ca is None and not self.allow_insecure_tls:
+        if self.ssl_ca is None and (
+            not self.allow_insecure_tls or self.tls_ca_configured
+        ):
             raise ValueError(_tls_error("PostgreSQL", self.ssl_ca_path))
 
 

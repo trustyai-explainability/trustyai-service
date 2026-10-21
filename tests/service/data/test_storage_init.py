@@ -329,10 +329,9 @@ class TestStorageInterfaceEnvVars:
                 "DATABASE_HOST": "localhost",
                 "DATABASE_PORT": str(DEFAULT_MARIADB_PORT),
                 "DATABASE_DATABASE": "test_db",
-                "DATABASE_TLS_CA_CERT": "/nonexistent/path/ca.crt",
                 "DATABASE_ATTEMPT_MIGRATION": "0",
             },
-            clear=False,
+            clear=True,
         ):
             get_storage_interface()
             mock_storage.assert_called_once_with(
@@ -851,9 +850,8 @@ class TestStorageInterfacePostgresEnvVars:
                 "DATABASE_HOST": "localhost",
                 "DATABASE_PORT": str(DEFAULT_POSTGRES_PORT),
                 "DATABASE_DATABASE": "test_db",
-                "DATABASE_TLS_CA_CERT": "/nonexistent/path/ca.crt",
             },
-            clear=False,
+            clear=True,
         ):
             get_storage_interface()
             mock_storage.assert_called_once_with(
@@ -1009,28 +1007,37 @@ class TestPostgreSQLConfig:
 
 
 class TestTLSPolicy:
-    """Authenticated TLS is required unless the deployment opts out explicitly."""
+    """TLS is optional without a CA unless the deployment requires one."""
 
     BASE_ENV: ClassVar[dict[str, str]] = {
         "DATABASE_USERNAME": "u",
         "DATABASE_PASSWORD": "p",  # pragma: allowlist secret
         "DATABASE_HOST": "h",
         "DATABASE_DATABASE": "d",
-        "DATABASE_TLS_CA_CERT": "/nonexistent/path/ca.crt",
     }
 
     @pytest.mark.parametrize("config_cls", [MariaDBConfig, PostgreSQLConfig])
-    def test_validate_rejects_missing_ca(self, config_cls: type) -> None:
-        """A missing CA certificate fails validation instead of falling back."""
+    def test_validate_accepts_missing_ca_by_default(self, config_cls: type) -> None:
+        """A CA is optional unless TLS verification is explicitly required."""
+        with patch.dict(os.environ, self.BASE_ENV, clear=True):
+            config = config_cls()
+            config.validate()
+            assert config.ssl_ca is None
+            assert config.allow_insecure_tls is True
+
+    @pytest.mark.parametrize("config_cls", [MariaDBConfig, PostgreSQLConfig])
+    def test_validate_rejects_missing_ca_when_required(self, config_cls: type) -> None:
+        """DATABASE_ALLOW_INSECURE_TLS=false requires a usable CA certificate."""
+        env = {**self.BASE_ENV, "DATABASE_ALLOW_INSECURE_TLS": "false"}
         with (
-            patch.dict(os.environ, self.BASE_ENV, clear=True),
-            pytest.raises(ValueError, match="requires authenticated TLS"),
+            patch.dict(os.environ, env, clear=True),
+            pytest.raises(ValueError, match="requires a usable CA certificate"),
         ):
             config_cls().validate()
 
     @pytest.mark.parametrize("config_cls", [MariaDBConfig, PostgreSQLConfig])
     def test_validate_accepts_missing_ca_with_opt_in(self, config_cls: type) -> None:
-        """DATABASE_ALLOW_INSECURE_TLS permits a connection with no CA certificate."""
+        """DATABASE_ALLOW_INSECURE_TLS=true permits a connection with no CA."""
         env = {**self.BASE_ENV, "DATABASE_ALLOW_INSECURE_TLS": "true"}
         with patch.dict(os.environ, env, clear=True):
             config = config_cls()
@@ -1063,17 +1070,21 @@ class TestTLSPolicy:
         env = {**self.BASE_ENV, "DATABASE_ALLOW_INSECURE_TLS": flag}
         with (
             patch.dict(os.environ, env, clear=True),
-            pytest.raises(ValueError, match="requires authenticated TLS"),
+            pytest.raises(ValueError, match="requires a usable CA certificate"),
         ):
             PostgreSQLConfig().validate()
 
     @pytest.mark.parametrize("config_cls", [MariaDBConfig, PostgreSQLConfig])
     def test_empty_ca_path_is_rejected(self, config_cls: type) -> None:
         """An empty DATABASE_TLS_CA_CERT resolves to '.' and must not pass."""
-        env = {**self.BASE_ENV, "DATABASE_TLS_CA_CERT": ""}
+        env = {
+            **self.BASE_ENV,
+            "DATABASE_ALLOW_INSECURE_TLS": "true",
+            "DATABASE_TLS_CA_CERT": "",
+        }
         with (
             patch.dict(os.environ, env, clear=True),
-            pytest.raises(ValueError, match="requires authenticated TLS"),
+            pytest.raises(ValueError, match="requires a usable CA certificate"),
         ):
             config_cls().validate()
 
@@ -1081,10 +1092,14 @@ class TestTLSPolicy:
     def test_directory_ca_path_is_rejected(self, config_cls: type) -> None:
         """A directory is not a usable CA bundle."""
         with tempfile.TemporaryDirectory() as ca_dir:
-            env = {**self.BASE_ENV, "DATABASE_TLS_CA_CERT": ca_dir}
+            env = {
+                **self.BASE_ENV,
+                "DATABASE_ALLOW_INSECURE_TLS": "true",
+                "DATABASE_TLS_CA_CERT": ca_dir,
+            }
             with (
                 patch.dict(os.environ, env, clear=True),
-                pytest.raises(ValueError, match="requires authenticated TLS"),
+                pytest.raises(ValueError, match="requires a usable CA certificate"),
             ):
                 config_cls().validate()
 
