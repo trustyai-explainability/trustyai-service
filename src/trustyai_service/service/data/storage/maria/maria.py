@@ -118,6 +118,7 @@ class MariaDBStorage(StorageInterface):
         self.connection_manager = MariaConnectionManager(
             user, password, host, port, database, ssl_ca=ssl_ca
         )
+        self.ssl_ca = ssl_ca
 
         self.schema_prefix = "trustyai_v2"
         self.dataset_reference_table = f"{self.schema_prefix}_table_reference"
@@ -199,6 +200,7 @@ class MariaDBStorage(StorageInterface):
             host=self.host,
             port=self.port,
             database=self.database,
+            ssl_ca=self.ssl_ca,
         )
         if legacy_reader.legacy_data_exists():
             logger.info(
