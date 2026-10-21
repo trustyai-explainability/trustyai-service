@@ -124,6 +124,10 @@ class MariaDBConfig:
 
     def validate(self) -> None:
         """Raise ValueError if required env vars are missing or TLS is unusable."""
+        from trustyai_service.service.data.storage.sql.engine import (  # noqa: PLC0415 -- SQL dependencies are optional
+            pool_kwargs_from_env,
+        )
+
         missing = []
         if not self.user:
             missing.append("DATABASE_USERNAME or QUARKUS_DATASOURCE_USERNAME")
@@ -138,6 +142,9 @@ class MariaDBConfig:
                 f"MariaDB storage requires environment variables: {', '.join(missing)}"
             )
             raise ValueError(msg)
+        # Fail readiness on malformed pool values or a per-pod connection budget
+        # that the configured pool could exceed.
+        pool_kwargs_from_env()
         if self.ssl_ca is None and not self.allow_insecure_tls:
             raise ValueError(_tls_error("MariaDB", self.ssl_ca_path))
 
@@ -175,6 +182,11 @@ class PostgreSQLConfig:
 
     def validate(self) -> None:
         """Raise ValueError if required env vars are missing or TLS is unusable."""
+        from trustyai_service.service.data.storage.sql.engine import (  # noqa: PLC0415 -- SQL dependencies are optional
+            pool_kwargs_from_env,
+            postgres_tuning_from_env,
+        )
+
         missing = []
         if not self.user:
             missing.append("DATABASE_USERNAME or QUARKUS_DATASOURCE_USERNAME")
@@ -190,6 +202,8 @@ class PostgreSQLConfig:
                 f"{', '.join(missing)}"
             )
             raise ValueError(msg)
+        pool_kwargs_from_env()
+        postgres_tuning_from_env()
         if self.ssl_ca is None and not self.allow_insecure_tls:
             raise ValueError(_tls_error("PostgreSQL", self.ssl_ca_path))
 
