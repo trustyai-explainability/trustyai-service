@@ -194,6 +194,16 @@ async def test_append_after_name_mapping_uses_original_names(
     assert np.array_equal(await storage.read_data(name), np.vstack([data, more]))
 
 
+def _inference_batch(
+    dataset_names: list[str], value: int, inference_id: str
+) -> list[tuple[str, np.ndarray, list[str]]]:
+    return [
+        (dataset_names[0], np.array([[value]]), ["input"]),
+        (dataset_names[1], np.array([[value * 10]]), ["output"]),
+        (dataset_names[2], np.array([[inference_id]]), ["id"]),
+    ]
+
+
 @pytest.mark.asyncio
 async def test_big_insert(storage: SQLStorage, names: SQLTestResources) -> None:
     """A 5000-row dataset round-trips."""

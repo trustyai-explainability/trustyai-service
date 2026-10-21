@@ -1,7 +1,6 @@
 # endpoints/consumer.py
 """Consumer endpoint for handling KServe inference requests and cloud events."""
 
-import asyncio
 import logging
 import time
 from collections.abc import Callable
@@ -231,10 +230,12 @@ async def write_reconciled_data(
     output_dataset = model_id + OUTPUT_SUFFIX
     metadata_dataset = model_id + METADATA_SUFFIX
 
-    await asyncio.gather(
-        storage_interface.write_data(input_dataset, input_array, input_names),
-        storage_interface.write_data(output_dataset, output_array, output_names),
-        storage_interface.write_data(metadata_dataset, metadata, metadata_names),
+    await storage_interface.write_data_batch(
+        [
+            (input_dataset, input_array, input_names),
+            (output_dataset, output_array, output_names),
+            (metadata_dataset, metadata, metadata_names),
+        ]
     )
 
     shapes = await ModelData(model_id).shapes()
