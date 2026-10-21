@@ -15,7 +15,8 @@ import pytest
 pytest.importorskip("sqlalchemy")
 
 from sqlalchemy import create_engine, event, insert
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import inspect as sqlalchemy_inspect
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 from tests.service.data.storage.sql_test_resources import SQLTestResources
 from tests.service.data.storage.test_sql_parity import (
@@ -23,6 +24,7 @@ from tests.service.data.storage.test_sql_parity import (
     _available_backends,
     _inference_batch,
 )
+from trustyai_service.service.data.storage.sql import base as sql_base
 from trustyai_service.service.data.storage.sql.base import SQLStorage
 from trustyai_service.service.data.storage.sqlite.sqlite import SQLiteStorage
 
@@ -114,12 +116,20 @@ async def test_competing_first_batches(
             event.remove(writer._engine, "handle_error", capture_conflict)
 
     assert raced == {0, 1}
-    assert conflicts
-    assert all(
-        isinstance(error, IntegrityError)
-        and writers[0]._is_dataset_creation_conflict(error)
+    creation_conflicts = [
+        error
         for error in conflicts
-    )
+        if isinstance(error, IntegrityError)
+        and writers[0]._is_dataset_creation_conflict(error)
+    ]
+    retried_ddl_conflicts = [
+        error
+        for error in conflicts
+        if isinstance(error, OperationalError)
+        and writers[0]._is_concurrent_ddl_error(error)
+    ]
+    assert creation_conflicts
+    assert len(creation_conflicts) + len(retried_ddl_conflicts) == len(conflicts)
     if matching_columns:
         assert results == [None, None]
     else:
@@ -196,6 +206,44 @@ async def test_competing_preparers_finish_a_visible_reference(tmp_path: Path) ->
             writer._engine.dispose()
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("errno", "should_retry"), [(1684, True), (1213, False)])
+async def test_prepare_retries_only_concurrent_ddl_in_a_fresh_transaction(
+    monkeypatch: pytest.MonkeyPatch, *, errno: int, should_retry: bool
+) -> None:
+    """Retry the MariaDB metadata race after rolling back its transaction."""
+    storage = SQLiteStorage()
+    try:
+        data = np.array([[1]])
+        columns = ["input"]
+        await storage.write_data("inputs", data, columns)
+        storage._engine.dialect.name = "mariadb"
+        connections = []
+
+        def fail_first_inspection(conn: Connection) -> object:
+            connections.append(conn)
+            if len(connections) == 1:
+                statement = "DESCRIBE trustyai_v2_dataset_0"
+                raise OperationalError(
+                    statement,
+                    {},
+                    Exception(errno),
+                )
+            return sqlalchemy_inspect(conn)
+
+        monkeypatch.setattr(sql_base, "inspect", fail_first_inspection)
+        if should_retry:
+            storage._prepare_implicit_commit_dataset("inputs", data, columns)
+            assert len(connections) == 2
+            assert connections[0] is not connections[1]
+        else:
+            with pytest.raises(OperationalError):
+                storage._prepare_implicit_commit_dataset("inputs", data, columns)
+            assert len(connections) == 1
+    finally:
+        storage._engine.dispose()
+
+
 def _integrity_error(dialect: str, key: str = "dataset_name") -> IntegrityError:
     """Construct driver diagnostics without requiring optional client libraries."""
     reference = "trustyai_v2_table_reference"
@@ -256,6 +304,33 @@ def test_other_error_codes_are_not_retryable(dialect: str) -> None:
     try:
         storage._engine.dialect.name = dialect
         assert not storage._is_dataset_creation_conflict(error)
+    finally:
+        storage._engine.dispose()
+
+
+@pytest.mark.parametrize(
+    ("dialect", "errno", "expected_result"),
+    [
+        ("mariadb", 1684, "retry"),
+        ("mysql", 1684, "retry"),
+        ("mariadb", 1213, "raise"),
+        ("postgresql", 1684, "raise"),
+        ("sqlite", 1684, "raise"),
+    ],
+)
+def test_only_mariadb_concurrent_ddl_errors_are_retryable(
+    dialect: str, errno: int, expected_result: str
+) -> None:
+    """Retry only MariaDB/MySQL's known concurrent table-definition error."""
+    storage = SQLStorage(create_engine("sqlite://"))
+    try:
+        storage._engine.dialect.name = dialect
+        error = OperationalError(
+            "DESCRIBE trustyai_v2_dataset_0",
+            {},
+            Exception(errno, "Table definition is being modified"),
+        )
+        assert storage._is_concurrent_ddl_error(error) is (expected_result == "retry")
     finally:
         storage._engine.dispose()
 

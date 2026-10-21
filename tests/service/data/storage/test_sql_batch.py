@@ -84,7 +84,7 @@ async def test_batch_insert_failure_rolls_back_all_rows(
         await storage.write_data(dataset, data, columns)
     inserted_datasets = []
 
-    def fail_after_insert(
+    def fail_before_insert(
         _conn: Connection, _cursor: object, statement: str, *_args: object
     ) -> None:
         if statement.startswith("INSERT INTO trustyai_v2_dataset_"):
@@ -93,14 +93,14 @@ async def test_batch_insert_failure_rolls_back_all_rows(
                 msg = "simulated batch insert failure"
                 raise RuntimeError(msg)
 
-    event.listen(storage._engine, "after_cursor_execute", fail_after_insert)
+    event.listen(storage._engine, "before_cursor_execute", fail_before_insert)
     try:
         with pytest.raises(RuntimeError, match="simulated batch insert failure"):
             await storage.write_data_batch(
                 _inference_batch(dataset_names, 2, "rejected_0")
             )
     finally:
-        event.remove(storage._engine, "after_cursor_execute", fail_after_insert)
+        event.remove(storage._engine, "before_cursor_execute", fail_before_insert)
 
     assert len(inserted_datasets) == failed_dataset + 1
     for index, (dataset, data, _) in enumerate(original):
