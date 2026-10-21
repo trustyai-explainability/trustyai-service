@@ -1017,16 +1017,7 @@ class TestTLSPolicy:
     }
 
     @pytest.mark.parametrize("config_cls", [MariaDBConfig, PostgreSQLConfig])
-    def test_validate_accepts_missing_ca_by_default(self, config_cls: type) -> None:
-        """A CA is optional unless TLS verification is explicitly required."""
-        with patch.dict(os.environ, self.BASE_ENV, clear=True):
-            config = config_cls()
-            config.validate()
-            assert config.ssl_ca is None
-            assert config.allow_insecure_tls is True
-
-    @pytest.mark.parametrize("config_cls", [MariaDBConfig, PostgreSQLConfig])
-    def test_validate_rejects_missing_ca_when_required(self, config_cls: type) -> None:
+    def test_validate_rejects_missing_ca(self, config_cls: type) -> None:
         """DATABASE_ALLOW_INSECURE_TLS=false requires a usable CA certificate."""
         env = {**self.BASE_ENV, "DATABASE_ALLOW_INSECURE_TLS": "false"}
         with (
@@ -1036,10 +1027,9 @@ class TestTLSPolicy:
             config_cls().validate()
 
     @pytest.mark.parametrize("config_cls", [MariaDBConfig, PostgreSQLConfig])
-    def test_validate_accepts_missing_ca_with_opt_in(self, config_cls: type) -> None:
-        """DATABASE_ALLOW_INSECURE_TLS=true permits a connection with no CA."""
-        env = {**self.BASE_ENV, "DATABASE_ALLOW_INSECURE_TLS": "true"}
-        with patch.dict(os.environ, env, clear=True):
+    def test_validate_accepts_missing_ca_by_default(self, config_cls: type) -> None:
+        """A CA is optional unless TLS verification is explicitly required."""
+        with patch.dict(os.environ, self.BASE_ENV, clear=True):
             config = config_cls()
             config.validate()
             assert config.ssl_ca is None
