@@ -168,27 +168,60 @@ def _get_postgres_health_connection_manager() -> Any:  # noqa: ANN401
     )
 
 
+def _check_database_storage_readiness() -> HealthCheck:
+    """Run the readiness check for the configured database kind."""
+    database_kind = os.getenv("QUARKUS_DATASOURCE_DB_KIND", "mariadb")
+    storage_checks = {
+        "mariadb": ("maria_storage", _check_maria_storage),
+        "maria": ("maria_storage", _check_maria_storage),
+        "postgresql": ("postgres_storage", _check_postgres_storage),
+        "postgres": ("postgres_storage", _check_postgres_storage),
+        "pgsql": ("postgres_storage", _check_postgres_storage),
+        "sqlite": ("sqlite_storage", _check_sqlite_storage),
+    }
+    selected = storage_checks.get(database_kind.strip().lower())
+    if selected is not None:
+        cache_key, check = selected
+        return _health_cache.get_or_compute(cache_key, check)
+
+    return HealthCheck(
+        "Storage readiness",
+        STATUS_ERROR,
+        {
+            "error": (
+                f"Database kind={database_kind} not supported for "
+                "storage format=DATABASE. "
+                "Supported kinds are mariadb, postgresql, and sqlite."
+            )
+        },
+    )
+
+
 def check_storage_readiness() -> HealthCheck:
     """Check if storage backend is accessible.
 
     For PVC storage: Verifies mount point exists and is writable (cached).
-    For MariaDB: Tests database connection (cached).
+    For database storage: Tests the configured MariaDB or PostgreSQL connection,
+    or checks SQLite storage accessibility (cached).
 
     :return: HealthCheck indicating storage readiness
     """
     try:
         storage_format = os.getenv("SERVICE_STORAGE_FORMAT", "PVC")
+        if storage_format == "DATABASE":
+            return _check_database_storage_readiness()
 
-        if storage_format == "PVC":
-            return _health_cache.get_or_compute("pvc_storage", _check_pvc_storage)
-        if storage_format in ("MARIA", "DATABASE"):
-            return _health_cache.get_or_compute("maria_storage", _check_maria_storage)
-        if storage_format in ("POSTGRESQL", "POSTGRES"):
-            return _health_cache.get_or_compute(
-                "postgres_storage", _check_postgres_storage
-            )
-        if storage_format == "SQLITE":
-            return _health_cache.get_or_compute("sqlite_storage", _check_sqlite_storage)
+        storage_checks = {
+            "PVC": ("pvc_storage", _check_pvc_storage),
+            "MARIA": ("maria_storage", _check_maria_storage),
+            "POSTGRESQL": ("postgres_storage", _check_postgres_storage),
+            "POSTGRES": ("postgres_storage", _check_postgres_storage),
+            "SQLITE": ("sqlite_storage", _check_sqlite_storage),
+        }
+        selected = storage_checks.get(storage_format)
+        if selected is not None:
+            cache_key, check = selected
+            return _health_cache.get_or_compute(cache_key, check)
         return HealthCheck(
             "Storage readiness",
             STATUS_ERROR,
