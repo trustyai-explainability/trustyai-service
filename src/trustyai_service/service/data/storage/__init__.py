@@ -208,6 +208,24 @@ class PostgreSQLConfig:
             raise ValueError(_tls_error("PostgreSQL", self.ssl_ca_path))
 
 
+def _database_storage_format() -> str:
+    """Map the configured database kind to its storage format."""
+    database_kind = os.environ.get("QUARKUS_DATASOURCE_DB_KIND", "mariadb")
+    normalized_kind = database_kind.strip().lower()
+    if normalized_kind in ("mariadb", "maria"):
+        return "MARIA"
+    if normalized_kind in ("postgresql", "postgres", "pgsql"):
+        return "POSTGRESQL"
+    if normalized_kind == "sqlite":
+        return "SQLITE"
+    msg = (
+        f"Database kind={database_kind} not supported for "
+        "storage format=DATABASE. "
+        "Supported kinds are mariadb, postgresql, and sqlite."
+    )
+    raise ValueError(msg)
+
+
 def get_storage_interface() -> (
     MariaDBStorage | PVCStorage | PostgreSQLStorage | SQLiteStorage
 ):
@@ -218,21 +236,7 @@ def get_storage_interface() -> (
     """
     storage_format = os.environ.get("SERVICE_STORAGE_FORMAT", "PVC")
     if storage_format == "DATABASE":
-        database_kind = os.environ.get("QUARKUS_DATASOURCE_DB_KIND", "mariadb")
-        normalized_kind = database_kind.strip().lower()
-        if normalized_kind in ("mariadb", "maria"):
-            storage_format = "MARIA"
-        elif normalized_kind in ("postgresql", "postgres", "pgsql"):
-            storage_format = "POSTGRESQL"
-        elif normalized_kind == "sqlite":
-            storage_format = "SQLITE"
-        else:
-            msg = (
-                f"Database kind={database_kind} not supported for "
-                "storage format=DATABASE. "
-                "Supported kinds are mariadb, postgresql, and sqlite."
-            )
-            raise ValueError(msg)
+        storage_format = _database_storage_format()
     if storage_format == "PVC":
         return PVCStorage(
             data_directory=os.environ.get("STORAGE_DATA_FOLDER", "/tmp"),  # noqa: S108 -- fallback default for STORAGE_DATA_FOLDER env var
