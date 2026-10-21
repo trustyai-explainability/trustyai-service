@@ -217,6 +217,22 @@ def get_storage_interface() -> (
     :raises ValueError: If storage format is unsupported or dependencies missing
     """
     storage_format = os.environ.get("SERVICE_STORAGE_FORMAT", "PVC")
+    if storage_format == "DATABASE":
+        database_kind = os.environ.get("QUARKUS_DATASOURCE_DB_KIND", "mariadb")
+        normalized_kind = database_kind.strip().lower()
+        if normalized_kind in ("mariadb", "maria"):
+            storage_format = "MARIA"
+        elif normalized_kind in ("postgresql", "postgres", "pgsql"):
+            storage_format = "POSTGRESQL"
+        elif normalized_kind == "sqlite":
+            storage_format = "SQLITE"
+        else:
+            msg = (
+                f"Database kind={database_kind} not supported for "
+                "storage format=DATABASE. "
+                "Supported kinds are mariadb, postgresql, and sqlite."
+            )
+            raise ValueError(msg)
     if storage_format == "PVC":
         return PVCStorage(
             data_directory=os.environ.get("STORAGE_DATA_FOLDER", "/tmp"),  # noqa: S108 -- fallback default for STORAGE_DATA_FOLDER env var
@@ -240,7 +256,7 @@ def get_storage_interface() -> (
                 f"Error: {e}"
             )
             raise ValueError(msg) from e
-    if storage_format in ("MARIA", "DATABASE"):
+    if storage_format in ("MARIA", "MARIADB"):
         try:
             # Import MariaDB storage only when needed (optional dependency)
             from trustyai_service.service.data.storage.maria.maria import (  # noqa: PLC0415 -- lazy import: mariadb is optional
