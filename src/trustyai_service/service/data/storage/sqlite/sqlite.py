@@ -16,17 +16,36 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy import create_engine
+from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.pool import QueuePool
 
 from trustyai_service.service.data.storage.sql.base import SQLStorage
-from trustyai_service.service.data.storage.sql.engine import sqlite_url
+from trustyai_service.service.data.storage.sql.engine import (
+    sqlite_pragmas_from_env,
+    sqlite_url,
+)
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.StreamHandler())
 logger.setLevel(logging.INFO)
 
 IN_MEMORY = ":memory:"
+
+
+def _configure_pragmas(engine: Engine, pragmas: dict[str, str | int]) -> None:
+    """Apply configured connection-local pragmas on every new DB-API connection."""
+    if not pragmas:
+        return
+
+    def apply_pragmas(dbapi_connection: object, _connection_record: object) -> None:
+        cursor = dbapi_connection.cursor()  # type: ignore[attr-defined]
+        try:
+            for name, value in pragmas.items():
+                cursor.execute(f"PRAGMA {name}={value}")
+        finally:
+            cursor.close()
+
+    event.listen(engine, "connect", apply_pragmas)
 
 
 class SQLiteStorage(SQLStorage):
@@ -41,6 +60,12 @@ class SQLiteStorage(SQLStorage):
     def __init__(self, path: str = IN_MEMORY) -> None:
         """Initialize SQLite storage at ``path`` (``:memory:`` or a file path)."""
         self.path = path
+        pragmas = sqlite_pragmas_from_env()
+        if path == IN_MEMORY and pragmas.get("journal_mode") == "WAL":
+            msg = (
+                "DATABASE_SQLITE_JOURNAL_MODE='wal' cannot be used with :memory: SQLite"
+            )
+            raise ValueError(msg)
         if path == IN_MEMORY:
             engine = create_engine(
                 sqlite_url(path),
@@ -54,4 +79,5 @@ class SQLiteStorage(SQLStorage):
                 sqlite_url(path),
                 connect_args={"check_same_thread": False},
             )
+        _configure_pragmas(engine, pragmas)
         super().__init__(engine)
