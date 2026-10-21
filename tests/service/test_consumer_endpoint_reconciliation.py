@@ -68,11 +68,9 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
             "trustyai_service.endpoints.consumer.consumer_endpoint.ModelData",
         )
         self.mock_model_data = self.model_data_patch.start()
-        self.mock_model_data.return_value.shapes.return_value = [
-            (5, 10),
-            (5, 1),
-            (5, 3),
-        ]
+        self.mock_model_data.return_value.shapes = mock.AsyncMock(
+            return_value=[(5, 10), (5, 1), (5, 3)]
+        )
 
         self.app = FastAPI()
         self.app.include_router(consumer_router)
@@ -97,8 +95,11 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
 
         self.mock_df = mock.MagicMock()
         self.mock_df.columns = ["input", "output_output", "id", "model_id", "synthetic"]
-        self.mock_df.__len__.return_value = 5
-        self.mock_df.__getitem__.return_value.values = mock.MagicMock()
+        self.mock_df.__getitem__.side_effect = lambda columns: (
+            np.zeros(5, dtype=bool)
+            if isinstance(columns, str)
+            else mock.MagicMock(values=np.zeros((5, len(columns))))
+        )
 
     def tearDown(self) -> None:
         """Clean up after tests."""
@@ -173,7 +174,7 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
         ]
 
         self.mock_storage.persist_partial_payload = mock.AsyncMock()
-        self.mock_storage.write_data = mock.AsyncMock()
+        self.mock_storage.write_data_batch = mock.AsyncMock()
         self.mock_storage.delete_partial_payload = mock.AsyncMock()
 
         with (
@@ -189,20 +190,7 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
                 "trustyai_service.endpoints.consumer.consumer_endpoint.ModelMeshPayloadParser.payloads_to_dataframe",
                 return_value=self.mock_df,
             ) as _mock_df,
-            mock.patch(
-                "trustyai_service.endpoints.consumer.consumer_endpoint.asyncio.gather",
-            ) as mock_gather,
-            mock.patch(
-                "trustyai_service.endpoints.consumer.consumer_endpoint.reconcile_modelmesh_payloads",
-                new=mock.AsyncMock(),
-            ) as mock_reconcile,
         ):
-
-            async def mock_gather_impl(*args: object, **_kwargs: object) -> list[None]:
-                return [None for coro in args if hasattr(coro, "__await__")]
-
-            mock_gather.side_effect = mock_gather_impl
-
             input_inference_payload = {
                 "data": self.input_payload.data,
                 "modelid": self.model_name,
@@ -254,10 +242,13 @@ class TestConsumerEndpointReconciliation(unittest.TestCase):
             assert call_kwargs["payload_id"] == self.request_id
             assert not call_kwargs["is_input"]  # is_input=False
 
-            mock_reconcile.assert_called_once()
-            reconcile_args = mock_reconcile.call_args[0]
-            assert reconcile_args[2] == self.request_id  # request_id
-            assert reconcile_args[3] == self.model_name  # model_id
+            self.mock_storage.write_data_batch.assert_awaited_once()
+            writes = self.mock_storage.write_data_batch.call_args.args[0]
+            assert [name for name, _, _ in writes] == [
+                f"{self.model_name}_inputs",
+                f"{self.model_name}_outputs",
+                f"{self.model_name}_metadata",
+            ]
 
 
 def run_async_test(coro: Coroutine[Any, Any, None]) -> None:
