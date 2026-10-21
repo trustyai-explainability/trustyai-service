@@ -58,6 +58,8 @@ logger.setLevel(logging.INFO)
 
 _MIN_MATRIX_NDIM = 2  # Minimum number of dimensions for a 2-D matrix
 _MYSQL_DUPLICATE_KEY = 1062
+_MYSQL_CONCURRENT_DDL = 1684
+_MAX_IMPLICIT_DDL_ATTEMPTS = 3
 
 
 def require_existing_dataset[**P, R](
@@ -349,6 +351,16 @@ class SQLStorage(StorageInterface):
             == f"UNIQUE constraint failed: {self.dataset_reference_table}.dataset_name"
         )
 
+    def _is_concurrent_ddl_error(self, error: OperationalError) -> bool:
+        """Recognize MariaDB/MySQL's concurrent table-definition error."""
+        if self._engine.dialect.name not in {"mariadb", "mysql"}:
+            return False
+        original = error.orig
+        errno = getattr(original, "errno", None)
+        if errno is None and original.args:
+            errno = original.args[0]
+        return errno == _MYSQL_CONCURRENT_DDL
+
     def _prepare_implicit_commit_dataset(
         self,
         dataset_name: str,
@@ -356,18 +368,30 @@ class SQLStorage(StorageInterface):
         column_names: list[str],
     ) -> None:
         """Finish MariaDB/MySQL dataset DDL before any inference row is written."""
-        with self._engine.begin() as conn:
-            # Locking a missing reference can take an InnoDB gap lock and
-            # deadlock competing inserts. The unique key arbitrates creation.
-            table = self._validate_dataset_write(
-                conn, dataset_name, new_rows, column_names
-            )
-            if table is None:
-                self._create_dataset(conn, dataset_name, new_rows, column_names)
-            elif not inspect(conn).has_table(table.name):
-                # A creator's DDL may have committed its reference while its
-                # CREATE is still pending. Both writers can safely finish it.
-                conn.execute(CreateTable(table, if_not_exists=True))
+        for attempt in range(_MAX_IMPLICIT_DDL_ATTEMPTS):
+            try:
+                with self._engine.begin() as conn:
+                    # Locking a missing reference can take an InnoDB gap lock
+                    # and deadlock competing inserts. The unique key arbitrates
+                    # creation.
+                    table = self._validate_dataset_write(
+                        conn, dataset_name, new_rows, column_names
+                    )
+                    if table is None:
+                        self._create_dataset(conn, dataset_name, new_rows, column_names)
+                    elif not inspect(conn).has_table(table.name):
+                        # A creator's DDL may have committed its reference while
+                        # its CREATE is still pending. Both writers can safely
+                        # finish it.
+                        conn.execute(CreateTable(table, if_not_exists=True))
+            except OperationalError as error:
+                if (
+                    attempt == _MAX_IMPLICIT_DDL_ATTEMPTS - 1
+                    or not self._is_concurrent_ddl_error(error)
+                ):
+                    raise
+            else:
+                return
 
     @staticmethod
     def _encode_rows(
