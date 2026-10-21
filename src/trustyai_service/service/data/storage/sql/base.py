@@ -24,14 +24,18 @@ import asyncio
 import gzip
 import json
 import logging
+import sqlite3
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from sqlalchemy import Engine, Table, delete, insert, inspect, select, update
-from sqlalchemy.exc import OperationalError, ProgrammingError
+from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError
+from sqlalchemy.schema import CreateTable
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine
+
+    from sqlalchemy import Connection
 
 from trustyai_service.endpoints.consumer import (
     KServeInferenceRequest,
@@ -53,6 +57,7 @@ logger.addHandler(logging.StreamHandler())
 logger.setLevel(logging.INFO)
 
 _MIN_MATRIX_NDIM = 2  # Minimum number of dimensions for a 2-D matrix
+_MYSQL_DUPLICATE_KEY = 1062
 
 
 def require_existing_dataset[**P, R](
@@ -203,6 +208,11 @@ class SQLStorage(StorageInterface):
                        these names must match the existing column names found within
                        `trustyai_v2_table_reference.metadata.column_names`.
         """
+        await self.write_data_batch([(dataset_name, new_rows, column_names)])
+
+    @staticmethod
+    def _validate_new_rows(new_rows: np.ndarray, column_names: list[str]) -> np.ndarray:
+        """Normalize rows and validate their supplied schema without writing."""
         if len(new_rows) == 0:
             msg = f"No data provided! `new_rows`=={new_rows}."
             raise ValueError(msg)
@@ -219,66 +229,152 @@ class SQLStorage(StorageInterface):
             )
             raise ValueError(msg)
 
-        cleaned_names = get_clean_column_names(column_names)
+        return new_rows
 
-        # if this is the first time we've seen this dataset, set up its tables inside the DB
-        if not await self.dataset_exists(dataset_name):
-            metadata = {
-                "column_names": column_names,
-                "aliased_names": column_names,
-                "shape": [-1, *new_rows.shape[1:]],
-            }
-            # Insert the reference row and create the dataset table together so a
-            # failure cannot leave an orphaned reference entry.
-            with self._engine.begin() as conn:
-                result = conn.execute(
-                    insert(self._ref).values(
-                        dataset_name=dataset_name, metadata=metadata, n_rows=0
-                    )
-                )
-                table_name = self._build_table_name(result.inserted_primary_key[0])
-                logger.info(
-                    "Creating table = %s to store data from %s.",
-                    table_name,
-                    dataset_name,
-                )
-                ds_table = self._dataset_table(table_name, cleaned_names)
-                ds_table.create(conn, checkfirst=True)
+    def _validate_dataset_write(
+        self,
+        conn: Connection,
+        dataset_name: str,
+        new_rows: np.ndarray,
+        column_names: list[str],
+        *,
+        lock: bool = False,
+    ) -> Table | None:
+        """Validate an existing dataset using the caller's connection."""
+        query = (
+            select(self._ref.c.table_idx, self._ref.c["metadata"])
+            .where(self._ref.c.dataset_name == dataset_name)
+            .order_by(self._ref.c.table_idx)
+            .limit(1)
+        )
+        if lock:
+            query = query.with_for_update()
+        reference = conn.execute(query).first()
+        if reference is None:
+            return None
+
+        table_idx, metadata = reference
+        stored_shape = metadata["shape"]
+        ncols = stored_shape[1]
+        if ncols != len(column_names):
+            msg = (
+                f"Shape mismatch: Number of provided column names ({len(column_names)})"
+                f" does not match number of columns in existing database ({ncols})."
+            )
+            raise ValueError(msg)
+
+        # Cells are stored positionally, so names must match in both value and order.
+        stored_names = metadata["column_names"]
+        if column_names != stored_names:
+            msg = (
+                f"Column mismatch: provided column names ({column_names}) do not"
+                f" match the column names of the existing database ({stored_names})."
+            )
+            raise ValueError(msg)
+        if list(stored_shape[1:]) != list(new_rows.shape[1:]):
+            msg = (
+                f"Shape mismatch: new_rows.shape[1:] ({new_rows.shape[1:]}) does not"
+                f" match shape of existing database ({stored_shape[1:]})."
+            )
+            raise ValueError(msg)
+        return self._dataset_table(
+            self._build_table_name(table_idx), get_clean_column_names(column_names)
+        )
+
+    def _create_dataset(
+        self,
+        conn: Connection,
+        dataset_name: str,
+        new_rows: np.ndarray,
+        column_names: list[str],
+    ) -> Table:
+        """Create an empty dataset using the caller's connection."""
+        metadata = {
+            "column_names": column_names,
+            "aliased_names": column_names,
+            "shape": [-1, *new_rows.shape[1:]],
+        }
+        result = conn.execute(
+            insert(self._ref).values(
+                dataset_name=dataset_name, metadata=metadata, n_rows=0
+            )
+        )
+        table_name = self._build_table_name(result.inserted_primary_key[0])
+        logger.info(
+            "Creating table = %s to store data from %s.", table_name, dataset_name
+        )
+        ds_table = self._dataset_table(table_name, get_clean_column_names(column_names))
+        if self._engine.dialect.name in {"mariadb", "mysql"}:
+            # CREATE commits the reference before creating its table. Another
+            # writer may observe that reference and finish the same table.
+            conn.execute(CreateTable(ds_table, if_not_exists=True))
         else:
-            # if dataset already exists, grab its current shape and information
-            stored_shape = await self.dataset_shape(dataset_name)
-            ncols = stored_shape[1]
-            table_name = await self._get_clean_table_name(dataset_name)
+            ds_table.create(conn, checkfirst=True)
+        return ds_table
 
-            # validate that the number of columns in the saved DB matched the provided column names
-            if ncols != len(column_names):
-                msg = (
-                    f"Shape mismatch: Number of provided column names ({len(column_names)})"
-                    f" does not match number of columns in existing database ({ncols})."
-                )
-                raise ValueError(msg)
+    def _is_dataset_creation_conflict(self, error: IntegrityError) -> bool:
+        """Recognize only a duplicate dataset name in the reference insert."""
+        if (
+            not (error.statement or "")
+            .lstrip()
+            .startswith(f"INSERT INTO {self.dataset_reference_table} ")
+        ):
+            return False
+        original = error.orig
+        dialect = self._engine.dialect.name
+        if dialect == "postgresql":
+            diagnostic = getattr(original, "diag", None)
+            return (
+                getattr(original, "sqlstate", None) == "23505"
+                and getattr(diagnostic, "table_name", None)
+                == self.dataset_reference_table
+                and getattr(diagnostic, "constraint_name", None)
+                == f"{self.dataset_reference_table}_dataset_name_key"
+            )
+        if dialect in {"mariadb", "mysql"}:
+            errno = getattr(original, "errno", None)
+            if errno is None and original.args:
+                errno = original.args[0]
+            message = original.args[1] if len(original.args) > 1 else str(original)
+            key = str(message).rpartition(" for key ")[2]
+            return errno == _MYSQL_DUPLICATE_KEY and key in {
+                "'dataset_name'",
+                f"'{self.dataset_reference_table}.dataset_name'",
+            }
+        return (
+            dialect == "sqlite"
+            and getattr(original, "sqlite_errorcode", None)
+            == sqlite3.SQLITE_CONSTRAINT_UNIQUE
+            and str(original)
+            == f"UNIQUE constraint failed: {self.dataset_reference_table}.dataset_name"
+        )
 
-            # Cells are stored positionally, so names that match in count but not
-            # in order would silently file values under the wrong column.
-            stored_names = await self.get_original_column_names(dataset_name)
-            if column_names != stored_names:
-                msg = (
-                    f"Column mismatch: provided column names ({column_names}) do not"
-                    f" match the column names of the existing database ({stored_names})."
-                )
-                raise ValueError(msg)
+    def _prepare_implicit_commit_dataset(
+        self,
+        dataset_name: str,
+        new_rows: np.ndarray,
+        column_names: list[str],
+    ) -> None:
+        """Finish MariaDB/MySQL dataset DDL before any inference row is written."""
+        with self._engine.begin() as conn:
+            # Locking a missing reference can take an InnoDB gap lock and
+            # deadlock competing inserts. The unique key arbitrates creation.
+            table = self._validate_dataset_write(
+                conn, dataset_name, new_rows, column_names
+            )
+            if table is None:
+                self._create_dataset(conn, dataset_name, new_rows, column_names)
+            elif not inspect(conn).has_table(table.name):
+                # A creator's DDL may have committed its reference while its
+                # CREATE is still pending. Both writers can safely finish it.
+                conn.execute(CreateTable(table, if_not_exists=True))
 
-            # validate that the shape of the inbound data is compatible with the stored data shape
-            if list(stored_shape[1:]) != list(new_rows.shape[1:]):
-                msg = (
-                    f"Shape mismatch: new_rows.shape[1:] ({new_rows.shape[1:]}) does not"
-                    f" match shape of existing database ({stored_shape[1:]})."
-                )
-                raise ValueError(msg)
-
-            ds_table = self._dataset_table(table_name, cleaned_names)
-
-        # encode each new_rows[i, j] to bytes (JSON + gzip) as insert param dicts
+    @staticmethod
+    def _encode_rows(
+        new_rows: np.ndarray, column_names: list[str]
+    ) -> list[dict[str, bytes]]:
+        """Encode every cell before any part of the batch is written."""
+        cleaned_names = get_clean_column_names(column_names)
         params = []
         for new_row in new_rows:
             row_params = {}
@@ -287,17 +383,77 @@ class SQLStorage(StorageInterface):
                 row_params[col_name] = gzip.compress(json_bytes)
             params.append(row_params)
 
-        # insert data and bump n_rows in a single transaction. The count is
-        # incremented database-side (n_rows = n_rows + N) rather than from a
-        # Python snapshot, so concurrent writers cannot clobber each other's
-        # updates and lose rows.
+        return params
+
+    async def write_data_batch(
+        self, datasets: list[tuple[str, np.ndarray, list[str]]]
+    ) -> None:
+        """Preflight the whole batch, then commit all rows and counts atomically.
+
+        MariaDB/MySQL implicitly commit DDL. New empty datasets are therefore
+        created before the row transaction on those backends, and may remain
+        after a failed first write. Existing datasets are never mutated during
+        preflight; all inference rows and counts share one transaction.
+        """
+        datasets = [
+            (name, self._validate_new_rows(rows, columns), columns)
+            for name, rows, columns in datasets
+        ]
+        with self._engine.connect() as conn:
+            for name, rows, columns in datasets:
+                self._validate_dataset_write(conn, name, rows, columns)
+        parameters = [self._encode_rows(rows, columns) for _, rows, columns in datasets]
+
+        # A conflict can occur once per newly created dataset. Retry only after
+        # the entire failed transaction is rolled back, then revalidate the
+        # winning schema and append the complete batch in a fresh transaction.
+        for attempt in range(len(datasets) + 1):
+            try:
+                self._write_data_batch_once(datasets, parameters)
+            except IntegrityError as error:
+                if attempt == len(datasets) or not self._is_dataset_creation_conflict(
+                    error
+                ):
+                    raise
+            else:
+                return
+
+    def _write_data_batch_once(
+        self,
+        datasets: list[tuple[str, np.ndarray, list[str]]],
+        parameters: list[list[dict[str, bytes]]],
+    ) -> None:
+        """Prepare dataset tables, then write every batch row in one transaction."""
+        implicit_ddl_commit = self._engine.dialect.name in {"mariadb", "mysql"}
+        if implicit_ddl_commit:
+            for name, rows, columns in datasets:
+                self._prepare_implicit_commit_dataset(name, rows, columns)
+
         with self._engine.begin() as conn:
-            conn.execute(insert(ds_table), params)
-            conn.execute(
-                update(self._ref)
-                .where(self._ref.c.dataset_name == dataset_name)
-                .values(n_rows=self._ref.c.n_rows + len(new_rows))
-            )
+            # Revalidate and lock before inserting anything. Concurrent writers
+            # must acquire the same reference locks before allocating row IDs,
+            # so the order of input/output/metadata rows remains consistent.
+            tables = [
+                self._validate_dataset_write(conn, name, rows, columns, lock=True)
+                for name, rows, columns in datasets
+            ]
+            if implicit_ddl_commit and any(table is None for table in tables):
+                msg = "A dataset was removed while preparing the batch write."
+                raise ValueError(msg)
+            for (name, rows, columns), table, params in zip(
+                datasets, tables, parameters, strict=True
+            ):
+                ds_table = (
+                    self._create_dataset(conn, name, rows, columns)
+                    if table is None
+                    else table
+                )
+                conn.execute(insert(ds_table), params)
+                conn.execute(
+                    update(self._ref)
+                    .where(self._ref.c.dataset_name == name)
+                    .values(n_rows=self._ref.c.n_rows + len(rows))
+                )
 
     @require_existing_dataset
     async def read_data(

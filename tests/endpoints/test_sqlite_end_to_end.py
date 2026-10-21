@@ -21,6 +21,7 @@ import unittest
 import uuid
 from http import HTTPStatus
 from importlib import reload
+from unittest.mock import patch
 
 import numpy as np
 import pytest
@@ -300,6 +301,85 @@ class TestSQLiteEndToEnd(unittest.TestCase):
 
         rows = asyncio.run(self.storage_interface.dataset_rows(f"{model_name}_inputs"))
         assert rows == 2 * n_rows
+
+    def test_rejected_renamed_input_preserves_inference_pairs(self) -> None:
+        """A rejected upload cannot append outputs or IDs to the next inference."""
+        model_name = f"e2e_rejected_{uuid.uuid4().hex[:8]}"
+        request_ids = [str(uuid.UUID(int=value)) for value in (1, 2, 3)]
+        datasets = [
+            f"{model_name}_{suffix}" for suffix in ("inputs", "outputs", "metadata")
+        ]
+
+        def upload(input_name: str, values: list[int], request_id: str) -> int:
+            payload = {
+                "model_name": model_name,
+                "data_tag": "TRAINING",
+                "request": {
+                    "inputs": [
+                        {
+                            "name": input_name,
+                            "shape": [len(values)],
+                            "datatype": "INT64",
+                            "data": values,
+                        }
+                    ],
+                },
+                "response": {
+                    "outputs": [
+                        {
+                            "name": "output",
+                            "shape": [len(values)],
+                            "datatype": "INT64",
+                            "data": [value * 10 for value in values],
+                        }
+                    ],
+                },
+            }
+            with patch(
+                "trustyai_service.endpoints.data.data_upload.uuid.uuid4",
+                return_value=request_id,
+            ):
+                return self.client.post(routes.DATA_UPLOAD, json=payload).status_code
+
+        async def snapshot() -> list[tuple[np.ndarray, int]]:
+            return [
+                (
+                    await self.storage_interface.read_data(dataset),
+                    await self.storage_interface.dataset_rows(dataset),
+                )
+                for dataset in datasets
+            ]
+
+        assert upload("input", [1, 2], request_ids[0]) == HTTPStatus.OK
+        before_rejection = asyncio.run(snapshot())
+
+        assert (
+            upload("renamed_input", [90, 91], request_ids[1])
+            == HTTPStatus.INTERNAL_SERVER_ERROR
+        )
+        after_rejection = asyncio.run(snapshot())
+        for (before, before_count), (after, after_count) in zip(
+            before_rejection, after_rejection, strict=True
+        ):
+            assert after_count == before_count == 2
+            np.testing.assert_array_equal(after, before)
+
+        assert upload("input", [3, 4], request_ids[2]) == HTTPStatus.OK
+        final_datasets = asyncio.run(snapshot())
+        assert [count for _, count in final_datasets] == [4, 4, 4]
+        inputs, outputs, metadata = [data for data, _ in final_datasets]
+        actual_pairs = [
+            (int(input_row[0]), int(output_row[0]), str(metadata_row[0]))
+            for input_row, output_row, metadata_row in zip(
+                inputs, outputs, metadata, strict=True
+            )
+        ]
+        assert actual_pairs == [
+            (1, 10, f"{request_ids[0]}_0"),
+            (2, 20, f"{request_ids[0]}_1"),
+            (3, 30, f"{request_ids[2]}_0"),
+            (4, 40, f"{request_ids[2]}_1"),
+        ]
 
 
 if __name__ == "__main__":
