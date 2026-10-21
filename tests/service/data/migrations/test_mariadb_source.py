@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import gzip
 import json
-import os
 
 import numpy as np
 import pytest
@@ -12,16 +11,18 @@ import pytest_asyncio
 
 from trustyai_service.service.serialization.encoders import json_encoder
 
-from .conftest import result_status, target_storage
+from .conftest import live_db_url, result_status, target_storage
 from .test_migration_contract import _runner
 
 
 @pytest_asyncio.fixture
-async def current_schema_engine():
+async def current_schema_engine(partial_payload, modelmesh_partial_payload):
     """Build a small SQLite database with the current v2 table shape."""
     pytest.importorskip("aiosqlite")
     from sqlalchemy import text
     from sqlalchemy.ext.asyncio import create_async_engine
+
+    from trustyai_service.service.serialization import serialize_model
 
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     metadata = {
@@ -40,6 +41,12 @@ async def current_schema_engine():
             text(
                 "CREATE TABLE trustyai_v2_dataset_1 "
                 "(row_idx INTEGER, column_0 BLOB, column_1 BLOB)"
+            )
+        )
+        await connection.execute(
+            text(
+                "CREATE TABLE trustyai_v2_partial_payloads "
+                "(payload_id TEXT, is_input INTEGER, payload_data BLOB)"
             )
         )
         await connection.execute(
@@ -70,6 +77,24 @@ async def current_schema_engine():
             ),
             rows,
         )
+        await connection.execute(
+            text(
+                "INSERT INTO trustyai_v2_partial_payloads VALUES "
+                "(:payload_id, :is_input, :payload_data)"
+            ),
+            [
+                {
+                    "payload_id": "kserve-1",
+                    "is_input": 1,
+                    "payload_data": serialize_model(partial_payload),
+                },
+                {
+                    "payload_id": "modelmesh-1",
+                    "is_input": 1,
+                    "payload_data": serialize_model(modelmesh_partial_payload),
+                },
+            ],
+        )
     yield engine
     await engine.dispose()
 
@@ -78,9 +103,7 @@ async def current_schema_engine():
 async def legacy_mariadb_engine():
     """Connect to the optional seeded legacy MariaDB integration service."""
     pytest.importorskip("asyncmy")
-    url = os.environ.get("TRUSTYAI_MIGRATION_TEST_MARIADB_URL")
-    if not url:
-        pytest.skip("set TRUSTYAI_MIGRATION_TEST_MARIADB_URL for MariaDB integration")
+    url = live_db_url("TRUSTYAI_MIGRATION_TEST_MARIADB_URL")
     from sqlalchemy.ext.asyncio import create_async_engine
 
     engine = create_async_engine(url)
@@ -163,6 +186,25 @@ async def test_current_mariadb_source_rejects_stale_registry_count(
 
     with pytest.raises(migration_api.MigrationValidationError, match="inconsistent"):
         await source.preflight()
+
+
+@pytest.mark.asyncio
+async def test_current_mariadb_source_classifies_modelmesh_partials(
+    migration_api, current_schema_engine, modelmesh_partial_payload
+) -> None:
+    """Stored ModelMesh partial payloads are detected instead of failing."""
+    source = migration_api.MariaDBSource(
+        current_schema_engine,
+        schema="trustyai_v2",
+        quiesced=True,
+    )
+
+    manifest = await source.preflight()
+
+    by_id = {record.payload_id: record for record in manifest.partial_payloads}
+    assert by_id["kserve-1"].is_modelmesh is False
+    assert by_id["modelmesh-1"].is_modelmesh is True
+    assert by_id["modelmesh-1"].payload == modelmesh_partial_payload
 
 
 @pytest.mark.asyncio

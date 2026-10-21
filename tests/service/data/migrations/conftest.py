@@ -34,6 +34,7 @@ import pytest
 import pytest_asyncio
 
 from trustyai_service.endpoints.consumer import KServeData, KServeInferenceRequest
+from trustyai_service.service.data.modelmesh_parser import PartialPayload
 from trustyai_service.service.data.storage.pvc import (
     MAX_VOID_TYPE_LENGTH,
     PARTIAL_INPUT_NAME,
@@ -250,38 +251,56 @@ def result_json(result: Any) -> dict[str, Any]:
     return {"status": result_status(result)}
 
 
+def live_db_url(env_name: str, *, required: bool = True) -> str:
+    """Return a configured live-database URL for migration integration tests.
+
+    Local runs without a database skip. CI sets
+    ``TRUSTYAI_REQUIRE_LIVE_SQL_TESTS`` so a missing URL fails instead of
+    silently skipping coverage. Sources without a seeded fixture (the v2
+    MariaDB schema) pass ``required=False`` to stay optional everywhere.
+    """
+    import os
+
+    url = os.environ.get(env_name)
+    if url:
+        return url
+    reason = f"set {env_name} to run live-database migration tests"
+    if required and os.environ.get("TRUSTYAI_REQUIRE_LIVE_SQL_TESTS") == "1":
+        pytest.fail(reason, pytrace=False)
+    pytest.skip(reason)
+
+
 @pytest_asyncio.fixture
 async def target_factory(migration_api):
     """Build a disposable SQL target from an explicit test URL."""
-    import os
     import uuid
 
     pytest.importorskip("sqlalchemy")
     from sqlalchemy.ext.asyncio import create_async_engine
 
-    engines = []
+    targets = []
 
     async def factory(kind: str):
-        env_name = (
+        url = live_db_url(
             "TRUSTYAI_MIGRATION_TEST_MARIADB_URL"
             if kind == "mariadb"
             else "TRUSTYAI_MIGRATION_TEST_POSTGRES_URL"
         )
-        url = os.environ.get(env_name)
-        if not url:
-            pytest.skip(f"set {env_name} to run the {kind} integration target")
         engine = create_async_engine(url)
-        engines.append(engine)
         target = migration_api.DatabaseTarget(
             engine,
             migration_namespace=f"test_{uuid.uuid4().hex}",
         )
         await target.reset_for_test()
+        targets.append(target)
         return target
 
     yield factory
-    for engine in engines:
-        await engine.dispose()
+    for target in targets:
+        try:
+            await target.reset_for_test()
+        finally:
+            await target.engine.dispose()
 
 
 @pytest_asyncio.fixture
@@ -303,35 +322,35 @@ async def sqlite_target(migration_api):
 @pytest_asyncio.fixture
 async def failing_target_factory(migration_api):
     """Build a target that injects one deterministic write failure."""
-    import os
+    import uuid
 
     pytest.importorskip("sqlalchemy")
     from sqlalchemy.ext.asyncio import create_async_engine
 
-    engines = []
+    targets = []
 
     async def factory(kind: str, *, fail_after_batches: int):
-        env_name = (
+        url = live_db_url(
             "TRUSTYAI_MIGRATION_TEST_MARIADB_URL"
             if kind == "mariadb"
             else "TRUSTYAI_MIGRATION_TEST_POSTGRES_URL"
         )
-        url = os.environ.get(env_name)
-        if not url:
-            pytest.skip(f"set {env_name} to run the {kind} integration target")
         engine = create_async_engine(url)
-        engines.append(engine)
         target = migration_api.DatabaseTarget(
             engine,
-            migration_namespace=f"failure_{kind}",
+            migration_namespace=f"failure_{kind}_{uuid.uuid4().hex}",
             fail_after_batches=fail_after_batches,
         )
         await target.reset_for_test()
+        targets.append(target)
         return target
 
     yield factory
-    for engine in engines:
-        await engine.dispose()
+    for target in targets:
+        try:
+            await target.reset_for_test()
+        finally:
+            await target.engine.dispose()
 
 
 @pytest.fixture
@@ -351,6 +370,12 @@ def partial_payload() -> KServeInferenceRequest:
 
 
 @pytest.fixture
+def modelmesh_partial_payload() -> PartialPayload:
+    """Return a representative ModelMesh partial payload."""
+    return PartialPayload(data="cHJvdG9idWY=", metadata={"model_id": "mm-model"})
+
+
+@pytest.fixture
 def pvc_fixture_with_partial_payload(
     pvc_fixture: PVCFixture,
     partial_payload: KServeInferenceRequest,
@@ -363,6 +388,22 @@ def pvc_fixture_with_partial_payload(
         )
         dataset.attrs["pending-1"] = np.void(serialize_model(partial_payload))
     return pvc_fixture
+
+
+@pytest.fixture
+def pvc_fixture_with_modelmesh_partial_payload(
+    pvc_fixture_with_partial_payload: PVCFixture,
+    modelmesh_partial_payload: PartialPayload,
+) -> PVCFixture:
+    """Add a persisted ModelMesh partial input payload to the PVC."""
+    partial_path = pvc_fixture_with_partial_payload.directory / (
+        f"{PARTIAL_INPUT_NAME}_trustyai.hdf5"
+    )
+    with h5py.File(partial_path, "a") as h5_file:
+        h5_file[PARTIAL_INPUT_NAME].attrs["mm-1"] = np.void(
+            serialize_model(modelmesh_partial_payload)
+        )
+    return pvc_fixture_with_partial_payload
 
 
 @pytest.fixture

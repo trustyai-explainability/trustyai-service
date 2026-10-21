@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import math
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, cast
@@ -343,22 +344,22 @@ class MigrationRunner:
         if self._migration_id is None:
             msg = "migration id was not initialized during preflight"
             raise MigrationPreflightError(msg)
-        state = await self.target.get_migration_dataset_state(
-            self._migration_id,
-            descriptor.name,
-        )
-        await self.target.ensure_dataset(descriptor)
-        if await self._state_is_complete(state, descriptor):
-            result.datasets_written += 1
-            return
-
-        # Dataset checkpoints are written only after the complete dataset is
-        # durable. Any incomplete or stale target rows must therefore be
-        # removed before retrying, otherwise write_data would append them.
-        await self.target.rollback_dataset(descriptor.name)
-
         rows_written = 0
         try:
+            state = await self.target.get_migration_dataset_state(
+                self._migration_id,
+                descriptor.name,
+            )
+            await self.target.ensure_dataset(descriptor)
+            if await self._state_is_complete(state, descriptor):
+                result.datasets_written += 1
+                return
+
+            # Dataset checkpoints are written only after the complete dataset is
+            # durable. Any incomplete or stale target rows must therefore be
+            # removed before retrying, otherwise write_data would append them.
+            await self.target.rollback_dataset(descriptor.name)
+
             for start in range(0, descriptor.row_count, self.config.batch_size):
                 rows = await self.source.read_rows(
                     descriptor,
@@ -449,6 +450,13 @@ class MigrationRunner:
         if manifest.total_files < 0:
             msg = "source manifest has a negative file count"
             raise MigrationValidationError(msg)
+        if not manifest.datasets and not manifest.partial_payloads:
+            msg = (
+                "source manifest contains no datasets or partial payloads; "
+                "verify the PVC source path and --data-file "
+                "(STORAGE_DATA_FILENAME) or the MariaDB source URL and schema"
+            )
+            raise MigrationValidationError(msg)
         seen_names: set[str] = set()
         for descriptor in manifest.datasets:
             MigrationRunner._validate_descriptor(descriptor, seen_names)
@@ -489,7 +497,11 @@ class MigrationRunner:
 
     @staticmethod
     def _make_migration_id(manifest: SourceManifest) -> str:
-        """Derive a stable checkpoint key from source and target identity."""
+        """Derive a stable checkpoint key from the source snapshot identity.
+
+        Target identity is provided separately by the migration namespace that
+        prefixes the checkpoint tables.
+        """
         value = f"{manifest.source_type}:{manifest.digest}"
         return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
@@ -502,6 +514,12 @@ class MigrationRunner:
 
 def _rows_equal(expected: np.ndarray, actual: np.ndarray) -> bool:
     """Compare object arrays while preserving bytes and nested structures."""
+    # Single-column sources are stored one-dimensional while the target always
+    # normalizes rows to columns; compare both in column form.
+    if expected.ndim == 1:
+        expected = expected.reshape(-1, 1)
+    if actual.ndim == 1:
+        actual = actual.reshape(-1, 1)
     expected_rows = [row.tolist() for row in expected]
     actual_rows = [row.tolist() for row in actual]
     return _values_equal(expected_rows, actual_rows)
@@ -520,6 +538,9 @@ def _values_equal(expected: object, actual: object) -> bool:
             _values_equal(left, right)
             for left, right in zip(expected, actual, strict=True)
         )
+    if isinstance(expected, float) and isinstance(actual, float):
+        # JSON round-trips NaN faithfully, but NaN != NaN under plain equality.
+        return bool(expected == actual) or (math.isnan(expected) and math.isnan(actual))
     try:
         return bool(expected == actual)
     except (TypeError, ValueError):

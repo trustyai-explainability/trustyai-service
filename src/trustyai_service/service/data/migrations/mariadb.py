@@ -20,7 +20,6 @@ from trustyai_service.endpoints.consumer import (
     KServeInferenceRequest,
     KServeInferenceResponse,
 )
-from trustyai_service.service.serialization import deserialize_model
 from trustyai_service.service.serialization.detection import safe_gzip_decompress
 from trustyai_service.service.serialization.encoders import json_decoder_hook
 
@@ -29,6 +28,7 @@ from .contracts import (
     MigrationSource,
     PartialPayloadRecord,
     SourceManifest,
+    decode_partial_payload,
     partial_payload_fingerprint,
 )
 from .errors import MigrationPreflightError, MigrationValidationError
@@ -484,7 +484,7 @@ class MariaDBSource(MigrationSource):
     async def _read_current_partials(
         self, connection: AsyncConnection, table_names: set[str]
     ) -> list[PartialPayloadRecord]:
-        """Read current KServe partial payloads when the table exists."""
+        """Read current KServe and ModelMesh partial payloads when the table exists."""
         table = "trustyai_v2_partial_payloads"
         if table not in table_names:
             return []
@@ -494,15 +494,26 @@ class MariaDBSource(MigrationSource):
                 "FROM `trustyai_v2_partial_payloads`"
             )
         )
-        return [
-            PartialPayloadRecord(
-                payload_id=str(row[0]),
-                is_input=bool(row[1]),
-                is_modelmesh=False,
-                payload=_deserialize_partial(row[2], is_input=bool(row[1])),
+        records: list[PartialPayloadRecord] = []
+        for row in result:
+            is_input = bool(row[1])
+            try:
+                payload, is_modelmesh = decode_partial_payload(
+                    bytes(row[2]),
+                    KServeInferenceRequest if is_input else KServeInferenceResponse,
+                )
+            except (TypeError, ValueError, OSError) as error:
+                msg = "unable to decode MariaDB partial payload"
+                raise MigrationValidationError(msg) from error
+            records.append(
+                PartialPayloadRecord(
+                    payload_id=str(row[0]),
+                    is_input=is_input,
+                    is_modelmesh=is_modelmesh,
+                    payload=payload,
+                )
             )
-            for row in result
-        ]
+        return records
 
     async def _read_legacy_partials(
         self, connection: AsyncConnection
@@ -688,15 +699,3 @@ def _decompress_json(value: object) -> str:
 def _current_table_name(table_idx: int) -> str:
     """Build a current-schema table name from a validated integer index."""
     return f"trustyai_v2_dataset_{table_idx}"
-
-
-def _deserialize_partial(value: object, *, is_input: bool) -> object:
-    """Deserialize a current-schema KServe partial payload without leaking raw data."""
-    try:
-        return deserialize_model(
-            bytes(value),
-            KServeInferenceRequest if is_input else KServeInferenceResponse,
-        )
-    except (TypeError, ValueError, OSError) as error:
-        msg = "unable to decode MariaDB partial payload"
-        raise MigrationValidationError(msg) from error

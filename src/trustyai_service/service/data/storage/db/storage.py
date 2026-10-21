@@ -36,7 +36,7 @@ from trustyai_service.service.serialization.encoders import (
     json_encoder,
 )
 
-from .schema import MigrationTables, build_tables
+from .schema import MigrationTables, build_tables, create_schema
 
 logger = logging.getLogger(__name__)
 _MATRIX_DIMENSIONS = 2
@@ -60,8 +60,7 @@ class DBStorage(StorageInterface):
         async with self._init_lock:
             if self._initialized:
                 return
-            async with self.engine.begin() as connection:
-                await connection.run_sync(self.tables.metadata.create_all)
+            await create_schema(self.tables.metadata, self.engine)
             self._initialized = True
 
     async def initialize(self) -> None:
@@ -187,9 +186,11 @@ class DBStorage(StorageInterface):
         rows = np.asarray(new_rows, dtype=object)
         if rows.ndim == 1:
             rows = rows.reshape(-1, 1)
-        if rows.ndim != _MATRIX_DIMENSIONS:
-            msg = f"Expected a two-dimensional row matrix, got shape {rows.shape}"
+        if rows.ndim < _MATRIX_DIMENSIONS:
+            msg = f"Expected a row matrix, got shape {rows.shape}"
             raise ValueError(msg)
+        # N-dimensional single-tensor datasets (shape [rows, d1, ..., dN]) are
+        # stored as nested JSON cells, one blob per row.
         if rows.shape[1] != len(column_names):
             msg = (
                 f"Shape mismatch: {rows.shape[1]} columns supplied, "

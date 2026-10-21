@@ -9,13 +9,13 @@ rebased.
 
 from __future__ import annotations
 
-import os
+import uuid
 
 import numpy as np
 import pytest
 import pytest_asyncio
 
-from .conftest import result_status, target_storage
+from .conftest import live_db_url, result_status, target_storage
 from .test_migration_contract import _runner
 
 
@@ -25,11 +25,7 @@ async def maria_source(migration_api):
     pytest.importorskip("sqlalchemy")
     from sqlalchemy.ext.asyncio import create_async_engine
 
-    url = os.environ.get("TRUSTYAI_MIGRATION_TEST_MARIADB_URL")
-    if not url:
-        pytest.skip("set TRUSTYAI_MIGRATION_TEST_MARIADB_URL for MariaDB integration")
-
-    engine = create_async_engine(url)
+    engine = create_async_engine(live_db_url("TRUSTYAI_MIGRATION_TEST_MARIADB_URL"))
     source = migration_api.MariaDBSource(
         engine,
         schema="auto",
@@ -45,19 +41,14 @@ async def postgres_target(migration_api):
     pytest.importorskip("sqlalchemy")
     from sqlalchemy.ext.asyncio import create_async_engine
 
-    url = os.environ.get("TRUSTYAI_MIGRATION_TEST_POSTGRES_URL")
-    if not url:
-        pytest.skip(
-            "set TRUSTYAI_MIGRATION_TEST_POSTGRES_URL for PostgreSQL integration"
-        )
-
-    engine = create_async_engine(url)
+    engine = create_async_engine(live_db_url("TRUSTYAI_MIGRATION_TEST_POSTGRES_URL"))
     target = migration_api.DatabaseTarget(
         engine,
-        migration_namespace="maria_to_postgres",
+        migration_namespace=f"maria_to_postgres_{uuid.uuid4().hex}",
     )
     await target.reset_for_test()
     yield target
+    await target.reset_for_test()
     await engine.dispose()
 
 
@@ -123,7 +114,7 @@ async def test_legacy_mariadb_to_postgres_is_idempotent(
     assert result_status(first) == "COMPLETE"
     assert result_status(second) == "COMPLETE"
     assert second.rows_written == 0
-    assert await target_storage(postgres_target).dataset_rows("model1_inputs") == 300
+    assert await target_storage(postgres_target).dataset_rows("model1_inputs") == 100
 
 
 @pytest.mark.asyncio
@@ -147,9 +138,8 @@ async def test_current_v2_mariadb_to_postgres_path_is_explicit(
     migration_api, postgres_target
 ) -> None:
     """The suite reserves a separate test for the current trustyai_v2 schema."""
-    url = os.environ.get("TRUSTYAI_MIGRATION_TEST_MARIADB_V2_URL")
-    if not url:
-        pytest.skip("set TRUSTYAI_MIGRATION_TEST_MARIADB_V2_URL for v2 integration")
+    # No seeded v2 fixture exists yet, so this URL stays optional everywhere.
+    url = live_db_url("TRUSTYAI_MIGRATION_TEST_MARIADB_V2_URL", required=False)
 
     pytest.importorskip("sqlalchemy")
     from sqlalchemy.ext.asyncio import create_async_engine

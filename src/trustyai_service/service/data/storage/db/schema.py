@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import sqlite3
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     BigInteger,
@@ -18,10 +20,31 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
+from sqlalchemy.dialects import mysql, postgresql
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.types import JSON
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncEngine
 
 _MAX_NAMESPACE_LENGTH = 255
 _SURROGATE_KEY_TYPE = BigInteger().with_variant(Integer, "sqlite")
+_SCHEMA_CREATE_ATTEMPTS = 3
+_MARIADB_TABLE_EXISTS = 1050
+_POSTGRES_CATALOG_UNIQUE_CONSTRAINTS = {
+    "pg_class_relname_nsp_index",
+    "pg_type_typname_nsp_index",
+}
+# Opaque gzipped-JSON blobs. MySQL/MariaDB's default BLOB caps at 64 KiB,
+# far too small for gzipped payload and row blobs, so LONGBLOB is used there.
+_BLOB = (
+    LargeBinary()
+    .with_variant(mysql.LONGBLOB(), "mysql")
+    .with_variant(mysql.LONGBLOB(), "mariadb")
+)
+# JSON metadata document. JSONB on PostgreSQL for parity with the SQL storage
+# backends and indexability.
+_JSON = JSON().with_variant(postgresql.JSONB(), "postgresql")
 
 
 @dataclass(frozen=True)
@@ -44,6 +67,52 @@ def _namespace_token(namespace: str) -> str:
     return hashlib.sha256(namespace.encode("utf-8")).hexdigest()[:16]
 
 
+def _is_concurrent_table_creation(error: DBAPIError) -> bool:
+    """Recognize duplicate DDL objects without treating data conflicts as races."""
+    if not (error.statement or "").lstrip().upper().startswith("CREATE TABLE "):
+        return False
+    original = error.orig
+    if getattr(original, "errno", None) == _MARIADB_TABLE_EXISTS:
+        return True
+    sqlstate = getattr(original, "sqlstate", None)
+    if sqlstate == "42P07":  # PostgreSQL duplicate_table
+        return True
+    if sqlstate == "23505":  # Concurrent CREATE can collide in system catalogs.
+        diagnostic = getattr(original, "diag", None)
+        return (
+            getattr(diagnostic, "constraint_name", None)
+            in _POSTGRES_CATALOG_UNIQUE_CONSTRAINTS
+        )
+    return (
+        isinstance(original, sqlite3.OperationalError)
+        and getattr(original, "sqlite_errorcode", None) == sqlite3.SQLITE_ERROR
+        and str(original).startswith("table ")
+        and str(original).endswith(" already exists")
+    )
+
+
+async def create_schema(metadata: MetaData, engine: AsyncEngine) -> None:
+    """Create namespace tables, tolerating another instance creating them first.
+
+    ``checkfirst`` and ``CREATE`` are separate operations, so a competing
+    process can create a table between them. Retry the complete existence
+    check in a fresh transaction after a duplicate-object error, including on
+    PostgreSQL where the failed DDL aborts the preceding transaction.
+    """
+    for attempt in range(_SCHEMA_CREATE_ATTEMPTS):
+        try:
+            async with engine.begin() as connection:
+                await connection.run_sync(metadata.create_all)
+        except DBAPIError as error:
+            if (
+                attempt == _SCHEMA_CREATE_ATTEMPTS - 1
+                or not _is_concurrent_table_creation(error)
+            ):
+                raise
+        else:
+            return
+
+
 def build_tables(namespace: str) -> MigrationTables:
     """Build isolated tables for a migration namespace.
 
@@ -58,7 +127,7 @@ def build_tables(namespace: str) -> MigrationTables:
         metadata,
         Column("id", _SURROGATE_KEY_TYPE, primary_key=True, autoincrement=True),
         Column("dataset_name", String(255), nullable=False),
-        Column("metadata", JSON, nullable=False),
+        Column("metadata", _JSON, nullable=False),
         Column("n_rows", BigInteger, nullable=False, default=0),
         UniqueConstraint("dataset_name", name=f"uq_{prefix}_dataset_name"),
     )
@@ -68,7 +137,7 @@ def build_tables(namespace: str) -> MigrationTables:
         Column("id", _SURROGATE_KEY_TYPE, primary_key=True, autoincrement=True),
         Column("dataset_name", String(255), nullable=False),
         Column("row_idx", BigInteger, nullable=False),
-        Column("row_data", LargeBinary, nullable=False),
+        Column("row_data", _BLOB, nullable=False),
         UniqueConstraint(
             "dataset_name",
             "row_idx",
@@ -81,7 +150,7 @@ def build_tables(namespace: str) -> MigrationTables:
         Column("payload_id", String(255), nullable=False),
         Column("is_input", Boolean, nullable=False),
         Column("is_modelmesh", Boolean, nullable=False, default=False),
-        Column("payload_data", LargeBinary, nullable=False),
+        Column("payload_data", _BLOB, nullable=False),
         UniqueConstraint(
             "payload_id",
             "is_input",

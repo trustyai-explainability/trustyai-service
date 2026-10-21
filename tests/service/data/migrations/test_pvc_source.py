@@ -49,6 +49,26 @@ async def test_pvc_source_decodes_partial_payload_file(
 
 
 @pytest.mark.asyncio
+async def test_pvc_source_classifies_modelmesh_partial_payloads(
+    migration_api,
+    pvc_fixture_with_modelmesh_partial_payload,
+    modelmesh_partial_payload,
+) -> None:
+    """ModelMesh partial payloads are detected instead of failing preflight."""
+    source = migration_api.PVCSource(
+        pvc_fixture_with_modelmesh_partial_payload.directory,
+        quiesced=True,
+    )
+
+    manifest = await source.preflight()
+
+    by_id = {record.payload_id: record for record in manifest.partial_payloads}
+    assert by_id["pending-1"].is_modelmesh is False
+    assert by_id["mm-1"].is_modelmesh is True
+    assert by_id["mm-1"].payload == modelmesh_partial_payload
+
+
+@pytest.mark.asyncio
 async def test_pvc_source_rejects_missing_column_metadata(
     migration_api, invalid_pvc_fixture
 ) -> None:

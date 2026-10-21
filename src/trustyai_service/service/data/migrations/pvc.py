@@ -24,13 +24,14 @@ from trustyai_service.service.data.storage.pvc import (
     PARTIAL_INPUT_NAME,
     PARTIAL_OUTPUT_NAME,
 )
-from trustyai_service.service.serialization import deserialize_model, deserialize_rows
+from trustyai_service.service.serialization import deserialize_rows
 
 from .contracts import (
     DatasetDescriptor,
     MigrationSource,
     PartialPayloadRecord,
     SourceManifest,
+    decode_partial_payload,
     partial_payload_fingerprint,
 )
 from .errors import MigrationPreflightError, MigrationValidationError
@@ -230,8 +231,8 @@ class PVCSource(MigrationSource):
         path: Path,
         dataset_name: str,
     ) -> list[PartialPayloadRecord]:
-        """Decode persisted KServe partial payload attributes."""
-        target_class = (
+        """Decode persisted KServe and ModelMesh partial payload attributes."""
+        kserve_class = (
             KServeInferenceRequest
             if dataset_name == PARTIAL_INPUT_NAME
             else KServeInferenceResponse
@@ -245,7 +246,9 @@ class PVCSource(MigrationSource):
             for payload_id in dataset.attrs:
                 raw = dataset.attrs[payload_id]
                 try:
-                    payload = deserialize_model(self._bytes(raw), target_class)
+                    payload, is_modelmesh = decode_partial_payload(
+                        self._bytes(raw), kserve_class
+                    )
                 except Exception as error:
                     msg = f"unable to decode partial payload '{payload_id}'"
                     raise MigrationValidationError(msg) from error
@@ -253,7 +256,7 @@ class PVCSource(MigrationSource):
                     PartialPayloadRecord(
                         payload_id=str(payload_id),
                         is_input=dataset_name == PARTIAL_INPUT_NAME,
-                        is_modelmesh=False,
+                        is_modelmesh=is_modelmesh,
                         payload=payload,
                     )
                 )

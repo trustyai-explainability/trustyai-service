@@ -5,8 +5,17 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from trustyai_service.service.data.modelmesh_parser import PartialPayload
+from trustyai_service.service.serialization import deserialize_model
+
 if TYPE_CHECKING:
     import numpy as np
+    from pydantic import BaseModel
+
+    from trustyai_service.endpoints.consumer import (
+        KServeInferenceRequest,
+        KServeInferenceResponse,
+    )
 
 
 @dataclass(frozen=True)
@@ -61,6 +70,22 @@ def partial_payload_fingerprint(payload: PartialPayloadRecord) -> dict[str, Any]
         "is_modelmesh": payload.is_modelmesh,
         "payload": value,
     }
+
+
+def decode_partial_payload(
+    raw: bytes, kserve_class: type[KServeInferenceRequest | KServeInferenceResponse]
+) -> tuple[BaseModel, bool]:
+    """Decode one stored partial payload and report whether it is ModelMesh.
+
+    Backends persist KServe and ModelMesh partial payloads side by side without
+    a type marker, so classification relies on the schemas being mutually
+    exclusive: a serialized ``PartialPayload`` never validates as a KServe
+    request/response and vice versa.
+    """
+    try:
+        return deserialize_model(raw, kserve_class), False
+    except ValueError:
+        return deserialize_model(raw, PartialPayload), True
 
 
 class MigrationSource:

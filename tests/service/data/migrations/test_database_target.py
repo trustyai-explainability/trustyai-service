@@ -6,6 +6,12 @@ import numpy as np
 import pytest
 
 
+class _FakeDuplicateTable:
+    """Mimic a MariaDB 'table already exists' driver error."""
+
+    errno = 1050
+
+
 @pytest.mark.asyncio
 async def test_database_target_preserves_rows_and_column_metadata(
     sqlite_target,
@@ -106,3 +112,61 @@ async def test_database_target_reset_is_namespace_scoped(migration_api):
         assert await second.storage.list_all_datasets() == ["second_dataset"]
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_database_target_retries_concurrent_table_creation(
+    sqlite_target,
+) -> None:
+    """A duplicate-object race while creating tables is retried, not fatal."""
+    from sqlalchemy.exc import DBAPIError
+
+    storage = sqlite_target.storage
+    real_create_all = storage.tables.metadata.create_all
+    calls = []
+    race_statement = "CREATE TABLE trusty_migration_race_datasets"
+
+    def flaky_create_all(bind) -> None:
+        calls.append(bind)
+        if len(calls) == 1:
+            raise DBAPIError(race_statement, (), _FakeDuplicateTable())
+        real_create_all(bind)
+
+    storage.tables.metadata.create_all = flaky_create_all
+    try:
+        await storage.initialize()
+    finally:
+        del storage.tables.metadata.create_all
+
+    assert len(calls) == 2
+    await storage.write_data(
+        "race_inputs",
+        np.asarray([[1.0]], dtype=np.float64),
+        ["value"],
+    )
+    assert await storage.dataset_rows("race_inputs") == 1
+
+
+@pytest.mark.asyncio
+async def test_database_target_does_not_mask_non_ddl_failures(
+    sqlite_target,
+) -> None:
+    """Driver errors that are not duplicate-table races still fail loudly."""
+    from sqlalchemy.exc import DBAPIError
+
+    storage = sqlite_target.storage
+    calls = []
+    insert_statement = "INSERT INTO trusty_migration_race_datasets"
+
+    def failing_create_all(bind) -> None:
+        calls.append(bind)
+        raise DBAPIError(insert_statement, (), _FakeDuplicateTable())
+
+    storage.tables.metadata.create_all = failing_create_all
+    try:
+        with pytest.raises(DBAPIError):
+            await storage.initialize()
+    finally:
+        del storage.tables.metadata.create_all
+
+    assert len(calls) == 1

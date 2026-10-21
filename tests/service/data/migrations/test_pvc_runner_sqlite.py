@@ -87,6 +87,32 @@ async def test_pvc_runner_copies_partial_payload_to_sqlite(
 
 
 @pytest.mark.asyncio
+async def test_pvc_runner_copies_modelmesh_partial_payload_to_sqlite(
+    migration_api,
+    pvc_fixture_with_modelmesh_partial_payload,
+    modelmesh_partial_payload,
+    sqlite_target,
+) -> None:
+    """Partial ModelMesh payloads survive the canonical transfer."""
+    source = migration_api.PVCSource(
+        pvc_fixture_with_modelmesh_partial_payload.directory,
+        quiesced=True,
+    )
+
+    result = await _runner(migration_api, source, sqlite_target).run()
+
+    assert result_status(result) == "COMPLETE"
+    assert (
+        await target_storage(sqlite_target).get_partial_payload(
+            "mm-1",
+            is_input=True,
+            is_modelmesh=True,
+        )
+        == modelmesh_partial_payload
+    )
+
+
+@pytest.mark.asyncio
 async def test_pvc_runner_is_idempotent_and_verifies_sqlite_target(
     migration_api, pvc_fixture, sqlite_target
 ) -> None:
