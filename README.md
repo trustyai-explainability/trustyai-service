@@ -119,7 +119,7 @@ podman run -p 8080:8080 trustyai:latest
 | `DATABASE_PASSWORD` | — | Database password |
 | `DATABASE_DATABASE` | — | Database name |
 | `DATABASE_TLS_CA_CERT` | `/etc/tls/db/ca.crt` | CA certificate used to verify the database server |
-| `DATABASE_ALLOW_INSECURE_TLS` | `false` | Allow a database connection with no CA certificate (development only) |
+| `DATABASE_ALLOW_INSECURE_TLS` | `unset` (allows no-CA connections) | Set to `false` to require a usable CA certificate; `true` explicitly permits a no-CA connection |
 | `DATABASE_POOL_SIZE` | `5` | Base connection pool size per service pod (must be at least `1`) |
 | `DATABASE_MAX_OVERFLOW` | `10` | Maximum extra pooled connections per pod (must be nonnegative) |
 | `DATABASE_POOL_TIMEOUT` | `30` | Seconds to wait for a pooled connection |
@@ -143,15 +143,27 @@ files are present.
 
 ### Database TLS
 
-MariaDB and PostgreSQL connections require authenticated TLS. The service reads
-the CA certificate from `DATABASE_TLS_CA_CERT` and verifies the server against
-it (`sslmode=verify-full` on PostgreSQL, `ssl_verify_cert` on MariaDB). Startup
-fails when that file is absent, because both drivers would otherwise fall back
-to an unverified — and, for PostgreSQL, possibly plaintext — connection.
+MariaDB and PostgreSQL connections verify the server certificate when a CA file
+is available at `DATABASE_TLS_CA_CERT` (`sslmode=verify-full` on PostgreSQL,
+`ssl_verify_cert` on MariaDB). Without a CA file, the service allows the
+database driver's unverified or plaintext connection behavior by default. Set
+`DATABASE_ALLOW_INSECURE_TLS=false` to require a usable CA.
 
-For local development against a database without TLS, set
-`DATABASE_ALLOW_INSECURE_TLS=true` to accept that fallback. Do not set it in a
-deployment.
+The Kubernetes operator preserves optional database TLS for operator-managed
+services. In `DATABASE` mode, it mounts the CA from the optional
+`<TrustyAIService-name>-db-tls` Secret. If the Secret is absent, the operator
+omits the mount, so the service uses its default no-CA behavior. When the Secret
+exists, the operator mounts its `tls.crt` key as `/etc/tls/db/ca.crt` and sets
+`DATABASE_TLS_CA_CERT` to that path, enabling certificate verification. A
+missing CA file fails startup and a present but invalid CA fails verification.
+The legacy
+`<TrustyAIService-name>-db-ca` Secret with a `ca.crt` key is also accepted. The
+database credentials and connection settings remain in the separate
+`databaseConfigurations` Secret.
+
+For deployments that require TLS, mount a CA certificate and point
+`DATABASE_TLS_CA_CERT` at it, or set `DATABASE_ALLOW_INSECURE_TLS=false` to fail
+startup when no CA is available.
 
 ---
 
