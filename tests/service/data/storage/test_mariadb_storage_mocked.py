@@ -18,6 +18,9 @@ if TYPE_CHECKING:
 
 mariadb = pytest.importorskip("mariadb")
 
+from trustyai_service.service.data.storage.maria.legacy_maria_reader import (  # noqa: E402
+    LegacyMariaDBStorageReader,
+)
 from trustyai_service.service.data.storage.maria.utils import (  # noqa: E402
     MariaConnectionManager,
     get_clean_column_names,
@@ -123,6 +126,40 @@ class TestMariaConnectionManager:
 
 
 # ===========================================================================
+# LegacyMariaDBStorageReader
+# ===========================================================================
+
+
+class TestLegacyMariaDBStorageReader:
+    """Tests for legacy MariaDB storage reader configuration."""
+
+    @patch(
+        "trustyai_service.service.data.storage.maria.legacy_maria_reader.MariaConnectionManager"
+    )
+    def test_forwards_tls_ca_to_connection_manager(
+        self, mock_connection_manager: MagicMock
+    ) -> None:
+        """Legacy reader forwards the configured CA to its connection manager."""
+        LegacyMariaDBStorageReader(
+            user="user",
+            password="pass",  # noqa: S106  # pragma: allowlist secret
+            host="localhost",
+            port=3306,
+            database="testdb",
+            ssl_ca="/path/to/ca.crt",
+        )
+
+        mock_connection_manager.assert_called_once_with(
+            "user",
+            "pass",  # pragma: allowlist secret
+            "localhost",
+            3306,
+            "testdb",
+            ssl_ca="/path/to/ca.crt",
+        )
+
+
+# ===========================================================================
 # get_clean_column_names
 # ===========================================================================
 
@@ -202,6 +239,33 @@ class TestMariaDBStorageMocked:
             storage.partial_payload_table = "trustyai_v2_partial_payloads"
             storage.connection_manager = MagicMock()
             return storage
+
+    @patch(
+        "trustyai_service.service.data.storage.maria.maria.LegacyMariaDBStorageReader"
+    )
+    def test_legacy_reader_reuses_database_tls_ca(
+        self, mock_legacy_reader: MagicMock
+    ) -> None:
+        """Legacy migration connections reuse the MariaDB CA certificate."""
+        storage = self._make_storage()
+        storage.user = "user"
+        storage.password = "pass"  # noqa: S105  # pragma: allowlist secret
+        storage.host = "localhost"
+        storage.port = 3306
+        storage.database = "testdb"
+        storage.ssl_ca = "/path/to/ca.crt"
+        mock_legacy_reader.return_value.legacy_data_exists.return_value = False
+
+        _run(storage._migrate_from_legacy_db())
+
+        mock_legacy_reader.assert_called_once_with(
+            user="user",
+            password="pass",  # noqa: S106  # pragma: allowlist secret
+            host="localhost",
+            port=3306,
+            database="testdb",
+            ssl_ca="/path/to/ca.crt",
+        )
 
     def test_dataset_exists_returns_false_on_programming_error(self) -> None:
         """dataset_exists returns False when MariaDB raises ProgrammingError."""
