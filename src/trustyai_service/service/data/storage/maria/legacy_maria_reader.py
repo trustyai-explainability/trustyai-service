@@ -30,6 +30,8 @@ class LegacyMariaDBStorageReader:
         host: str | None,
         port: int,
         database: str | None,
+        *,
+        ssl_ca: str | None = None,
     ) -> None:
         """Initialize legacy reader with database connection parameters.
 
@@ -38,9 +40,10 @@ class LegacyMariaDBStorageReader:
         :param host: Database host
         :param port: Database port
         :param database: Database name
+        :param ssl_ca: Path to the CA certificate used to verify the database server
         """
         self.connection_manager = MariaConnectionManager(
-            user, password, host, port, database
+            user, password, host, port, database, ssl_ca=ssl_ca
         )
 
     def legacy_data_exists(self) -> bool:
