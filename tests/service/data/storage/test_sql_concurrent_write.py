@@ -46,11 +46,11 @@ def writers(
     request: pytest.FixtureRequest, tmp_path: Path, names: SQLTestResources
 ) -> Iterator[list[SQLStorage]]:
     """Give each writer a separate engine connected to the same database."""
-    stores = (
-        [SQLiteStorage(str(tmp_path / "competing.sqlite")) for _ in range(2)]
-        if request.param == "sqlite"
-        else [_FACTORIES[request.param]() for _ in range(2)]
-    )
+    stores: list[SQLStorage]
+    if request.param == "sqlite":
+        stores = [SQLiteStorage(str(tmp_path / "competing.sqlite")) for _ in range(2)]
+    else:
+        stores = [_FACTORIES[request.param]() for _ in range(2)]
     try:
         yield stores
     finally:
