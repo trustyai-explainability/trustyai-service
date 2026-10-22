@@ -69,7 +69,7 @@ class TestCompareMeansEndpoints:
             "fitColumns": ["feature1"],
             "alpha": 0.05,
         },
-        expected_metric_name="COMPAREMEANS",
+        expected_metric_name="CompareMeans",
     )
 
     test_delete_schedule_endpoint = factory.make_delete_schedule_endpoint_test(
@@ -536,7 +536,7 @@ class TestCompareMeansEndpoints:
             "fitColumns": ["feature1"],
             "alpha": 0.05,
         },
-        expected_metric_name="MEANSHIFT",
+        expected_metric_name="Meanshift",
     )
 
     test_deprecated_delete_schedule_endpoint = factory.make_deprecated_endpoint_test(
@@ -664,13 +664,13 @@ class TestCompareMeansEndpoints:
     test_retrieve_default_tags_with_none_metric_name = (
         factory.make_retrieve_default_tags_with_none_metric_name_test(
             request_class=CompareMeansMetricRequest,
-            expected_metric_name="COMPAREMEANS",
+            expected_metric_name="CompareMeans",
         )
     )
 
     test_retrieve_default_tags_called_directly_by_prometheus_publisher = (
         factory.make_retrieve_default_tags_called_directly_by_prometheus_publisher_test(
             request_class=CompareMeansMetricRequest,
-            expected_metric_name="COMPAREMEANS",
+            expected_metric_name="CompareMeans",
         )
     )

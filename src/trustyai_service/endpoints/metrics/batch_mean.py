@@ -33,8 +33,8 @@ from trustyai_service.service.utils.logging_utils import log_deprecated_endpoint
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-METRIC_NAME = "BATCHMEAN"
-DEPRECATED_METRIC_NAME = "IDENTITY"
+METRIC_NAME = "BatchMean"
+DEPRECATED_METRIC_NAME = "Identity"
 DEFAULT_BATCH_SIZE = 100
 
 
@@ -281,7 +281,7 @@ async def _list_batch_mean_requests(metric_name: str) -> dict:
                 {
                     "requestId": str(request_id),
                     "modelId": request.model_id,
-                    "metricName": metric_name,
+                    "metricName": METRIC_NAME,
                     "batchSize": getattr(request, "batch_size", DEFAULT_BATCH_SIZE),
                     "columnName": request.column_name,
                     "lowerThreshold": getattr(request, "lower_threshold", None),

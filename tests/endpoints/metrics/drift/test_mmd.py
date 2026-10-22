@@ -566,7 +566,7 @@ class TestMMDEndpoints:
         mock_scheduler = MagicMock()
         mock_request = MMDMetricRequest(
             modelId="test_model",
-            metricName="FOURIERMMD",
+            metricName="FourierMMD",
             batchSize=100,
             referenceTag="ref_tag",
             fitColumns=["col1"],
@@ -583,8 +583,8 @@ class TestMMDEndpoints:
             data = response.json()
             assert "requests" in data
             assert len(data["requests"]) == 1
-            # Verify metricName is FOURIERMMD, not MMD
-            assert data["requests"][0]["metricName"] == "FOURIERMMD"
+            # Verify metricName is FourierMMD, not MMD
+            assert data["requests"][0]["metricName"] == "FourierMMD"
 
     def test_helper_functions(self) -> None:
         """Test that helper functions return the correct shared instances."""
