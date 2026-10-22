@@ -216,6 +216,13 @@ async def get_compare_means_definition() -> dict[str, str]:
 @router.post(routes.DRIFT_COMPARE_MEANS.request)
 async def schedule_compare_means(request: CompareMeansMetricRequest) -> dict[str, str]:
     """Schedule a recurring computation of CompareMeans metric."""
+    return await _schedule_compare_means(request, METRIC_NAME)
+
+
+async def _schedule_compare_means(
+    request: CompareMeansMetricRequest, metric_name: str
+) -> dict[str, str]:
+    """Schedule a recurring computation under the route's exact metric name."""
     # Get the scheduler and validate availability
     scheduler = get_prometheus_scheduler()
     if not scheduler:
@@ -230,26 +237,23 @@ async def schedule_compare_means(request: CompareMeansMetricRequest) -> dict[str
     try:
         # Generate UUID for this request
         request_id = uuid.uuid4()
-        logger.info("Scheduling %s computation with ID: %s.", METRIC_NAME, request_id)
+        logger.info("Scheduling %s computation with ID: %s.", metric_name, request_id)
 
-        if request.metric_name.upper() == DEPRECATED_METRIC_NAME:
-            request.metric_name = DEPRECATED_METRIC_NAME
-        else:
-            request.metric_name = METRIC_NAME
+        request.metric_name = metric_name
         # Register with the scheduler (this will reconcile the request and store it)
-        await scheduler.register(request.metric_name, request_id, request)
+        await scheduler.register(metric_name, request_id, request)
 
     except HTTPException:
         raise
     except Exception as e:  # Broad catch intentional: scheduler registration errors should not crash endpoint
-        logger.exception("Error scheduling %s computation", METRIC_NAME)
+        logger.exception("Error scheduling %s computation", metric_name)
         raise HTTPException(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
             detail="Error scheduling metric. Check server logs for details.",
         ) from e
     else:
         logger.info(
-            "Successfully scheduled %s computation with ID: %s", METRIC_NAME, request_id
+            "Successfully scheduled %s computation with ID: %s", metric_name, request_id
         )
         return {"requestId": str(request_id)}
 
@@ -430,8 +434,7 @@ async def schedule_meanshift(request: MeanshiftMetricRequest) -> dict[str, str]:
     compare_means_request = CompareMeansMetricRequest.model_validate(
         request.model_dump(exclude_none=True)
     )
-    compare_means_request.metric_name = DEPRECATED_METRIC_NAME
-    return await schedule_compare_means(compare_means_request)
+    return await _schedule_compare_means(compare_means_request, DEPRECATED_METRIC_NAME)
 
 
 @router.delete(routes.DRIFT_MEANSHIFT.request, deprecated=True)
