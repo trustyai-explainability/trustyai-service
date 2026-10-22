@@ -364,7 +364,7 @@ class TestJensenShannonEndpoints:
                 "trustyai_service.endpoints.metrics.drift.jensen_shannon",
                 fromlist=["JensenShannonMetricRequest"],
             ).JensenShannonMetricRequest,
-            expected_metric_name="JENSENSHANNON",
+            expected_metric_name="JensenShannon",
         )
     )
 
@@ -374,7 +374,7 @@ class TestJensenShannonEndpoints:
                 "trustyai_service.endpoints.metrics.drift.jensen_shannon",
                 fromlist=["JensenShannonMetricRequest"],
             ).JensenShannonMetricRequest,
-            expected_metric_name="JENSENSHANNON",
+            expected_metric_name="JensenShannon",
         )
     )
 

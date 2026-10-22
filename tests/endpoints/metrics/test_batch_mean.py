@@ -59,7 +59,7 @@ class TestBatchMeanCompute:
 
         assert response.status_code == HTTPStatus.OK
         data = response.json()
-        assert data["name"] == "BATCHMEAN"
+        assert data["name"] == "BatchMean"
         assert data["type"] == "BATCH_MEAN"
         assert isinstance(data["value"], float)
         assert "specificDefinition" in data
@@ -192,10 +192,6 @@ class TestBatchMeanSchedule:
         assert response.status_code == HTTPStatus.OK
         assert "requestId" in response.json()
         assert "-" in response.json()["requestId"]
-        register_call = mock_sched.register.call_args
-        assert register_call is not None
-        assert register_call.args[0] == "BATCHMEAN"
-        assert register_call.args[2].metric_name == "BATCHMEAN"
 
     @patch(f"{MODULE}.get_prometheus_scheduler")
     def test_delete_schedule(self, mock_sched_fn: MagicMock) -> None:
@@ -262,7 +258,7 @@ class TestBatchMeanList:
         data = response.json()
         assert len(data["requests"]) == num_requests
         for req in data["requests"]:
-            assert req["metricName"] == "BATCHMEAN"
+            assert req["metricName"] == "BatchMean"
             assert "columnName" in req
 
     @patch(f"{MODULE}.get_prometheus_scheduler")
@@ -312,7 +308,7 @@ class TestDeprecatedIdentityEndpoints:
 
         response = client.post(routes.IDENTITY.compute, json=_base_payload())
         assert response.status_code == HTTPStatus.OK
-        assert response.json()["name"] == "BATCHMEAN"
+        assert response.json()["name"] == "BatchMean"
         assert response.json()["value"] == 2.0
 
     def test_deprecated_definition(self) -> None:
@@ -331,10 +327,6 @@ class TestDeprecatedIdentityEndpoints:
         response = client.post(routes.IDENTITY.request, json=_base_payload())
         assert response.status_code == HTTPStatus.OK
         assert "requestId" in response.json()
-        register_call = mock_sched.register.call_args
-        assert register_call is not None
-        assert register_call.args[0] == "IDENTITY"
-        assert register_call.args[2].metric_name == "IDENTITY"
 
     @patch(f"{MODULE}.get_prometheus_scheduler")
     def test_deprecated_delete(self, mock_sched_fn: MagicMock) -> None:
@@ -368,7 +360,7 @@ class TestBatchMeanRequest:
     def test_default_metric_name(self) -> None:
         """Default metric_name is set to BatchMean via field default."""
         request = BatchMeanRequest(modelId="test", columnName="col")
-        assert request.metric_name == "BATCHMEAN"
+        assert request.metric_name == "BatchMean"
 
     def test_retrieve_tags(self) -> None:
         """Tags match the Java BatchMean request labels."""

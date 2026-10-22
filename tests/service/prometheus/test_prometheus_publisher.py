@@ -137,6 +137,50 @@ class TestPrometheusPublisher:
                 subcategory_value_map[sample.labels["subcategory"]] = sample.value
         assert subcategory_value_map == test_named_values
 
+    @pytest.mark.parametrize(
+        ("metric_name", "expected_label", "expected_family"),
+        [
+            ("Meanshift", "MEANSHIFT", "trustyai_meanshift"),
+            ("KSTest", "KSTEST", "trustyai_kstest"),
+            ("APPROXKSTEST", "APPROXKSTEST", "trustyai_approxkstest"),
+            ("FOURIERMMD", "FOURIERMMD", "trustyai_fouriermmd"),
+            ("BatchMean", "BATCHMEAN", "trustyai_batchmean"),
+            ("CompareMeans", "COMPAREMEANS", "trustyai_comparemeans"),
+            ("JensenShannon", "JENSENSHANNON", "trustyai_jensenshannon"),
+        ],
+    )
+    @pytest.mark.parametrize("named_values", [False, True])
+    def test_metric_name_label_casing(
+        self,
+        publisher: PrometheusPublisher,
+        metric_name: str,
+        expected_label: str,
+        expected_family: str,
+        *,
+        named_values: bool,
+    ) -> None:
+        """Publish uppercase labels without changing request or metric family names."""
+        request = MockMetricRequest(metric_name=metric_name)
+        publisher.gauge(
+            GaugeConfig(
+                model_name="test_model",
+                request_id=uuid.uuid4(),
+                request=request,
+                value=None if named_values else 0.5,
+                named_values={"feature": 0.5} if named_values else None,
+            )
+        )
+
+        samples = [
+            sample
+            for metric in publisher.registry.collect()
+            for sample in metric.samples
+        ]
+        assert len(samples) == 1
+        assert samples[0].name == expected_family
+        assert samples[0].labels["metricName"] == expected_label
+        assert request.metric_name == metric_name
+
     def test_simple_gauge_without_request(self, publisher: PrometheusPublisher) -> None:
         """Test publishing simple gauge without request object."""
         test_id = uuid.uuid4()
@@ -269,7 +313,7 @@ class TestPrometheusPublisher:
         )
 
         expected_tags = {
-            "metricName": mock_request.metric_name,
+            "metricName": "TEST_METRIC",
             "model": "test_model",
             "requestName": mock_request.request_name,
             "custom_tag": "custom_value",

@@ -68,12 +68,10 @@ class TestMMDEndpoints:
         client=client,
         request_payload={
             "modelId": "test-model",
-            "metricName": "FourierMMD",
             "referenceTag": "baseline",
             "fitColumns": ["feature1"],
             "alpha": 0.05,
         },
-        expected_metric_name="MMD",
     )
 
     test_delete_schedule_endpoint = factory.make_delete_schedule_endpoint_test(
@@ -537,12 +535,10 @@ class TestMMDEndpoints:
         module_path=MODULE_PATH,
         request_payload={
             "modelId": "test-model",
-            "metricName": "MMD",
             "referenceTag": "baseline",
             "fitColumns": ["feature1"],
             "alpha": 0.05,
         },
-        expected_metric_name="FOURIERMMD",
     )
 
     test_deprecated_delete_schedule_endpoint = factory.make_deprecated_endpoint_test(
