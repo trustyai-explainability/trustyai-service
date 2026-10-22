@@ -1,4 +1,4 @@
-# Storage migration tutorial: PVC, Java CSV, and databases
+# Storage migration tutorial: PVC, CSV, and databases
 
 > **EXPERIMENTAL MIGRATION FEATURE — NOT PRODUCTION-READY**
 >
@@ -36,10 +36,10 @@ the current tables as needed; that schema setup is separate from copying stored
 inference data. The two automatic data migrations are startup paths.
 
 Separately, the explicit `trustyai-migrate` command provides a cross-database
-data-transfer suite with durable migration tracking. It reads Java CSV-on-PVC
-alongside the existing Python HDF5 PVC and MariaDB sources, and can target
-SQLite, MariaDB, or PostgreSQL. This is a command-driven migration, not an
-automatic startup path.
+data-transfer suite with durable migration tracking. It reads CSV files and
+their metadata sidecars alongside the existing Python HDF5 PVC and MariaDB
+sources, and can target SQLite, MariaDB, or PostgreSQL. This is a
+command-driven migration, not an automatic startup path.
 
 ### Migration routes at a glance
 
@@ -53,14 +53,13 @@ Startup migration requires `DATABASE_ATTEMPT_MIGRATION`; HDF5 takes priority
 over legacy MariaDB. The CLI accepts `pvc`, `pvc-csv`, and MariaDB `legacy` or
 `trustyai_v2` sources.
 
-In particular, Java CSV-on-PVC is not detected by the service's automatic
-startup migration. Use `trustyai-migrate --source pvc-csv` for that layout.
+The CSV source is not detected by the service's automatic startup migration.
+Use `trustyai-migrate --source pvc-csv` for that layout.
 
-## 1.1 Explicit Java CSV-on-PVC migration suite
+## 1.1 Explicit CSV-on-PVC migration suite
 
-The Java service's CSV PVC layout is different from this repository's HDF5
-layout. For each model ID, it stores three sibling files in the configured
-folder:
+The CSV PVC layout differs from this repository's HDF5 layout. For each model
+ID, it stores a record CSV and two sidecar files in the configured folder:
 
 | File | Contents |
 | --- | --- |
@@ -582,7 +581,7 @@ uv run pytest tests/service/data/test_mariadb_migration.py -v
 uv run pytest tests/service/test_health_checks.py \
   tests/service/data/test_storage_factory.py -v
 
-# Explicit cross-database migration suite, including Java CSV PVC sources
+# Cross-database migration tests, including CSV PVC sources
 uv run --extra migration pytest tests/service/data/migrations/ -v
 ```
 
@@ -600,8 +599,8 @@ The main implementation locations are:
   PVC discovery, transfer, tracking, and validation.
 - `src/trustyai_service/service/data/storage/maria/legacy_maria_reader.py`:
   reads and converts legacy Java-serialized MariaDB data.
-- `src/trustyai_service/service/data/migrations/pvc_csv.py`: reads Java CSV PVC
-  data and its model/internal metadata sidecars.
+- `src/trustyai_service/service/data/migrations/pvc_csv.py`: reads CSV data
+  with its model/internal metadata sidecars.
 - `src/trustyai_service/service/data/migrations/runner.py`: runs batched
   migrations with durable tracking and verifies target results.
 - `src/trustyai_service/service/data/migrations/target.py`: writes the shared
@@ -610,7 +609,7 @@ The main implementation locations are:
   migration readiness.
 - `tests/service/data/storage/maria/test_pvc_migration.py`: exercises PVC
   migration tracking and transfer behavior.
-- `tests/service/data/migrations/test_pvc_csv_source.py`: exercises Java CSV
-  PVC parsing and SQL-target transfers.
+- `tests/service/data/migrations/test_pvc_csv_source.py`: exercises CSV source
+  parsing and SQL-target transfers.
 - `tests/service/data/test_mariadb_migration.py`: exercises legacy MariaDB
   migration with seeded data.

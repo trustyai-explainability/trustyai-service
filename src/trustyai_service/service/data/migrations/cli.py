@@ -268,7 +268,10 @@ def build_parser() -> argparse.ArgumentParser:
             if os.environ.get("STORAGE_DATA_FOLDER")
             else None
         ),
-        help="PVC directory containing TrustyAI HDF5 or Java CSV files; may be supplied through STORAGE_DATA_FOLDER.",
+        help=(
+            "PVC directory containing TrustyAI HDF5 or CSV files; may be "
+            "supplied through STORAGE_DATA_FOLDER."
+        ),
     )
     parser.add_argument(
         "--source-url",

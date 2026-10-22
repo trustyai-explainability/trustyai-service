@@ -1,4 +1,4 @@
-"""Reader for the Java service's CSV-on-PVC storage format."""
+"""Reader for the CSV-on-PVC storage layout and metadata sidecars."""
 
 from __future__ import annotations
 
@@ -53,7 +53,7 @@ _INTEGER_BOUNDS = {
 
 
 class PVCCSVSource(MigrationSource):
-    """Read the Java service's per-model data and metadata CSV files."""
+    """Read per-model CSV data and metadata sidecars from a PVC."""
 
     source_type = "PVC_CSV"
 
@@ -84,7 +84,7 @@ class PVCCSVSource(MigrationSource):
         try:
             manifest = await asyncio.to_thread(self._build_manifest)
         except OSError as error:
-            msg = f"unable to inspect Java CSV source directory: {error}"
+            msg = f"unable to inspect CSV source directory: {error}"
             raise MigrationPreflightError(msg) from error
         return manifest
 
@@ -122,7 +122,7 @@ class PVCCSVSource(MigrationSource):
         self._types_by_dataset.clear()
         data_paths = self._data_paths()
         if not data_paths:
-            msg = f"no Java CSV data files ending in '-{self.data_file}' found"
+            msg = f"no CSV data files ending in '-{self.data_file}' found"
             raise MigrationValidationError(msg)
 
         descriptors: list[DatasetDescriptor] = []
@@ -246,7 +246,7 @@ class PVCCSVSource(MigrationSource):
             msg = f"PVC CSV source file must not be a symlink: {path.name}"
             raise MigrationValidationError(msg)
         if path.parent != self.directory or not path.is_file():
-            msg = f"missing Java CSV source file: {path.name}"
+            msg = f"missing CSV source file: {path.name}"
             raise MigrationValidationError(msg)
         return path
 
@@ -367,7 +367,7 @@ class PVCCSVSource(MigrationSource):
         except MigrationValidationError:
             raise
         except (OSError, UnicodeDecodeError, csv.Error, ValueError) as error:
-            msg = f"unable to validate Java CSV rows for '{model_id}': {error}"
+            msg = f"unable to validate CSV rows for '{model_id}': {error}"
             raise MigrationValidationError(msg) from error
         return count
 
@@ -454,10 +454,10 @@ class PVCCSVSource(MigrationSource):
         except MigrationValidationError:
             raise
         except (OSError, UnicodeDecodeError, csv.Error, ValueError) as error:
-            msg = f"unable to read Java CSV dataset '{dataset.name}': {error}"
+            msg = f"unable to read CSV dataset '{dataset.name}': {error}"
             raise MigrationValidationError(msg) from error
         if len(rows) != n_rows:
-            msg = f"Java CSV dataset '{dataset.name}' ended before requested batch"
+            msg = f"CSV dataset '{dataset.name}' ended before requested batch"
             raise MigrationValidationError(msg)
         return result
 
@@ -490,7 +490,7 @@ class PVCCSVSource(MigrationSource):
                 for chunk in iter(lambda: stream.read(1024 * 1024), b""):
                     digest.update(chunk)
         except OSError as error:
-            msg = f"unable to hash Java CSV source file '{path.name}': {error}"
+            msg = f"unable to hash CSV source file '{path.name}': {error}"
             raise MigrationValidationError(msg) from error
         return digest.hexdigest()
 
@@ -504,7 +504,7 @@ def _validate_row_pair(
 ) -> None:
     """Validate paired Java rows and decode cells during source preflight."""
     if data_row is None or internal_row is None:
-        msg = f"Java CSV row count mismatch for '{model_id}'"
+        msg = f"CSV row count mismatch for '{model_id}'"
         raise MigrationValidationError(msg)
     if len(data_row) != len(fields):
         msg = (
@@ -584,11 +584,11 @@ def _column_index(item: dict[str, Any], name: str) -> int:
 
 
 def _parse_value(value: str, data_type: str, model_id: str) -> object:
-    """Convert one Java CSV cell without coercing malformed values."""
+    """Convert one CSV cell without coercing malformed values."""
     if data_type == "BOOL":
         normalized = value.lower()
         if normalized not in {"true", "false"}:
-            msg = f"invalid BOOL value in Java CSV row for '{model_id}'"
+            msg = f"invalid BOOL value in CSV row for '{model_id}'"
             raise MigrationValidationError(msg)
         return normalized == "true"
     if data_type in {"FLOAT", "DOUBLE"}:
@@ -605,14 +605,14 @@ def _parse_float(value: str, data_type: str, model_id: str) -> float:
     try:
         number = float(value)
     except ValueError as error:
-        msg = f"invalid {data_type} value in Java CSV row for '{model_id}'"
+        msg = f"invalid {data_type} value in CSV row for '{model_id}'"
         raise MigrationValidationError(msg) from error
     if data_type == "FLOAT":
         try:
             number = struct.unpack("!f", struct.pack("!f", number))[0]
         except (OverflowError, struct.error) as error:
             if not math.isfinite(number):
-                msg = f"invalid FLOAT value in Java CSV row for '{model_id}'"
+                msg = f"invalid FLOAT value in CSV row for '{model_id}'"
                 raise MigrationValidationError(msg) from error
             number = math.copysign(math.inf, number)
     return number
@@ -621,16 +621,16 @@ def _parse_float(value: str, data_type: str, model_id: str) -> float:
 def _parse_integer(value: str, data_type: str, model_id: str) -> int:
     """Parse Java integer text and enforce its declared width."""
     if value != value.strip():
-        msg = f"invalid {data_type} value in Java CSV row for '{model_id}'"
+        msg = f"invalid {data_type} value in CSV row for '{model_id}'"
         raise MigrationValidationError(msg)
     try:
         number = int(value)
     except ValueError as error:
-        msg = f"invalid {data_type} value in Java CSV row for '{model_id}'"
+        msg = f"invalid {data_type} value in CSV row for '{model_id}'"
         raise MigrationValidationError(msg) from error
     lower, upper = _INTEGER_BOUNDS[data_type]
     if not lower <= number <= upper:
-        msg = f"invalid {data_type} value in Java CSV row for '{model_id}'"
+        msg = f"invalid {data_type} value in CSV row for '{model_id}'"
         raise MigrationValidationError(msg)
     return number
 
@@ -640,7 +640,7 @@ def _decode_tensor(value: str) -> object:
     try:
         import javaobj  # noqa: PLC0415 -- required only when CSV contains tensors
     except ModuleNotFoundError as error:
-        msg = "Java CSV tensor migration requires the 'migration' extra"
+        msg = "Tensor migration requires the 'migration' extra"
         raise MigrationPreflightError(msg) from error
     try:
         encoded = base64.b64decode(value, validate=True)

@@ -1,4 +1,4 @@
-"""Tests for the Java service's CSV-on-PVC migration source."""
+"""Tests for the CSV-on-PVC migration source."""
 
 from __future__ import annotations
 

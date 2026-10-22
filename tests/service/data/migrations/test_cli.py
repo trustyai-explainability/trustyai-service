@@ -73,8 +73,8 @@ def test_cli_accepts_operator_pvc_environment(monkeypatch) -> None:
     assert args.data_file == "legacy.hdf5"
 
 
-def test_cli_accepts_java_csv_pvc_source() -> None:
-    """The Java CSV source uses its native default filename."""
+def test_cli_accepts_csv_pvc_source() -> None:
+    """The CSV source uses its default filename."""
     from trustyai_service.service.data.migrations.cli import parse_args
 
     args = parse_args(
@@ -94,7 +94,7 @@ def test_cli_accepts_java_csv_pvc_source() -> None:
     assert args.data_file == "data.csv"
 
 
-def test_cli_allows_java_csv_filename_override(monkeypatch) -> None:
+def test_cli_allows_csv_filename_override(monkeypatch) -> None:
     """The Java source honors the mounted storage filename configuration."""
     from trustyai_service.service.data.migrations.cli import parse_args
 
