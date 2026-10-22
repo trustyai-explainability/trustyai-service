@@ -76,11 +76,27 @@ def _spd_request(**overrides: object) -> dict[str, object]:
     "field",
     ["privilegedAttribute", "unprivilegedAttribute", "favorableOutcome"],
 )
+@pytest.mark.parametrize(
+    "wrap",
+    [
+        lambda v: v,
+        lambda v: {"rawValueNode": {"value": v}},
+        lambda v: {"rawValueNodes": [{"value": v}]},
+        lambda v: {"reconciledType": [{"value": v}]},
+    ],
+)
 @pytest.mark.parametrize("bad", [float("nan"), float("inf")])
-def test_group_rejects_non_finite_values(field: str, bad: float) -> None:
-    """NaN and infinity are rejected at validation time, not during serialization."""
+def test_group_rejects_non_finite_values(field: str, wrap: object, bad: float) -> None:
+    """NaN and infinity are rejected at validation time, bare or wrapped."""
     with pytest.raises(ValidationError):
-        GroupMetricRequest.model_validate(_spd_request(**{field: bad}))
+        GroupMetricRequest.model_validate(_spd_request(**{field: wrap(bad)}))
+
+
+@pytest.mark.parametrize("batch_size", [0, -5])
+def test_group_rejects_non_positive_batch_size(batch_size: int) -> None:
+    """Zero or negative batch sizes are rejected instead of silently defaulted."""
+    with pytest.raises(ValidationError):
+        GroupMetricRequest.model_validate(_spd_request(batchSize=batch_size))
 
 
 def test_group_batch_size_label_never_renders_none() -> None:
