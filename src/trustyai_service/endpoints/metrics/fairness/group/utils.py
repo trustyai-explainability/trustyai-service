@@ -51,7 +51,7 @@ class GroupMetricRequest(BaseMetricRequest):
         default=None, alias="metricName"
     )  # Will be set by endpoint
     request_name: str | None = Field(default=None, alias="requestName")
-    batch_size: int | None = Field(default=DEFAULT_BATCH_SIZE, alias="batchSize")
+    batch_size: int | None = Field(default=DEFAULT_BATCH_SIZE, alias="batchSize", gt=0)
 
     # SPD-specific fields
     protected_attribute: str = Field(alias="protectedAttribute")
