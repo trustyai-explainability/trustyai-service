@@ -950,8 +950,16 @@ def make_retrieve_tags_test() -> Callable[[Any], None]:
             }
         )
         tags = request.retrieve_tags()
-        assert tags["modelId"] == "test-model"
-        assert tags["protectedAttribute"] == "gender"
-        assert tags["outcomeName"] == "income"
+        assert tags == {
+            **request.retrieve_default_tags(),
+            "protectedAttribute": "gender",
+            "outcomeName": "income",
+            "outcome": "income",
+            "favorable_value": "1",
+            "protected": "gender",
+            "privileged": '"male"',
+            "unprivileged": '"female"',
+            "batch_size": "100",
+        }
 
     return test_impl
