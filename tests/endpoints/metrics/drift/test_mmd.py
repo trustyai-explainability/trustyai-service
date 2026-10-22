@@ -562,7 +562,7 @@ class TestMMDEndpoints:
         mock_scheduler = MagicMock()
         mock_request = MMDMetricRequest(
             modelId="test_model",
-            metricName="FourierMMD",
+            metricName="arbitrary-client-value",
             batchSize=100,
             referenceTag="ref_tag",
             fitColumns=["col1"],
