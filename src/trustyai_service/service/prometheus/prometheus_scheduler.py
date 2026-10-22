@@ -32,16 +32,6 @@ from trustyai_service.service.prometheus.prometheus_publisher import PrometheusP
 logger: logging.Logger = logging.getLogger(__name__)
 
 
-def _metric_key(name: str) -> str:
-    """Share schedules between renamed endpoints and their legacy aliases."""
-    return {
-        "IDENTITY": "BATCHMEAN",
-        "MEANSHIFT": "COMPAREMEANS",
-        "APPROXKSTEST": "KSTESTSTREAMING",
-        "FOURIERMMD": "MMD",
-    }.get(name, name)
-
-
 class PrometheusScheduler:
     """Schedules and executes periodic metric calculations."""
 
@@ -120,7 +110,7 @@ class PrometheusScheduler:
     def get_requests(self, metric_name: str) -> dict[uuid.UUID, BaseMetricRequest]:
         """Get all requests for a specific metric."""
         with self._requests_lock:
-            return dict(self.requests.get(_metric_key(metric_name), {}))
+            return dict(self.requests.get(metric_name, {}))
 
     def get_all_requests(self) -> dict[str, dict[uuid.UUID, BaseMetricRequest]]:
         """Get all requests organized by metric name."""
@@ -184,7 +174,6 @@ class PrometheusScheduler:
             request_id,
             getattr(request, "model_id", "unknown"),
         )
-        metric_name = _metric_key(metric_name)
         await RequestReconciler.reconcile(request, self.data_source)
         logger.info(
             "After reconciliation, %s request %s model_id: %s",
@@ -205,13 +194,14 @@ class PrometheusScheduler:
 
     async def delete(self, metric_name: str, request_id: uuid.UUID) -> None:
         """Delete a metric request."""
-        canonical_name = _metric_key(metric_name)
         with self._requests_lock:
-            request = self.requests.get(canonical_name, {}).pop(request_id, None)
+            if (
+                metric_name in self.requests
+                and request_id in self.requests[metric_name]
+            ):
+                del self.requests[metric_name][request_id]
 
-        self.publisher.remove_gauge(
-            request.metric_name if request is not None else metric_name, request_id
-        )
+        self.publisher.remove_gauge(metric_name, request_id)
 
     def has_requests(self) -> bool:
         """Check if there are any requests."""

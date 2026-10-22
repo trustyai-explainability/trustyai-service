@@ -122,6 +122,7 @@ class PrometheusPublisher:
         if request is not None:
             tags.update(request.retrieve_default_tags())
             tags.update(request.retrieve_tags())
+            tags["metricName"] = request.metric_name.upper()
         elif model_name:
             tags["model"] = model_name
 

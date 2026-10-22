@@ -162,7 +162,6 @@ def make_schedule_endpoint_test(
     endpoint_path: str,
     client: TestClient,
     request_payload: dict[str, Any],
-    expected_metric_name: str | None = None,
 ) -> Callable[[], None]:
     """Create a test for the schedule/request endpoint.
 
@@ -173,8 +172,6 @@ def make_schedule_endpoint_test(
         routes.DRIFT_KSTEST.request)
     :param client: TestClient instance for making requests
     :param request_payload: Request payload dictionary
-    :param expected_metric_name: Exact metric name passed to the scheduler, if it
-        should be asserted
     :return: Test function
     """
 
@@ -222,12 +219,6 @@ def make_schedule_endpoint_test(
         assert "-" in request_id, (
             f"{metric_name} requestId doesn't look like a UUID: {request_id}"
         )
-
-        if expected_metric_name is not None:
-            register_call = mock_sched.register.call_args
-            assert register_call is not None
-            assert register_call.args[0] == expected_metric_name
-            assert register_call.args[2].metric_name == expected_metric_name
 
     return test_impl
 
@@ -1141,7 +1132,7 @@ def make_retrieve_default_tags_with_none_metric_name_test(
     :param request_class: The request class to test (e.g.,
         CompareMeansMetricRequest)
     :param expected_metric_name: The expected metric name after
-        validator runs (e.g., "COMPAREMEANS")
+        validator runs (e.g., "CompareMeans")
     :return: Test function
     """
 
@@ -1317,7 +1308,6 @@ def make_deprecated_endpoint_test(
     request_payload: dict[str, Any] | None = None,
     expected_response_keys: list[str] | None = None,
     expected_name_substring: str | None = None,
-    expected_metric_name: str | None = None,
 ) -> Callable[[Any], None]:
     """Unified factory to create tests for any deprecated endpoint.
 
@@ -1339,8 +1329,6 @@ def make_deprecated_endpoint_test(
         (required for compute)
     :param expected_name_substring: Substring expected in metric name
         (required for definition)
-    :param expected_metric_name: Exact metric name passed to the scheduler for
-        a deprecated schedule endpoint, if it should be asserted
     :return: Test function
 
     Examples:
@@ -1466,12 +1454,6 @@ def make_deprecated_endpoint_test(
                     f"Missing 'requestId' in deprecated {metric_name} schedule response"
                 )
                 uuid.UUID(data["requestId"])  # Raises ValueError if invalid
-
-                if expected_metric_name is not None:
-                    register_call = mock_sched_fn.return_value.register.call_args
-                    assert register_call is not None
-                    assert register_call.args[0] == expected_metric_name
-                    assert register_call.args[2].metric_name == expected_metric_name
 
             return test_impl
 

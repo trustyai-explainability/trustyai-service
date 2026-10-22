@@ -33,8 +33,8 @@ from trustyai_service.service.utils.logging_utils import log_deprecated_endpoint
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-METRIC_NAME = "BATCHMEAN"
-DEPRECATED_METRIC_NAME = "IDENTITY"
+METRIC_NAME = "BatchMean"
+DEPRECATED_METRIC_NAME = "Identity"
 DEFAULT_BATCH_SIZE = 100
 
 
@@ -117,12 +117,6 @@ def register_batch_mean_calculator() -> None:
     if scheduler and scheduler.metrics_directory:
         scheduler.metrics_directory.register(METRIC_NAME, calculate_batch_mean_metric)
         logger.info("BatchMean calculator registered with metrics directory")
-        scheduler.metrics_directory.register(
-            DEPRECATED_METRIC_NAME, calculate_batch_mean_metric
-        )
-        logger.info(
-            "%s calculator registered with metrics directory", DEPRECATED_METRIC_NAME
-        )
 
 
 try:
@@ -217,21 +211,13 @@ async def interpret_batch_mean_value(request: BatchMeanRequest) -> dict:
 @router.post(routes.BATCH_MEAN.request)
 async def schedule_batch_mean(request: BatchMeanRequest) -> dict:
     """Schedule a recurring computation of Batch Mean metric."""
-    return await _schedule_batch_mean(request, METRIC_NAME)
-
-
-async def _schedule_batch_mean(request: BatchMeanRequest, metric_name: str) -> dict:
-    """Schedule a recurring computation under the route's exact metric name."""
     request_id = uuid.uuid4()
-    logger.info("Scheduling %s computation with ID: %s", metric_name, request_id)
+    logger.info("Scheduling BatchMean computation with ID: %s", request_id)
 
     scheduler = get_prometheus_scheduler()
-    request.metric_name = metric_name
-    await scheduler.register(metric_name, request_id, request)
+    await scheduler.register(METRIC_NAME, request_id, request)
 
-    logger.info(
-        "Successfully scheduled %s computation with ID: %s", metric_name, request_id
-    )
+    logger.info("Successfully scheduled BatchMean computation with ID: %s", request_id)
     return {"requestId": str(request_id)}
 
 
@@ -321,7 +307,7 @@ async def interpret_identity_value(request: IdentityMetricRequest) -> dict:
 async def schedule_identity(request: IdentityMetricRequest) -> dict:
     """Schedule identity metric (deprecated). Use /metrics/batchmean/request instead."""
     log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
-    return await _schedule_batch_mean(request, DEPRECATED_METRIC_NAME)
+    return await schedule_batch_mean(request)
 
 
 @router.delete(routes.IDENTITY.request, deprecated=True)
