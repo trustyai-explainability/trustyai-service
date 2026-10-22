@@ -34,8 +34,8 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 # Metric name constants
-METRIC_NAME = "CompareMeans"
-DEPRECATED_METRIC_NAME = "Meanshift"  # Legacy name for backwards compatibility
+METRIC_NAME = "COMPAREMEANS"
+DEPRECATED_METRIC_NAME = "MEANSHIFT"  # Legacy name for backwards compatibility
 
 # Default parameter values
 DEFAULT_BATCH_SIZE = 100

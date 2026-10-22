@@ -33,8 +33,8 @@ from trustyai_service.service.utils.logging_utils import log_deprecated_endpoint
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-METRIC_NAME = "BatchMean"
-DEPRECATED_METRIC_NAME = "Identity"
+METRIC_NAME = "BATCHMEAN"
+DEPRECATED_METRIC_NAME = "IDENTITY"
 DEFAULT_BATCH_SIZE = 100
 
 
