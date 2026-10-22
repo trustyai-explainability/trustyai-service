@@ -399,6 +399,7 @@ class TestKSTestStreamingEndpoints:
         )
 
         tags = request.retrieve_tags()
+        assert tags["batch_size"] == "100"
 
         # Check that tags include the base tags plus KSTestStreaming-specific tags
         assert "modelId" in tags
@@ -419,6 +420,7 @@ class TestKSTestStreamingEndpoints:
         )
 
         tags = request.retrieve_tags()
+        assert tags["batch_size"] == "100"
 
         # Check that tags include base tags but not referenceTag
         assert "modelId" in tags
@@ -436,6 +438,7 @@ class TestKSTestStreamingEndpoints:
         )
 
         tags = request.retrieve_tags()
+        assert tags["batch_size"] == "100"
 
         # Check that tags include referenceTag and epsilon but not fitColumns
         assert "modelId" in tags
@@ -452,6 +455,7 @@ class TestKSTestStreamingEndpoints:
         )
 
         tags = request.retrieve_tags()
+        assert tags["batch_size"] == "100"
 
         # Check that tags include epsilon with default value
         assert "epsilon" in tags
