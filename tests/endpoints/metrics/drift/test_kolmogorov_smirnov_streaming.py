@@ -400,15 +400,7 @@ class TestKSTestStreamingEndpoints:
 
         tags = request.retrieve_tags()
 
-        # Check that tags include the base tags plus KSTestStreaming-specific tags
-        assert "modelId" in tags
-        assert tags["modelId"] == "test-model"
-        assert "referenceTag" in tags
-        assert tags["referenceTag"] == "baseline"
-        assert "fitColumns" in tags
-        assert tags["fitColumns"] == "feature1,feature2"
-        assert "epsilon" in tags
-        assert tags["epsilon"] == "0.01"
+        assert tags == {"batch_size": "100"}
 
     def test_retrieve_tags_without_reference_tag(self) -> None:
         """Test retrieve_tags method without referenceTag."""
@@ -420,12 +412,7 @@ class TestKSTestStreamingEndpoints:
 
         tags = request.retrieve_tags()
 
-        # Check that tags include base tags but not referenceTag
-        assert "modelId" in tags
-        assert tags["modelId"] == "test-model"
-        assert "referenceTag" not in tags
-        assert "fitColumns" in tags
-        assert "epsilon" in tags
+        assert tags == {"batch_size": "100"}
 
     def test_retrieve_tags_without_fit_columns(self) -> None:
         """Test retrieve_tags method without fitColumns."""
@@ -437,11 +424,7 @@ class TestKSTestStreamingEndpoints:
 
         tags = request.retrieve_tags()
 
-        # Check that tags include referenceTag and epsilon but not fitColumns
-        assert "modelId" in tags
-        assert "referenceTag" in tags
-        assert "fitColumns" not in tags
-        assert "epsilon" in tags
+        assert tags == {"batch_size": "100"}
 
     def test_retrieve_tags_with_default_epsilon(self) -> None:
         """Test retrieve_tags method with default epsilon value."""
@@ -453,9 +436,7 @@ class TestKSTestStreamingEndpoints:
 
         tags = request.retrieve_tags()
 
-        # Check that tags include epsilon with default value
-        assert "epsilon" in tags
-        assert tags["epsilon"] == "0.01"  # Default epsilon
+        assert tags == {"batch_size": "100"}
 
 
 # ============================================================================

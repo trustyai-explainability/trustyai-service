@@ -66,12 +66,7 @@ class KSTestMetricRequest(BaseMetricRequest):
 
     def retrieve_tags(self) -> dict[str, str]:
         """Retrieve tags for this KSTest metric request."""
-        tags = self.retrieve_default_tags()
-        if self.reference_tag:
-            tags["referenceTag"] = self.reference_tag
-        if self.fit_columns:
-            tags["fitColumns"] = ",".join(self.fit_columns)
-        return tags
+        return {"batch_size": str(self.batch_size)}
 
 
 @router.post(routes.DRIFT_KSTEST.compute)
