@@ -401,8 +401,8 @@ class TestKSTestStreamingEndpoints:
         tags = request.retrieve_tags()
 
         # Check that tags include the base tags plus KSTestStreaming-specific tags
-        assert "modelId" in tags
-        assert tags["modelId"] == "test-model"
+        assert "model" in tags
+        assert tags["model"] == "test-model"
         assert "referenceTag" in tags
         assert tags["referenceTag"] == "baseline"
         assert "fitColumns" in tags
@@ -421,8 +421,8 @@ class TestKSTestStreamingEndpoints:
         tags = request.retrieve_tags()
 
         # Check that tags include base tags but not referenceTag
-        assert "modelId" in tags
-        assert tags["modelId"] == "test-model"
+        assert "model" in tags
+        assert tags["model"] == "test-model"
         assert "referenceTag" not in tags
         assert "fitColumns" in tags
         assert "epsilon" in tags
@@ -438,7 +438,7 @@ class TestKSTestStreamingEndpoints:
         tags = request.retrieve_tags()
 
         # Check that tags include referenceTag and epsilon but not fitColumns
-        assert "modelId" in tags
+        assert "model" in tags
         assert "referenceTag" in tags
         assert "fitColumns" not in tags
         assert "epsilon" in tags

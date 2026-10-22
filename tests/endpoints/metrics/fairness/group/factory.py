@@ -950,7 +950,7 @@ def make_retrieve_tags_test() -> Callable[[Any], None]:
             }
         )
         tags = request.retrieve_tags()
-        assert tags["modelId"] == "test-model"
+        assert tags["model"] == "test-model"
         assert tags["protectedAttribute"] == "gender"
         assert tags["outcomeName"] == "income"
 

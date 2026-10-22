@@ -414,8 +414,8 @@ class TestKSTestEndpoints:
         tags = request.retrieve_tags()
 
         # Check that tags include the base tags plus KSTest-specific tags
-        assert "modelId" in tags
-        assert tags["modelId"] == "test-model"
+        assert "model" in tags
+        assert tags["model"] == "test-model"
         assert "referenceTag" in tags
         assert tags["referenceTag"] == "baseline"
         assert "fitColumns" in tags
@@ -431,8 +431,8 @@ class TestKSTestEndpoints:
         tags = request.retrieve_tags()
 
         # Check that tags include base tags but not referenceTag
-        assert "modelId" in tags
-        assert tags["modelId"] == "test-model"
+        assert "model" in tags
+        assert tags["model"] == "test-model"
         assert "referenceTag" not in tags
         assert "fitColumns" in tags
 
@@ -446,6 +446,6 @@ class TestKSTestEndpoints:
         tags = request.retrieve_tags()
 
         # Check that tags include referenceTag but not fitColumns
-        assert "modelId" in tags
+        assert "model" in tags
         assert "referenceTag" in tags
         assert "fitColumns" not in tags

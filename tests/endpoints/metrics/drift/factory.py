@@ -1023,8 +1023,8 @@ def make_retrieve_tags_with_all_fields_test(
         tags = request.retrieve_tags()
 
         # Check that tags include the base tags plus metric-specific tags
-        assert "modelId" in tags
-        assert tags["modelId"] == "test-model"
+        assert "model" in tags
+        assert tags["model"] == "test-model"
         assert "referenceTag" in tags
         assert tags["referenceTag"] == "baseline"
         assert "fitColumns" in tags
@@ -1053,8 +1053,8 @@ def make_retrieve_tags_without_reference_tag_test(
         tags = request.retrieve_tags()
 
         # Check that tags include base tags but not referenceTag
-        assert "modelId" in tags
-        assert tags["modelId"] == "test-model"
+        assert "model" in tags
+        assert tags["model"] == "test-model"
         assert "referenceTag" not in tags
         assert "fitColumns" in tags
 
@@ -1083,7 +1083,7 @@ def make_retrieve_tags_without_fit_columns_test(
         tags = request.retrieve_tags()
 
         # Check that tags include referenceTag but not fitColumns
-        assert "modelId" in tags
+        assert "model" in tags
         assert "referenceTag" in tags
         assert "fitColumns" not in tags
 
@@ -1112,7 +1112,7 @@ def make_retrieve_tags_with_empty_fit_columns_test(
 
         # Check that tags include referenceTag but not fitColumns
         # (empty list should not add tag)
-        assert "modelId" in tags
+        assert "model" in tags
         assert "referenceTag" in tags
         assert "fitColumns" not in tags
 
@@ -1151,12 +1151,12 @@ def make_retrieve_default_tags_with_none_metric_name_test(
         tags = request.retrieve_default_tags()
 
         # Verify tags are all strings (no None values)
-        assert "modelId" in tags
-        assert tags["modelId"] == "test-model"
+        assert "model" in tags
+        assert tags["model"] == "test-model"
         assert "metricName" in tags
         assert tags["metricName"] == expected_metric_name
         assert isinstance(tags["metricName"], str)
-        assert isinstance(tags["modelId"], str)
+        assert isinstance(tags["model"], str)
 
         # Verify all values are strings (not None)
         for key, value in tags.items():

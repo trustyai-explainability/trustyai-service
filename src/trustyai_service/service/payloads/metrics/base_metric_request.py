@@ -22,7 +22,7 @@ class BaseMetricRequest(BaseModel):
         if self.request_name is not None:
             output["requestName"] = self.request_name
         output["metricName"] = self.metric_name
-        output["modelId"] = self.model_id
+        output["model"] = self.model_id
         return output
 
     @abstractmethod

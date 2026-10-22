@@ -88,7 +88,7 @@ class TestPrometheusPublisher:
         # Verify gauge has correct labels
         expected_labels: list[str] = list(
             mock_request.retrieve_default_tags().keys(),
-        )  # default labels (metricName, modelId, requestName)
+        )  # default labels (metricName, model, requestName)
         expected_labels.extend(
             list(mock_request.retrieve_tags().keys()),
         )  # custom tags (custom_tag)
@@ -270,7 +270,7 @@ class TestPrometheusPublisher:
 
         expected_tags = {
             "metricName": mock_request.metric_name,
-            "modelId": "test_model",
+            "model": "test_model",
             "requestName": mock_request.request_name,
             "custom_tag": "custom_value",
             "request": str(test_id),
