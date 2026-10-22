@@ -71,6 +71,8 @@ class BatchMeanRequest(BaseMetricRequest):
     def retrieve_tags(self) -> dict[str, str]:
         """Return Prometheus labels for this metric request."""
         return {
+            **self.retrieve_default_tags(),
+            "columnName": self.column_name,
             "column": self.column_name,
             "batch_size": str(self.batch_size),
         }

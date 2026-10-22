@@ -366,9 +366,19 @@ class TestBatchMeanRequest:
         """Tags match the Java BatchMean request labels."""
         request = BatchMeanRequest(modelId="test", columnName="col")
         tags = request.retrieve_tags()
-        assert tags == {"column": "col", "batch_size": "100"}
+        assert tags["column"] == tags["columnName"] == "col"
+        assert tags["batch_size"] == "100"
+        assert tags["modelId"] == "test"
 
     def test_default_batch_size(self) -> None:
         """Default batch_size matches the model field default."""
         request = BatchMeanRequest(modelId="test", columnName="col")
         assert request.batch_size == BatchMeanRequest.model_fields["batch_size"].default
+
+
+def test_column_label_aliases() -> None:
+    """Expose both column selectors and the configured batch size."""
+    request = BatchMeanRequest(modelId="model", columnName="feature", batchSize=37)
+    tags = request.retrieve_tags()
+    assert tags["column"] == tags["columnName"] == "feature"
+    assert tags["batch_size"] == "37"
