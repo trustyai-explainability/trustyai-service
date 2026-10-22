@@ -562,7 +562,7 @@ class TestMMDEndpoints:
         mock_scheduler = MagicMock()
         mock_request = MMDMetricRequest(
             modelId="test_model",
-            metricName="FOURIERMMD",
+            metricName="FourierMMD",
             batchSize=100,
             referenceTag="ref_tag",
             fitColumns=["col1"],
@@ -579,7 +579,7 @@ class TestMMDEndpoints:
             data = response.json()
             assert "requests" in data
             assert len(data["requests"]) == 1
-            # Verify metricName is FOURIERMMD, not MMD
+            # Verify metricName is FOURIERMMD, not the request's custom value
             assert data["requests"][0]["metricName"] == "FOURIERMMD"
 
     def test_helper_functions(self) -> None:

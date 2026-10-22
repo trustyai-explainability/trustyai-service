@@ -296,13 +296,12 @@ async def _list_requests(metric_name: str) -> dict[str, list[dict[str, Any]]]:
                 and hasattr(request, "reference_tag")
                 and hasattr(request, "fit_columns")
             ):
-                request_metric_name = getattr(request, "metric_name", metric_name)
                 requests_list.append(
                     {
                         "id": str(request_id),  # deprecated: use requestId
                         "requestId": str(request_id),
                         "modelId": request.model_id,
-                        "metricName": request_metric_name,
+                        "metricName": metric_name,
                         "batchSize": request.batch_size,
                         "referenceTag": request.reference_tag,
                         "fitColumns": request.fit_columns,
