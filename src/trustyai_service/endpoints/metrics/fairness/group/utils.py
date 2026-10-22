@@ -65,10 +65,14 @@ class GroupMetricRequest(BaseMetricRequest):
 
     def retrieve_tags(self) -> dict[str, str]:
         """Retrieve tags for this SPD metric request."""
-        tags = self.retrieve_default_tags()
-        tags["protectedAttribute"] = self.protected_attribute
-        tags["outcomeName"] = self.outcome_name
-        return tags
+        return {
+            "outcome": self.outcome_name,
+            "favorable_value": str(self.favorable_outcome),
+            "protected": self.protected_attribute,
+            "privileged": str(self.privileged_attribute),
+            "unprivileged": str(self.unprivileged_attribute),
+            "batch_size": str(self.batch_size),
+        }
 
 
 class GroupDefinitionRequest(BaseModel):
