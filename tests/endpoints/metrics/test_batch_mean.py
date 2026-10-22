@@ -59,7 +59,7 @@ class TestBatchMeanCompute:
 
         assert response.status_code == HTTPStatus.OK
         data = response.json()
-        assert data["name"] == "BatchMean"
+        assert data["name"] == "BATCHMEAN"
         assert data["type"] == "BATCH_MEAN"
         assert isinstance(data["value"], float)
         assert "specificDefinition" in data
@@ -258,7 +258,7 @@ class TestBatchMeanList:
         data = response.json()
         assert len(data["requests"]) == num_requests
         for req in data["requests"]:
-            assert req["metricName"] == "BatchMean"
+            assert req["metricName"] == "BATCHMEAN"
             assert "columnName" in req
 
     @patch(f"{MODULE}.get_prometheus_scheduler")
@@ -308,7 +308,7 @@ class TestDeprecatedIdentityEndpoints:
 
         response = client.post(routes.IDENTITY.compute, json=_base_payload())
         assert response.status_code == HTTPStatus.OK
-        assert response.json()["name"] == "BatchMean"
+        assert response.json()["name"] == "BATCHMEAN"
         assert response.json()["value"] == 2.0
 
     def test_deprecated_definition(self) -> None:
@@ -360,7 +360,7 @@ class TestBatchMeanRequest:
     def test_default_metric_name(self) -> None:
         """Default metric_name is set to BatchMean via field default."""
         request = BatchMeanRequest(modelId="test", columnName="col")
-        assert request.metric_name == "BatchMean"
+        assert request.metric_name == "BATCHMEAN"
 
     def test_retrieve_tags(self) -> None:
         """Tags include columnName and modelId."""
