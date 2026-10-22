@@ -88,6 +88,7 @@ class JensenShannonMetricRequest(BaseMetricRequest):
     def retrieve_tags(self) -> dict[str, str]:
         """Retrieve tags for this JensenShannon metric request."""
         tags = self.retrieve_default_tags()
+        tags["batch_size"] = str(self.batch_size)
         if self.reference_tag:
             tags["referenceTag"] = self.reference_tag
         if self.fit_columns:

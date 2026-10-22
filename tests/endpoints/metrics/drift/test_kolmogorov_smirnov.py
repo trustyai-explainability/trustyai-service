@@ -412,6 +412,7 @@ class TestKSTestEndpoints:
         )
 
         tags = request.retrieve_tags()
+        assert tags["batch_size"] == "100"
 
         # Check that tags include the base tags plus KSTest-specific tags
         assert "modelId" in tags
@@ -429,6 +430,7 @@ class TestKSTestEndpoints:
         )
 
         tags = request.retrieve_tags()
+        assert tags["batch_size"] == "100"
 
         # Check that tags include base tags but not referenceTag
         assert "modelId" in tags
@@ -444,6 +446,7 @@ class TestKSTestEndpoints:
         )
 
         tags = request.retrieve_tags()
+        assert tags["batch_size"] == "100"
 
         # Check that tags include referenceTag but not fitColumns
         assert "modelId" in tags
