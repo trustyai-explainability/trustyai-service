@@ -1,5 +1,6 @@
 """Utility functions and models for group fairness metric endpoints."""
 
+import json
 import logging
 from typing import Any
 
@@ -65,10 +66,30 @@ class GroupMetricRequest(BaseMetricRequest):
 
     def retrieve_tags(self) -> dict[str, str]:
         """Retrieve tags for this SPD metric request."""
-        tags = self.retrieve_default_tags()
-        tags["protectedAttribute"] = self.protected_attribute
-        tags["outcomeName"] = self.outcome_name
-        return tags
+        return {
+            **self.retrieve_default_tags(),
+            "protectedAttribute": self.protected_attribute,
+            "outcomeName": self.outcome_name,
+            "outcome": self.outcome_name,
+            "favorable_value": _serialize_label_value(self.favorable_outcome),
+            "protected": self.protected_attribute,
+            "privileged": _serialize_label_value(self.privileged_attribute),
+            "unprivileged": _serialize_label_value(self.unprivileged_attribute),
+            "batch_size": str(self.batch_size),
+        }
+
+
+def _serialize_label_value(
+    value: ReconcilableFeature | ReconcilableOutput | float | str,
+) -> str:
+    """Serialize label values as compact JSON, including Python wrapper forms."""
+    values = _extract_values(value)
+    return json.dumps(
+        values[0] if len(values) == 1 else values,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
 
 
 class GroupDefinitionRequest(BaseModel):
