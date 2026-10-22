@@ -1,4 +1,4 @@
-"""Contract checks for aliases and selectable Prometheus exposition."""
+"""Contract checks for uppercase metric identifiers and shared aliases."""
 
 import importlib
 import uuid
@@ -9,13 +9,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from prometheus_client import CollectorRegistry, generate_latest
 
-from trustyai_service.endpoints.metrics.batch_mean import BatchMeanRequest
 from trustyai_service.service.prometheus.gauge_config import GaugeConfig
 from trustyai_service.service.prometheus.prometheus_publisher import PrometheusPublisher
 from trustyai_service.service.prometheus.prometheus_scheduler import PrometheusScheduler
 
 
-@pytest.mark.parametrize("schema", ["java", "python-legacy"])
 @pytest.mark.parametrize(
     ("module_name", "current", "deprecated", "fields"),
     [
@@ -31,9 +29,8 @@ from trustyai_service.service.prometheus.prometheus_scheduler import PrometheusS
     ],
 )
 @pytest.mark.parametrize("reverse", [False, True])
-def test_alias_schedule_lifecycle(  # noqa: PLR0913 - route and schema contract matrix
+def test_alias_schedule_lifecycle(  # noqa: PLR0913 - route contract matrix
     monkeypatch: pytest.MonkeyPatch,
-    schema: str,
     module_name: str,
     current: str,
     deprecated: str,
@@ -42,7 +39,6 @@ def test_alias_schedule_lifecycle(  # noqa: PLR0913 - route and schema contract 
     reverse: bool,
 ) -> None:
     """Create, list, publish and delete through both spellings of a route."""
-    monkeypatch.setenv("SERVICE_PROMETHEUS_SCHEMA", schema)
     module = importlib.import_module(
         f"trustyai_service.endpoints.metrics.{module_name}"
     )
@@ -78,12 +74,15 @@ def test_alias_schedule_lifecycle(  # noqa: PLR0913 - route and schema contract 
         assert listed.status_code == 200
         assert listed.json()["requests"][0]["requestId"] == str(request_id)
     request = scheduler.get_all_requests_flat()[request_id]
+    assert request.metric_name.isupper()
     publisher.gauge(
         GaugeConfig(
             model_name="model", request_id=request_id, request=request, value=1.0
         )
     )
-    assert f'request="{request_id}"' in generate_latest(registry).decode()
+    scrape = generate_latest(registry).decode()
+    assert f'request="{request_id}"' in scrape
+    assert f'metricName="{request.metric_name}"' in scrape
     response = client.request(
         "DELETE",
         f"/metrics/{delete_route}/request",
@@ -92,35 +91,3 @@ def test_alias_schedule_lifecycle(  # noqa: PLR0913 - route and schema contract 
     assert response.status_code == 200
     assert not scheduler.get_all_requests_flat()
     assert f'request="{request_id}"' not in generate_latest(registry).decode()
-
-
-@pytest.mark.parametrize(
-    ("schema", "metric_name", "family"),
-    [("java", "IDENTITY", "identity"), ("python-legacy", "BatchMean", "batchmean")],
-)
-def test_exposition_schema(
-    monkeypatch: pytest.MonkeyPatch, schema: str, metric_name: str, family: str
-) -> None:
-    """Switch identifiers at exposition without mutating the REST request."""
-    monkeypatch.setenv("SERVICE_PROMETHEUS_SCHEMA", schema)
-    registry = CollectorRegistry()
-    publisher = PrometheusPublisher(registry)
-    request = BatchMeanRequest(
-        modelId="model", columnName="feature", metricName="Identity"
-    )
-    publisher.gauge(
-        GaugeConfig(
-            model_name="model", request_id=uuid.uuid4(), request=request, value=2.0
-        )
-    )
-    scrape = generate_latest(registry).decode()
-    assert f"trustyai_{family}" in scrape
-    assert f'metricName="{metric_name}"' in scrape
-    assert request.metric_name == "Identity"
-
-
-def test_invalid_exposition_schema(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Reject unknown schema names at publisher creation."""
-    monkeypatch.setenv("SERVICE_PROMETHEUS_SCHEMA", "typo")
-    with pytest.raises(ValueError, match="SERVICE_PROMETHEUS_SCHEMA"):
-        PrometheusPublisher(CollectorRegistry())

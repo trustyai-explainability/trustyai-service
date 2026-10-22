@@ -35,8 +35,8 @@ logger: logging.Logger = logging.getLogger(__name__)
 def _metric_key(name: str) -> str:
     """Share schedules between renamed endpoints and their legacy aliases."""
     return {
-        "Identity": "BatchMean",
-        "Meanshift": "CompareMeans",
+        "IDENTITY": "BATCHMEAN",
+        "MEANSHIFT": "COMPAREMEANS",
         "APPROXKSTEST": "KSTESTSTREAMING",
         "FOURIERMMD": "MMD",
     }.get(name, name)
