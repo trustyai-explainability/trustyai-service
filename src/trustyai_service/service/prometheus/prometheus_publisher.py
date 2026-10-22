@@ -2,7 +2,6 @@
 
 import hashlib
 import logging
-import os
 import re
 import threading
 import uuid
@@ -32,10 +31,6 @@ class PrometheusPublisher:
 
         :param registry: Prometheus collector registry to use
         """
-        self.schema = os.getenv("SERVICE_PROMETHEUS_SCHEMA", "java")
-        if self.schema not in {"java", "python-legacy"}:
-            msg = "SERVICE_PROMETHEUS_SCHEMA must be java or python-legacy"
-            raise ValueError(msg)
         self.registry: CollectorRegistry = registry
         self.values: dict[uuid.UUID, float] = {}
         self._values_lock: threading.RLock = threading.RLock()
@@ -127,20 +122,6 @@ class PrometheusPublisher:
         if request is not None:
             tags.update(request.retrieve_default_tags())
             tags.update(request.retrieve_tags())
-            tags["metricName"] = self._metric_name(request.metric_name)
-            if self.schema == "python-legacy":
-                for label in (
-                    "column",
-                    "outcome",
-                    "favorable_value",
-                    "protected",
-                    "privileged",
-                    "unprivileged",
-                    "batch_size",
-                ):
-                    tags.pop(label, None)
-                if "modelId" in tags:
-                    tags.pop("model", None)
         elif model_name:
             tags["model"] = model_name
 
@@ -234,12 +215,6 @@ class PrometheusPublisher:
             msg = "Either 'request' or 'metric_name' & 'value' must be provided"
             raise ValueError(msg)
 
-    def _metric_name(self, name: str) -> str:
-        """Select the exposition name without changing the REST request."""
-        if self.schema == "python-legacy":
-            return "BatchMean" if name == "Identity" else name
-        return name.upper()
-
     def _get_full_metric_name(self, metric_name: str) -> str:
         if not PROMETHEUS_METRIC_PREFIX.strip():
             msg = "Prometheus metric prefix cannot be empty"
@@ -248,7 +223,6 @@ class PrometheusPublisher:
             msg = "Metric name cannot be empty"
             raise ValueError(msg)
 
-        metric_name = self._metric_name(metric_name)
         full_name = f"{PROMETHEUS_METRIC_PREFIX}{metric_name.lower()}"
         # Validate the full metric name against the regex
         if not PROMETHEUS_METRIC_NAME_REGEX.match(full_name):

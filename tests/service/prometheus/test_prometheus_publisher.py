@@ -275,7 +275,6 @@ class TestPrometheusPublisher:
             "custom_tag": "custom_value",
             "request": str(test_id),
         }
-        expected_tags["metricName"] = mock_request.metric_name.upper()
 
         assert tags == expected_tags
 
