@@ -32,6 +32,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects import mysql, postgresql
 from sqlalchemy.exc import DBAPIError
+from sqlalchemy.schema import CreateTable
 
 from trustyai_service.endpoints.consumer import (
     KServeInferenceRequest,
@@ -269,6 +270,15 @@ class CanonicalStorage:
             ):
                 msg = f"Dataset '{dataset_name}' has incompatible service metadata"
                 raise ValueError(msg)
+            table = _build_dataset_table(
+                int(existing["table_idx"]),
+                len(existing_metadata["column_names"]),
+            )
+            await connection.run_sync(
+                lambda sync_connection: sync_connection.execute(
+                    CreateTable(table, if_not_exists=True)
+                )
+            )
             merged = dict(existing_metadata)
             if aliases is not None:
                 merged["aliased_names"] = alias_names

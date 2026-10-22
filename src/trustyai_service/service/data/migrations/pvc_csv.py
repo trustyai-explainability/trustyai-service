@@ -450,7 +450,8 @@ class PVCCSVSource(MigrationSource):
                     is_metadata=is_metadata,
                 )
                 for offset, row in enumerate(rows):
-                    result[offset] = row
+                    for column, value in enumerate(row):
+                        result[offset, column] = value
         except MigrationValidationError:
             raise
         except (OSError, UnicodeDecodeError, csv.Error, ValueError) as error:

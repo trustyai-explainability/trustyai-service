@@ -117,6 +117,43 @@ async def test_database_target_creates_empty_canonical_dataset(sqlite_target) ->
 
 
 @pytest.mark.asyncio
+async def test_database_target_repairs_missing_existing_dataset_table(
+    sqlite_target,
+) -> None:
+    """An existing reference row with missing DDL is repaired before appending."""
+    from sqlalchemy import inspect, select, text
+
+    storage = sqlite_target.storage
+    await storage.ensure_dataset("repair_inputs", ["left", "right"])
+    async with storage.engine.connect() as connection:
+        table_idx = (
+            await connection.execute(
+                select(storage.reference_table.c.table_idx).where(
+                    storage.reference_table.c.dataset_name == "repair_inputs"
+                )
+            )
+        ).scalar_one()
+
+    async with storage.engine.begin() as connection:
+        await connection.execute(text(f"DROP TABLE trustyai_v2_dataset_{table_idx}"))
+
+    await storage.ensure_dataset("repair_inputs", ["left", "right"])
+
+    async with storage.engine.connect() as connection:
+        tables = await connection.run_sync(
+            lambda sync_connection: set(inspect(sync_connection).get_table_names())
+        )
+    assert f"trustyai_v2_dataset_{table_idx}" in tables
+
+    await storage.write_data(
+        "repair_inputs",
+        np.asarray([[1.0, 2.0]], dtype=object),
+        ["left", "right"],
+    )
+    assert await storage.dataset_rows("repair_inputs") == 1
+
+
+@pytest.mark.asyncio
 async def test_database_target_uses_pr334_partial_payload_columns(
     sqlite_target, partial_payload
 ) -> None:

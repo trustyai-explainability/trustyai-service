@@ -155,6 +155,37 @@ def test_cli_accepts_database_urls_from_environment(monkeypatch) -> None:
     assert args.target_url.endswith("/trustyai")
 
 
+def test_cli_defaults_database_format_to_mariadb(monkeypatch) -> None:
+    """DATABASE uses the service's MariaDB default when no kind is set."""
+    from sqlalchemy.engine import make_url
+
+    from trustyai_service.service.data.migrations.cli import target_url_from_environment
+
+    for name in (
+        "TRUSTYAI_MIGRATION_TARGET_URL",
+        "QUARKUS_DATASOURCE_DB_KIND",
+        "DATABASE_USERNAME",
+        "DATABASE_PASSWORD",
+        "DATABASE_HOST",
+        "DATABASE_SERVICE",
+        "DATABASE_DATABASE",
+        "DATABASE_NAME",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("SERVICE_STORAGE_FORMAT", "DATABASE")
+    monkeypatch.setenv("DATABASE_USERNAME", "trustyai")
+    monkeypatch.setenv("DATABASE_PASSWORD", "secret")
+    monkeypatch.setenv("DATABASE_HOST", "mariadb.example")
+    monkeypatch.setenv("DATABASE_DATABASE", "trustyai")
+
+    parsed = make_url(target_url_from_environment())
+    assert parsed.drivername == "mariadb+asyncmy"
+    assert parsed.username == "trustyai"
+    assert parsed.host == "mariadb.example"
+    assert parsed.port == 3306
+    assert parsed.database == "trustyai"
+
+
 def test_cli_rejects_non_positive_batch_size() -> None:
     """Invalid transfer bounds fail at argument parsing."""
     from trustyai_service.service.data.migrations.cli import parse_args

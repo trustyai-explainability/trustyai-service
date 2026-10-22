@@ -162,6 +162,60 @@ async def test_pvc_csv_source_discovers_and_decodes_java_storage(
 
 
 @pytest.mark.asyncio
+async def test_pvc_csv_source_reads_tensor_only_rows(
+    migration_api, tmp_path: Path
+) -> None:
+    """Tensor-only rows must not be coerced into a multidimensional row array."""
+    model_id = "tensor-model"
+    (tmp_path / f"{model_id}-data.csv").write_text(
+        f"{_TENSOR},0.75\n{_TENSOR},0.25\n",
+        encoding="utf-8",
+    )
+    (tmp_path / f"{model_id}-internal_data.csv").write_text(
+        "organic,id-1,2024-02-03T04:05:06\nsynthetic,id-2,2024-02-03T04:06:07\n",
+        encoding="utf-8",
+    )
+    (tmp_path / f"{model_id}-metadata.json").write_text(
+        json.dumps(
+            {
+                "modelId": model_id,
+                "inputTensorName": "instances",
+                "outputTensorName": "predictions",
+                "observations": 2,
+                "recordedInferences": True,
+                "inputSchema": {
+                    "items": {
+                        "embedding": {
+                            "type": "TENSOR",
+                            "name": "embedding",
+                            "columnIndex": 0,
+                        }
+                    }
+                },
+                "outputSchema": {
+                    "items": {
+                        "score": {
+                            "type": "DOUBLE",
+                            "name": "score",
+                            "columnIndex": 1,
+                        }
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    source = migration_api.PVCCSVSource(tmp_path, quiesced=True)
+    manifest = await source.preflight()
+    inputs = next(item for item in manifest.datasets if item.name.endswith("_inputs"))
+
+    rows = await source.read_rows(inputs, 0, 2)
+
+    assert rows.tolist() == [[[1.25, 2.5]], [[1.25, 2.5]]]
+
+
+@pytest.mark.asyncio
 async def test_pvc_csv_source_accepts_java_legacy_schema_index(
     migration_api, java_csv_pvc: Path
 ) -> None:

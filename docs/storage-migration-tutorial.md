@@ -535,7 +535,8 @@ new dataset is first written.
 
 ### 9.3 Configuration aliases are not migrations
 
-`SERVICE_STORAGE_FORMAT=DATABASE` is an alias for `MARIA`. The operator and
+`SERVICE_STORAGE_FORMAT=DATABASE` selects the backend from
+`QUARKUS_DATASOURCE_DB_KIND` (default: `mariadb`). The operator and
 direct-deployment database environment-variable aliases are also only
 configuration compatibility. They do not copy or transform data.
 

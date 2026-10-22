@@ -134,6 +134,77 @@ async def test_current_mariadb_source_reads_canonical_rows(
 
 
 @pytest.mark.asyncio
+async def test_current_mariadb_source_uses_keyset_pagination_for_sequential_reads(
+    migration_api, current_schema_engine
+) -> None:
+    """Current-schema reads seek by row_idx without repeated OFFSET scans."""
+    from sqlalchemy import event, text
+
+    async with current_schema_engine.begin() as connection:
+        await connection.execute(
+            text(
+                "INSERT INTO trustyai_v2_dataset_1 "
+                "(row_idx, column_0, column_1) VALUES "
+                "(:row_idx, :column_0, :column_1)"
+            ),
+            {
+                "row_idx": 4,
+                "column_0": gzip.compress(b"3.0"),
+                "column_1": gzip.compress(b"0.9"),
+            },
+        )
+        await connection.execute(
+            text(
+                "UPDATE trustyai_v2_table_reference SET n_rows=3 "
+                "WHERE dataset_name='model_inputs'"
+            )
+        )
+
+    statements: list[str] = []
+
+    def capture_statement(*args) -> None:
+        statement = args[2]
+        if (
+            "trustyai_v2_dataset_1" in statement
+            and statement.lstrip().upper().startswith("SELECT")
+        ):
+            statements.append(statement)
+
+    event.listen(
+        current_schema_engine.sync_engine,
+        "before_cursor_execute",
+        capture_statement,
+    )
+    try:
+        source = migration_api.MariaDBSource(
+            current_schema_engine,
+            schema="trustyai_v2",
+            quiesced=True,
+        )
+        manifest = await source.preflight()
+        dataset = manifest.datasets[0]
+        first = await source.read_rows(dataset, 0, 1)
+        second = await source.read_rows(dataset, 1, 1)
+        third = await source.read_rows(dataset, 2, 1)
+    finally:
+        event.remove(
+            current_schema_engine.sync_engine,
+            "before_cursor_execute",
+            capture_statement,
+        )
+
+    np.testing.assert_array_equal(first, np.asarray([[1.0, 0.5]]))
+    np.testing.assert_array_equal(second, np.asarray([[2.0, 0.75]]))
+    np.testing.assert_array_equal(third, np.asarray([[3.0, 0.9]]))
+    assert statements
+    assert all(" OFFSET " not in statement.upper() for statement in statements)
+    keyset_statements = [
+        statement for statement in statements if "WHERE row_idx >" in statement
+    ]
+    assert len(keyset_statements) == 5
+
+
+@pytest.mark.asyncio
 async def test_current_mariadb_source_digest_includes_row_contents(
     migration_api, current_schema_engine
 ) -> None:

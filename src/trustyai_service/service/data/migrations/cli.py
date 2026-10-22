@@ -77,7 +77,7 @@ def _configured_database_kind() -> str | None:
         return "postgresql"
     if storage_format == "SQLITE":
         return "sqlite"
-    return os.environ.get("QUARKUS_DATASOURCE_DB_KIND", "").strip().lower() or None
+    return os.environ.get("QUARKUS_DATASOURCE_DB_KIND", "").strip().lower() or "mariadb"
 
 
 def _build_network_database_url(driver: str, default_port: int) -> str:

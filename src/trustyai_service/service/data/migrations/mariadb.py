@@ -55,6 +55,14 @@ class _LegacyDatasetSpec:
     aliases: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class _CurrentReadCursor:
+    """Keyset position for sequential reads of one current-schema dataset."""
+
+    next_start: int
+    last_row_idx: int
+
+
 class MariaDBSource(MigrationSource):
     """Read current TrustyAI or legacy Java/MariaDB data through SQLAlchemy."""
 
@@ -76,6 +84,7 @@ class MariaDBSource(MigrationSource):
         self.quiesced = quiesced
         self._mode: str | None = None
         self._current_specs: dict[str, tuple[int, str]] = {}
+        self._current_read_cursors: dict[str, _CurrentReadCursor] = {}
         self._legacy_specs: dict[str, _LegacyDatasetSpec] = {}
         self._last_manifest: SourceManifest | None = None
 
@@ -141,6 +150,7 @@ class MariaDBSource(MigrationSource):
             msg = f"missing MariaDB table: {reference}"
             raise MigrationPreflightError(msg)
         self._current_specs.clear()
+        self._current_read_cursors.clear()
         query = text(
             "SELECT table_idx, dataset_name, metadata, n_rows "
             "FROM `trustyai_v2_table_reference` ORDER BY dataset_name"
@@ -458,19 +468,31 @@ class MariaDBSource(MigrationSource):
             raise MigrationValidationError(msg)
         table_name = _current_table_name(table_spec[0])
         columns = ", ".join(
-            f"column_{index}" for index in range(len(descriptor.column_names))
+            [
+                "row_idx",
+                *(f"column_{index}" for index in range(len(descriptor.column_names))),
+            ]
         )
         query = text(
             f"SELECT {columns} FROM `{table_name}` "  # noqa: S608 -- table name is an integer-derived internal identifier
-            "ORDER BY row_idx LIMIT :n_rows OFFSET :start_row"
+            "WHERE row_idx > :last_row_idx ORDER BY row_idx LIMIT :n_rows"
         )
+        if n_rows == 0:
+            return np.empty((0, len(descriptor.column_names)), dtype=object)
+        last_row_idx = await self._current_read_boundary(
+            table_name, descriptor.name, start_row
+        )
+        if last_row_idx is None:
+            return np.empty((0, len(descriptor.column_names)), dtype=object)
         async with self.engine.connect() as connection:
             result = await connection.execute(
                 query,
-                {"n_rows": n_rows, "start_row": start_row},
+                {"n_rows": n_rows, "last_row_idx": last_row_idx},
             )
             rows = []
+            last_read_row_idx: int | None = None
             for row in result:
+                last_read_row_idx = int(row[0])
                 try:
                     rows.append(
                         [
@@ -478,7 +500,7 @@ class MariaDBSource(MigrationSource):
                                 _decompress_json(cell),
                                 object_hook=json_decoder_hook,
                             )
-                            for cell in row
+                            for cell in row[1:]
                         ]
                     )
                 except MigrationValidationError:
@@ -486,7 +508,30 @@ class MariaDBSource(MigrationSource):
                 except Exception as error:
                     msg = f"unable to decode MariaDB row for '{descriptor.name}'"
                     raise MigrationValidationError(msg) from error
+        if rows and last_read_row_idx is not None:
+            self._current_read_cursors[descriptor.name] = _CurrentReadCursor(
+                next_start=start_row + len(rows),
+                last_row_idx=last_read_row_idx,
+            )
         return np.asarray(rows, dtype=object)
+
+    async def _current_read_boundary(
+        self, table_name: str, dataset_name: str, start_row: int
+    ) -> int | None:
+        """Return the previous row key, using a cursor for sequential batches."""
+        cursor = self._current_read_cursors.get(dataset_name)
+        if cursor is not None and cursor.next_start == start_row:
+            return cursor.last_row_idx
+        if start_row == 0:
+            return -1
+        query = text(
+            f"SELECT row_idx FROM `{table_name}` "  # noqa: S608 -- table name is an integer-derived internal identifier
+            "ORDER BY row_idx LIMIT 1 OFFSET :preceding_rows"
+        )
+        async with self.engine.connect() as connection:
+            return (
+                await connection.execute(query, {"preceding_rows": start_row - 1})
+            ).scalar_one_or_none()
 
     async def _read_current_partials(
         self, connection: AsyncConnection, table_names: set[str]
@@ -585,20 +630,20 @@ class MariaDBSource(MigrationSource):
         )
         query = text(
             f"SELECT {columns} FROM `{table_name}` "  # noqa: S608 -- table name is an integer-derived internal identifier
-            "ORDER BY row_idx LIMIT :page_size OFFSET :offset"
+            "WHERE row_idx > :last_row_idx ORDER BY row_idx LIMIT :page_size"
         )
-        offset = 0
+        last_row_idx = -1
         while True:
             result = await connection.execute(
                 query,
-                {"page_size": _CONTENT_HASH_PAGE_SIZE, "offset": offset},
+                {"page_size": _CONTENT_HASH_PAGE_SIZE, "last_row_idx": last_row_idx},
             )
             rows = result.fetchall()
             if not rows:
                 return
             for row in rows:
                 _hash_values(digest, "current", table_idx, *row)
-            offset += len(rows)
+            last_row_idx = int(rows[-1][0])
 
     async def _hash_legacy_rows(
         self,
