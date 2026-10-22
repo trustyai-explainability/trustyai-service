@@ -34,8 +34,8 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 # Metric name constants
-METRIC_NAME = "CompareMeans"
-DEPRECATED_METRIC_NAME = "Meanshift"  # Legacy name for backwards compatibility
+METRIC_NAME = "COMPAREMEANS"
+DEPRECATED_METRIC_NAME = "MEANSHIFT"  # Legacy name for backwards compatibility
 
 # Default parameter values
 DEFAULT_BATCH_SIZE = 100
@@ -232,6 +232,10 @@ async def schedule_compare_means(request: CompareMeansMetricRequest) -> dict[str
         request_id = uuid.uuid4()
         logger.info("Scheduling %s computation with ID: %s.", METRIC_NAME, request_id)
 
+        if request.metric_name.upper() == DEPRECATED_METRIC_NAME:
+            request.metric_name = DEPRECATED_METRIC_NAME
+        else:
+            request.metric_name = METRIC_NAME
         # Register with the scheduler (this will reconcile the request and store it)
         await scheduler.register(request.metric_name, request_id, request)
 

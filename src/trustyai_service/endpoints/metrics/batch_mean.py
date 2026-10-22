@@ -33,8 +33,8 @@ from trustyai_service.service.utils.logging_utils import log_deprecated_endpoint
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-METRIC_NAME = "BatchMean"
-DEPRECATED_METRIC_NAME = "Identity"
+METRIC_NAME = "BATCHMEAN"
+DEPRECATED_METRIC_NAME = "IDENTITY"
 DEFAULT_BATCH_SIZE = 100
 
 
@@ -215,6 +215,7 @@ async def schedule_batch_mean(request: BatchMeanRequest) -> dict:
     logger.info("Scheduling BatchMean computation with ID: %s", request_id)
 
     scheduler = get_prometheus_scheduler()
+    request.metric_name = METRIC_NAME
     await scheduler.register(METRIC_NAME, request_id, request)
 
     logger.info("Successfully scheduled BatchMean computation with ID: %s", request_id)

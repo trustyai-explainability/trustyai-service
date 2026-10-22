@@ -214,6 +214,10 @@ async def schedule_mmd(request: MMDMetricRequest) -> dict[str, str]:
     try:
         request_id = uuid.uuid4()
         logger.info("Scheduling %s computation with ID: %s.", METRIC_NAME, request_id)
+        if request.metric_name.upper() == DEPRECATED_METRIC_NAME:
+            request.metric_name = DEPRECATED_METRIC_NAME
+        else:
+            request.metric_name = METRIC_NAME
         await scheduler.register(request.metric_name, request_id, request)
 
     except HTTPException:
