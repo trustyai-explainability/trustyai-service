@@ -204,6 +204,13 @@ async def schedule_ksteststreaming(
     request: ApproxKSTestMetricRequest,
 ) -> dict[str, str]:
     """Schedule a recurring computation of KS Test Streaming metric."""
+    return await _schedule_ksteststreaming(request, METRIC_NAME)
+
+
+async def _schedule_ksteststreaming(
+    request: ApproxKSTestMetricRequest, metric_name: str
+) -> dict[str, str]:
+    """Schedule a recurring computation under the route's exact metric name."""
     # Validate drift request fields (modifies request.fit_columns in-place)
     await validate_drift_request(request)
 
@@ -218,19 +225,16 @@ async def schedule_ksteststreaming(
     try:
         # Generate UUID for this request
         request_id = uuid.uuid4()
-        logger.info("Scheduling %s computation with ID: %s.", METRIC_NAME, request_id)
+        logger.info("Scheduling %s computation with ID: %s.", metric_name, request_id)
 
-        if request.metric_name.upper() == DEPRECATED_METRIC_NAME:
-            request.metric_name = DEPRECATED_METRIC_NAME
-        else:
-            request.metric_name = METRIC_NAME
+        request.metric_name = metric_name
         # Register with the scheduler (this will reconcile the request and store it)
-        await scheduler.register(request.metric_name, request_id, request)
+        await scheduler.register(metric_name, request_id, request)
 
     except HTTPException:
         raise
     except Exception as e:  # Broad catch intentional: scheduler registration errors should not crash endpoint
-        logger.exception("Error scheduling %s computation", METRIC_NAME)
+        logger.exception("Error scheduling %s computation", metric_name)
         raise HTTPException(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
             detail="Error scheduling metric. Check server logs for details.",
@@ -238,7 +242,7 @@ async def schedule_ksteststreaming(
     else:
         logger.info(
             "Successfully scheduled %s computation with ID: %s",
-            METRIC_NAME,
+            metric_name,
             request_id,
         )
         return {"requestId": str(request_id)}
@@ -390,8 +394,7 @@ async def schedule_approxkstest_deprecated(
     This endpoint is deprecated. Please use /metrics/drift/ksteststreaming/request instead.
     """
     log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
-    request.metric_name = DEPRECATED_METRIC_NAME
-    return await schedule_ksteststreaming(request)
+    return await _schedule_ksteststreaming(request, DEPRECATED_METRIC_NAME)
 
 
 @router.delete("/metrics/drift/approxkstest/request", deprecated=True)
