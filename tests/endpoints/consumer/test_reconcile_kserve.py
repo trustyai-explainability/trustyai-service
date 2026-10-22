@@ -200,7 +200,7 @@ class TestWriteReconciledData(unittest.TestCase):
         )
 
         self.mock_storage = self.storage_patch.start().return_value
-        self.mock_storage.write_data = mock.AsyncMock()
+        self.mock_storage.write_data_batch = mock.AsyncMock()
         self.mock_storage.delete_partial_payload = mock.AsyncMock()
 
         self.mock_data_source = self.data_source_patch.start().return_value
@@ -225,7 +225,7 @@ class TestWriteReconciledData(unittest.TestCase):
         self.model_data_patch.stop()
 
     def test_writes_three_datasets(self) -> None:
-        """write_reconciled_data calls write_data for inputs, outputs, metadata."""
+        """Inputs, outputs, and metadata are submitted in one storage batch."""
         input_arr = np.array([[1.0], [2.0], [3.0]])
         output_arr = np.array([[10.0], [20.0], [30.0]])
 
@@ -241,10 +241,10 @@ class TestWriteReconciledData(unittest.TestCase):
             )
         )
 
-        assert self.mock_storage.write_data.call_count == _EXPECTED_DATASET_WRITES
-        dataset_names = [
-            call[0][0] for call in self.mock_storage.write_data.call_args_list
-        ]
+        self.mock_storage.write_data_batch.assert_awaited_once()
+        writes = self.mock_storage.write_data_batch.call_args.args[0]
+        assert len(writes) == _EXPECTED_DATASET_WRITES
+        dataset_names = [name for name, _, _ in writes]
         assert "test-model_inputs" in dataset_names
         assert "test-model_outputs" in dataset_names
         assert "test-model_metadata" in dataset_names
@@ -339,10 +339,10 @@ class TestWriteReconciledData(unittest.TestCase):
         )
 
         # Find the metadata write call
-        for call in self.mock_storage.write_data.call_args_list:
-            if call[0][0] == "tag-model_metadata":
-                metadata_arr = call[0][1]
-                metadata_names = call[0][2]
+        for name, rows, columns in self.mock_storage.write_data_batch.call_args.args[0]:
+            if name == "tag-model_metadata":
+                metadata_arr = rows
+                metadata_names = columns
                 break
         else:
             self.fail("Metadata write call not found")
@@ -369,10 +369,10 @@ class TestWriteReconciledData(unittest.TestCase):
             )
         )
 
-        for call in self.mock_storage.write_data.call_args_list:
-            if call[0][0] == "id-model_metadata":
-                metadata_arr = call[0][1]
-                metadata_names = call[0][2]
+        for name, rows, columns in self.mock_storage.write_data_batch.call_args.args[0]:
+            if name == "id-model_metadata":
+                metadata_arr = rows
+                metadata_names = columns
                 break
         else:
             self.fail("Metadata write call not found")

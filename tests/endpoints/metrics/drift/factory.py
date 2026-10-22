@@ -1021,6 +1021,7 @@ def make_retrieve_tags_with_all_fields_test(
         )
 
         tags = request.retrieve_tags()
+        assert tags["batch_size"] == "100"
 
         # Check that tags include the base tags plus metric-specific tags
         assert "modelId" in tags
@@ -1051,6 +1052,7 @@ def make_retrieve_tags_without_reference_tag_test(
         )
 
         tags = request.retrieve_tags()
+        assert tags["batch_size"] == "100"
 
         # Check that tags include base tags but not referenceTag
         assert "modelId" in tags
@@ -1081,6 +1083,7 @@ def make_retrieve_tags_without_fit_columns_test(
         )
 
         tags = request.retrieve_tags()
+        assert tags["batch_size"] == "100"
 
         # Check that tags include referenceTag but not fitColumns
         assert "modelId" in tags
@@ -1109,6 +1112,7 @@ def make_retrieve_tags_with_empty_fit_columns_test(
         )
 
         tags = request.retrieve_tags()
+        assert tags["batch_size"] == "100"
 
         # Check that tags include referenceTag but not fitColumns
         # (empty list should not add tag)

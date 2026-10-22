@@ -88,7 +88,7 @@ class TestPrometheusPublisher:
         # Verify gauge has correct labels
         expected_labels: list[str] = list(
             mock_request.retrieve_default_tags().keys(),
-        )  # default labels (metricName, modelId, requestName)
+        )  # default labels (metricName, model, modelId, requestName)
         expected_labels.extend(
             list(mock_request.retrieve_tags().keys()),
         )  # custom tags (custom_tag)
@@ -136,6 +136,48 @@ class TestPrometheusPublisher:
             for sample in metric.samples:
                 subcategory_value_map[sample.labels["subcategory"]] = sample.value
         assert subcategory_value_map == test_named_values
+
+    @pytest.mark.parametrize(
+        "metric_name",
+        [
+            "Meanshift",
+            "KSTest",
+            "APPROXKSTEST",
+            "FOURIERMMD",
+            "BatchMean",
+            "CompareMeans",
+            "JensenShannon",
+        ],
+    )
+    @pytest.mark.parametrize("named_values", [False, True])
+    def test_metric_name_label_casing(
+        self,
+        publisher: PrometheusPublisher,
+        metric_name: str,
+        *,
+        named_values: bool,
+    ) -> None:
+        """Publish uppercase labels without changing request or metric family names."""
+        request = MockMetricRequest(metric_name=metric_name)
+        publisher.gauge(
+            GaugeConfig(
+                model_name="test_model",
+                request_id=uuid.uuid4(),
+                request=request,
+                value=None if named_values else 0.5,
+                named_values={"feature": 0.5} if named_values else None,
+            )
+        )
+
+        samples = [
+            sample
+            for metric in publisher.registry.collect()
+            for sample in metric.samples
+        ]
+        assert len(samples) == 1
+        assert samples[0].name == f"trustyai_{metric_name.lower()}"
+        assert samples[0].labels["metricName"] == metric_name.upper()
+        assert request.metric_name == metric_name
 
     def test_simple_gauge_without_request(self, publisher: PrometheusPublisher) -> None:
         """Test publishing simple gauge without request object."""
@@ -269,7 +311,8 @@ class TestPrometheusPublisher:
         )
 
         expected_tags = {
-            "metricName": mock_request.metric_name,
+            "metricName": "TEST_METRIC",
+            "model": "test_model",
             "modelId": "test_model",
             "requestName": mock_request.request_name,
             "custom_tag": "custom_value",
@@ -379,3 +422,19 @@ class TestPrometheusPublisher:
                     request=mock_request,
                 )
             )
+
+
+def test_model_label_aliases() -> None:
+    """Expose both model selectors on the same sample during migration."""
+    registry = CollectorRegistry()
+    publisher = PrometheusPublisher(registry)
+    publisher.gauge(
+        GaugeConfig(
+            model_name="test_model",
+            request_id=uuid.uuid4(),
+            request=MockMetricRequest(),
+            value=0.5,
+        )
+    )
+    sample = next(sample for metric in registry.collect() for sample in metric.samples)
+    assert sample.labels["model"] == sample.labels["modelId"] == "test_model"

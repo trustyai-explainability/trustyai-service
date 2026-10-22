@@ -49,12 +49,13 @@ def _mock_model_data(metadata: np.ndarray) -> MagicMock:
 class TestGetTags:
     """Tests for GET /info/tags."""
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @patch("trustyai_service.endpoints.metadata.get_data_source")
     def test_get_tags_single_model(
-        self, mock_get_ds: MagicMock, mock_storage: MagicMock
+        self, mock_get_ds: MagicMock, mock_get_storage: MagicMock
     ) -> None:
         """Returns correct tag counts for a specific model."""
+        mock_storage = mock_get_storage.return_value
         mock_ds = MagicMock()
         mock_ds.get_known_models = AsyncMock(return_value={"test-model"})
         mock_get_ds.return_value = mock_ds
@@ -81,12 +82,13 @@ class TestGetTags:
         assert data["TRAINING"] == 2
         assert data["REFERENCE"] == 1
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @patch("trustyai_service.endpoints.metadata.get_data_source")
     def test_get_tags_model_not_found(
-        self, mock_get_ds: MagicMock, mock_storage: MagicMock
+        self, mock_get_ds: MagicMock, mock_get_storage: MagicMock
     ) -> None:
         """Returns 404 for a non-existent model."""
+        mock_storage = mock_get_storage.return_value
         mock_ds = MagicMock()
         mock_ds.get_known_models = AsyncMock(return_value=set())
         mock_get_ds.return_value = mock_ds
@@ -98,12 +100,13 @@ class TestGetTags:
 
         assert response.status_code == HTTPStatus.NOT_FOUND
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @patch("trustyai_service.endpoints.metadata.get_data_source")
     def test_get_tags_empty_data(
-        self, mock_get_ds: MagicMock, mock_storage: MagicMock
+        self, mock_get_ds: MagicMock, mock_get_storage: MagicMock
     ) -> None:
         """Returns empty dict when model has no metadata rows."""
+        mock_storage = mock_get_storage.return_value
         mock_ds = MagicMock()
         mock_ds.get_known_models = AsyncMock(return_value={"empty-model"})
         mock_get_ds.return_value = mock_ds
@@ -121,12 +124,13 @@ class TestGetTags:
         assert response.status_code == HTTPStatus.OK
         assert response.json() == {}
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @patch("trustyai_service.endpoints.metadata.get_data_source")
     def test_get_tags_all_models(
-        self, mock_get_ds: MagicMock, mock_storage: MagicMock
+        self, mock_get_ds: MagicMock, mock_get_storage: MagicMock
     ) -> None:
         """Returns tag counts for all known models when modelId is omitted."""
+        mock_storage = mock_get_storage.return_value
         mock_ds = MagicMock()
         mock_ds.get_verified_models = AsyncMock(return_value=["model-a", "model-b"])
         mock_ds.get_known_models = AsyncMock(return_value={"model-a", "model-b"})
@@ -160,12 +164,13 @@ class TestGetTags:
 class TestApplyTags:
     """Tests for POST /info/tags."""
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @patch("trustyai_service.endpoints.metadata.get_data_source")
     def test_apply_tags_success(
-        self, mock_get_ds: MagicMock, mock_storage: MagicMock
+        self, mock_get_ds: MagicMock, mock_get_storage: MagicMock
     ) -> None:
         """Applies tags to specified row ranges."""
+        mock_storage = mock_get_storage.return_value
         mock_ds = MagicMock()
         mock_ds.get_known_models = AsyncMock(return_value={"test-model"})
         mock_get_ds.return_value = mock_ds
@@ -195,12 +200,13 @@ class TestApplyTags:
         mock_storage.delete_dataset.assert_awaited_once()
         mock_storage.write_data.assert_awaited_once()
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @patch("trustyai_service.endpoints.metadata.get_data_source")
     def test_apply_tags_reserved_prefix(
-        self, mock_get_ds: MagicMock, mock_storage: MagicMock
+        self, mock_get_ds: MagicMock, mock_get_storage: MagicMock
     ) -> None:
         """Rejects tags with the reserved _trustyai prefix."""
+        mock_storage = mock_get_storage.return_value
         mock_ds = MagicMock()
         mock_ds.get_known_models = AsyncMock(return_value={"test-model"})
         mock_get_ds.return_value = mock_ds
@@ -219,12 +225,13 @@ class TestApplyTags:
         assert response.status_code == HTTPStatus.BAD_REQUEST
         assert "_trustyai" in response.json()["detail"]
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @patch("trustyai_service.endpoints.metadata.get_data_source")
     def test_apply_tags_out_of_bounds(
-        self, mock_get_ds: MagicMock, mock_storage: MagicMock
+        self, mock_get_ds: MagicMock, mock_get_storage: MagicMock
     ) -> None:
         """Rejects ranges that exceed dataset size."""
+        mock_storage = mock_get_storage.return_value
         mock_ds = MagicMock()
         mock_ds.get_known_models = AsyncMock(return_value={"test-model"})
         mock_get_ds.return_value = mock_ds
@@ -247,12 +254,13 @@ class TestApplyTags:
         assert response.status_code == HTTPStatus.BAD_REQUEST
         assert "exceeds dataset size" in response.json()["detail"]
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @patch("trustyai_service.endpoints.metadata.get_data_source")
     def test_apply_tags_idempotent(
-        self, mock_get_ds: MagicMock, mock_storage: MagicMock
+        self, mock_get_ds: MagicMock, mock_get_storage: MagicMock
     ) -> None:
         """Applying the same tag twice does not duplicate it in the row."""
+        mock_storage = mock_get_storage.return_value
         mock_ds = MagicMock()
         mock_ds.get_known_models = AsyncMock(return_value={"test-model"})
         mock_get_ds.return_value = mock_ds
@@ -291,12 +299,13 @@ class TestApplyTags:
         for row in saved:
             assert row[3].count("TRAINING") == 1
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @patch("trustyai_service.endpoints.metadata.get_data_source")
     def test_apply_tags_model_not_found(
-        self, mock_get_ds: MagicMock, mock_storage: MagicMock
+        self, mock_get_ds: MagicMock, mock_get_storage: MagicMock
     ) -> None:
         """Returns 404 for a non-existent model."""
+        mock_storage = mock_get_storage.return_value
         mock_ds = MagicMock()
         mock_ds.get_known_models = AsyncMock(return_value=set())
         mock_get_ds.return_value = mock_ds
@@ -314,12 +323,13 @@ class TestApplyTags:
 
         assert response.status_code == HTTPStatus.NOT_FOUND
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @patch("trustyai_service.endpoints.metadata.get_data_source")
     def test_apply_tags_invalid_range(
-        self, mock_get_ds: MagicMock, mock_storage: MagicMock
+        self, mock_get_ds: MagicMock, mock_get_storage: MagicMock
     ) -> None:
         """Rejects ranges where start >= end."""
+        mock_storage = mock_get_storage.return_value
         mock_ds = MagicMock()
         mock_ds.get_known_models = AsyncMock(return_value={"test-model"})
         mock_get_ds.return_value = mock_ds
@@ -342,12 +352,13 @@ class TestApplyTags:
         assert response.status_code == HTTPStatus.BAD_REQUEST
         assert "start must be less than end" in response.json()["detail"]
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @patch("trustyai_service.endpoints.metadata.get_data_source")
     def test_apply_tags_negative_index(
-        self, mock_get_ds: MagicMock, mock_storage: MagicMock
+        self, mock_get_ds: MagicMock, mock_get_storage: MagicMock
     ) -> None:
         """Rejects ranges containing negative indices."""
+        mock_storage = mock_get_storage.return_value
         mock_ds = MagicMock()
         mock_ds.get_known_models = AsyncMock(return_value={"test-model"})
         mock_get_ds.return_value = mock_ds
@@ -370,12 +381,13 @@ class TestApplyTags:
         assert response.status_code == HTTPStatus.BAD_REQUEST
         assert "non-negative" in response.json()["detail"]
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @patch("trustyai_service.endpoints.metadata.get_data_source")
     def test_apply_tags_overlapping_ranges(
-        self, mock_get_ds: MagicMock, mock_storage: MagicMock
+        self, mock_get_ds: MagicMock, mock_get_storage: MagicMock
     ) -> None:
         """Overlapping ranges apply tags correctly without duplicates."""
+        mock_storage = mock_get_storage.return_value
         mock_ds = MagicMock()
         mock_ds.get_known_models = AsyncMock(return_value={"test-model"})
         mock_get_ds.return_value = mock_ds
@@ -414,12 +426,13 @@ class TestApplyTags:
         for idx in range(8):
             assert saved[idx][3].count("TAG") == 1
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @patch("trustyai_service.endpoints.metadata.get_data_source")
     def test_apply_tags_multiple_tags_different_ranges(
-        self, mock_get_ds: MagicMock, mock_storage: MagicMock
+        self, mock_get_ds: MagicMock, mock_get_storage: MagicMock
     ) -> None:
         """Multiple tags applied to different ranges in a single request."""
+        mock_storage = mock_get_storage.return_value
         mock_ds = MagicMock()
         mock_ds.get_known_models = AsyncMock(return_value={"test-model"})
         mock_get_ds.return_value = mock_ds
@@ -465,12 +478,13 @@ class TestApplyTags:
         assert "REFERENCE" in saved[9][3]
         assert "REFERENCE" not in saved[0][3]
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @patch("trustyai_service.endpoints.metadata.get_data_source")
     def test_apply_tags_non_contiguous_ranges(
-        self, mock_get_ds: MagicMock, mock_storage: MagicMock
+        self, mock_get_ds: MagicMock, mock_get_storage: MagicMock
     ) -> None:
         """Non-contiguous ranges tag only specified rows."""
+        mock_storage = mock_get_storage.return_value
         mock_ds = MagicMock()
         mock_ds.get_known_models = AsyncMock(return_value={"test-model"})
         mock_get_ds.return_value = mock_ds
@@ -512,12 +526,13 @@ class TestApplyTags:
         for idx in (2, 3, 4, 8, 9):
             assert "TAG" not in saved[idx][3]
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @patch("trustyai_service.endpoints.metadata.get_data_source")
     def test_apply_tags_singleton_range(
-        self, mock_get_ds: MagicMock, mock_storage: MagicMock
+        self, mock_get_ds: MagicMock, mock_get_storage: MagicMock
     ) -> None:
         """Singleton range [n] tags only row n."""
+        mock_storage = mock_get_storage.return_value
         mock_ds = MagicMock()
         mock_ds.get_known_models = AsyncMock(return_value={"test-model"})
         mock_get_ds.return_value = mock_ds
@@ -556,12 +571,13 @@ class TestApplyTags:
         assert "TAG" not in saved[2][3]
         assert "TAG" not in saved[4][3]
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @patch("trustyai_service.endpoints.metadata.get_data_source")
     def test_apply_tags_empty_data_tagging(
-        self, mock_get_ds: MagicMock, mock_storage: MagicMock
+        self, mock_get_ds: MagicMock, mock_get_storage: MagicMock
     ) -> None:
         """Empty dataTagging dict returns 400."""
+        mock_storage = mock_get_storage.return_value
         mock_ds = MagicMock()
         mock_ds.get_known_models = AsyncMock(return_value={"test-model"})
         mock_get_ds.return_value = mock_ds
@@ -580,12 +596,13 @@ class TestApplyTags:
         assert response.status_code == HTTPStatus.BAD_REQUEST
         assert "at least one tag" in response.json()["detail"]
 
-    @patch("trustyai_service.endpoints.metadata.storage_interface")
+    @patch("trustyai_service.endpoints.metadata.get_global_storage_interface")
     @patch("trustyai_service.endpoints.metadata.get_data_source")
     def test_apply_tags_range_too_many_elements(
-        self, mock_get_ds: MagicMock, mock_storage: MagicMock
+        self, mock_get_ds: MagicMock, mock_get_storage: MagicMock
     ) -> None:
         """Range with 3+ elements returns 400."""
+        mock_storage = mock_get_storage.return_value
         mock_ds = MagicMock()
         mock_ds.get_known_models = AsyncMock(return_value={"test-model"})
         mock_get_ds.return_value = mock_ds

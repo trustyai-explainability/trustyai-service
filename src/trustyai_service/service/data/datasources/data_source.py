@@ -25,7 +25,7 @@ from trustyai_service.service.data.metadata.storage_metadata import (
     StorageMetadataConfig,
 )
 from trustyai_service.service.data.model_data import ModelData
-from trustyai_service.service.data.storage import get_storage_interface
+from trustyai_service.service.data.storage import get_global_storage_interface
 from trustyai_service.service.payloads.service.schema import Schema
 from trustyai_service.service.payloads.service.schema_item import SchemaItem
 from trustyai_service.service.payloads.values.data_type import DataType
@@ -57,7 +57,7 @@ class DataSource:
     def __init__(self) -> None:
         """Initialize data source with storage interface and metadata cache."""
         self.known_models: set[str] = set()
-        self.storage_interface = get_storage_interface()
+        self.storage_interface = get_global_storage_interface()
         self.metadata_cache: dict[str, StorageMetadata] = {}
 
     # MODEL TRACKING OPERATIONS
