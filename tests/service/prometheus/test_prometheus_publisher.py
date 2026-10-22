@@ -88,7 +88,7 @@ class TestPrometheusPublisher:
         # Verify gauge has correct labels
         expected_labels: list[str] = list(
             mock_request.retrieve_default_tags().keys(),
-        )  # default labels (metricName, modelId, requestName)
+        )  # default labels (metricName, model, modelId, requestName)
         expected_labels.extend(
             list(mock_request.retrieve_tags().keys()),
         )  # custom tags (custom_tag)
@@ -312,6 +312,7 @@ class TestPrometheusPublisher:
 
         expected_tags = {
             "metricName": "TEST_METRIC",
+            "model": "test_model",
             "modelId": "test_model",
             "requestName": mock_request.request_name,
             "custom_tag": "custom_value",
@@ -421,3 +422,19 @@ class TestPrometheusPublisher:
                     request=mock_request,
                 )
             )
+
+
+def test_model_label_aliases() -> None:
+    """Expose both model selectors on the same sample during migration."""
+    registry = CollectorRegistry()
+    publisher = PrometheusPublisher(registry)
+    publisher.gauge(
+        GaugeConfig(
+            model_name="test_model",
+            request_id=uuid.uuid4(),
+            request=MockMetricRequest(),
+            value=0.5,
+        )
+    )
+    sample = next(sample for metric in registry.collect() for sample in metric.samples)
+    assert sample.labels["model"] == sample.labels["modelId"] == "test_model"

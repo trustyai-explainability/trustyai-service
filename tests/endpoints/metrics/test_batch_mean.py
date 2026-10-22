@@ -363,12 +363,12 @@ class TestBatchMeanRequest:
         assert request.metric_name == "BatchMean"
 
     def test_retrieve_tags(self) -> None:
-        """Tags match the Java BatchMean request labels."""
+        """Tags include Java labels and retained Python aliases."""
         request = BatchMeanRequest(modelId="test", columnName="col")
         tags = request.retrieve_tags()
         assert tags["column"] == tags["columnName"] == "col"
         assert tags["batch_size"] == "100"
-        assert tags["modelId"] == "test"
+        assert tags["model"] == tags["modelId"] == "test"
 
     def test_default_batch_size(self) -> None:
         """Default batch_size matches the model field default."""
