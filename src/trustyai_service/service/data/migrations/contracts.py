@@ -30,6 +30,7 @@ class DatasetDescriptor:
     shape: tuple[int, ...] = ()
     serialized: bool = False
     source_file: str | None = None
+    service_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

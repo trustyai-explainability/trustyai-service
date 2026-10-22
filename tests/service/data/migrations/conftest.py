@@ -7,6 +7,7 @@ explicit failure when the implementation has not yet been added.
 The public API specified by these tests is:
 
 * ``trustyai_service.service.data.migrations.PVCSource``
+* ``trustyai_service.service.data.migrations.PVCCSVSource``
 * ``trustyai_service.service.data.migrations.MariaDBSource``
 * ``trustyai_service.service.data.migrations.DatabaseTarget``
 * ``trustyai_service.service.data.migrations.MigrationConfig``
@@ -100,6 +101,7 @@ def _load_migration_module() -> ModuleType:
 
     required = (
         "PVCSource",
+        "PVCCSVSource",
         "MariaDBSource",
         "DatabaseTarget",
         "MigrationConfig",

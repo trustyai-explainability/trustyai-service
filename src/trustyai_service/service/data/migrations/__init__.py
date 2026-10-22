@@ -17,6 +17,7 @@ from .errors import (
 )
 from .mariadb import MariaDBSource
 from .pvc import PVCSource
+from .pvc_csv import PVCCSVSource
 from .runner import (
     DatasetMigrationResult,
     MigrationConfig,
@@ -40,6 +41,7 @@ __all__ = [
     "MigrationStatus",
     "MigrationValidationError",
     "MigrationWriteError",
+    "PVCCSVSource",
     "PVCSource",
     "PartialPayloadRecord",
     "SourceManifest",

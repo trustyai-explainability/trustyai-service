@@ -195,6 +195,7 @@ class CanonicalStorage:
         column_types: Sequence[str] | None = None,
         shape: Sequence[int] | None = None,
         serialized: bool | None = None,
+        service_metadata: dict[str, Any] | None = None,
     ) -> None:
         """Create or validate a dataset registry row and dynamic table."""
         _validate_dataset_name(dataset_name)
@@ -227,6 +228,8 @@ class CanonicalStorage:
             metadata["column_types"] = types
         if serialized is not None:
             metadata["serialized"] = bool(serialized)
+        if service_metadata:
+            metadata["trustyai_service"] = dict(service_metadata)
 
         await self._ensure_initialized()
         async with self.engine.begin() as connection:
@@ -259,6 +262,13 @@ class CanonicalStorage:
             if types is not None and existing_types not in (None, types):
                 msg = f"Dataset '{dataset_name}' has incompatible column types"
                 raise ValueError(msg)
+            existing_service_metadata = existing_metadata.get("trustyai_service")
+            if service_metadata and existing_service_metadata not in (
+                None,
+                service_metadata,
+            ):
+                msg = f"Dataset '{dataset_name}' has incompatible service metadata"
+                raise ValueError(msg)
             merged = dict(existing_metadata)
             if aliases is not None:
                 merged["aliased_names"] = alias_names
@@ -266,6 +276,8 @@ class CanonicalStorage:
                 merged["column_types"] = types
             if serialized is not None:
                 merged["serialized"] = bool(serialized)
+            if service_metadata:
+                merged["trustyai_service"] = dict(service_metadata)
             await connection.execute(
                 self.tables.reference.update()
                 .where(self.tables.reference.c.dataset_name == dataset_name)
@@ -422,6 +434,12 @@ class CanonicalStorage:
         reference = await self._get_reference(dataset_name)
         types = reference["metadata"].get("column_types")
         return list(types) if types is not None else None
+
+    async def get_service_metadata(self, dataset_name: str) -> dict[str, Any] | None:
+        """Return preserved service-level metadata for a migrated dataset."""
+        reference = await self._get_reference(dataset_name)
+        value = reference["metadata"].get("trustyai_service")
+        return dict(value) if value is not None else None
 
     async def set_column_types(
         self, dataset_name: str, column_types: list[str]

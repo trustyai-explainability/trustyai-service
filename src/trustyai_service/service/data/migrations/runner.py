@@ -272,7 +272,7 @@ class MigrationRunner:
             errors=tuple(errors),
         )
 
-    async def _verify_dataset(  # noqa: PLR0911 -- each validation stage has a precise outcome
+    async def _verify_dataset(  # noqa: C901, PLR0911 -- each validation stage has a precise outcome
         self, descriptor: DatasetDescriptor, storage: StorageInterface
     ) -> tuple[int, int, int, list[str]]:
         """Verify one dataset and return aggregate counters and errors."""
@@ -290,6 +290,18 @@ class MigrationRunner:
                 descriptor.column_types
             ):
                 return 0, 0, 0, [f"type mismatch: {descriptor.name}"]
+            if descriptor.service_metadata:
+                get_service_metadata = getattr(storage, "get_service_metadata", None)
+                if not callable(get_service_metadata):
+                    return (
+                        0,
+                        0,
+                        0,
+                        [f"target cannot verify service metadata: {descriptor.name}"],
+                    )
+                actual_service_metadata = await get_service_metadata(descriptor.name)
+                if actual_service_metadata != descriptor.service_metadata:
+                    return 0, 0, 0, [f"service metadata mismatch: {descriptor.name}"]
             count = await storage.dataset_rows(descriptor.name)
             if count != descriptor.row_count:
                 return (

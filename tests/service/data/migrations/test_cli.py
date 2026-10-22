@@ -73,6 +73,47 @@ def test_cli_accepts_operator_pvc_environment(monkeypatch) -> None:
     assert args.data_file == "legacy.hdf5"
 
 
+def test_cli_accepts_java_csv_pvc_source() -> None:
+    """The Java CSV source uses its native default filename."""
+    from trustyai_service.service.data.migrations.cli import parse_args
+
+    args = parse_args(
+        [
+            "--source",
+            "pvc-csv",
+            "--source-path",
+            "source",
+            "--target-url",
+            "sqlite+aiosqlite:///:memory:",
+            "--quiesced",
+        ]
+    )
+
+    assert args.source == "pvc-csv"
+    assert args.source_path == Path("source")
+    assert args.data_file == "data.csv"
+
+
+def test_cli_allows_java_csv_filename_override(monkeypatch) -> None:
+    """The Java source honors the mounted storage filename configuration."""
+    from trustyai_service.service.data.migrations.cli import parse_args
+
+    monkeypatch.setenv("STORAGE_DATA_FILENAME", "inference.csv")
+    args = parse_args(
+        [
+            "--source",
+            "pvc-csv",
+            "--source-path",
+            "source",
+            "--target-url",
+            "sqlite+aiosqlite:///:memory:",
+            "--quiesced",
+        ]
+    )
+
+    assert args.data_file == "inference.csv"
+
+
 def test_cli_accepts_mariadb_source_arguments() -> None:
     """MariaDB source arguments expose schema selection without importing a driver."""
     from trustyai_service.service.data.migrations.cli import parse_args

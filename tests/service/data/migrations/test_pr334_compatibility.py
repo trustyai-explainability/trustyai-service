@@ -239,10 +239,12 @@ def test_migration_dependencies_are_explicit_and_container_visible() -> None:
     assert any("sqlalchemy" in requirement for requirement in migration)
     assert any("asyncpg" in requirement for requirement in migration)
     assert any("asyncmy" in requirement for requirement in migration)
+    assert any("javaobj-py3" in requirement for requirement in migration)
     requirements = Path("requirements.txt").read_text(encoding="utf-8")
     assert "--extra migration" in requirements
     assert "asyncpg==" in requirements
     assert "asyncmy==" in requirements
+    assert "javaobj-py3==" in requirements
     assert "sqlalchemy==" in requirements
 
 

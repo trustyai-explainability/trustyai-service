@@ -17,6 +17,7 @@ from sqlalchemy.engine import URL, make_url
 from .errors import MigrationError
 from .mariadb import MariaDBSource
 from .pvc import PVCSource
+from .pvc_csv import PVCCSVSource
 from .runner import MigrationConfig, MigrationResult, MigrationRunner, MigrationStatus
 from .target import DatabaseTarget
 
@@ -255,7 +256,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--source",
-        choices=("pvc", "mariadb"),
+        choices=("pvc", "pvc-csv", "mariadb"),
         required=True,
         help="Source adapter to read.",
     )
@@ -267,7 +268,7 @@ def build_parser() -> argparse.ArgumentParser:
             if os.environ.get("STORAGE_DATA_FOLDER")
             else None
         ),
-        help="PVC directory containing TrustyAI HDF5 files; may be supplied through STORAGE_DATA_FOLDER.",
+        help="PVC directory containing TrustyAI HDF5 or Java CSV files; may be supplied through STORAGE_DATA_FOLDER.",
     )
     parser.add_argument(
         "--source-url",
@@ -282,8 +283,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--data-file",
-        default=os.environ.get("STORAGE_DATA_FILENAME", "trustyai.hdf5"),
-        help="PVC data-file suffix; may be supplied through STORAGE_DATA_FILENAME; default: trustyai.hdf5.",
+        default=None,
+        help="PVC data filename; defaults to STORAGE_DATA_FILENAME, trustyai.hdf5 for pvc, or data.csv for pvc-csv.",
     )
     parser.add_argument(
         "--target-url",
@@ -324,10 +325,23 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _default_data_file(source: str, configured: str | None) -> str:
+    """Resolve source-specific defaults while honoring the mounted config."""
+    if configured:
+        return configured
+    return "data.csv" if source == "pvc-csv" else "trustyai.hdf5"
+
+
 def parse_args(arguments: Sequence[str] | None = None) -> argparse.Namespace:
     """Parse and validate command-line arguments."""
     parser = build_parser()
     args = parser.parse_args(arguments)
+    args.data_file = _default_data_file(
+        args.source,
+        args.data_file
+        if args.data_file is not None
+        else os.environ.get("STORAGE_DATA_FILENAME"),
+    )
     if not args.quiesced:
         parser.error("--quiesced is required before a source can be read")
     if not args.target_url:
@@ -344,9 +358,9 @@ def parse_args(arguments: Sequence[str] | None = None) -> argparse.Namespace:
         parser.error("--batch-size must be greater than zero")
     if not args.namespace or len(args.namespace) > _MAX_NAMESPACE_LENGTH:
         parser.error("--namespace must contain 1 to 255 characters")
-    if args.source == "pvc" and args.source_path is None:
-        parser.error("--source-path is required for --source pvc")
-    if args.source == "pvc" and (
+    if args.source in {"pvc", "pvc-csv"} and args.source_path is None:
+        parser.error(f"--source-path is required for --source {args.source}")
+    if args.source in {"pvc", "pvc-csv"} and (
         not args.data_file or Path(args.data_file).name != args.data_file
     ):
         parser.error("--data-file must be a non-empty file name")
@@ -367,6 +381,12 @@ async def run_from_args(args: argparse.Namespace) -> MigrationResult:
     try:
         if args.source == "pvc":
             source = PVCSource(
+                args.source_path,
+                quiesced=args.quiesced,
+                data_file=args.data_file,
+            )
+        elif args.source == "pvc-csv":
+            source = PVCCSVSource(
                 args.source_path,
                 quiesced=args.quiesced,
                 data_file=args.data_file,

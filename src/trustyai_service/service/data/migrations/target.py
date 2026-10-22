@@ -47,6 +47,7 @@ class DatabaseTarget(MigrationTarget):
             column_types=dataset.column_types,
             shape=dataset.shape or (len(dataset.column_names),),
             serialized=dataset.serialized,
+            service_metadata=dataset.service_metadata or None,
         )
 
     async def write_batch(self, dataset: DatasetDescriptor, rows: np.ndarray) -> None:

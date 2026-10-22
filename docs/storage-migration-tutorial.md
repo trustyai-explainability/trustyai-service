@@ -1,0 +1,517 @@
+# Storage migration tutorial: PVC, Java CSV, and databases
+
+This tutorial describes the storage migration behavior implemented by the
+Python TrustyAI service in this repository. It is an implementation guide for
+service developers and operators. It is not a description of an external
+operator contract.
+
+## 1. The short version
+
+The service has two automatic migration paths when MariaDB storage is selected
+and migration is enabled:
+
+1. **PVC to MariaDB:** reads HDF5 files from the configured PVC mount and
+   writes their logical datasets into the MariaDB `trustyai_v2_*` schema.
+2. **Legacy MariaDB to the current schema:** reads the older Java-serialized
+   MariaDB tables and writes input, output, and metadata datasets through the
+   current `MariaDBStorage` implementation.
+
+The PVC path has priority. If at least one `*.hdf5` file is found in
+`STORAGE_DATA_FOLDER`, the service runs the PVC migration and returns without
+checking the legacy database tables in that startup. The legacy path is
+considered only when no HDF5 file is found.
+
+There is no implemented MariaDB-to-PVC rollback migration and there is no
+general-purpose database schema migration framework. The current schema is
+created with `CREATE TABLE IF NOT EXISTS`, and the two data migrations are
+explicit startup paths.
+
+Separately, the explicit `trustyai-migrate` command provides a resumable
+cross-database suite. It reads Java CSV-on-PVC alongside the existing Python
+HDF5 PVC and MariaDB sources, and can target SQLite, MariaDB, or PostgreSQL.
+This is a command-driven migration, not an automatic startup path.
+
+## 1.1 Explicit Java CSV-on-PVC migration suite
+
+The Java service's CSV PVC layout is different from this repository's HDF5
+layout. For each model ID, it stores three sibling files in the configured
+folder:
+
+| File | Contents |
+| --- | --- |
+| `<model>-<data-file>` | Headerless combined input/output rows |
+| `<model>-internal_data.csv` | Headerless `tag,id,timestamp` rows |
+| `<model>-metadata.json` | Schemas, aliases, tensor names, and counts |
+
+The data filename defaults to `data.csv`.
+
+Run the standalone migration command with the `migration` extra. For example,
+to move the Java PVC to PostgreSQL:
+
+```bash
+uv run --extra migration trustyai-migrate \
+  --source pvc-csv \
+  --source-path /inputs \
+  --data-file data.csv \
+  --target-url "$TRUSTYAI_MIGRATION_TARGET_URL" \
+  --namespace java-pvc-cutover \
+  --quiesced
+```
+
+Use a `mariadb+asyncmy://...` target URL for MariaDB or
+`sqlite+aiosqlite:///...` for a local SQLite target. The command requires
+`--quiesced` for every source and uses the same bounded batching, resume,
+collision checks, source checksum, and post-write verification as the other
+migration-suite sources. It does not remove or modify the PVC. Keep the source
+until the run reports `COMPLETE` and the destination has been checked.
+
+The source adapter requires all three files for every discovered model. It
+validates the data and internal CSV row counts against each other and against
+`observations` in the JSON sidecar; reads `inputSchema.items` and
+`outputSchema.items` in their declared column-index order; and preserves the
+original names, aliases, Java data types, tensor names, and recorded-inference
+flag. The internal timestamp string is retained exactly, including fractional
+nanoseconds. Java `TENSOR` cells are parsed as data with `javaobj-py3` and an
+allowlist of the Java Tensor class and boxed scalar/string element types; the
+migration does not invoke Java `ObjectInputStream` or execute serialized Java
+classes.
+Set `STORAGE_DATA_FILENAME` or pass `--data-file` when the source uses a name
+other than `data.csv`.
+
+## 2. Storage layouts and terminology
+
+### PVC storage
+
+`PVCStorage` stores one HDF5 file per logical dataset by default. The file name
+is derived from the dataset name and the configured PVC data-file suffix. A
+dataset normally represents one of the following model streams:
+
+| Logical dataset | Meaning |
+| --- | --- |
+| `<model>_inputs` | Input features or request data |
+| `<model>_outputs` | Model outputs or predictions |
+| `<model>_metadata` | Row-level metadata such as timestamps and tags |
+
+The HDF5 dataset carries attributes such as `column_names` and `is_bytes`.
+Non-numeric rows are serialized in the PVC implementation and are deserialized
+by the migration before they are written to MariaDB.
+
+### Current MariaDB storage
+
+The MariaDB backend uses a generated table for each logical dataset:
+
+- `trustyai_v2_table_reference`: maps datasets to generated table indexes
+  and stores JSON metadata, aliases, shape, and row count.
+- `trustyai_v2_dataset_<index>`: stores serialized values for one logical
+  dataset.
+- `trustyai_v2_partial_payloads`: stores partial payloads while inference
+  inputs and outputs are reconciled.
+
+Dataset values are written as JSON plus gzip-compressed `LONGBLOB` values. The
+migration is therefore a logical data conversion, not a file copy.
+
+The PVC migration also creates these tracking tables:
+
+- `trustyai_migration_status`: one row per PVC migration run, including status,
+  file counts, and any error message.
+- `trustyai_file_migration_status`: per-file completion and failure records
+  used for resumption.
+
+## 3. How startup chooses a migration
+
+The storage factory in `src/trustyai_service/service/data/storage/__init__.py`
+selects the backend from `SERVICE_STORAGE_FORMAT`:
+
+```mermaid
+flowchart TD
+    A[Service creates storage] --> B{SERVICE_STORAGE_FORMAT}
+    B -->|PVC or unset| C[PVCStorage]
+    B -->|MARIA or DATABASE| D[MariaDBStorage]
+    B -->|Anything else| E[Configuration error]
+    D --> F{DATABASE_ATTEMPT_MIGRATION enabled?}
+    F -->|No| G[Create current DB base tables only]
+    F -->|Yes| H[Run migration decision]
+    H --> I{Any *.hdf5 in STORAGE_DATA_FOLDER?}
+    I -->|Yes| J[PVC to MariaDB]
+    I -->|No| K[Check legacy MariaDB tables]
+    K -->|DataframeMetadata exists| L[Legacy MariaDB to current schema]
+    K -->|No legacy data| M[No data migration]
+```
+
+`MARIA` and `DATABASE` select the same Python MariaDB backend. `DATABASE` is an
+accepted alias used by operator-oriented deployments; selecting it does not
+perform a migration by itself.
+
+`MariaDBStorage` always creates the current reference and partial-payload
+tables during initialization. The migration flag controls whether it then
+starts the data migration. If an event loop is already running, migration is
+scheduled as an asynchronous task. Otherwise initialization runs it with
+`asyncio.run`.
+
+## 4. Configuration for a PVC-to-MariaDB migration
+
+The following is a representative configuration. Do not put real credentials
+in a shell history, manifest, or document.
+
+```text
+SERVICE_STORAGE_FORMAT=MARIA
+DATABASE_ATTEMPT_MIGRATION=true
+STORAGE_DATA_FOLDER=/inputs
+MIGRATION_BATCH_SIZE=10000
+
+DATABASE_HOST=<mariadb-host>
+DATABASE_PORT=3306
+DATABASE_USERNAME=<username>
+DATABASE_PASSWORD=<password>
+DATABASE_DATABASE=<database>
+```
+
+The migration flag accepts `1`, `true`, `yes`, and `on`, case-insensitively.
+`MIGRATION_BATCH_SIZE` defaults to `10000` and must be positive. Each database
+batch write has a five-minute timeout in the current implementation.
+
+The service also accepts the operator-oriented aliases below when the direct
+names are absent:
+
+| Direct setting | Fallback setting |
+| --- | --- |
+| `DATABASE_USERNAME` | `QUARKUS_DATASOURCE_USERNAME` |
+| `DATABASE_PASSWORD` | `QUARKUS_DATASOURCE_PASSWORD` |
+| `DATABASE_HOST` | `DATABASE_SERVICE` |
+| `DATABASE_DATABASE` | `DATABASE_NAME` |
+
+If `DATABASE_TLS_CA_CERT` is set and the file exists, the MariaDB connection
+uses it for certificate verification. The default path checked by the service
+is `/etc/tls/db/ca.crt`.
+
+`STORAGE_DATA_FOLDER` is the important source setting for migration. The
+migrator scans that directory for every file matching `*.hdf5`; it does not use
+`STORAGE_DATA_FILENAME` to select a single source file. When the setting is
+omitted on the MariaDB path, the migration code uses `/inputs`.
+
+## 5. Recommended migration procedure
+
+### Step 1: Prepare the source and target
+
+Before starting the migration:
+
+- Keep the PVC mounted and readable at `STORAGE_DATA_FOLDER`.
+- Make a recoverable backup of the PVC and the destination database.
+- Confirm that the image includes the MariaDB extra. For a local environment,
+  use `uv sync --all-groups --extra mariadb`; the container build uses the
+  `mariadb` extra.
+- Ensure the destination database, credentials, and TLS settings are valid.
+- Quiesce inference writes if possible. The migration reads the PVC while the
+  service can otherwise continue receiving data, and the implementation does
+  not establish a distributed migration lock.
+- Run one migration-capable service instance while the migration is active.
+
+Do not remove or detach the PVC at this stage.
+
+### Step 2: Start MariaDB mode with migration enabled
+
+Start the service with `SERVICE_STORAGE_FORMAT=MARIA` or
+`SERVICE_STORAGE_FORMAT=DATABASE`, `DATABASE_ATTEMPT_MIGRATION=true`, and the
+database settings. The process creates the current base tables, detects the
+HDF5 files, and starts `PVCToDBMigrator`.
+
+### Step 3: Confirm discovery and tracking
+
+The migration creates its tracking tables and records an `IN_PROGRESS` run.
+The service logs the number of HDF5 files discovered. The run records:
+
+- `total_files`: number of HDF5 files discovered for that run;
+- `files_processed`: successful files plus files skipped as already complete;
+- `error_message`: run-level or partial-failure information.
+
+Each file receives a corresponding row in
+`trustyai_file_migration_status` when it succeeds or fails.
+
+### Step 4: Validate the result before removing the PVC
+
+Use the database and service logs to verify the migration. The following SQL
+is illustrative; use the exact database connection and permissions for the
+deployment:
+
+```sql
+SELECT id, migration_type, status, started_at, completed_at,
+       files_processed, total_files, error_message
+FROM trustyai_migration_status
+WHERE migration_type = 'PVC_TO_DB'
+ORDER BY started_at DESC
+LIMIT 1;
+
+SELECT migration_id, file_name, dataset_name, rows_migrated,
+       completed_at, error_message
+FROM trustyai_file_migration_status
+WHERE migration_id = <migration-id>
+ORDER BY file_name;
+
+SELECT dataset_name, n_rows, metadata
+FROM trustyai_v2_table_reference
+ORDER BY dataset_name;
+```
+
+For each source file, verify the expected logical datasets and row counts in
+`trustyai_v2_table_reference`. For a representative sample, compare values and
+column names with the source data. The completion log is:
+
+```text
+Migration complete, the PVC is now safe to remove.
+```
+
+Treat the log as one piece of evidence, not as the only check. Remove the PVC
+only after the latest run is `COMPLETE`, every expected file is successful, and
+the data checks are satisfactory.
+
+## 6. What the PVC migration does internally
+
+The main control flow is:
+
+```mermaid
+sequenceDiagram
+    participant S as MariaDBStorage
+    participant M as PVCToDBMigrator
+    participant P as PVC/HDF5
+    participant D as MariaDB
+
+    S->>M: create tracking tables
+    M->>D: check for prior COMPLETE run
+    M->>P: discover *.hdf5 files
+    M->>D: create or resume IN_PROGRESS run
+    loop each source file
+        M->>D: check completed file record
+        M->>P: validate HDF5 structure
+        loop each HDF5 dataset and batch
+            M->>P: read batch and attributes
+            M->>M: deserialize bytes/void rows when is_bytes is true
+            M->>D: write logical rows through MariaDBStorage
+            M->>D: validate resulting row count
+        end
+        M->>D: mark file success or failure
+    end
+    M->>D: mark COMPLETE or PARTIAL
+```
+
+### 6.1 Source discovery and file validation
+
+The migrator scans only the top-level configured folder for `*.hdf5` files. For
+each file it checks that:
+
+- the file contains at least one HDF5 dataset; and
+- every dataset has a `column_names` attribute.
+
+Empty datasets are accepted by the validation step and produce a warning.
+
+### 6.2 Dataset conversion
+
+For each HDF5 dataset, the migrator reads:
+
+- the dataset values;
+- `column_names`; and
+- the `is_bytes` attribute.
+
+When `is_bytes` is true and the HDF5 dtype is bytes or `void`, the migrator
+calls `deserialize_rows`. The resulting array is passed to
+`MariaDBStorage.write_data`, which creates the logical dataset on first use and
+appends subsequent batches.
+
+The MariaDB writer stores each value as JSON plus gzip-compressed bytes. It
+stores original column names and initializes aliased names to those same names.
+The HDF5 file itself is never modified by this path.
+
+### 6.3 Batching and row-count validation
+
+Large HDF5 datasets are read and written in batches. The default batch size is
+`10000`; set `MIGRATION_BATCH_SIZE` to change it. A batch write is protected by
+a 300-second timeout.
+
+After a non-empty HDF5 dataset is written, the migrator queries
+`trustyai_v2_table_reference.n_rows` and compares the resulting count with the
+source row count. A file is marked successful only after all its datasets pass
+this step.
+
+### 6.4 Resumption and idempotence
+
+The migrator is designed to resume after a restart:
+
+- an existing `IN_PROGRESS` run is reused;
+- a file with a completed record is skipped;
+- a failed file is recorded and does not stop other files from being attempted;
+- a run with any failed files is marked `PARTIAL`;
+- an unexpected run-level exception is marked `FAILED`.
+
+The original HDF5 files remain in place, so a failed or partial migration can
+be investigated and retried without reconstructing the PVC data.
+
+## 7. Migration statuses and readiness
+
+When migration is enabled, the readiness code looks at the most recent row in
+`trustyai_migration_status` for migration type `PVC_TO_DB` or `LEGACY_DB`.
+
+| Status | Current readiness behavior | Operational meaning |
+| --- | --- | --- |
+| `IN_PROGRESS` | Error | Do not treat the service as migration-ready |
+| `FAILED` | Error | Investigate the recorded error and logs |
+| `PARTIAL` | OK, with a warning | Some files failed; retain the PVC and retry |
+| `COMPLETE` | OK | Candidate for PVC removal after data verification |
+
+This means readiness `OK` is not sufficient by itself for a `PARTIAL` run.
+The PVC must remain available until the failed files have been dealt with.
+
+There is also a special case: if the PVC folder is missing or contains no HDF5
+files, the startup selector skips the PVC migrator and falls through to the
+legacy-database check. If the PVC migrator is invoked directly with no files,
+it also returns without creating a successful tracking run. Do not interpret
+either case as proof that all PVC data has been copied.
+
+## 8. The other automatic migration: legacy MariaDB to the current schema
+
+The second path is implemented by
+`LegacyMariaDBStorageReader` in
+`src/trustyai_service/service/data/storage/maria/legacy_maria_reader.py`.
+It is selected only when the PVC scan found no HDF5 files.
+
+### Detection
+
+The reader checks for the legacy `DataframeMetadata` table. If that table is
+absent, it does nothing. If it exists, it lists legacy model IDs and processes
+each model.
+
+### Conversion
+
+For each legacy model, the reader:
+
+1. Reads rows from `DataframeRow` and `DataframeRow_Values`.
+2. Deserializes the Java-serialized values with `javaobj`.
+3. Reads the original column names and input/output classification from the
+   legacy metadata tables.
+4. Reads the legacy name mappings.
+5. Writes three current logical datasets through `MariaDBStorage`:
+   `<model>_inputs`, `<model>_outputs`, and `<model>_metadata`.
+6. Applies the input and output name mappings to the new datasets.
+
+The reader treats a model as already migrated only when all three target
+datasets exist. It does not drop the legacy tables.
+
+### Important differences from PVC migration
+
+The legacy reader currently does not create a `LEGACY_DB` row in
+`trustyai_migration_status`, does not use the per-file tracking table, and does
+not provide the same per-batch progress and row-count validation. The readiness
+code contains `LEGACY_DB` in its query, but the legacy reader itself does not
+write that status record. Verify this migration through the target dataset
+contents and logs, and retain the legacy tables until the result is confirmed.
+
+If both HDF5 files and legacy tables exist, the HDF5 path wins for that startup.
+The legacy path will not run in the same migration decision after the PVC path
+returns.
+
+## 9. Other migration-like procedures to keep in mind
+
+### 9.1 PVC serialized-void-type compatibility procedure
+
+This is not an automatic PVC-to-MariaDB migration. Older PVC datasets can have
+a smaller NumPy `void` capacity than newly serialized rows require. The PVC
+storage implementation documents the compatibility procedure:
+
+```python
+data = await storage.read_data(dataset_name)
+await storage.delete_dataset(dataset_name)
+await storage.write_data(dataset_name, data, column_names)
+```
+
+The recreated dataset uses the current maximum serialized capacity. Take a
+backup first and preserve the original data until the rewrite has been
+validated. A PVC-to-MariaDB migration normally deserializes byte rows before
+writing them to MariaDB, but malformed or unreadable source rows can still
+fail migration.
+
+### 9.2 Current-schema initialization
+
+Creating `trustyai_v2_table_reference` and
+`trustyai_v2_partial_payloads`, or lazily creating a
+`trustyai_v2_dataset_<index>` table for a new dataset, is schema initialization,
+not a data migration. It happens when MariaDB storage is initialized or when a
+new dataset is first written.
+
+### 9.3 Configuration aliases are not migrations
+
+`SERVICE_STORAGE_FORMAT=DATABASE` is an alias for `MARIA`. The operator and
+direct-deployment database environment-variable aliases are also only
+configuration compatibility. They do not copy or transform data.
+
+## 10. Current limitations worth making explicit
+
+These points describe the current code and should be considered before using
+the migration as an operational handoff:
+
+- **A completed PVC run short-circuits future PVC processing.** Once any
+  `PVC_TO_DB` run is marked `COMPLETE`, the PVC migrator returns before
+  rediscovering and processing source files. New files added under the same
+  PVC are therefore not imported by this path.
+- **Completion is keyed by file name.** A previously completed basename is
+  skipped on later runs, even if its contents have changed. The tracking schema
+  does not record a source checksum or modification version.
+- **There is no distributed migration lock.** Multiple migration-capable pods
+  should not be started against the same source and target at the same time.
+- **Empty HDF5 datasets are not written.** The code logs that an empty dataset
+  will migrate as metadata-only, then skips its write. Verify whether an empty
+  logical dataset is required by the deployment.
+- **The row-count validator is called with a zero pre-migration count.** Its
+  helper supports a delta comparison, but the current file migration call does
+  not pass an existing row count. Existing target data therefore needs explicit
+  verification, especially after an interrupted write.
+- **Legacy migration has weaker observability.** It is not represented in the
+  same migration tracking tables, and the readiness query can report that
+  migration status is unavailable even though the legacy reader ran.
+- **There is no reverse migration.** Switching from MariaDB back to PVC does
+  not copy the current database contents to HDF5.
+
+## 11. Tests and source map
+
+The migration-focused tests are:
+
+```bash
+# PVC migration unit tests; no live MariaDB data set is required
+uv run pytest tests/service/data/storage/maria/test_pvc_migration.py -v
+
+# Legacy MariaDB migration integration test; requires the MariaDB test service
+uv run pytest tests/service/data/test_mariadb_migration.py -v
+
+# Readiness and storage-selection behavior
+uv run pytest tests/service/test_health_checks.py \
+  tests/service/data/test_storage_factory.py -v
+
+# Explicit cross-database migration suite, including Java CSV PVC sources
+uv run --extra migration pytest tests/service/data/migrations/ -v
+```
+
+The legacy integration test expects a MariaDB instance seeded from
+`tests/resources/legacy_database_dump.sql`. The local MariaDB service
+definition is `tests/resources/compose-local-maria.yaml`.
+
+The main implementation locations are:
+
+- `src/trustyai_service/service/data/storage/__init__.py`: selects PVC or
+  MariaDB and parses migration configuration.
+- `src/trustyai_service/service/data/storage/maria/maria.py`: initializes the
+  current schema and selects PVC versus legacy migration.
+- `src/trustyai_service/service/data/storage/maria/pvc_migration.py`: implements
+  PVC discovery, transfer, tracking, and validation.
+- `src/trustyai_service/service/data/storage/maria/legacy_maria_reader.py`:
+  reads and converts legacy Java-serialized MariaDB data.
+- `src/trustyai_service/service/data/migrations/pvc_csv.py`: reads Java CSV PVC
+  data and its model/internal metadata sidecars.
+- `src/trustyai_service/service/data/migrations/runner.py`: runs bounded,
+  resumable migrations and verifies target results.
+- `src/trustyai_service/service/data/migrations/target.py`: writes the shared
+  canonical SQL layout for SQLite, MariaDB, and PostgreSQL.
+- `src/trustyai_service/service/health_checks.py`: reports storage and
+  migration readiness.
+- `tests/service/data/storage/maria/test_pvc_migration.py`: exercises PVC
+  migration tracking and transfer behavior.
+- `tests/service/data/migrations/test_pvc_csv_source.py`: exercises Java CSV
+  PVC parsing and SQL-target transfers.
+- `tests/service/data/test_mariadb_migration.py`: exercises legacy MariaDB
+  migration with seeded data.

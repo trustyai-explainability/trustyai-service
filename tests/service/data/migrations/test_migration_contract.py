@@ -33,6 +33,7 @@ def test_public_api_is_available(migration_api) -> None:
     assert migration_api.MigrationRunner is not None
     assert migration_api.MigrationConfig is not None
     assert migration_api.PVCSource is not None
+    assert migration_api.PVCCSVSource is not None
     assert migration_api.MariaDBSource is not None
     assert migration_api.DatabaseTarget is not None
 
