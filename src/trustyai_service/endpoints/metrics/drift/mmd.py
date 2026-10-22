@@ -201,11 +201,6 @@ async def get_mmd_definition() -> dict[str, str]:
 @router.post(routes.DRIFT_MMD.request)
 async def schedule_mmd(request: MMDMetricRequest) -> dict[str, str]:
     """Schedule a recurring computation of MMD metric."""
-    return await _schedule_mmd(request, METRIC_NAME)
-
-
-async def _schedule_mmd(request: MMDMetricRequest, metric_name: str) -> dict[str, str]:
-    """Schedule a recurring computation under the route's exact metric name."""
     # Validate drift request fields (modifies request.fit_columns in-place)
     await validate_drift_request(request)
 
@@ -218,21 +213,20 @@ async def _schedule_mmd(request: MMDMetricRequest, metric_name: str) -> dict[str
 
     try:
         request_id = uuid.uuid4()
-        logger.info("Scheduling %s computation with ID: %s.", metric_name, request_id)
-        request.metric_name = metric_name
-        await scheduler.register(metric_name, request_id, request)
+        logger.info("Scheduling %s computation with ID: %s.", METRIC_NAME, request_id)
+        await scheduler.register(request.metric_name, request_id, request)
 
     except HTTPException:
         raise
     except Exception as e:  # Broad catch intentional: scheduler registration errors should not crash endpoint
-        logger.exception("Error scheduling %s computation", metric_name)
+        logger.exception("Error scheduling %s computation", METRIC_NAME)
         raise HTTPException(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
             detail="Error scheduling metric. Check server logs for details.",
         ) from e
     else:
         logger.info(
-            "Successfully scheduled %s computation with ID: %s", metric_name, request_id
+            "Successfully scheduled %s computation with ID: %s", METRIC_NAME, request_id
         )
         return {"requestId": str(request_id)}
 
@@ -393,7 +387,8 @@ async def schedule_fouriermmd(request: MMDMetricRequest) -> dict[str, str]:
     /metrics/drift/mmd/request instead.
     """
     log_deprecated_endpoint(logger, DEPRECATED_METRIC_NAME, METRIC_NAME)
-    return await _schedule_mmd(request, DEPRECATED_METRIC_NAME)
+    request.metric_name = DEPRECATED_METRIC_NAME
+    return await schedule_mmd(request)
 
 
 @router.delete(routes.DRIFT_FOURIER_MMD.request, deprecated=True)
