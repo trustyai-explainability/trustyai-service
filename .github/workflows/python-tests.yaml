@@ -60,7 +60,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
       - name: Install dependencies
-        run: uv sync --group dev --group types
+        run: uv sync --group dev --group types --group test
 
       - name: Generate protobuf stubs
         run: bash scripts/generate_protos.sh
@@ -134,13 +134,20 @@ jobs:
       - name: Populate Database
         run: mariadb -u trustyai --password=trustyai -D trustyai-database -h 127.0.0.1 < tests/resources/legacy_database_dump.sql  # pragma: allowlist secret
 
-      - name: Run tests with pytest
+      - name: Run non-migration tests with pytest
         env:
           # Missing drivers/servers must fail the live SQL and migration gates.
           TRUSTYAI_REQUIRE_LIVE_SQL_TESTS: "1"
           TRUSTYAI_MIGRATION_TEST_MARIADB_URL: mysql+asyncmy://trustyai:trustyai@127.0.0.1:3306/trustyai-database  # pragma: allowlist secret
           TRUSTYAI_MIGRATION_TEST_POSTGRES_URL: postgresql+asyncpg://trustyai:trustyai@127.0.0.1:5432/trustyai-database  # pragma: allowlist secret
-        run: uv run pytest tests/ -v --cov=src --cov-report=xml
+        run: uv run pytest tests/ -v --ignore=tests/service/data/migrations --cov=src --cov-report=
+
+      - name: Run storage migration tests serially
+        env:
+          TRUSTYAI_REQUIRE_LIVE_SQL_TESTS: "1"
+          TRUSTYAI_MIGRATION_TEST_MARIADB_URL: mysql+asyncmy://trustyai:trustyai@127.0.0.1:3306/trustyai-database  # pragma: allowlist secret
+          TRUSTYAI_MIGRATION_TEST_POSTGRES_URL: postgresql+asyncpg://trustyai:trustyai@127.0.0.1:5432/trustyai-database  # pragma: allowlist secret
+        run: uv run pytest tests/service/data/migrations -v -n 0 --cov=src --cov-append --cov-report=xml
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1

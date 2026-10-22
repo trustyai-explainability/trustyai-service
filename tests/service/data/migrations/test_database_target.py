@@ -37,6 +37,22 @@ async def test_database_target_preserves_rows_and_column_metadata(
 
 
 @pytest.mark.asyncio
+async def test_database_target_preserves_bytes_and_mapping_cells(sqlite_target) -> None:
+    """Canonical reads retain scalar bytes and mappings as Python values."""
+    rows = np.empty((2, 2), dtype=object)
+    rows[:, 0] = [b"\x00\x01", b"\x02\x03"]
+    rows[:, 1] = [{"rank": 1}, {"rank": 2}]
+    storage = sqlite_target.storage
+
+    await storage.write_data("typed_cells", rows, ["raw", "details"])
+    actual = await storage.read_data("typed_cells")
+
+    assert actual.tolist() == rows.tolist()
+    assert isinstance(actual[0, 0], bytes)
+    assert isinstance(actual[0, 1], dict)
+
+
+@pytest.mark.asyncio
 async def test_database_target_preserves_serialized_metadata_on_append(
     sqlite_target,
 ) -> None:

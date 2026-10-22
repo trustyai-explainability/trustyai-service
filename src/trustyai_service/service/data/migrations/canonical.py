@@ -398,10 +398,11 @@ class CanonicalStorage:
         await self._ensure_initialized()
         async with self.engine.connect() as connection:
             result = await connection.execute(query)
-            rows: list[list[np.ndarray]] = []
+            rows: list[list[Any]] = []
             dtypes: set[np.dtype[Any]] = set()
+            has_object_cells = False
             for row in result:
-                values: list[np.ndarray] = []
+                values: list[Any] = []
                 for cell in row[1:]:
                     decoded = json.loads(
                         safe_gzip_decompress(bytes(cell)).decode("utf-8"),
@@ -409,10 +410,17 @@ class CanonicalStorage:
                     )
                     value = np.asarray(decoded)
                     dtypes.add(value.dtype)
-                    values.append(value)
+                    if value.ndim == 0:
+                        scalar = value.item()
+                        has_object_cells |= isinstance(scalar, (bytes, dict)) or (
+                            scalar is None
+                        )
+                        values.append(scalar)
+                    else:
+                        values.append(value)
                 rows.append(values)
         if rows:
-            dtype = dtypes.pop() if len(dtypes) == 1 else object
+            dtype = object if has_object_cells or len(dtypes) != 1 else dtypes.pop()
             return np.array(rows, dtype=dtype)
         return np.empty(
             (0, *[int(value) for value in metadata["shape"][1:]]), dtype=object

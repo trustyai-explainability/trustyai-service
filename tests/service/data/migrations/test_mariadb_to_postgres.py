@@ -28,7 +28,7 @@ async def maria_source(migration_api):
     engine = create_async_engine(live_db_url("TRUSTYAI_MIGRATION_TEST_MARIADB_URL"))
     source = migration_api.MariaDBSource(
         engine,
-        schema="auto",
+        schema="legacy",
         quiesced=True,
     )
     yield source
