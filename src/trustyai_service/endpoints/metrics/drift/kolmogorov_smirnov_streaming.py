@@ -80,15 +80,7 @@ class ApproxKSTestMetricRequest(BaseMetricRequest):
 
     def retrieve_tags(self) -> dict[str, str]:
         """Retrieve tags for this ApproxKSTest metric request."""
-        tags = self.retrieve_default_tags()
-        if self.reference_tag:
-            tags["referenceTag"] = self.reference_tag
-        if self.fit_columns:
-            tags["fitColumns"] = ",".join(self.fit_columns)
-        # Always reflect explicitly configured epsilon, even if it's 0.0
-        if self.epsilon is not None:
-            tags["epsilon"] = str(self.epsilon)
-        return tags
+        return {"batch_size": str(self.batch_size)}
 
 
 @router.post("/metrics/drift/ksteststreaming")

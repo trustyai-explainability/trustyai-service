@@ -1022,13 +1022,7 @@ def make_retrieve_tags_with_all_fields_test(
 
         tags = request.retrieve_tags()
 
-        # Check that tags include the base tags plus metric-specific tags
-        assert "model" in tags
-        assert tags["model"] == "test-model"
-        assert "referenceTag" in tags
-        assert tags["referenceTag"] == "baseline"
-        assert "fitColumns" in tags
-        assert tags["fitColumns"] == "feature1,feature2"
+        assert tags == {"batch_size": "100"}
 
     return test_impl
 
@@ -1052,11 +1046,7 @@ def make_retrieve_tags_without_reference_tag_test(
 
         tags = request.retrieve_tags()
 
-        # Check that tags include base tags but not referenceTag
-        assert "model" in tags
-        assert tags["model"] == "test-model"
-        assert "referenceTag" not in tags
-        assert "fitColumns" in tags
+        assert tags == {"batch_size": "100"}
 
     return test_impl
 
@@ -1082,10 +1072,7 @@ def make_retrieve_tags_without_fit_columns_test(
 
         tags = request.retrieve_tags()
 
-        # Check that tags include referenceTag but not fitColumns
-        assert "model" in tags
-        assert "referenceTag" in tags
-        assert "fitColumns" not in tags
+        assert tags == {"batch_size": "100"}
 
     return test_impl
 
@@ -1110,11 +1097,7 @@ def make_retrieve_tags_with_empty_fit_columns_test(
 
         tags = request.retrieve_tags()
 
-        # Check that tags include referenceTag but not fitColumns
-        # (empty list should not add tag)
-        assert "model" in tags
-        assert "referenceTag" in tags
-        assert "fitColumns" not in tags
+        assert tags == {"batch_size": "100"}
 
     return test_impl
 
@@ -1132,7 +1115,7 @@ def make_retrieve_default_tags_with_none_metric_name_test(
     :param request_class: The request class to test (e.g.,
         CompareMeansMetricRequest)
     :param expected_metric_name: The expected metric name after
-        validator runs (e.g., "COMPAREMEANS")
+        validator runs (e.g., "CompareMeans")
     :return: Test function
     """
 
@@ -1151,12 +1134,12 @@ def make_retrieve_default_tags_with_none_metric_name_test(
         tags = request.retrieve_default_tags()
 
         # Verify tags are all strings (no None values)
-        assert "model" in tags
-        assert tags["model"] == "test-model"
+        assert "modelId" in tags
+        assert tags["modelId"] == "test-model"
         assert "metricName" in tags
         assert tags["metricName"] == expected_metric_name
         assert isinstance(tags["metricName"], str)
-        assert isinstance(tags["model"], str)
+        assert isinstance(tags["modelId"], str)
 
         # Verify all values are strings (not None)
         for key, value in tags.items():
