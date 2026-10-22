@@ -95,21 +95,21 @@ async def test_database_target_reset_is_namespace_scoped(migration_api):
     try:
         await first.reset_for_test()
         await second.reset_for_test()
-        await first.storage.write_data(
+        await first.checkpoint_storage.write_data(
             "first_dataset",
             np.asarray([[1.0]], dtype=np.float64),
             ["value"],
         )
-        await second.storage.write_data(
+        await second.checkpoint_storage.write_data(
             "second_dataset",
             np.asarray([[2.0]], dtype=np.float64),
             ["value"],
         )
 
-        await first.reset_for_test()
+        await first.checkpoint_storage.reset_for_test()
 
-        assert await first.storage.list_all_datasets() == []
-        assert await second.storage.list_all_datasets() == ["second_dataset"]
+        assert await first.checkpoint_storage.list_all_datasets() == []
+        assert await second.checkpoint_storage.list_all_datasets() == ["second_dataset"]
     finally:
         await engine.dispose()
 

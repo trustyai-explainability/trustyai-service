@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 
@@ -48,6 +50,27 @@ def test_cli_accepts_pvc_to_database_arguments() -> None:
     assert args.batch_size == 17
     assert args.namespace == "cutover"
     assert args.dry_run is True
+
+
+def test_cli_accepts_operator_pvc_environment(monkeypatch) -> None:
+    """PVC migration defaults match the operator's migration deployment env."""
+    from trustyai_service.service.data.migrations.cli import parse_args
+
+    monkeypatch.setenv("STORAGE_DATA_FOLDER", "/var/lib/trustyai")
+    monkeypatch.setenv("STORAGE_DATA_FILENAME", "legacy.hdf5")
+
+    args = parse_args(
+        [
+            "--source",
+            "pvc",
+            "--target-url",
+            "sqlite+aiosqlite:///:memory:",
+            "--quiesced",
+        ]
+    )
+
+    assert args.source_path == Path("/var/lib/trustyai")
+    assert args.data_file == "legacy.hdf5"
 
 
 def test_cli_accepts_mariadb_source_arguments() -> None:

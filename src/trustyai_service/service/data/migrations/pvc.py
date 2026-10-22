@@ -183,18 +183,51 @@ class PVCSource(MigrationSource):
                 if len(column_types) != len(column_names):
                     msg = f"PVC dataset '{dataset_name}' has mismatched column types"
                     raise MigrationValidationError(msg)
+                serialized = bool(dataset.attrs.get(BYTES_ATTRIBUTE, False))
+                shape = self._logical_shape(
+                    dataset,
+                    column_count=len(column_names),
+                    serialized=serialized,
+                    dataset_name=dataset_name,
+                )
                 return DatasetDescriptor(
                     name=dataset_name,
                     column_names=tuple(column_names),
                     aliases=tuple(aliases),
                     column_types=tuple(column_types),
                     row_count=int(dataset.shape[0]),
-                    serialized=bool(dataset.attrs.get(BYTES_ATTRIBUTE, False)),
+                    shape=shape,
+                    serialized=serialized,
                     source_file=path.name,
                 )
-        except OSError as error:
+        except (OSError, ValueError) as error:
             msg = f"unable to read PVC dataset '{dataset_name}': {error}"
             raise MigrationValidationError(msg) from error
+
+    @staticmethod
+    def _logical_shape(
+        dataset: h5py.Dataset,
+        *,
+        column_count: int,
+        serialized: bool,
+        dataset_name: str,
+    ) -> tuple[int, ...]:
+        """Return logical row dimensions, including serialized HDF5 rows."""
+        if not serialized:
+            return tuple(int(value) for value in dataset.shape[1:])
+        if dataset.shape[0] == 0:
+            return (column_count,)
+        try:
+            decoded = deserialize_rows(dataset[0:1])
+        except ValueError:
+            # Keep preflight non-destructive for corrupt rows. The normal
+            # bounded read path reports the corruption as an unsafe migration.
+            return (column_count,)
+        shape = tuple(int(value) for value in decoded.shape[1:])
+        if not shape or shape[0] != column_count or any(value <= 0 for value in shape):
+            msg = f"PVC dataset '{dataset_name}' has an incompatible serialized shape"
+            raise MigrationValidationError(msg)
+        return shape
 
     def _read_rows_sync(
         self,

@@ -27,6 +27,7 @@ class DatasetDescriptor:
     aliases: tuple[str, ...]
     column_types: tuple[str, ...]
     row_count: int
+    shape: tuple[int, ...] = ()
     serialized: bool = False
     source_file: str | None = None
 

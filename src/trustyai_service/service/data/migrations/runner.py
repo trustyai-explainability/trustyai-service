@@ -130,10 +130,10 @@ class MigrationRunner:
             existing_run is not None
             and existing_run.get("status") == MigrationStatus.COMPLETE.value
         )
-        if existing_run is None and await self._target_storage().list_all_datasets():
+        if existing_run is None and await self._target_datasets():
             msg = (
-                "target namespace already contains datasets from another migration; "
-                "use a new namespace or reset it explicitly"
+                "target database already contains datasets from another migration; "
+                "use a new target database or reset it explicitly"
             )
             raise MigrationPreflightError(msg)
         return manifest
@@ -286,7 +286,9 @@ class MigrationRunner:
             if actual_aliases != list(descriptor.aliases):
                 return 0, 0, 0, [f"alias mismatch: {descriptor.name}"]
             actual_types = await storage.get_column_types(descriptor.name)
-            if actual_types != list(descriptor.column_types):
+            if actual_types is not None and actual_types != list(
+                descriptor.column_types
+            ):
                 return 0, 0, 0, [f"type mismatch: {descriptor.name}"]
             count = await storage.dataset_rows(descriptor.name)
             if count != descriptor.row_count:
@@ -337,7 +339,7 @@ class MigrationRunner:
                 result.rows_read += len(rows)
                 result.max_batch_rows = max(result.max_batch_rows, len(rows))
 
-    async def _migrate_dataset(
+    async def _migrate_dataset(  # noqa: C901 -- transfer, checkpoint, and rollback are one transaction boundary
         self, descriptor: DatasetDescriptor, result: MigrationResult
     ) -> None:
         """Transfer one dataset and isolate its failure."""
@@ -345,12 +347,15 @@ class MigrationRunner:
             msg = "migration id was not initialized during preflight"
             raise MigrationPreflightError(msg)
         rows_written = 0
+        target_present = False
         try:
             state = await self.target.get_migration_dataset_state(
                 self._migration_id,
                 descriptor.name,
             )
+            had_target = await self._target_storage().dataset_exists(descriptor.name)
             await self.target.ensure_dataset(descriptor)
+            target_present = True
             if await self._state_is_complete(state, descriptor):
                 result.datasets_written += 1
                 return
@@ -358,7 +363,11 @@ class MigrationRunner:
             # Dataset checkpoints are written only after the complete dataset is
             # durable. Any incomplete or stale target rows must therefore be
             # removed before retrying, otherwise write_data would append them.
-            await self.target.rollback_dataset(descriptor.name)
+            # A freshly-created dataset is already empty. If a retry found an
+            # existing dataset, delete and recreate it so writes start at row 0.
+            if had_target:
+                await self.target.rollback_dataset(descriptor.name)
+                await self.target.ensure_dataset(descriptor)
 
             for start in range(0, descriptor.row_count, self.config.batch_size):
                 rows = await self.source.read_rows(
@@ -389,12 +398,13 @@ class MigrationRunner:
             )
             result.datasets_written += 1
         except Exception as error:  # noqa: BLE001 -- isolate one dataset failure
-            try:
-                await self.target.rollback_dataset(descriptor.name)
-            except Exception as rollback_error:  # noqa: BLE001 -- preserve failure context
-                error = RuntimeError(f"{error}; rollback failed: {rollback_error}")
-            else:
-                result.rows_written -= rows_written
+            if target_present:
+                try:
+                    await self.target.rollback_dataset(descriptor.name)
+                except Exception as rollback_error:  # noqa: BLE001 -- preserve failure context
+                    error = RuntimeError(f"{error}; rollback failed: {rollback_error}")
+                else:
+                    result.rows_written -= rows_written
             await self.target.save_migration_dataset_state(
                 {
                     "migration_id": self._migration_id,
@@ -444,6 +454,13 @@ class MigrationRunner:
             raise MigrationPreflightError(msg)
         return cast("StorageInterface", storage)
 
+    async def _target_datasets(self) -> list[str]:
+        """List destination data separately from migration checkpoint tables."""
+        method = getattr(self.target, "list_target_datasets", None)
+        if callable(method):
+            return await method()
+        return await self._target_storage().list_all_datasets()
+
     @staticmethod
     def _validate_manifest(manifest: SourceManifest) -> None:
         """Reject malformed source metadata before creating target state."""
@@ -460,8 +477,17 @@ class MigrationRunner:
         seen_names: set[str] = set()
         for descriptor in manifest.datasets:
             MigrationRunner._validate_descriptor(descriptor, seen_names)
+        seen_partials: set[tuple[str, bool]] = set()
         for payload in manifest.partial_payloads:
             MigrationRunner._validate_partial_payload(payload.payload_id)
+            key = (payload.payload_id, payload.is_input)
+            if key in seen_partials:
+                msg = (
+                    "source manifest contains duplicate partial payload: "
+                    f"{payload.payload_id}"
+                )
+                raise MigrationValidationError(msg)
+            seen_partials.add(key)
 
     @staticmethod
     def _validate_descriptor(
@@ -483,6 +509,12 @@ class MigrationRunner:
             raise MigrationValidationError(msg)
         if len(descriptor.column_types) != len(descriptor.column_names):
             msg = f"source dataset '{descriptor.name}' has mismatched types"
+            raise MigrationValidationError(msg)
+        shape = descriptor.shape or (len(descriptor.column_names),)
+        if shape[0] != len(descriptor.column_names) or any(
+            value <= 0 for value in shape
+        ):
+            msg = f"source dataset '{descriptor.name}' has an incompatible shape"
             raise MigrationValidationError(msg)
         if descriptor.row_count < 0:
             msg = f"source dataset '{descriptor.name}' has a negative row count"

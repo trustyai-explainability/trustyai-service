@@ -243,7 +243,7 @@ async def test_pvc_runner_rejects_reusing_namespace_for_new_source(
     with h5py.File(path, "r+") as h5_file:
         h5_file[pvc_fixture.datasets[0].name][0, 0] = 999.0
 
-    with pytest.raises(migration_api.MigrationPreflightError, match="namespace"):
+    with pytest.raises(migration_api.MigrationPreflightError, match="target database"):
         await _runner(migration_api, source, sqlite_target).run()
 
     assert result_status(first) == "COMPLETE"

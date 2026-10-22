@@ -25,6 +25,7 @@ async def test_pvc_source_builds_manifest_and_reads_logical_batches(
         manifest.datasets,
         strict=True,
     ):
+        assert descriptor.shape == (len(expected.column_names),)
         rows = await source.read_rows(descriptor, 0, descriptor.row_count)
         assert [tuple(row.tolist()) for row in rows] == [
             tuple(row) for row in expected.rows

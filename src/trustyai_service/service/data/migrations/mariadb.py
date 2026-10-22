@@ -34,6 +34,7 @@ from .contracts import (
 from .errors import MigrationPreflightError, MigrationValidationError
 
 _CONTENT_HASH_PAGE_SIZE = 1_024
+_MIN_SHAPE_DIMENSIONS = 2
 
 
 class _Digest(Protocol):
@@ -201,6 +202,7 @@ class MariaDBSource(MigrationSource):
                     aliases=tuple(aliases),
                     column_types=tuple(types),
                     row_count=declared_count,
+                    shape=_shape_from_metadata(metadata, len(names)),
                     serialized=False,
                     source_file=str(table_idx),
                 )
@@ -324,6 +326,11 @@ class MariaDBSource(MigrationSource):
                         )
                     ),
                     row_count=row_count,
+                    shape=(
+                        len(spec.selected_indices)
+                        if spec.kind != "metadata"
+                        else len(spec.raw_columns),
+                    ),
                     source_file=f"legacy:{model_id}:{spec.kind}",
                 )
             )
@@ -544,6 +551,7 @@ class MariaDBSource(MigrationSource):
                     "columns": descriptor.column_names,
                     "aliases": descriptor.aliases,
                     "types": descriptor.column_types,
+                    "shape": descriptor.shape,
                     "rows": descriptor.row_count,
                 }
                 for descriptor in descriptors
@@ -668,6 +676,31 @@ def _string_list(value: object) -> list[str]:
         msg = "MariaDB dataset metadata contains a non-list value"
         raise MigrationValidationError(msg)
     return [str(item) for item in value]
+
+
+def _shape_from_metadata(
+    metadata: dict[str, object], column_count: int
+) -> tuple[int, ...]:
+    """Return the non-row dimensions from a canonical metadata document."""
+    raw_shape = metadata.get("shape")
+    if raw_shape is None:
+        return (column_count,)
+    if isinstance(raw_shape, (str, bytes)) or not isinstance(raw_shape, (list, tuple)):
+        msg = "MariaDB dataset metadata contains a non-list shape"
+        raise MigrationValidationError(msg)
+    try:
+        shape = tuple(int(value) for value in raw_shape)
+    except (TypeError, ValueError) as error:
+        msg = "MariaDB dataset metadata contains an invalid shape"
+        raise MigrationValidationError(msg) from error
+    if (
+        len(shape) < _MIN_SHAPE_DIMENSIONS
+        or shape[1] != column_count
+        or any(value <= 0 for value in shape[1:])
+    ):
+        msg = "MariaDB dataset metadata contains an incompatible shape"
+        raise MigrationValidationError(msg)
+    return shape[1:]
 
 
 def _is_input_flag(value: object) -> bool:

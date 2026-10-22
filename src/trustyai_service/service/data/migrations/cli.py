@@ -6,10 +6,13 @@ import argparse
 import asyncio
 import json
 import os
+import ssl
 import sys
 from dataclasses import asdict
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+from sqlalchemy.engine import URL, make_url
 
 from .errors import MigrationError
 from .mariadb import MariaDBSource
@@ -18,11 +21,231 @@ from .runner import MigrationConfig, MigrationResult, MigrationRunner, Migration
 from .target import DatabaseTarget
 
 _MAX_NAMESPACE_LENGTH = 255
+_DEFAULT_TLS_CA_CERT = "/etc/tls/db/ca.crt"
+_TRUTHY = {"1", "true", "yes", "on"}
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from sqlalchemy.ext.asyncio import AsyncEngine
+
+
+def target_url_from_environment() -> str | None:
+    """Build a migration target URL from the operator database contract."""
+    explicit = os.environ.get("TRUSTYAI_MIGRATION_TARGET_URL")
+    if explicit:
+        return explicit
+
+    database_kind = _configured_database_kind()
+    if database_kind is None:
+        return None
+    if database_kind in {"maria", "mariadb"}:
+        driver = "mariadb+asyncmy"
+        default_port = 3306
+    elif database_kind in {"postgres", "postgresql", "pgsql"}:
+        driver = "postgresql+asyncpg"
+        default_port = 5432
+    elif database_kind == "sqlite":
+        path = os.environ.get("STORAGE_DATABASE_PATH", ":memory:")
+        if path == ":memory:":
+            return "sqlite+aiosqlite:///:memory:"
+        return URL.create("sqlite+aiosqlite", database=path).render_as_string(
+            hide_password=False
+        )
+    else:
+        return None
+
+    return _build_network_database_url(driver, default_port)
+
+
+def _configured_database_kind() -> str | None:
+    """Normalize the operator's storage format and database kind."""
+    storage_format = os.environ.get("SERVICE_STORAGE_FORMAT", "").strip().upper()
+    if storage_format not in {
+        "DATABASE",
+        "MARIA",
+        "MARIADB",
+        "POSTGRES",
+        "POSTGRESQL",
+        "SQLITE",
+    }:
+        return None
+    if storage_format in {"MARIA", "MARIADB"}:
+        return "mariadb"
+    if storage_format in {"POSTGRES", "POSTGRESQL"}:
+        return "postgresql"
+    if storage_format == "SQLITE":
+        return "sqlite"
+    return os.environ.get("QUARKUS_DATASOURCE_DB_KIND", "").strip().lower() or None
+
+
+def _build_network_database_url(driver: str, default_port: int) -> str:
+    """Build a SQLAlchemy URL from operator Secret and Service values."""
+    user = os.environ.get("DATABASE_USERNAME") or os.environ.get(
+        "QUARKUS_DATASOURCE_USERNAME"
+    )
+    password = os.environ.get("DATABASE_PASSWORD") or os.environ.get(
+        "QUARKUS_DATASOURCE_PASSWORD"
+    )
+    host = os.environ.get("DATABASE_HOST") or os.environ.get("DATABASE_SERVICE")
+    database = os.environ.get("DATABASE_DATABASE") or os.environ.get("DATABASE_NAME")
+    port = os.environ.get("DATABASE_PORT", str(default_port))
+    missing = [
+        name
+        for name, value in (
+            ("DATABASE_USERNAME or QUARKUS_DATASOURCE_USERNAME", user),
+            ("DATABASE_PASSWORD or QUARKUS_DATASOURCE_PASSWORD", password),
+            ("DATABASE_HOST or DATABASE_SERVICE", host),
+            ("DATABASE_DATABASE or DATABASE_NAME", database),
+        )
+        if not value
+    ]
+    if missing:
+        raise ValueError(
+            "operator database configuration is incomplete: " + ", ".join(missing)
+        )
+    try:
+        port_number = int(port)
+    except ValueError as error:
+        message = f"Invalid DATABASE_PORT={port!r}: must be an integer"
+        raise ValueError(message) from error
+    return URL.create(
+        driver,
+        username=user,
+        password=password,
+        host=host,
+        port=port_number,
+        database=database,
+    ).render_as_string(hide_password=False)
+
+
+def engine_options_from_environment(url: str) -> dict[str, object]:
+    """Translate operator tuning and mounted TLS settings to async SQLAlchemy."""
+    parsed = make_url(url)
+    options = _pool_options(parsed.drivername)
+    options["connect_args"] = _connect_args(parsed.drivername)
+    return options
+
+
+def _pool_options(drivername: str) -> dict[str, object]:
+    """Return validated SQLAlchemy pool settings for non-SQLite drivers."""
+    if drivername.startswith("sqlite"):
+        return {}
+    pool_size = _integer_env("DATABASE_POOL_SIZE", 5, minimum=1)
+    max_overflow = _integer_env("DATABASE_MAX_OVERFLOW", 10, minimum=0)
+    pool_timeout = _integer_env("DATABASE_POOL_TIMEOUT", 30, minimum=1)
+    pool_recycle = _integer_env("DATABASE_POOL_RECYCLE", 1800, minimum=-1)
+    budget = os.environ.get("DATABASE_MAX_CONNECTIONS_BUDGET")
+    if budget is not None:
+        budget_value = _integer_env("DATABASE_MAX_CONNECTIONS_BUDGET", 1, minimum=1)
+        ceiling = pool_size + max_overflow
+        if ceiling > budget_value:
+            msg = (
+                f"DATABASE_MAX_CONNECTIONS_BUDGET={budget_value}: configured pool "
+                f"ceiling {ceiling} exceeds the per-pod budget"
+            )
+            raise ValueError(msg)
+    return {
+        "pool_size": pool_size,
+        "max_overflow": max_overflow,
+        "pool_timeout": pool_timeout,
+        "pool_recycle": pool_recycle,
+        "pool_pre_ping": True,
+    }
+
+
+def _connect_args(drivername: str) -> dict[str, object]:
+    """Return TLS and PostgreSQL session settings for one async driver."""
+    args = _tls_connect_args(drivername)
+    if drivername.startswith("postgresql+asyncpg"):
+        args.update(_postgres_connect_args())
+    elif drivername.startswith(("mariadb+", "mysql+")):
+        application_name = os.environ.get("DATABASE_APPLICATION_NAME")
+        if application_name is not None and "\x00" in application_name:
+            message = "DATABASE_APPLICATION_NAME must not contain NUL characters"
+            raise ValueError(message)
+        if application_name is not None:
+            args["program_name"] = application_name
+    return args
+
+
+def _tls_connect_args(drivername: str) -> dict[str, object]:
+    """Build verified TLS arguments from the mounted CA contract."""
+    ca_path = os.environ.get("DATABASE_TLS_CA_CERT", _DEFAULT_TLS_CA_CERT)
+    ca_configured = "DATABASE_TLS_CA_CERT" in os.environ
+    allow_insecure = (
+        os.environ.get("DATABASE_ALLOW_INSECURE_TLS", "").lower() in _TRUTHY
+    )
+    if not ca_path or not Path(ca_path).is_file():
+        if ca_configured and not allow_insecure:
+            message = f"database TLS requires a usable CA certificate at '{ca_path}'"
+            raise ValueError(message)
+        return {}
+    if drivername.startswith("postgresql+asyncpg"):
+        return {"ssl": ssl.create_default_context(cafile=ca_path)}
+    if drivername.startswith(("mariadb+", "mysql+")):
+        return {
+            "ssl": {
+                "ca": ca_path,
+                "check_hostname": True,
+                "verify_mode": ssl.CERT_REQUIRED,
+            }
+        }
+    return {}
+
+
+def _postgres_connect_args() -> dict[str, object]:
+    """Build asyncpg session settings from the operator ConfigMap."""
+    application_name = os.environ.get("DATABASE_APPLICATION_NAME")
+    if application_name is not None and "\x00" in application_name:
+        message = "DATABASE_APPLICATION_NAME must not contain NUL characters"
+        raise ValueError(message)
+    statement_timeout = _optional_integer_env(
+        "DATABASE_STATEMENT_TIMEOUT_MS", minimum=0
+    )
+    synchronous_commit = os.environ.get("DATABASE_SYNCHRONOUS_COMMIT", "on").lower()
+    sync_value = {
+        "1": "on",
+        "true": "on",
+        "yes": "on",
+        "on": "on",
+        "0": "off",
+        "false": "off",
+        "no": "off",
+        "off": "off",
+    }.get(synchronous_commit)
+    if sync_value is None:
+        message = "DATABASE_SYNCHRONOUS_COMMIT must be a boolean (true or false)"
+        raise ValueError(message)
+    server_settings: dict[str, str] = {"synchronous_commit": sync_value}
+    if application_name is not None:
+        server_settings["application_name"] = application_name
+    if statement_timeout is not None:
+        server_settings["statement_timeout"] = str(statement_timeout)
+    return {"server_settings": server_settings}
+
+
+def _integer_env(name: str, default: int, *, minimum: int) -> int:
+    """Read one bounded integer from an operator ConfigMap value."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError as error:
+        message = f"Invalid {name}={raw!r}: must be an integer"
+        raise ValueError(message) from error
+    if value < minimum:
+        message = f"Invalid {name}={raw!r}: must be at least {minimum}"
+        raise ValueError(message)
+    return value
+
+
+def _optional_integer_env(name: str, *, minimum: int) -> int | None:
+    """Read an optional bounded integer."""
+    if name not in os.environ:
+        return None
+    return _integer_env(name, 0, minimum=minimum)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -39,7 +262,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--source-path",
         type=Path,
-        help="PVC directory containing TrustyAI HDF5 files.",
+        default=(
+            Path(os.environ["STORAGE_DATA_FOLDER"])
+            if os.environ.get("STORAGE_DATA_FOLDER")
+            else None
+        ),
+        help="PVC directory containing TrustyAI HDF5 files; may be supplied through STORAGE_DATA_FOLDER.",
     )
     parser.add_argument(
         "--source-url",
@@ -54,13 +282,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--data-file",
-        default="trustyai.hdf5",
-        help="PVC data-file suffix; default: trustyai.hdf5.",
+        default=os.environ.get("STORAGE_DATA_FILENAME", "trustyai.hdf5"),
+        help="PVC data-file suffix; may be supplied through STORAGE_DATA_FILENAME; default: trustyai.hdf5.",
     )
     parser.add_argument(
         "--target-url",
         default=os.environ.get("TRUSTYAI_MIGRATION_TARGET_URL"),
-        help="Async SQLAlchemy URL for the destination database; may be supplied through TRUSTYAI_MIGRATION_TARGET_URL.",
+        help="Async SQLAlchemy URL for the destination database; may be supplied through TRUSTYAI_MIGRATION_TARGET_URL or the operator database environment.",
     )
     parser.add_argument(
         "--namespace",
@@ -103,7 +331,15 @@ def parse_args(arguments: Sequence[str] | None = None) -> argparse.Namespace:
     if not args.quiesced:
         parser.error("--quiesced is required before a source can be read")
     if not args.target_url:
-        parser.error("--target-url or TRUSTYAI_MIGRATION_TARGET_URL is required")
+        try:
+            args.target_url = target_url_from_environment()
+        except ValueError as error:
+            parser.error(str(error))
+    if not args.target_url:
+        parser.error(
+            "--target-url, TRUSTYAI_MIGRATION_TARGET_URL, or a complete operator "
+            "database environment is required"
+        )
     if args.batch_size <= 0:
         parser.error("--batch-size must be greater than zero")
     if not args.namespace or len(args.namespace) > _MAX_NAMESPACE_LENGTH:
@@ -124,7 +360,10 @@ async def run_from_args(args: argparse.Namespace) -> MigrationResult:
     from sqlalchemy.ext.asyncio import create_async_engine  # noqa: PLC0415
 
     source_engine: AsyncEngine | None = None
-    target_engine = create_async_engine(args.target_url)
+    target_engine = create_async_engine(
+        args.target_url,
+        **engine_options_from_environment(args.target_url),
+    )
     try:
         if args.source == "pvc":
             source = PVCSource(
@@ -133,7 +372,10 @@ async def run_from_args(args: argparse.Namespace) -> MigrationResult:
                 data_file=args.data_file,
             )
         else:
-            source_engine = create_async_engine(args.source_url)
+            source_engine = create_async_engine(
+                args.source_url,
+                **engine_options_from_environment(args.source_url),
+            )
             source = MariaDBSource(
                 source_engine,
                 schema=args.source_schema,
@@ -165,7 +407,7 @@ def main(arguments: Sequence[str] | None = None) -> int:
     args = parse_args(arguments)
     try:
         result = asyncio.run(run_from_args(args))
-    except MigrationError as error:
+    except (MigrationError, ValueError) as error:
         sys.stderr.write(f"migration failed: {error}\n")
         return 2
     sys.stdout.write(
