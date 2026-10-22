@@ -228,6 +228,10 @@ async def schedule_ksteststreaming(
         request_id = uuid.uuid4()
         logger.info("Scheduling %s computation with ID: %s.", METRIC_NAME, request_id)
 
+        if request.metric_name.upper() == DEPRECATED_METRIC_NAME:
+            request.metric_name = DEPRECATED_METRIC_NAME
+        else:
+            request.metric_name = METRIC_NAME
         # Register with the scheduler (this will reconcile the request and store it)
         await scheduler.register(request.metric_name, request_id, request)
 
