@@ -1,6 +1,7 @@
 """Prometheus label values for primitive and wrapped fairness requests."""
 
 import uuid
+from collections.abc import Callable
 
 import pytest
 from prometheus_client import CollectorRegistry, generate_latest
@@ -86,7 +87,9 @@ def _spd_request(**overrides: object) -> dict[str, object]:
     ],
 )
 @pytest.mark.parametrize("bad", [float("nan"), float("inf")])
-def test_group_rejects_non_finite_values(field: str, wrap: object, bad: float) -> None:
+def test_group_rejects_non_finite_values(
+    field: str, wrap: Callable[[float], object], bad: float
+) -> None:
     """NaN and infinity are rejected at validation time, bare or wrapped."""
     with pytest.raises(ValidationError):
         GroupMetricRequest.model_validate(_spd_request(**{field: wrap(bad)}))
