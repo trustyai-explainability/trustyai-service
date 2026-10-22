@@ -36,7 +36,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 # Metric name constant
-METRIC_NAME = "JENSENSHANNON"
+METRIC_NAME = "JensenShannon"
 
 
 def get_prometheus_scheduler() -> PrometheusScheduler:
@@ -231,7 +231,7 @@ async def schedule_jensenshannon(request: JensenShannonMetricRequest) -> dict[st
         request_id = uuid.uuid4()
         logger.info("Scheduling %s computation with ID: %s.", METRIC_NAME, request_id)
 
-        request.metric_name = METRIC_NAME
+        # Metric name is automatically set by model_validator
         # Register with the scheduler (this will reconcile the request and store it)
         await scheduler.register(request.metric_name, request_id, request)
 
