@@ -64,10 +64,12 @@ class TestCompareMeansEndpoints:
         client=client,
         request_payload={
             "modelId": "test-model",
+            "metricName": "Meanshift",
             "referenceTag": "baseline",
             "fitColumns": ["feature1"],
             "alpha": 0.05,
         },
+        expected_metric_name="COMPAREMEANS",
     )
 
     test_delete_schedule_endpoint = factory.make_delete_schedule_endpoint_test(
@@ -529,10 +531,12 @@ class TestCompareMeansEndpoints:
         module_path="trustyai_service.endpoints.metrics.drift.compare_means",
         request_payload={
             "modelId": "test-model",
+            "metricName": "COMPAREMEANS",
             "referenceTag": "baseline",
             "fitColumns": ["feature1"],
             "alpha": 0.05,
         },
+        expected_metric_name="MEANSHIFT",
     )
 
     test_deprecated_delete_schedule_endpoint = factory.make_deprecated_endpoint_test(

@@ -62,10 +62,12 @@ class TestKSTestStreamingEndpoints:
         client=client,
         request_payload={
             "modelId": "test-model",
+            "metricName": "ApproxKSTest",
             "referenceTag": "baseline",
             "fitColumns": ["feature1"],
             "epsilon": 0.01,
         },
+        expected_metric_name="KSTESTSTREAMING",
     )
 
     test_delete_schedule_endpoint = factory.make_delete_schedule_endpoint_test(
@@ -474,6 +476,7 @@ class TestApproxKSTestDeprecatedEndpoints:
         client=client,
         request_payload={
             "modelId": "test-model",
+            "metricName": "KSTESTSTREAMING",
             "referenceTag": "baseline",
             "fitColumns": ["feature1"],
             "epsilon": 0.01,
@@ -504,10 +507,12 @@ class TestApproxKSTestDeprecatedEndpoints:
         client=client,
         request_payload={
             "modelId": "test-model",
+            "metricName": "KSTESTSTREAMING",
             "referenceTag": "baseline",
             "fitColumns": ["feature1"],
             "epsilon": 0.01,
         },
+        expected_metric_name="APPROXKSTEST",
     )
 
     # Test deprecated delete endpoint forwards to new endpoint
