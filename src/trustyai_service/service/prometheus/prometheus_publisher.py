@@ -14,7 +14,6 @@ from trustyai_service.service.payloads.metrics.base_metric_request import (
     BaseMetricRequest,
 )
 from trustyai_service.service.prometheus.gauge_config import GaugeConfig
-from trustyai_service.service.prometheus.metric_identity import external_metric_name
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -128,9 +127,7 @@ class PrometheusPublisher:
         if request is not None:
             tags.update(request.retrieve_default_tags())
             tags.update(request.retrieve_tags())
-            tags["metricName"] = external_metric_name(
-                request.metric_name, legacy=self.schema == "python-legacy"
-            )
+            tags["metricName"] = self._metric_name(request.metric_name)
             if self.schema == "python-legacy":
                 for label in (
                     "column",
@@ -237,6 +234,12 @@ class PrometheusPublisher:
             msg = "Either 'request' or 'metric_name' & 'value' must be provided"
             raise ValueError(msg)
 
+    def _metric_name(self, name: str) -> str:
+        """Select the exposition name without changing the REST request."""
+        if self.schema == "python-legacy":
+            return "BatchMean" if name == "Identity" else name
+        return name.upper()
+
     def _get_full_metric_name(self, metric_name: str) -> str:
         if not PROMETHEUS_METRIC_PREFIX.strip():
             msg = "Prometheus metric prefix cannot be empty"
@@ -245,9 +248,7 @@ class PrometheusPublisher:
             msg = "Metric name cannot be empty"
             raise ValueError(msg)
 
-        metric_name = external_metric_name(
-            metric_name, legacy=self.schema == "python-legacy"
-        )
+        metric_name = self._metric_name(metric_name)
         full_name = f"{PROMETHEUS_METRIC_PREFIX}{metric_name.lower()}"
         # Validate the full metric name against the regex
         if not PROMETHEUS_METRIC_NAME_REGEX.match(full_name):

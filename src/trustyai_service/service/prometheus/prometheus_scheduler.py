@@ -26,11 +26,20 @@ from trustyai_service.service.payloads.metrics.request_reconciler import (
     RequestReconciler,
 )
 from trustyai_service.service.prometheus.gauge_config import GaugeConfig
-from trustyai_service.service.prometheus.metric_identity import canonical_metric_name
 from trustyai_service.service.prometheus.metric_value_carrier import MetricValueCarrier
 from trustyai_service.service.prometheus.prometheus_publisher import PrometheusPublisher
 
 logger: logging.Logger = logging.getLogger(__name__)
+
+
+def _metric_key(name: str) -> str:
+    """Share schedules between renamed endpoints and their legacy aliases."""
+    return {
+        "Identity": "BatchMean",
+        "Meanshift": "CompareMeans",
+        "APPROXKSTEST": "KSTESTSTREAMING",
+        "FOURIERMMD": "MMD",
+    }.get(name, name)
 
 
 class PrometheusScheduler:
@@ -111,7 +120,7 @@ class PrometheusScheduler:
     def get_requests(self, metric_name: str) -> dict[uuid.UUID, BaseMetricRequest]:
         """Get all requests for a specific metric."""
         with self._requests_lock:
-            return dict(self.requests.get(canonical_metric_name(metric_name), {}))
+            return dict(self.requests.get(_metric_key(metric_name), {}))
 
     def get_all_requests(self) -> dict[str, dict[uuid.UUID, BaseMetricRequest]]:
         """Get all requests organized by metric name."""
@@ -175,7 +184,7 @@ class PrometheusScheduler:
             request_id,
             getattr(request, "model_id", "unknown"),
         )
-        metric_name = canonical_metric_name(metric_name)
+        metric_name = _metric_key(metric_name)
         await RequestReconciler.reconcile(request, self.data_source)
         logger.info(
             "After reconciliation, %s request %s model_id: %s",
@@ -196,7 +205,7 @@ class PrometheusScheduler:
 
     async def delete(self, metric_name: str, request_id: uuid.UUID) -> None:
         """Delete a metric request."""
-        canonical_name = canonical_metric_name(metric_name)
+        canonical_name = _metric_key(metric_name)
         with self._requests_lock:
             request = self.requests.get(canonical_name, {}).pop(request_id, None)
 
