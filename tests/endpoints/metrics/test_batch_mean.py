@@ -192,6 +192,10 @@ class TestBatchMeanSchedule:
         assert response.status_code == HTTPStatus.OK
         assert "requestId" in response.json()
         assert "-" in response.json()["requestId"]
+        register_call = mock_sched.register.call_args
+        assert register_call is not None
+        assert register_call.args[0] == "BATCHMEAN"
+        assert register_call.args[2].metric_name == "BATCHMEAN"
 
     @patch(f"{MODULE}.get_prometheus_scheduler")
     def test_delete_schedule(self, mock_sched_fn: MagicMock) -> None:
@@ -327,6 +331,10 @@ class TestDeprecatedIdentityEndpoints:
         response = client.post(routes.IDENTITY.request, json=_base_payload())
         assert response.status_code == HTTPStatus.OK
         assert "requestId" in response.json()
+        register_call = mock_sched.register.call_args
+        assert register_call is not None
+        assert register_call.args[0] == "IDENTITY"
+        assert register_call.args[2].metric_name == "IDENTITY"
 
     @patch(f"{MODULE}.get_prometheus_scheduler")
     def test_deprecated_delete(self, mock_sched_fn: MagicMock) -> None:
