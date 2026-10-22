@@ -27,7 +27,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 # Metric name constant
-METRIC_NAME = "KSTest"
+METRIC_NAME = "KSTEST"
 
 
 def get_prometheus_scheduler() -> PrometheusScheduler:

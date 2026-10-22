@@ -1132,7 +1132,7 @@ def make_retrieve_default_tags_with_none_metric_name_test(
     :param request_class: The request class to test (e.g.,
         CompareMeansMetricRequest)
     :param expected_metric_name: The expected metric name after
-        validator runs (e.g., "CompareMeans")
+        validator runs (e.g., "COMPAREMEANS")
     :return: Test function
     """
 
