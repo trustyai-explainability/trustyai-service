@@ -1,5 +1,14 @@
 # Storage migration tutorial: PVC, Java CSV, and databases
 
+> **EXPERIMENTAL MIGRATION FEATURE — NOT PRODUCTION-READY**
+>
+> Every migration path described here is completely experimental at this stage.
+> Do not use it for production cutovers or against the only copy of important
+> data. Test using disposable source copies and targets, keep a verified and
+> restorable source backup, and independently validate migrated data before
+> cutover or removing source storage. Behavior and interfaces may change without
+> notice.
+
 This tutorial describes the storage migration behavior implemented by the
 Python TrustyAI service in this repository. It is an implementation guide for
 service developers and operators. It is not a description of an external
@@ -22,14 +31,30 @@ checking the legacy database tables in that startup. The legacy path is
 considered only when no HDF5 file is found.
 
 There is no implemented MariaDB-to-PVC rollback migration and there is no
-general-purpose database schema migration framework. The current schema is
-created with `CREATE TABLE IF NOT EXISTS`, and the two data migrations are
-explicit startup paths.
+versioned database schema-upgrade framework. Backend initialization creates
+the current tables as needed; that schema setup is separate from copying stored
+inference data. The two automatic data migrations are startup paths.
 
-Separately, the explicit `trustyai-migrate` command provides a resumable
-cross-database suite. It reads Java CSV-on-PVC alongside the existing Python
-HDF5 PVC and MariaDB sources, and can target SQLite, MariaDB, or PostgreSQL.
-This is a command-driven migration, not an automatic startup path.
+Separately, the explicit `trustyai-migrate` command provides a cross-database
+data-transfer suite with durable migration tracking. It reads Java CSV-on-PVC
+alongside the existing Python HDF5 PVC and MariaDB sources, and can target
+SQLite, MariaDB, or PostgreSQL. This is a command-driven migration, not an
+automatic startup path.
+
+### Migration routes at a glance
+
+| Source | Destination | How it runs |
+| --- | --- | --- |
+| Python HDF5 PVC | MariaDB | Startup or `trustyai-migrate` |
+| Legacy MariaDB | Current MariaDB | Startup or CLI |
+| HDF5/CSV PVC or MariaDB | SQLite, MariaDB, PostgreSQL | CLI only |
+
+Startup migration requires `DATABASE_ATTEMPT_MIGRATION`; HDF5 takes priority
+over legacy MariaDB. The CLI accepts `pvc`, `pvc-csv`, and MariaDB `legacy` or
+`trustyai_v2` sources.
+
+In particular, Java CSV-on-PVC is not detected by the service's automatic
+startup migration. Use `trustyai-migrate --source pvc-csv` for that layout.
 
 ## 1.1 Explicit Java CSV-on-PVC migration suite
 
@@ -59,11 +84,11 @@ uv run --extra migration trustyai-migrate \
 ```
 
 Use a `mariadb+asyncmy://...` target URL for MariaDB or
-`sqlite+aiosqlite:///...` for a local SQLite target. The command requires
-`--quiesced` for every source and uses the same bounded batching, resume,
-collision checks, source checksum, and post-write verification as the other
-migration-suite sources. It does not remove or modify the PVC. Keep the source
-until the run reports `COMPLETE` and the destination has been checked.
+`postgresql+asyncpg://...` for PostgreSQL, or `sqlite+aiosqlite:///...` for a
+local SQLite target. The command requires `--quiesced` for every source and
+uses bounded batches, migration tracking, source checksums, collision checks,
+and post-write verification. It does not remove or modify the PVC. Keep the
+source until the run reports `COMPLETE` and the destination has been checked.
 
 The source adapter requires all three files for every discovered model. It
 validates the data and internal CSV row counts against each other and against
@@ -77,6 +102,71 @@ migration does not invoke Java `ObjectInputStream` or execute serialized Java
 classes.
 Set `STORAGE_DATA_FILENAME` or pass `--data-file` when the source uses a name
 other than `data.csv`.
+
+## 1.2 Cross-database migration commands
+
+Use `trustyai-migrate` when the destination is PostgreSQL or SQLite, or when
+you want an explicit, command-driven migration rather than the MariaDB startup
+path. The CLI accepts `pvc`, `pvc-csv`, and `mariadb` sources. Set the target URL
+securely in `TRUSTYAI_MIGRATION_TARGET_URL` or pass it with `--target-url`:
+
+| Destination | SQLAlchemy URL driver |
+| --- | --- |
+| MariaDB | `mariadb+asyncmy://...` |
+| PostgreSQL | `postgresql+asyncpg://...` |
+| SQLite | `sqlite+aiosqlite:///...` |
+
+Avoid putting credentials directly in shell history. For example, migrate a
+Python HDF5 PVC to either MariaDB or PostgreSQL by setting the target URL to the
+corresponding driver above, then running:
+
+```bash
+uv run --extra migration trustyai-migrate \
+  --source pvc \
+  --source-path /inputs \
+  --target-url "$TRUSTYAI_MIGRATION_TARGET_URL" \
+  --namespace pvc-cutover \
+  --quiesced
+```
+
+The HDF5 CLI source defaults to `trustyai.hdf5`; pass `--data-file` if the
+mounted PVC uses another suffix. To migrate MariaDB data to PostgreSQL, set
+`TRUSTYAI_MIGRATION_SOURCE_URL` to the MariaDB source URL and the target URL as
+shown above, then run:
+
+```bash
+uv run --extra migration trustyai-migrate \
+  --source mariadb \
+  --source-url "$TRUSTYAI_MIGRATION_SOURCE_URL" \
+  --source-schema auto \
+  --target-url "$TRUSTYAI_MIGRATION_TARGET_URL" \
+  --namespace maria-to-postgres \
+  --quiesced
+```
+
+The MariaDB source URL uses the `mariadb+asyncmy://...` driver.
+`--source-schema auto` detects the supported legacy or `trustyai_v2` MariaDB
+layout when only one is present. If both layouts exist, select `legacy` or
+`trustyai_v2` explicitly. For any source, append `--dry-run` to validate and
+decode it before transferring. A dry run still requires a syntactically valid
+target URL, but it does not connect to, initialize, or write to the target, so
+it does not verify target availability.
+
+The required `--quiesced` flag is an operator confirmation, not a lock: the
+command does not stop writers or provide a distributed lock. By default, the
+post-write checksum can detect source changes between preflight and
+verification, but it cannot prevent inconsistent reads during the transfer.
+Quiesce the source or use a consistent snapshot before running either dry-run
+or transfer. For a new migration with no matching run in the selected tracking
+namespace, the target canonical dataset layout must be empty; the CLI rejects
+unrelated existing target datasets. `--namespace` scopes migration-tracking
+tables only; it does not isolate the destination datasets.
+
+Transfers are batched, but checkpoints are not saved after each batch. After an
+interrupted, `PARTIAL`, or `FAILED` run, a retry can clear and rewrite datasets
+from row zero, including datasets that completed during the earlier attempt.
+It does not continue from the last successful batch. Keep the same source
+snapshot and target, and allow enough time and capacity for a full replay.
 
 ## 2. Storage layouts and terminology
 
@@ -126,21 +216,30 @@ selects the backend from `SERVICE_STORAGE_FORMAT`:
 flowchart TD
     A[Service creates storage] --> B{SERVICE_STORAGE_FORMAT}
     B -->|PVC or unset| C[PVCStorage]
-    B -->|MARIA or DATABASE| D[MariaDBStorage]
-    B -->|Anything else| E[Configuration error]
-    D --> F{DATABASE_ATTEMPT_MIGRATION enabled?}
-    F -->|No| G[Create current DB base tables only]
-    F -->|Yes| H[Run migration decision]
-    H --> I{Any *.hdf5 in STORAGE_DATA_FOLDER?}
-    I -->|Yes| J[PVC to MariaDB]
-    I -->|No| K[Check legacy MariaDB tables]
-    K -->|DataframeMetadata exists| L[Legacy MariaDB to current schema]
-    K -->|No legacy data| M[No data migration]
+    B -->|MARIA or MARIADB| D[MariaDBStorage]
+    B -->|POSTGRES or POSTGRESQL| E[PostgreSQLStorage]
+    B -->|SQLITE| F[SQLiteStorage]
+    B -->|DATABASE| G{QUARKUS_DATASOURCE_DB_KIND}
+    G -->|mariadb or maria; default is mariadb| D
+    G -->|postgresql, postgres, or pgsql| E
+    G -->|sqlite| F
+    G -->|Unsupported kind| H[Configuration error]
+    B -->|Unsupported format| H
+    D --> I{DATABASE_ATTEMPT_MIGRATION enabled?}
+    I -->|No| J[Create current DB base tables only]
+    I -->|Yes| K[Run migration decision]
+    K --> L{Any *.hdf5 in STORAGE_DATA_FOLDER?}
+    L -->|Yes| M[PVC to MariaDB]
+    L -->|No| N[Check legacy MariaDB tables]
+    N -->|DataframeMetadata exists| O[Legacy MariaDB to current schema]
+    N -->|No legacy data| P[No data migration]
 ```
 
-`MARIA` and `DATABASE` select the same Python MariaDB backend. `DATABASE` is an
-accepted alias used by operator-oriented deployments; selecting it does not
-perform a migration by itself.
+`MARIA` and `MARIADB` select MariaDB directly. `DATABASE` resolves
+`QUARKUS_DATASOURCE_DB_KIND` (default: `mariadb`) and can select MariaDB,
+PostgreSQL, or SQLite. Only the MariaDB backend runs the automatic startup
+migration decision controlled by `DATABASE_ATTEMPT_MIGRATION`; selecting a
+backend by itself does not migrate data.
 
 `MariaDBStorage` always creates the current reference and partial-payload
 tables during initialization. The migration flag controls whether it then
@@ -503,8 +602,8 @@ The main implementation locations are:
   reads and converts legacy Java-serialized MariaDB data.
 - `src/trustyai_service/service/data/migrations/pvc_csv.py`: reads Java CSV PVC
   data and its model/internal metadata sidecars.
-- `src/trustyai_service/service/data/migrations/runner.py`: runs bounded,
-  resumable migrations and verifies target results.
+- `src/trustyai_service/service/data/migrations/runner.py`: runs batched
+  migrations with durable tracking and verifies target results.
 - `src/trustyai_service/service/data/migrations/target.py`: writes the shared
   canonical SQL layout for SQLite, MariaDB, and PostgreSQL.
 - `src/trustyai_service/service/health_checks.py`: reports storage and
