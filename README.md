@@ -148,3 +148,17 @@ See [SECURITY.md](SECURITY.md) for details.
 ## License
 
 [Apache License 2.0](LICENSE)
+
+### Prometheus compatibility
+
+`SERVICE_PROMETHEUS_SCHEMA` selects the exposition contract at service startup:
+
+- `java` (default) emits uppercase metric identifiers in the `metricName` label.
+- `python-legacy` retains Python identifier spellings and legacy labels, including
+  publishing Identity schedules as BatchMean. Use this during dashboard migration.
+
+This setting affects Prometheus output only. REST response spellings remain stable.
+Deprecated and current routes share schedules; either route can list and delete
+a request created through its alias. Restart the service when changing schemas.
+Java labels retain Python aliases during the transition; drift reference, column,
+and epsilon metadata remain available. No removal date is defined yet.

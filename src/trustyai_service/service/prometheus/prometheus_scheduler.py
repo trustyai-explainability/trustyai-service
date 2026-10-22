@@ -26,6 +26,7 @@ from trustyai_service.service.payloads.metrics.request_reconciler import (
     RequestReconciler,
 )
 from trustyai_service.service.prometheus.gauge_config import GaugeConfig
+from trustyai_service.service.prometheus.metric_identity import canonical_metric_name
 from trustyai_service.service.prometheus.metric_value_carrier import MetricValueCarrier
 from trustyai_service.service.prometheus.prometheus_publisher import PrometheusPublisher
 
@@ -110,7 +111,7 @@ class PrometheusScheduler:
     def get_requests(self, metric_name: str) -> dict[uuid.UUID, BaseMetricRequest]:
         """Get all requests for a specific metric."""
         with self._requests_lock:
-            return dict(self.requests.get(metric_name, {}))
+            return dict(self.requests.get(canonical_metric_name(metric_name), {}))
 
     def get_all_requests(self) -> dict[str, dict[uuid.UUID, BaseMetricRequest]]:
         """Get all requests organized by metric name."""
@@ -174,6 +175,7 @@ class PrometheusScheduler:
             request_id,
             getattr(request, "model_id", "unknown"),
         )
+        metric_name = canonical_metric_name(metric_name)
         await RequestReconciler.reconcile(request, self.data_source)
         logger.info(
             "After reconciliation, %s request %s model_id: %s",
@@ -194,14 +196,13 @@ class PrometheusScheduler:
 
     async def delete(self, metric_name: str, request_id: uuid.UUID) -> None:
         """Delete a metric request."""
+        canonical_name = canonical_metric_name(metric_name)
         with self._requests_lock:
-            if (
-                metric_name in self.requests
-                and request_id in self.requests[metric_name]
-            ):
-                del self.requests[metric_name][request_id]
+            request = self.requests.get(canonical_name, {}).pop(request_id, None)
 
-        self.publisher.remove_gauge(metric_name, request_id)
+        self.publisher.remove_gauge(
+            request.metric_name if request is not None else metric_name, request_id
+        )
 
     def has_requests(self) -> bool:
         """Check if there are any requests."""
