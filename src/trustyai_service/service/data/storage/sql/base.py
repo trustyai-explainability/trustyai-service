@@ -59,6 +59,7 @@ logger.setLevel(logging.INFO)
 _MIN_MATRIX_NDIM = 2  # Minimum number of dimensions for a 2-D matrix
 _MYSQL_DUPLICATE_KEY = 1062
 _MYSQL_CONCURRENT_DDL = 1684
+_MYSQL_NO_SUCH_TABLE = 1146
 _MAX_IMPLICIT_DDL_ATTEMPTS = 3
 
 
@@ -361,6 +362,27 @@ class SQLStorage(StorageInterface):
             errno = original.args[0]
         return errno == _MYSQL_CONCURRENT_DDL
 
+    def _is_missing_dataset_table_error(self, error: ProgrammingError) -> bool:
+        """Recognize a MariaDB/MySQL INSERT racing a generated table's creation."""
+        if self._engine.dialect.name not in {"mariadb", "mysql"}:
+            return False
+        statement = iter((error.statement or "").lstrip().split())
+        if (next(statement, "").upper(), next(statement, "").upper()) != (
+            "INSERT",
+            "INTO",
+        ):
+            return False
+        table_name = next(statement, "").strip('`"').lower()
+        table_prefix = f"{self.schema_prefix}_dataset_"
+        table_index = table_name.removeprefix(table_prefix)
+        if not table_index.isdecimal():
+            return False
+        original = error.orig
+        errno = getattr(original, "errno", None)
+        if errno is None and original.args:
+            errno = original.args[0]
+        return errno == _MYSQL_NO_SUCH_TABLE
+
     def _prepare_implicit_commit_dataset(
         self,
         dataset_name: str,
@@ -428,16 +450,29 @@ class SQLStorage(StorageInterface):
                 self._validate_dataset_write(conn, name, rows, columns)
         parameters = [self._encode_rows(rows, columns) for _, rows, columns in datasets]
 
-        # A conflict can occur once per newly created dataset. Retry only after
-        # the entire failed transaction is rolled back, then revalidate the
-        # winning schema and append the complete batch in a fresh transaction.
-        for attempt in range(len(datasets) + 1):
+        # Reference conflicts and a table-visibility race can each happen once
+        # per new dataset. Retry only after the whole failed transaction rolls
+        # back, then revalidate the schema and append the batch from scratch.
+        max_attempts = 2 * len(datasets) + 1
+        reference_conflicts = 0
+        missing_table_conflicts = 0
+        for attempt in range(max_attempts):
             try:
                 self._write_data_batch_once(datasets, parameters)
-            except IntegrityError as error:
-                if attempt == len(datasets) or not self._is_dataset_creation_conflict(
-                    error
-                ):
+            except (IntegrityError, ProgrammingError) as error:
+                if isinstance(
+                    error, IntegrityError
+                ) and self._is_dataset_creation_conflict(error):
+                    reference_conflicts += 1
+                    retryable = reference_conflicts <= len(datasets)
+                elif isinstance(
+                    error, ProgrammingError
+                ) and self._is_missing_dataset_table_error(error):
+                    missing_table_conflicts += 1
+                    retryable = missing_table_conflicts <= len(datasets)
+                else:
+                    retryable = False
+                if attempt == max_attempts - 1 or not retryable:
                     raise
             else:
                 return
