@@ -138,15 +138,15 @@ class TestPrometheusPublisher:
         assert subcategory_value_map == test_named_values
 
     @pytest.mark.parametrize(
-        ("metric_name", "expected_label", "expected_family"),
+        "metric_name",
         [
-            ("Meanshift", "MEANSHIFT", "trustyai_meanshift"),
-            ("KSTest", "KSTEST", "trustyai_kstest"),
-            ("APPROXKSTEST", "APPROXKSTEST", "trustyai_approxkstest"),
-            ("FOURIERMMD", "FOURIERMMD", "trustyai_fouriermmd"),
-            ("BatchMean", "BATCHMEAN", "trustyai_batchmean"),
-            ("CompareMeans", "COMPAREMEANS", "trustyai_comparemeans"),
-            ("JensenShannon", "JENSENSHANNON", "trustyai_jensenshannon"),
+            "Meanshift",
+            "KSTest",
+            "APPROXKSTEST",
+            "FOURIERMMD",
+            "BatchMean",
+            "CompareMeans",
+            "JensenShannon",
         ],
     )
     @pytest.mark.parametrize("named_values", [False, True])
@@ -154,8 +154,6 @@ class TestPrometheusPublisher:
         self,
         publisher: PrometheusPublisher,
         metric_name: str,
-        expected_label: str,
-        expected_family: str,
         *,
         named_values: bool,
     ) -> None:
@@ -177,8 +175,8 @@ class TestPrometheusPublisher:
             for sample in metric.samples
         ]
         assert len(samples) == 1
-        assert samples[0].name == expected_family
-        assert samples[0].labels["metricName"] == expected_label
+        assert samples[0].name == f"trustyai_{metric_name.lower()}"
+        assert samples[0].labels["metricName"] == metric_name.upper()
         assert request.metric_name == metric_name
 
     def test_simple_gauge_without_request(self, publisher: PrometheusPublisher) -> None:
