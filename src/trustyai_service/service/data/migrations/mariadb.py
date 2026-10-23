@@ -33,6 +33,7 @@ from .contracts import (
 )
 from .errors import MigrationPreflightError, MigrationValidationError
 from .java_values import legacy_value
+from .row_metadata import METADATA_COLUMNS, METADATA_TYPES, legacy_metadata_row
 
 _CONTENT_HASH_PAGE_SIZE = 1_024
 _MIN_SHAPE_DIMENSIONS = 2
@@ -321,9 +322,9 @@ class MariaDBSource(MigrationSource):
             _LegacyDatasetSpec(
                 model_id,
                 "metadata",
-                ("timestamp", "rowId", "tag"),
-                (0, 1, 2),
-                ("timestamp", "rowId", "tag"),
+                METADATA_COLUMNS,
+                tuple(range(len(METADATA_COLUMNS))),
+                METADATA_COLUMNS,
             ),
         )
         descriptors: list[DatasetDescriptor] = []
@@ -339,14 +340,9 @@ class MariaDBSource(MigrationSource):
                         else spec.raw_columns
                     ),
                     aliases=spec.aliases,
-                    column_types=tuple(
-                        ["UNKNOWN"]
-                        * len(
-                            spec.selected_indices
-                            if spec.kind != "metadata"
-                            else spec.raw_columns
-                        )
-                    ),
+                    column_types=METADATA_TYPES
+                    if spec.kind == "metadata"
+                    else ("UNKNOWN",) * len(spec.selected_indices),
                     row_count=row_count,
                     shape=(
                         len(spec.selected_indices)
@@ -427,7 +423,7 @@ class MariaDBSource(MigrationSource):
         rows = np.empty((len(grouped), len(descriptor.column_names)), dtype=object)
         for index, (row_id, (metadata, cells)) in enumerate(grouped.items()):
             if spec.kind == "metadata":
-                values = metadata
+                values = legacy_metadata_row(*metadata)
             else:
                 values = _decode_legacy_cells(cells, spec, row_id)
                 values = [values[column] for column in spec.selected_indices]

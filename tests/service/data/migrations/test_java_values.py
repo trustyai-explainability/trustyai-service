@@ -68,6 +68,29 @@ def serialized_legacy_string(value):
     return javaobj.dumps(wrapper)
 
 
+@pytest.mark.parametrize("field", ["dimensions", "nEntries", "dimension"])
+@pytest.mark.parametrize("kind", ["fractional", "float", "string", "boolean", "null"])
+def test_tensor_rejects_non_integer_metadata(field, kind):
+    """Malformed metadata cannot pass by truncation, parsing, or bool coercion."""
+    import javaobj
+
+    from trustyai_service.service.data.migrations.errors import MigrationValidationError
+    from trustyai_service.service.data.migrations.java_values import tensor_value
+
+    tensor = javaobj.loads(base64.b64decode(_TENSOR))
+    count = 1 if field == "dimension" else 2
+    invalid = {
+        "fractional": count + 0.5,
+        "float": float(count),
+        "string": str(count),
+        "boolean": True,
+        "null": None,
+    }[kind]
+    setattr(tensor, field, [invalid] if field == "dimensions" else invalid)
+    with pytest.raises(MigrationValidationError):
+        tensor_value(tensor)
+
+
 def test_legacy_wrapper_and_value_are_allowlisted():
     """Only the service wrapper containing supported values is accepted."""
     import javaobj
