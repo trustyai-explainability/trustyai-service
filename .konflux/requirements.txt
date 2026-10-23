@@ -105,13 +105,6 @@ pandas==3.0.5 \
     --hash=sha256:b46c895903ed41060fa3c7e52ba212eabd3126ac313820a549a855793725c0c0
     # via trustyai-service (pyproject.toml)
     # from https://packages.redhat.com/api/pypi/public-rhai/cpu-torch2.13-el9.8-test/simple/
-polars==1.31.0 \
-    --hash=sha256:23baa8cda811a0421c6848dcc3b4487e2ef5245285e3df73929d746910e05da1 \
-    --hash=sha256:6e2b6db3e7bde4ec52186641d040a21358e645021de013d98c2f02f46574d58c \
-    --hash=sha256:718ca2c18f3ebdda24cbf41479fdf1835af5eefbf2c269a7454fa0da83fe901f \
-    --hash=sha256:a5a414959637c00942e56c570b91d2aa67325b60342054b205d2ab376950317e
-    # via trustyai-service (pyproject.toml)
-    # from https://packages.redhat.com/api/pypi/public-rhai/cpu-torch2.13-el9.8-test/simple/
 priority==2.0.0 \
     --hash=sha256:0430d651c6984ad3ab61e6db5bacc12835b1cd2090bfdbfc996ff02db91866a8
     # via hypercorn
@@ -164,6 +157,13 @@ six==1.17.0 \
     --hash=sha256:d0fea194c3813bd785de9ec350864656a5566f5be278f314794963f831649051
     # via python-dateutil
     # from https://packages.redhat.com/api/pypi/public-rhai/cpu-torch2.13-el9.8-test/simple/
+sqlalchemy==2.1.5 \
+    --hash=sha256:14060860dd095a70bc78cc2f497df39bc333aec5da5aef733aa3b92b6ce46812 \
+    --hash=sha256:4a28924bdc41bc57dd1b24a0008a237c92f6f5ec22118bf62256826a48f3fe3a \
+    --hash=sha256:56a81481ed05256120e1dfb42e26c706ede3e754c3d01489507fb803cd8f90e9 \
+    --hash=sha256:616b66494ecc90028e46121ea5ac60e536c7b36763ae09ecfe5fb4b46a6baa5a
+    # via trustyai-service (pyproject.toml)
+    # from https://packages.redhat.com/api/pypi/public-rhai/cpu-torch2.13-el9.8-test/simple/
 starlette==1.6.0 \
     --hash=sha256:1e52f9e8ebb9f3555749acd358a34965a47e03f8ad3b6448c428a42167929509
     # via fastapi
@@ -179,6 +179,7 @@ typing-extensions==4.16.0 \
     #   fastapi
     #   pydantic
     #   pydantic-core
+    #   sqlalchemy
     #   starlette
     #   typing-inspection
     # from https://packages.redhat.com/api/pypi/public-rhai/cpu-torch2.13-el9.8-test/simple/

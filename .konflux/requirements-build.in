@@ -1,4 +1,6 @@
-cython
-numpy
 hatchling
 hatch-vcs
+setuptools
+wheel
+cython
+numpy

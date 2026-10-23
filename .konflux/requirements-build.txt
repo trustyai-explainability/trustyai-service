@@ -32,6 +32,7 @@ packaging==26.3 \
     #   hatchling
     #   setuptools-scm
     #   vcs-versioning
+    #   wheel
     # from https://packages.redhat.com/api/pypi/public-rhai/cpu-torch2.13-el9.8-test/simple/
 pathspec==1.1.1 \
     --hash=sha256:b28884aaadb4c4ed86d647066fb867069d28d6fc981277897eafcab82d911d7d
@@ -43,7 +44,9 @@ pluggy==1.6.0 \
     # from https://packages.redhat.com/api/pypi/public-rhai/cpu-torch2.13-el9.8-test/simple/
 setuptools==84.0.0 \
     --hash=sha256:54551c2da1e47baf2c91b9c2ff07d616ae51cbc1c6c65e5f73103a826824c954
-    # via setuptools-scm
+    # via
+    #   -r .konflux/requirements-build.in
+    #   setuptools-scm
     # from https://packages.redhat.com/api/pypi/public-rhai/cpu-torch2.13-el9.8-test/simple/
 setuptools-scm==10.2.1 \
     --hash=sha256:a12c65e4041252231a30c0bf7fce9d45d1a330ac3d9acff958126f315d1a5dcb
@@ -60,4 +63,8 @@ trove-classifiers==2026.6.1.19 \
 vcs-versioning==2.2.4 \
     --hash=sha256:dd14a4d52a1e592d7ec28f7bb62421997c595112231badf157bb74b1705a10b4
     # via setuptools-scm
+    # from https://packages.redhat.com/api/pypi/public-rhai/cpu-torch2.13-el9.8-test/simple/
+wheel==0.48.0 \
+    --hash=sha256:c6d4bd2d0224ddba5b3b3d773566bffe64b9be5cf956be3e5223757ffa6e16f1
+    # via -r .konflux/requirements-build.in
     # from https://packages.redhat.com/api/pypi/public-rhai/cpu-torch2.13-el9.8-test/simple/
