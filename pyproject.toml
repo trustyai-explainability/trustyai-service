@@ -39,6 +39,8 @@ test = [
     "pytest-asyncio>=1.3.0",
     "pytest-xdist[psutil]>=3.8.0",
     "hypothesis>=6.151.12",
+    "aiosqlite>=0.21,<1",
+    "sqlalchemy[asyncio]>=2.0,<3",
     "aif360>=0.6.1",
 ]
 
@@ -49,6 +51,13 @@ test = [
 mariadb = ["mariadb>=1.1,<1.2", "javaobj-py3>=0.5,<0.7", "sqlalchemy>=2.0,<3"]
 postgres = ["psycopg[binary]>=3.2,<4", "sqlalchemy>=2.0,<3"]
 sqlite = ["sqlalchemy>=2.0,<3"]
+migration = [
+    "sqlalchemy[asyncio]>=2.0,<3",
+    "aiosqlite>=0.21,<1",
+    "asyncmy>=0.2,<1",
+    "asyncpg>=0.30,<1",
+    "javaobj-py3>=0.5,<0.7",
+]
 mmd = ["goodpoints>=0.6.3,<0.7"]
 
 [tool.hatch.version]
@@ -71,6 +80,9 @@ version-file = "src/trustyai_service/_version.py"
 [build-system]
 requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+[project.scripts]
+trustyai-migrate = "trustyai_service.service.data.migrations.cli:main"
 
 [tool.ruff]
 # Exclude generated protobuf files from all ruff operations
@@ -131,6 +143,7 @@ ignore = [
 "tests/service/data/test_utils.py" = ["PLR0913", "UP037"]  # UP037: Keep quoted annotations for optional protobuf imports
 "tests/service/data/storage/test_pvc_storage.py" = ["PLC0415"]
 "tests/service/data/storage/maria/*.py" = ["ANN", "ARG002"]  # Pytest style: no test method annotations, setup-only fixtures
+"tests/service/data/migrations/*.py" = ["ANN", "PLC0415", "TC003"]  # Contract fixtures load optional migration backends lazily
 
 [tool.pytest.ini_options]
 asyncio_mode = "strict"

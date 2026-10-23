@@ -2,6 +2,7 @@
 
 import asyncio
 from abc import ABC, abstractmethod
+from typing import Any
 
 import numpy as np
 
@@ -82,6 +83,11 @@ class StorageInterface(ABC):
 
     async def get_column_types(self, dataset_name: str) -> list[str] | None:
         """Read column type information. Returns None if backend doesn't support it."""
+        _ = dataset_name
+        return None
+
+    async def get_service_metadata(self, dataset_name: str) -> dict[str, Any] | None:
+        """Read optional persisted tensor names and recorded-inference state."""
         _ = dataset_name
         return None
 
