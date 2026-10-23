@@ -219,6 +219,7 @@ class TestBuildEngine:
 
     def test_pooled_engine_uses_queuepool(self) -> None:
         """A pooled engine uses QueuePool with the configured size."""
+        pytest.importorskip("psycopg")  # postgres extra is optional
         engine = eng.build_engine(eng.postgres_url("u", "p", "h", 5432, "db"))
         assert isinstance(engine.pool, QueuePool)
         engine.dispose()
