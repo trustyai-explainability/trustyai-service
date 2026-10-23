@@ -59,6 +59,7 @@ logger.setLevel(logging.INFO)
 _MIN_MATRIX_NDIM = 2  # Minimum number of dimensions for a 2-D matrix
 _MYSQL_DUPLICATE_KEY = 1062
 _MYSQL_CONCURRENT_DDL = 1684
+_MYSQL_NO_SUCH_TABLE = 1146
 _MAX_IMPLICIT_DDL_ATTEMPTS = 3
 
 
@@ -361,12 +362,37 @@ class SQLStorage(StorageInterface):
             errno = original.args[0]
         return errno == _MYSQL_CONCURRENT_DDL
 
+    def _is_missing_dataset_table_error(self, error: ProgrammingError) -> bool:
+        """Recognize a MariaDB/MySQL INSERT racing a generated table's creation."""
+        if self._engine.dialect.name not in {"mariadb", "mysql"}:
+            return False
+        statement = iter((error.statement or "").lstrip().split())
+        if (next(statement, "").upper(), next(statement, "").upper()) != (
+            "INSERT",
+            "INTO",
+        ):
+            return False
+        table_name = next(statement, "").strip('`"').lower()
+        table_prefix = f"{self.schema_prefix}_dataset_"
+        if not table_name.startswith(table_prefix):
+            return False
+        table_index = table_name.removeprefix(table_prefix)
+        if not table_index.isdecimal():
+            return False
+        original = error.orig
+        errno = getattr(original, "errno", None)
+        if errno is None and original.args:
+            errno = original.args[0]
+        return errno == _MYSQL_NO_SUCH_TABLE
+
     def _prepare_implicit_commit_dataset(
         self,
         dataset_name: str,
         new_rows: np.ndarray,
         column_names: list[str],
-    ) -> None:
+        *,
+        expected_table: str | None = None,
+    ) -> Table:
         """Finish MariaDB/MySQL dataset DDL before any inference row is written."""
         for attempt in range(_MAX_IMPLICIT_DDL_ATTEMPTS):
             try:
@@ -377,9 +403,27 @@ class SQLStorage(StorageInterface):
                     table = self._validate_dataset_write(
                         conn, dataset_name, new_rows, column_names
                     )
+                    if expected_table is not None and (
+                        table is None or table.name != expected_table
+                    ):
+                        msg = f"Dataset '{dataset_name}' was removed or replaced during the batch write"
+                        raise ValueError(msg)
                     if table is None:
-                        self._create_dataset(conn, dataset_name, new_rows, column_names)
+                        table = self._create_dataset(
+                            conn, dataset_name, new_rows, column_names
+                        )
                     elif not inspect(conn).has_table(table.name):
+                        n_rows = conn.execute(
+                            select(self._ref.c.n_rows).where(
+                                self._ref.c.dataset_name == dataset_name
+                            )
+                        ).scalar_one()
+                        if n_rows != 0:
+                            msg = (
+                                f"Dataset '{dataset_name}' table is missing while "
+                                f"registry declares {n_rows} rows"
+                            )
+                            raise ValueError(msg)
                         # A creator's DDL may have committed its reference while
                         # its CREATE is still pending. Both writers can safely
                         # finish it.
@@ -391,7 +435,9 @@ class SQLStorage(StorageInterface):
                 ):
                     raise
             else:
-                return
+                return table
+        msg = "dataset DDL preparation exhausted its retry limit"
+        raise RuntimeError(msg)
 
     @staticmethod
     def _encode_rows(
@@ -423,21 +469,37 @@ class SQLStorage(StorageInterface):
             (name, self._validate_new_rows(rows, columns), columns)
             for name, rows, columns in datasets
         ]
+        expected_tables: dict[str, str] = {}
         with self._engine.connect() as conn:
             for name, rows, columns in datasets:
-                self._validate_dataset_write(conn, name, rows, columns)
+                table = self._validate_dataset_write(conn, name, rows, columns)
+                if table is not None:
+                    expected_tables[name] = table.name
         parameters = [self._encode_rows(rows, columns) for _, rows, columns in datasets]
 
-        # A conflict can occur once per newly created dataset. Retry only after
-        # the entire failed transaction is rolled back, then revalidate the
-        # winning schema and append the complete batch in a fresh transaction.
-        for attempt in range(len(datasets) + 1):
+        # Reference conflicts and a table-visibility race can each happen once
+        # per new dataset. Retry only after the whole failed transaction rolls
+        # back, then revalidate the schema and append the batch from scratch.
+        max_attempts = 2 * len(datasets) + 1
+        reference_conflicts = 0
+        missing_table_conflicts = 0
+        for attempt in range(max_attempts):
             try:
-                self._write_data_batch_once(datasets, parameters)
-            except IntegrityError as error:
-                if attempt == len(datasets) or not self._is_dataset_creation_conflict(
-                    error
-                ):
+                self._write_data_batch_once(datasets, parameters, expected_tables)
+            except (IntegrityError, ProgrammingError) as error:
+                if isinstance(
+                    error, IntegrityError
+                ) and self._is_dataset_creation_conflict(error):
+                    reference_conflicts += 1
+                    retryable = reference_conflicts <= len(datasets)
+                elif isinstance(
+                    error, ProgrammingError
+                ) and self._is_missing_dataset_table_error(error):
+                    missing_table_conflicts += 1
+                    retryable = missing_table_conflicts <= len(datasets)
+                else:
+                    retryable = False
+                if attempt == max_attempts - 1 or not retryable:
                     raise
             else:
                 return
@@ -446,12 +508,16 @@ class SQLStorage(StorageInterface):
         self,
         datasets: list[tuple[str, np.ndarray, list[str]]],
         parameters: list[list[dict[str, bytes]]],
+        expected_tables: dict[str, str],
     ) -> None:
         """Prepare dataset tables, then write every batch row in one transaction."""
         implicit_ddl_commit = self._engine.dialect.name in {"mariadb", "mysql"}
         if implicit_ddl_commit:
             for name, rows, columns in datasets:
-                self._prepare_implicit_commit_dataset(name, rows, columns)
+                table = self._prepare_implicit_commit_dataset(
+                    name, rows, columns, expected_table=expected_tables.get(name)
+                )
+                expected_tables[name] = table.name
 
         with self._engine.begin() as conn:
             # Revalidate and lock before inserting anything. Concurrent writers
@@ -464,6 +530,12 @@ class SQLStorage(StorageInterface):
             if implicit_ddl_commit and any(table is None for table in tables):
                 msg = "A dataset was removed while preparing the batch write."
                 raise ValueError(msg)
+            for (name, _, _), table in zip(datasets, tables, strict=True):
+                if name in expected_tables and (
+                    table is None or table.name != expected_tables[name]
+                ):
+                    msg = f"Dataset '{name}' was removed or replaced during the batch write"
+                    raise ValueError(msg)
             for (name, rows, columns), table, params in zip(
                 datasets, tables, parameters, strict=True
             ):
@@ -532,6 +604,44 @@ class SQLStorage(StorageInterface):
         return np.array(arr, dtype=dtypes.pop() if len(dtypes) == 1 else object)
 
     # === COLUMN NAMES =============================================================================
+    @require_existing_dataset
+    async def get_column_types(self, dataset_name: str) -> list[str] | None:
+        """Read types preserved by ingestion or an explicit migration."""
+        return (await self._get_dataset_metadata(dataset_name)).get("column_types")
+
+    @require_existing_dataset
+    async def set_column_types(
+        self, dataset_name: str, column_types: list[str]
+    ) -> None:
+        """Persist one type per column without replacing other metadata."""
+        with self._engine.begin() as conn:
+            reference = (
+                conn.execute(
+                    select(self._ref.c.table_idx, self._ref.c.metadata)
+                    .where(self._ref.c.dataset_name == dataset_name)
+                    .order_by(self._ref.c.table_idx)
+                    .limit(1)
+                    .with_for_update()
+                )
+                .mappings()
+                .one()
+            )
+            metadata = dict(reference["metadata"])
+            if len(column_types) != len(metadata["column_names"]):
+                msg = "column types must match the dataset column count"
+                raise ValueError(msg)
+            metadata["column_types"] = list(column_types)
+            conn.execute(
+                update(self._ref)
+                .where(self._ref.c.table_idx == reference["table_idx"])
+                .values(metadata=metadata)
+            )
+
+    @require_existing_dataset
+    async def get_service_metadata(self, dataset_name: str) -> dict[str, Any] | None:
+        """Read model metadata preserved in the canonical registry."""
+        return (await self._get_dataset_metadata(dataset_name)).get("trustyai_service")
+
     @require_existing_dataset
     async def get_original_column_names(self, dataset_name: str) -> list[str] | None:
         """Return the original column names for a dataset."""

@@ -1,4 +1,6 @@
 ### Use this to run the mariadb tests locally: `podman compose -f compose-local-maria.yaml up
+### Storage-migration live-DB tests also need PostgreSQL:
+### `podman compose -f compose-local-maria.yaml --profile migrations up`
 
 x-common-variables: &global-variables
   MARIADB_ROOT_PASSWORD: root  # pragma: allowlist secret
@@ -7,6 +9,26 @@ x-common-variables: &global-variables
   MARIADB_DATABASE: trustyai-database
 
 services:
+  trustyai-pg-container:
+    profiles: ["migrations"]
+    networks:
+      - data-connection
+    container_name: trustyai-pg-container
+    healthcheck:
+      interval: 10s
+      retries: 3
+      test:
+        ["CMD-SHELL", "pg_isready -U trustyai -d trustyai-database"]
+      timeout: 5s
+    ports:
+      - 5432:5432
+    expose:
+      - 5432
+    environment:
+      POSTGRES_USER: trustyai
+      POSTGRES_PASSWORD: trustyai  # pragma: allowlist secret
+      POSTGRES_DB: trustyai-database
+    image: postgres:16
   trustyai-db-container:
     networks:
       - data-connection

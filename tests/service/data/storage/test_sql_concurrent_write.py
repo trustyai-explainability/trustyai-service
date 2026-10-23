@@ -14,9 +14,9 @@ import pytest
 
 pytest.importorskip("sqlalchemy")
 
-from sqlalchemy import create_engine, event, insert
+from sqlalchemy import create_engine, delete, event, insert, select
 from sqlalchemy import inspect as sqlalchemy_inspect
-from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError
 
 from tests.service.data.storage.sql_test_resources import SQLTestResources
 from tests.service.data.storage.test_sql_parity import (
@@ -128,8 +128,16 @@ async def test_competing_first_batches(
         if isinstance(error, OperationalError)
         and writers[0]._is_concurrent_ddl_error(error)
     ]
+    retried_missing_table_conflicts = [
+        error
+        for error in conflicts
+        if isinstance(error, ProgrammingError)
+        and writers[0]._is_missing_dataset_table_error(error)
+    ]
     assert creation_conflicts
-    assert len(creation_conflicts) + len(retried_ddl_conflicts) == len(conflicts)
+    assert len(creation_conflicts) + len(retried_ddl_conflicts) + len(
+        retried_missing_table_conflicts
+    ) == len(conflicts)
     if matching_columns:
         assert results == [None, None]
     else:
@@ -331,6 +339,164 @@ def test_only_mariadb_concurrent_ddl_errors_are_retryable(
             Exception(errno, "Table definition is being modified"),
         )
         assert storage._is_concurrent_ddl_error(error) is (expected_result == "retry")
+    finally:
+        storage._engine.dispose()
+
+
+@pytest.mark.parametrize(
+    ("dialect", "statement", "errno", "expected_result"),
+    [
+        (
+            "mariadb",
+            "INSERT INTO trustyai_v2_dataset_12 (column_0) VALUES (?)",
+            1146,
+            "retry",
+        ),
+        (
+            "mysql",
+            "INSERT INTO trustyai_v2_dataset_12 (column_0) VALUES (?)",
+            1146,
+            "retry",
+        ),
+        (
+            "postgresql",
+            "INSERT INTO trustyai_v2_dataset_12 (column_0) VALUES (?)",
+            1146,
+            "raise",
+        ),
+        (
+            "mariadb",
+            "INSERT INTO unrelated_table (column_0) VALUES (?)",
+            1146,
+            "raise",
+        ),
+        (
+            "mariadb",
+            "SELECT * FROM trustyai_v2_dataset_12",
+            1146,
+            "raise",
+        ),
+        (
+            "mariadb",
+            "INSERT INTO trustyai_v2_dataset_12 (column_0) VALUES (?)",
+            1213,
+            "raise",
+        ),
+    ],
+)
+def test_only_missing_mariadb_dataset_table_inserts_are_retryable(
+    dialect: str,
+    statement: str,
+    errno: int,
+    expected_result: str,
+) -> None:
+    """Retry only MariaDB/MySQL INSERTs for a missing generated dataset table."""
+    storage = SQLStorage(create_engine("sqlite://"))
+    original = Exception(errno, "Table does not exist")
+    error = ProgrammingError(statement, {}, original)
+    try:
+        storage._engine.dialect.name = dialect
+        assert storage._is_missing_dataset_table_error(error) is (
+            expected_result == "retry"
+        )
+    finally:
+        storage._engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_write_batch_retries_transient_missing_dataset_table(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A transient missing-table error retries the full atomic batch."""
+    storage = SQLiteStorage()
+    batch = _inference_batch(["inputs", "outputs", "metadata"], 1, "inference_1")
+    original_write = storage._write_data_batch_once
+    storage._engine.dialect.name = "mariadb"
+    attempts = 0
+
+    def fail_once(
+        datasets: list[tuple[str, np.ndarray, list[str]]],
+        parameters: list[list[dict[str, bytes]]],
+        expected_tables: dict[str, str],
+    ) -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            statement = "INSERT INTO trustyai_v2_dataset_0 (column_0) VALUES (?)"
+            driver_error = Exception(1146, "Table does not exist")
+            raise ProgrammingError(statement, {}, driver_error)
+        storage._engine.dialect.name = "sqlite"
+        original_write(datasets, parameters, expected_tables)
+
+    monkeypatch.setattr(storage, "_write_data_batch_once", fail_once)
+    try:
+        await storage.write_data_batch(batch)
+
+        assert attempts == 2
+        assert (await storage.read_data("inputs")).tolist() == [[1]]
+    finally:
+        storage._engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_preparation_does_not_recreate_a_populated_missing_table() -> None:
+    """A lost table is corruption, not a fresh-creation race."""
+    storage = SQLiteStorage()
+    try:
+        await storage.write_data("inputs", np.array([[1], [2]]), ["input"])
+        table_name = await storage._get_clean_table_name("inputs")
+        with storage._engine.begin() as connection:
+            storage._dataset_table(table_name, ["column_0"]).drop(connection)
+        with pytest.raises(ValueError, match="registry declares 2 rows"):
+            storage._prepare_implicit_commit_dataset(
+                "inputs", np.array([[3]]), ["input"]
+            )
+        assert not sqlalchemy_inspect(storage._engine).has_table(table_name)
+        assert await storage.dataset_rows("inputs") == 2
+    finally:
+        storage._engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_missing_table_retry_does_not_undo_concurrent_deletion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The retry must retain the reference identity observed by its first attempt."""
+    storage = SQLiteStorage()
+    original_write = storage._write_data_batch_once
+    attempts = 0
+
+    def deleted_during_first_attempt(
+        datasets: list[tuple[str, np.ndarray, list[str]]],
+        parameters: list[list[dict[str, bytes]]],
+        expected_tables: dict[str, str],
+    ) -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            name, rows, columns = datasets[0]
+            table = storage._prepare_implicit_commit_dataset(name, rows, columns)
+            expected_tables[name] = table.name
+            with storage._engine.begin() as connection:
+                connection.execute(
+                    delete(storage._ref).where(storage._ref.c.dataset_name == name)
+                )
+                table.drop(connection)
+            # Keep SQLite's DDL types during setup. Only error classification
+            # and the retry need the simulated MariaDB dialect.
+            storage._engine.dialect.name = "mariadb"
+            statement = f"INSERT INTO {table.name} (column_0) VALUES (?)"  # noqa: S608 -- generated table name
+            driver_error = Exception(1146, "Table does not exist")
+            raise ProgrammingError(statement, {}, driver_error)
+        original_write(datasets, parameters, expected_tables)
+
+    monkeypatch.setattr(storage, "_write_data_batch_once", deleted_during_first_attempt)
+    try:
+        with pytest.raises(ValueError, match="removed or replaced"):
+            await storage.write_data("inputs", np.array([[1]]), ["input"])
+        assert attempts == 2
+        with storage._engine.connect() as connection:
+            assert connection.execute(select(storage._ref)).first() is None
     finally:
         storage._engine.dispose()
 

@@ -353,13 +353,25 @@ class DataSource:
                 output_items[name] = SchemaItem(dtype, name, i)
             output_schema = Schema(output_items)
 
+            service_metadata = (
+                await self.storage_interface.get_service_metadata(input_dataset) or {}
+            )
+
             metadata = StorageMetadata(
                 StorageMetadataConfig(
                     model_id=model_id,
                     input_schema=input_schema,
                     output_schema=output_schema,
                     observations=min(input_rows, output_rows, metadata_rows),
-                    recorded_inferences=UNLABELED_TAG in metadata_names,
+                    input_tensor_name=service_metadata.get(
+                        "input_tensor_name", "input"
+                    ),
+                    output_tensor_name=service_metadata.get(
+                        "output_tensor_name", "output"
+                    ),
+                    recorded_inferences=service_metadata.get(
+                        "recorded_inferences", UNLABELED_TAG in metadata_names
+                    ),
                 )
             )
 
