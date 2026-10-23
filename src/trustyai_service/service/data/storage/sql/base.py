@@ -615,20 +615,25 @@ class SQLStorage(StorageInterface):
     ) -> None:
         """Persist one type per column without replacing other metadata."""
         with self._engine.begin() as conn:
-            metadata = dict(
+            reference = (
                 conn.execute(
-                    select(self._ref.c.metadata)
+                    select(self._ref.c.table_idx, self._ref.c.metadata)
                     .where(self._ref.c.dataset_name == dataset_name)
+                    .order_by(self._ref.c.table_idx)
+                    .limit(1)
                     .with_for_update()
-                ).scalar_one()
+                )
+                .mappings()
+                .one()
             )
+            metadata = dict(reference["metadata"])
             if len(column_types) != len(metadata["column_names"]):
                 msg = "column types must match the dataset column count"
                 raise ValueError(msg)
             metadata["column_types"] = list(column_types)
             conn.execute(
                 update(self._ref)
-                .where(self._ref.c.dataset_name == dataset_name)
+                .where(self._ref.c.table_idx == reference["table_idx"])
                 .values(metadata=metadata)
             )
 
