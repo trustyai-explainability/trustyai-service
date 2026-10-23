@@ -7,21 +7,20 @@ import logging
 import math
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-from .errors import MigrationPreflightError, MigrationValidationError
+from .errors import MigrationPreflightError, MigrationValidationError, error_detail
 
 if TYPE_CHECKING:
-    from trustyai_service.service.data.storage.storage_interface import StorageInterface
-
     from .contracts import (
         DatasetDescriptor,
         MigrationSource,
         MigrationTarget,
         PartialPayloadRecord,
         SourceManifest,
+        VerificationStorage,
     )
 
 logger = logging.getLogger(__name__)
@@ -44,6 +43,8 @@ class MigrationConfig:
 
     batch_size: int = 10_000
     require_quiescent_source: bool = True
+    # Kept for API compatibility. Incomplete runs replay whole datasets;
+    # completed runs are immutable regardless of this flag.
     resume: bool = True
     verify_checksums: bool = True
     dry_run: bool = False
@@ -141,6 +142,11 @@ class MigrationRunner:
     async def run(self) -> MigrationResult:
         """Run or resume a migration and verify it before reporting completion."""
         manifest = await self.preflight()
+        logger.info(
+            "Migration preflight: %d datasets, %d rows",
+            len(manifest.datasets),
+            manifest.total_rows,
+        )
         result = MigrationResult(
             status=MigrationStatus.IN_PROGRESS,
             total_files=manifest.total_files,
@@ -152,38 +158,40 @@ class MigrationRunner:
             result.status = MigrationStatus.DRY_RUN
             return result
 
+        # A completed cutover no longer owns the destination: the service may
+        # have ingested or edited data since then. Never turn a failed audit
+        # into permission to clear it, including on a later retry.
+        if self._previous_run_complete:
+            verification = await self.verify(manifest=manifest)
+            if not verification.ok:
+                msg = (
+                    "completed migration target has diverged; refusing destructive "
+                    "replay: " + "; ".join(verification.errors)
+                )
+                raise MigrationPreflightError(msg)
+            result.status = MigrationStatus.COMPLETE
+            result.safe_to_remove_source = True
+            return result
+
         if self._migration_id is None:
             msg = "migration id was not initialized during preflight"
             raise MigrationPreflightError(msg)
-        await self.target.save_migration_run(
-            {
-                "migration_id": self._migration_id,
-                "source_type": manifest.source_type,
-                "source_identity": manifest.digest,
-                "status": MigrationStatus.IN_PROGRESS.value,
-                "total_files": manifest.total_files,
-                "total_datasets": len(manifest.datasets),
-                "total_rows": manifest.total_rows,
-                "error_message": None,
-            }
-        )
+        if not await self._save_run(manifest, result):
+            return result
 
         for descriptor in manifest.datasets:
             await self._migrate_dataset(descriptor, result)
 
-        for payload in manifest.partial_payloads:
-            try:
-                await self.target.persist_partial(payload)
-            except Exception as error:  # noqa: BLE001 -- isolate one payload failure
-                result.failed_datasets.append(
-                    DatasetMigrationResult(
-                        name=self._partial_name(payload),
-                        status=MigrationStatus.FAILED,
-                        error=str(error),
-                    )
-                )
+        await self._migrate_partials(manifest, result)
 
-        verification = await self.verify(manifest=manifest)
+        try:
+            verification = await self.verify(manifest=manifest)
+        except Exception as error:  # noqa: BLE001 -- source/connection failure must produce a failed result
+            logger.error("Migration verification failed (%s)", type(error).__name__)  # noqa: TRY400 -- tracebacks may expose SQL parameters
+            verification = VerificationResult(
+                ok=False,
+                errors=(f"verification could not finish ({type(error).__name__})",),
+            )
         if result.failed_datasets or not verification.ok:
             result.status = (
                 MigrationStatus.PARTIAL
@@ -196,19 +204,58 @@ class MigrationRunner:
         else:
             result.status = MigrationStatus.COMPLETE
             result.safe_to_remove_source = True
-        await self.target.save_migration_run(
-            {
-                "migration_id": self._migration_id,
-                "source_type": manifest.source_type,
-                "source_identity": manifest.digest,
-                "status": result.status.value,
-                "total_files": manifest.total_files,
-                "total_datasets": len(manifest.datasets),
-                "total_rows": manifest.total_rows,
-                "error_message": result.error,
-            }
+        await self._save_run(manifest, result)
+        logger.info(
+            "Migration finished: %s; %d rows written",
+            result.status.value,
+            result.rows_written,
         )
         return result
+
+    async def _migrate_partials(
+        self, manifest: SourceManifest, result: MigrationResult
+    ) -> None:
+        """Transfer in-flight payloads while retaining individual failures."""
+        for payload in manifest.partial_payloads:
+            try:
+                await self.target.persist_partial(payload)
+            except Exception as error:  # noqa: BLE001 -- isolate one payload failure
+                logger.error(  # noqa: TRY400 -- tracebacks may expose SQL parameters
+                    "Partial payload transfer failed (%s)", type(error).__name__
+                )
+                result.failed_datasets.append(
+                    DatasetMigrationResult(
+                        name=self._partial_name(payload),
+                        status=MigrationStatus.FAILED,
+                        error=error_detail(error),
+                    )
+                )
+
+    async def _save_run(
+        self, manifest: SourceManifest, result: MigrationResult
+    ) -> bool:
+        """Fail closed if durable bookkeeping cannot record the outcome."""
+        try:
+            await self.target.save_migration_run(
+                {
+                    "migration_id": self._migration_id,
+                    "source_type": manifest.source_type,
+                    "source_identity": manifest.digest,
+                    "status": result.status.value,
+                    "total_files": manifest.total_files,
+                    "total_datasets": len(manifest.datasets),
+                    "total_rows": manifest.total_rows,
+                    "error_message": result.error,
+                }
+            )
+        except Exception as error:  # noqa: BLE001 -- a DB outage must not hide the result
+            logger.error("Migration run checkpoint failed (%s)", type(error).__name__)  # noqa: TRY400 -- tracebacks may expose SQL parameters
+            result.status = MigrationStatus.FAILED
+            result.safe_to_remove_source = False
+            detail = f"run checkpoint could not be saved ({type(error).__name__})"
+            result.error = f"{result.error}; {detail}" if result.error else detail
+            return False
+        return True
 
     async def verify(
         self, *, manifest: SourceManifest | None = None
@@ -254,7 +301,7 @@ class MigrationRunner:
                 )
             except Exception as error:  # noqa: BLE001 -- report per-payload errors
                 errors.append(
-                    f"partial verification failed for {payload.payload_id}: {error}"
+                    f"partial verification failed for {payload.payload_id}: {error_detail(error)}"
                 )
                 continue
             if actual_payload is None:
@@ -273,7 +320,7 @@ class MigrationRunner:
         )
 
     async def _verify_dataset(  # noqa: C901, PLR0911 -- each validation stage has a precise outcome
-        self, descriptor: DatasetDescriptor, storage: StorageInterface
+        self, descriptor: DatasetDescriptor, storage: VerificationStorage
     ) -> tuple[int, int, int, list[str]]:
         """Verify one dataset and return aggregate counters and errors."""
         try:
@@ -286,20 +333,12 @@ class MigrationRunner:
             if actual_aliases != list(descriptor.aliases):
                 return 0, 0, 0, [f"alias mismatch: {descriptor.name}"]
             actual_types = await storage.get_column_types(descriptor.name)
-            if actual_types is not None and actual_types != list(
-                descriptor.column_types
-            ):
+            if actual_types != list(descriptor.column_types):
                 return 0, 0, 0, [f"type mismatch: {descriptor.name}"]
             if descriptor.service_metadata:
-                get_service_metadata = getattr(storage, "get_service_metadata", None)
-                if not callable(get_service_metadata):
-                    return (
-                        0,
-                        0,
-                        0,
-                        [f"target cannot verify service metadata: {descriptor.name}"],
-                    )
-                actual_service_metadata = await get_service_metadata(descriptor.name)
+                actual_service_metadata = await storage.get_service_metadata(
+                    descriptor.name
+                )
                 if actual_service_metadata != descriptor.service_metadata:
                     return 0, 0, 0, [f"service metadata mismatch: {descriptor.name}"]
             count = await storage.dataset_rows(descriptor.name)
@@ -333,7 +372,12 @@ class MigrationRunner:
                         [f"row mismatch: {descriptor.name} at {start}"],
                     )
         except Exception as error:  # noqa: BLE001 -- verification reports per-dataset errors
-            return 0, 0, 0, [f"verification failed for {descriptor.name}: {error}"]
+            return (
+                0,
+                0,
+                0,
+                [f"verification failed for {descriptor.name}: {error_detail(error)}"],
+            )
         else:
             return 1, rows_compared, count, []
 
@@ -348,10 +392,11 @@ class MigrationRunner:
                     start,
                     min(self.config.batch_size, descriptor.row_count - start),
                 )
+                self._validate_batch(descriptor, rows, start)
                 result.rows_read += len(rows)
                 result.max_batch_rows = max(result.max_batch_rows, len(rows))
 
-    async def _migrate_dataset(  # noqa: C901 -- transfer, checkpoint, and rollback are one transaction boundary
+    async def _migrate_dataset(
         self, descriptor: DatasetDescriptor, result: MigrationResult
     ) -> None:
         """Transfer one dataset and isolate its failure."""
@@ -361,22 +406,15 @@ class MigrationRunner:
         rows_written = 0
         target_present = False
         try:
-            state = await self.target.get_migration_dataset_state(
-                self._migration_id,
-                descriptor.name,
-            )
             had_target = await self._target_storage().dataset_exists(descriptor.name)
             await self.target.ensure_dataset(descriptor)
             target_present = True
-            if await self._state_is_complete(state, descriptor):
-                result.datasets_written += 1
-                return
 
             # Dataset checkpoints are written only after the complete dataset is
             # durable. Any incomplete or stale target rows must therefore be
             # removed before retrying, otherwise write_data would append them.
             # A freshly-created dataset is already empty. If a retry found an
-            # existing dataset, delete and recreate it so writes start at row 0.
+            # existing dataset, clear its rows so writes start at row 0.
             if had_target:
                 await self.target.rollback_dataset(descriptor.name)
                 await self.target.ensure_dataset(descriptor)
@@ -387,12 +425,7 @@ class MigrationRunner:
                     start,
                     min(self.config.batch_size, descriptor.row_count - start),
                 )
-                if len(rows) == 0:
-                    msg = f"source returned no rows for {descriptor.name} at {start}"
-                    raise MigrationValidationError(msg)  # noqa: TRY301
-                if len(rows) > self.config.batch_size:
-                    msg = f"source exceeded batch size for {descriptor.name}"
-                    raise MigrationValidationError(msg)  # noqa: TRY301
+                self._validate_batch(descriptor, rows, start)
                 result.rows_read += len(rows)
                 result.max_batch_rows = max(result.max_batch_rows, len(rows))
                 await self.target.write_batch(descriptor, rows)
@@ -409,69 +442,71 @@ class MigrationRunner:
                 }
             )
             result.datasets_written += 1
+            logger.info(
+                "Dataset transfer complete: %s; %d rows", descriptor.name, rows_written
+            )
         except Exception as error:  # noqa: BLE001 -- isolate one dataset failure
+            logger.error(  # noqa: TRY400 -- tracebacks may expose SQL parameters
+                "Dataset transfer failed: %s (%s)",
+                descriptor.name,
+                type(error).__name__,
+            )
             if target_present:
                 try:
                     await self.target.rollback_dataset(descriptor.name)
                 except Exception as rollback_error:  # noqa: BLE001 -- preserve failure context
-                    error = RuntimeError(f"{error}; rollback failed: {rollback_error}")
+                    error = RuntimeError(
+                        f"{error_detail(error)}; rollback failed: {error_detail(rollback_error)}"
+                    )
                 else:
                     result.rows_written -= rows_written
-            await self.target.save_migration_dataset_state(
-                {
-                    "migration_id": self._migration_id,
-                    "dataset_name": descriptor.name,
-                    "source_identity": self._manifest.digest if self._manifest else "",
-                    "status": MigrationStatus.FAILED.value,
-                    "rows_written": 0,
-                    "error_message": str(error),
-                }
-            )
+            try:
+                await self.target.save_migration_dataset_state(
+                    {
+                        "migration_id": self._migration_id,
+                        "dataset_name": descriptor.name,
+                        "source_identity": self._manifest.digest
+                        if self._manifest
+                        else "",
+                        "status": MigrationStatus.FAILED.value,
+                        "rows_written": 0,
+                        "error_message": error_detail(error),
+                    }
+                )
+            except Exception as checkpoint_error:  # noqa: BLE001 -- preserve the original transfer failure
+                logger.error(  # noqa: TRY400 -- tracebacks may expose SQL parameters
+                    "Dataset failure checkpoint failed: %s (%s)",
+                    descriptor.name,
+                    type(checkpoint_error).__name__,
+                )
+                error = RuntimeError(
+                    f"{error_detail(error)}; failure checkpoint could not be saved ({type(checkpoint_error).__name__})"
+                )
             result.failed_datasets.append(
                 DatasetMigrationResult(
                     name=descriptor.name,
                     status=MigrationStatus.FAILED,
                     rows_written=0,
-                    error=str(error),
+                    error=error_detail(error),
                 )
             )
 
-    async def _state_is_complete(
-        self,
-        state: dict[str, Any] | None,
-        descriptor: DatasetDescriptor,
-    ) -> bool:
-        """Trust a checkpoint only when target rows still match it."""
-        if not self.config.resume or state is None:
-            return False
-        if not self._previous_run_complete:
-            return False
-        if state.get("status") != MigrationStatus.COMPLETE.value:
-            return False
-        if state.get("source_identity") != self._manifest.digest:
-            return False
-        try:
-            return (
-                await self._target_storage().dataset_rows(descriptor.name)
-                == descriptor.row_count
-            )
-        except Exception:  # noqa: BLE001 -- missing target data means retry
-            return False
+    def _validate_batch(
+        self, descriptor: DatasetDescriptor, rows: np.ndarray, start: int
+    ) -> None:
+        """Require every source batch to satisfy its advertised row range."""
+        expected = min(self.config.batch_size, descriptor.row_count - start)
+        if len(rows) != expected:
+            msg = f"source returned {len(rows)} rows for {descriptor.name} at {start}; expected {expected}"
+            raise MigrationValidationError(msg)
 
-    def _target_storage(self) -> StorageInterface:
+    def _target_storage(self) -> VerificationStorage:
         """Get the storage view used for verification and checkpoints."""
-        storage = getattr(self.target, "storage", None)
-        if storage is None:
-            msg = "migration target has no storage view"
-            raise MigrationPreflightError(msg)
-        return cast("StorageInterface", storage)
+        return self.target.storage
 
     async def _target_datasets(self) -> list[str]:
         """List destination data separately from migration checkpoint tables."""
-        method = getattr(self.target, "list_target_datasets", None)
-        if callable(method):
-            return await method()
-        return await self._target_storage().list_all_datasets()
+        return await self.target.list_target_datasets()
 
     @staticmethod
     def _validate_manifest(manifest: SourceManifest) -> None:
@@ -569,10 +604,21 @@ def _rows_equal(expected: np.ndarray, actual: np.ndarray) -> bool:
     return _values_equal(expected_rows, actual_rows)
 
 
-def _values_equal(expected: object, actual: object) -> bool:
+def _values_equal(expected: object, actual: object) -> bool:  # noqa: PLR0911 -- distinct recursive value kinds
     """Recursively compare values that may contain NumPy objects."""
     if isinstance(expected, np.ndarray) or isinstance(actual, np.ndarray):
-        return np.array_equal(expected, actual)
+        if (
+            isinstance(expected, np.ndarray)
+            and isinstance(actual, np.ndarray)
+            and expected.shape != actual.shape
+        ):
+            return False
+        # equal_nan=True does not support mixed object/string arrays. Normalize
+        # arrays recursively so nested tensors use the same scalar NaN policy.
+        return _values_equal(
+            expected.tolist() if isinstance(expected, np.ndarray) else expected,
+            actual.tolist() if isinstance(actual, np.ndarray) else actual,
+        )
     if isinstance(expected, dict) and isinstance(actual, dict):
         return expected.keys() == actual.keys() and all(
             _values_equal(expected[key], actual[key]) for key in expected
@@ -582,7 +628,9 @@ def _values_equal(expected: object, actual: object) -> bool:
             _values_equal(left, right)
             for left, right in zip(expected, actual, strict=True)
         )
-    if isinstance(expected, float) and isinstance(actual, float):
+    if isinstance(expected, (float, np.floating)) and isinstance(
+        actual, (float, np.floating)
+    ):
         # JSON round-trips NaN faithfully, but NaN != NaN under plain equality.
         return bool(expected == actual) or (math.isnan(expected) and math.isnan(actual))
     try:

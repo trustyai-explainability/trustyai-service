@@ -15,7 +15,6 @@ dependencies = [
     "pydantic>=2.13,<3",
     "hypercorn>=0.18,<0.19",
     "protobuf>=7,<8",        # Security: Resolves CVE-2026-0994 (HIGH - Buffer overflow)
-    "sqlalchemy[asyncio]>=2.0,<3",
     "h5py>=3.13,<4",
     "isodate>=0.7,<0.8",
 ]
@@ -41,6 +40,7 @@ test = [
     "pytest-xdist[psutil]>=3.8.0",
     "hypothesis>=6.151.12",
     "aiosqlite>=0.21,<1",
+    "sqlalchemy[asyncio]>=2.0,<3",
     "aif360>=0.6.1",
 ]
 

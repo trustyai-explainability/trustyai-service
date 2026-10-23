@@ -1820,7 +1820,6 @@ dependencies = [
     { name = "pydantic" },
     { name = "scikit-learn" },
     { name = "scipy" },
-    { name = "sqlalchemy", extra = ["asyncio"] },
 ]
 
 [package.optional-dependencies]
@@ -1863,6 +1862,7 @@ test = [
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "pytest-xdist", extra = ["psutil"] },
+    { name = "sqlalchemy", extra = ["asyncio"] },
 ]
 types = [
     { name = "h5py-stubs" },
@@ -1895,7 +1895,6 @@ requires-dist = [
     { name = "sqlalchemy", marker = "extra == 'mariadb'", specifier = ">=2.0,<3" },
     { name = "sqlalchemy", marker = "extra == 'postgres'", specifier = ">=2.0,<3" },
     { name = "sqlalchemy", marker = "extra == 'sqlite'", specifier = ">=2.0,<3" },
-    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0,<3" },
     { name = "sqlalchemy", extras = ["asyncio"], marker = "extra == 'migration'", specifier = ">=2.0,<3" },
 ]
 provides-extras = ["mariadb", "migration", "mmd", "postgres", "sqlite"]
@@ -1916,6 +1915,7 @@ test = [
     { name = "pytest-asyncio", specifier = ">=1.3.0" },
     { name = "pytest-cov", specifier = ">=7.1.0" },
     { name = "pytest-xdist", extras = ["psutil"], specifier = ">=3.8.0" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0,<3" },
 ]
 types = [
     { name = "h5py-stubs", specifier = ">=0.1.2" },

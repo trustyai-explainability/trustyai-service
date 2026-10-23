@@ -13,6 +13,24 @@ class _FakeDuplicateTable:
 
 
 @pytest.mark.asyncio
+async def test_database_target_rejects_incompatible_collision(
+    migration_api, sqlite_target
+):
+    """A schema collision must leave existing destination rows untouched."""
+    await sqlite_target.storage.write_data("existing", np.array([[7]]), ["original"])
+    descriptor = migration_api.DatasetDescriptor(
+        name="existing",
+        column_names=("different",),
+        aliases=("different",),
+        column_types=("DOUBLE",),
+        row_count=1,
+    )
+    with pytest.raises(ValueError, match="incompatible column names"):
+        await sqlite_target.ensure_dataset(descriptor)
+    assert (await sqlite_target.storage.read_data("existing")).tolist() == [[7]]
+
+
+@pytest.mark.asyncio
 async def test_database_target_preserves_rows_and_column_metadata(
     sqlite_target,
 ) -> None:
@@ -109,23 +127,26 @@ async def test_database_target_reset_is_namespace_scoped(migration_api):
     first = migration_api.DatabaseTarget(engine, migration_namespace="first")
     second = migration_api.DatabaseTarget(engine, migration_namespace="second")
     try:
-        await first.reset_for_test()
-        await second.reset_for_test()
-        await first.checkpoint_storage.write_data(
-            "first_dataset",
-            np.asarray([[1.0]], dtype=np.float64),
-            ["value"],
-        )
-        await second.checkpoint_storage.write_data(
-            "second_dataset",
-            np.asarray([[2.0]], dtype=np.float64),
-            ["value"],
-        )
+        await first.storage.reset_for_test()
+        await first.checkpoint_storage.reset_for_test()
+        await second.checkpoint_storage.reset_for_test()
+        values = {
+            "migration_id": "run",
+            "source_type": "PVC",
+            "source_identity": "digest",
+            "status": "IN_PROGRESS",
+            "total_files": 1,
+            "total_datasets": 1,
+            "total_rows": 2,
+            "error_message": None,
+        }
+        await first.save_migration_run(values)
+        await second.save_migration_run(values)
 
         await first.checkpoint_storage.reset_for_test()
 
-        assert await first.checkpoint_storage.list_all_datasets() == []
-        assert await second.checkpoint_storage.list_all_datasets() == ["second_dataset"]
+        assert await first.get_migration_run("run") is None
+        assert await second.get_migration_run("run") == values
     finally:
         await engine.dispose()
 

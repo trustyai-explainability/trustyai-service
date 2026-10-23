@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import uuid
 import zlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
@@ -13,6 +12,7 @@ import numpy as np
 from sqlalchemy import inspect, text
 
 if TYPE_CHECKING:
+    from sqlalchemy import TextClause
     from sqlalchemy.engine import Connection
     from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
@@ -32,6 +32,7 @@ from .contracts import (
     partial_payload_fingerprint,
 )
 from .errors import MigrationPreflightError, MigrationValidationError
+from .java_values import legacy_value
 
 _CONTENT_HASH_PAGE_SIZE = 1_024
 _MIN_SHAPE_DIMENSIONS = 2
@@ -86,6 +87,7 @@ class MariaDBSource(MigrationSource):
         self._current_specs: dict[str, tuple[int, str]] = {}
         self._current_read_cursors: dict[str, _CurrentReadCursor] = {}
         self._legacy_specs: dict[str, _LegacyDatasetSpec] = {}
+        self._legacy_read_cursors: dict[str, _CurrentReadCursor] = {}
         self._last_manifest: SourceManifest | None = None
 
     async def preflight(self) -> SourceManifest:
@@ -215,6 +217,7 @@ class MariaDBSource(MigrationSource):
                     shape=_shape_from_metadata(metadata, len(names)),
                     serialized=False,
                     source_file=str(table_idx),
+                    service_metadata=_json_object(metadata.get("trustyai_service", {})),
                 )
                 descriptors.append(descriptor)
                 self._current_specs[descriptor.name] = (
@@ -232,6 +235,7 @@ class MariaDBSource(MigrationSource):
     async def _build_legacy_manifest(self) -> SourceManifest:
         """Translate the legacy Java schema into logical datasets."""
         self._legacy_specs.clear()
+        self._legacy_read_cursors.clear()
         model_query = text("SELECT DISTINCT id FROM DataframeMetadata ORDER BY id")
         descriptors: list[DatasetDescriptor] = []
         content_digest = hashlib.sha256()
@@ -378,85 +382,54 @@ class MariaDBSource(MigrationSource):
         self, descriptor: DatasetDescriptor, start_row: int, n_rows: int
     ) -> np.ndarray:
         """Read legacy Java rows and select input/output/metadata values."""
-        try:
-            import javaobj  # noqa: PLC0415 -- legacy decoding is an optional extra
-        except ModuleNotFoundError as error:
-            msg = "legacy MariaDB migration requires the 'javaobj-py3' extra"
-            raise MigrationPreflightError(msg) from error
-
         spec = self._legacy_specs.get(descriptor.name)
         if spec is None:
             msg = f"legacy dataset '{descriptor.name}' was not discovered"
             raise MigrationValidationError(msg)
-        if spec.kind == "metadata":
-            return await self._read_legacy_metadata(spec, start_row, n_rows)
-
-        separator = f",-{uuid.uuid4()}-,"
-        query = text(
-            "SELECT DataframeRow.timestamp, DataframeRow.modelId, "  # noqa: S608 -- separator is an internal UUID
-            "DataframeRow.rowId, DataframeRow.tag, "
-            "GROUP_CONCAT(DataframeRow_Values.serializableObject "
-            f"ORDER BY DataframeRow_Values.order_column SEPARATOR '{separator}') "
-            "FROM DataframeRow "
-            "LEFT JOIN DataframeRow_Values "
-            "ON DataframeRow.dbId = DataframeRow_Values.DataframeRow_dbId "
-            "WHERE DataframeRow.modelId=:model_id "
-            "GROUP BY DataframeRow.dbId "
-            "ORDER BY DataframeRow.dbId "
-            "LIMIT :n_rows OFFSET :start_row"
-        )
         async with self.engine.connect() as connection:
+            cursor = self._legacy_read_cursors.get(descriptor.name)
+            last_id = -1
+            if cursor is not None and cursor.next_start == start_row:
+                last_id = cursor.last_row_idx
+            elif start_row:
+                # Only non-sequential callers require an offset lookup. Normal
+                # transfer and verification walk primary keys linearly.
+                boundary = await connection.execute(
+                    text(
+                        "SELECT dbId FROM DataframeRow WHERE modelId=:model_id "
+                        "ORDER BY dbId LIMIT 1 OFFSET :offset"
+                    ),
+                    {"model_id": spec.model_id, "offset": start_row - 1},
+                )
+                value = boundary.scalar_one_or_none()
+                if value is None:
+                    msg = f"legacy dataset '{descriptor.name}' ended before requested batch"
+                    raise MigrationValidationError(msg)
+                last_id = int(value)
             result = await connection.execute(
-                query,
-                {
-                    "model_id": spec.model_id,
-                    "n_rows": n_rows,
-                    "start_row": start_row,
-                },
+                _legacy_page_query(),
+                {"model_id": spec.model_id, "page_size": n_rows, "last_id": last_id},
             )
-            rows = []
+            grouped: dict[int, tuple[list[object], list[tuple[object, object]]]] = {}
             for row in result:
-                serialized_values = row[4]
-                if serialized_values is None:
-                    values: list[object] = []
-                else:
-                    raw = (
-                        serialized_values
-                        if isinstance(serialized_values, bytes)
-                        else str(serialized_values).encode()
-                    )
-                    try:
-                        values = [
-                            _legacy_value(javaobj.loads(item).object)
-                            for item in raw.split(separator.encode())
-                        ]
-                    except Exception as error:
-                        msg = (
-                            f"unable to decode legacy MariaDB row for '{spec.model_id}'"
-                        )
-                        raise MigrationValidationError(msg) from error
-                rows.append([values[index] for index in spec.selected_indices])
-        return np.asarray(rows, dtype=object)
-
-    async def _read_legacy_metadata(
-        self, spec: _LegacyDatasetSpec, start_row: int, n_rows: int
-    ) -> np.ndarray:
-        """Read the row-level metadata subset of the legacy table."""
-        query = text(
-            "SELECT timestamp, rowId, tag FROM DataframeRow "
-            "WHERE modelId=:model_id ORDER BY dbId "
-            "LIMIT :n_rows OFFSET :start_row"
-        )
-        async with self.engine.connect() as connection:
-            result = await connection.execute(
-                query,
-                {
-                    "model_id": spec.model_id,
-                    "n_rows": n_rows,
-                    "start_row": start_row,
-                },
+                metadata, cells = grouped.setdefault(
+                    int(row[0]), ([row[1], row[3], row[4]], [])
+                )
+                cells.append((row[5], row[6]))
+        rows = np.empty((len(grouped), len(descriptor.column_names)), dtype=object)
+        for index, (row_id, (metadata, cells)) in enumerate(grouped.items()):
+            if spec.kind == "metadata":
+                values = metadata
+            else:
+                values = _decode_legacy_cells(cells, spec, row_id)
+                values = [values[column] for column in spec.selected_indices]
+            for column, value in enumerate(values):
+                rows[index, column] = value
+        if grouped:
+            self._legacy_read_cursors[descriptor.name] = _CurrentReadCursor(
+                start_row + len(grouped), next(reversed(grouped))
             )
-            return np.asarray([list(row) for row in result], dtype=object)
+        return rows
 
     async def _read_current_rows(
         self, descriptor: DatasetDescriptor, start_row: int, n_rows: int
@@ -598,6 +571,7 @@ class MariaDBSource(MigrationSource):
                     "types": descriptor.column_types,
                     "shape": descriptor.shape,
                     "rows": descriptor.row_count,
+                    "service_metadata": descriptor.service_metadata,
                 }
                 for descriptor in descriptors
             ],
@@ -652,26 +626,15 @@ class MariaDBSource(MigrationSource):
         digest: _Digest,
     ) -> None:
         """Hash legacy row metadata and serialized values in bounded pages."""
-        query = text(
-            "SELECT DataframeRow.dbId, DataframeRow.timestamp, "
-            "DataframeRow.modelId, DataframeRow.rowId, DataframeRow.tag, "
-            "DataframeRow_Values.order_column, "
-            "DataframeRow_Values.serializableObject "
-            "FROM DataframeRow "
-            "LEFT JOIN DataframeRow_Values "
-            "ON DataframeRow.dbId = DataframeRow_Values.DataframeRow_dbId "
-            "WHERE DataframeRow.modelId=:model_id "
-            "ORDER BY DataframeRow.dbId, DataframeRow_Values.order_column "
-            "LIMIT :page_size OFFSET :offset"
-        )
-        offset = 0
+        query = _legacy_page_query()
+        last_id = -1
         while True:
             result = await connection.execute(
                 query,
                 {
                     "model_id": model_id,
                     "page_size": _CONTENT_HASH_PAGE_SIZE,
-                    "offset": offset,
+                    "last_id": last_id,
                 },
             )
             rows = result.fetchall()
@@ -679,7 +642,7 @@ class MariaDBSource(MigrationSource):
                 return
             for row in rows:
                 _hash_values(digest, "legacy", model_id, *row)
-            offset += len(rows)
+            last_id = int(rows[-1][0])
 
 
 def inspect_table_names(connection: Connection) -> list[str]:
@@ -753,9 +716,45 @@ def _is_input_flag(value: object) -> bool:
     return value in (True, 1, b"\x01", "1", "true", "True")
 
 
-def _legacy_value(value: object) -> object:
-    """Unwrap javaobj primitive wrappers while preserving rich values."""
-    return value.value if hasattr(value, "value") else value
+def _legacy_page_query() -> TextClause:
+    """Page whole logical rows before joining cells, never aggregate binary data."""
+    return text(
+        "SELECT r.dbId, r.timestamp, r.modelId, r.rowId, r.tag, "
+        "v.order_column, v.serializableObject "
+        "FROM (SELECT dbId, timestamp, modelId, rowId, tag FROM DataframeRow "
+        "WHERE modelId=:model_id AND dbId > :last_id "
+        "ORDER BY dbId LIMIT :page_size) r "
+        "LEFT JOIN DataframeRow_Values v ON r.dbId=v.DataframeRow_dbId "
+        "ORDER BY r.dbId, v.order_column"
+    )
+
+
+def _decode_legacy_cells(
+    cells: list[tuple[object, object]], spec: _LegacyDatasetSpec, row_id: int
+) -> list[object]:
+    """Validate physical column order and decode each legacy value separately."""
+    try:
+        import javaobj  # noqa: PLC0415 -- legacy decoding is optional
+    except ModuleNotFoundError as error:
+        msg = "legacy MariaDB migration requires the 'migration' extra"
+        raise MigrationPreflightError(msg) from error
+    context = f"legacy MariaDB model '{spec.model_id}', row {row_id}"
+    if len(cells) != len(spec.raw_columns) or [cell[0] for cell in cells] != list(
+        range(len(spec.raw_columns))
+    ):
+        msg = f"{context}: incorrect column count or order"
+        raise MigrationValidationError(msg)
+    values = []
+    for column, raw in cells:
+        try:
+            if not isinstance(raw, (bytes, bytearray, memoryview)):
+                msg = "serialized value is not binary"
+                raise MigrationValidationError(msg)  # noqa: TRY301
+            values.append(legacy_value(javaobj.loads(bytes(raw))))
+        except Exception as error:
+            msg = f"{context}, column {column}: invalid or unsupported serialized value"
+            raise MigrationValidationError(msg) from error
+    return values
 
 
 def _decompress_json(value: object) -> str:

@@ -5,16 +5,24 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import os
 import ssl
 import sys
 from dataclasses import asdict
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import unquote
 
 from sqlalchemy.engine import URL, make_url
+from sqlalchemy.exc import SQLAlchemyError
 
-from .errors import MigrationError
+from trustyai_service.service.data.storage import (
+    _insecure_tls_allowed,
+    _resolve_tls_ca,
+)
+
+from .errors import MigrationError, error_detail
 from .mariadb import MariaDBSource
 from .pvc import PVCSource
 from .pvc_csv import PVCCSVSource
@@ -22,8 +30,7 @@ from .runner import MigrationConfig, MigrationResult, MigrationRunner, Migration
 from .target import DatabaseTarget
 
 _MAX_NAMESPACE_LENGTH = 255
-_DEFAULT_TLS_CA_CERT = "/etc/tls/db/ca.crt"
-_TRUTHY = {"1", "true", "yes", "on"}
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -172,15 +179,17 @@ def _connect_args(drivername: str) -> dict[str, object]:
 
 def _tls_connect_args(drivername: str) -> dict[str, object]:
     """Build verified TLS arguments from the mounted CA contract."""
-    ca_path = os.environ.get("DATABASE_TLS_CA_CERT", _DEFAULT_TLS_CA_CERT)
+    if drivername.startswith("sqlite"):
+        return {}
+    ca_path, usable_ca = _resolve_tls_ca()
     ca_configured = "DATABASE_TLS_CA_CERT" in os.environ
-    allow_insecure = (
-        os.environ.get("DATABASE_ALLOW_INSECURE_TLS", "").lower() in _TRUTHY
-    )
-    if not ca_path or not Path(ca_path).is_file():
-        if ca_configured and not allow_insecure:
+    if usable_ca is None:
+        if ca_configured or not _insecure_tls_allowed():
             message = f"database TLS requires a usable CA certificate at '{ca_path}'"
             raise ValueError(message)
+        logger.warning(
+            "Database CA is unavailable; migration connection has no configured CA verification. Mount a CA or set DATABASE_ALLOW_INSECURE_TLS=false to require one."
+        )
         return {}
     if drivername.startswith("postgresql+asyncpg"):
         return {"ssl": ssl.create_default_context(cafile=ca_path)}
@@ -192,7 +201,24 @@ def _tls_connect_args(drivername: str) -> dict[str, object]:
                 "verify_mode": ssl.CERT_REQUIRED,
             }
         }
-    return {}
+    message = f"migration TLS configuration does not support driver '{drivername}'"
+    raise ValueError(message)
+
+
+def _validate_target_url(url: str, *, dry_run: bool) -> None:
+    """Do not advertise transient SQLite data as a durable migration result."""
+    parsed = make_url(url)
+    if dry_run or parsed.get_backend_name() != "sqlite":
+        return
+    database = unquote(parsed.database or "")
+    if (
+        database in {"", ":memory:", "file:"}
+        or database.startswith("file::memory:")
+        or "memory" in parsed.normalized_query.get("mode", ())
+        or "memdb" in parsed.normalized_query.get("vfs", ())
+    ):
+        msg = "migration target must be a persistent SQLite file, not an in-memory database"
+        raise ValueError(msg)
 
 
 def _postgres_connect_args() -> dict[str, object]:
@@ -318,7 +344,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--no-resume",
         action="store_true",
-        help="Do not reuse completed dataset checkpoints.",
+        help=(
+            "Compatibility flag: incomplete runs replay whole datasets; "
+            "completed migrations are always audit-only."
+        ),
     )
     parser.add_argument(
         "--no-checksums",
@@ -335,7 +364,7 @@ def _default_data_file(source: str, configured: str | None) -> str:
     return "data.csv" if source == "pvc-csv" else "trustyai.hdf5"
 
 
-def parse_args(arguments: Sequence[str] | None = None) -> argparse.Namespace:
+def parse_args(arguments: Sequence[str] | None = None) -> argparse.Namespace:  # noqa: C901 -- boundary validations report precise CLI errors
     """Parse and validate command-line arguments."""
     parser = build_parser()
     args = parser.parse_args(arguments)
@@ -369,6 +398,10 @@ def parse_args(arguments: Sequence[str] | None = None) -> argparse.Namespace:
         parser.error("--data-file must be a non-empty file name")
     if args.source == "mariadb" and not args.source_url:
         parser.error("--source-url is required for --source mariadb")
+    try:
+        _validate_target_url(args.target_url, dry_run=args.dry_run)
+    except ValueError as error:
+        parser.error(str(error))
     return args
 
 
@@ -376,6 +409,7 @@ async def run_from_args(args: argparse.Namespace) -> MigrationResult:
     """Run one migration described by parsed CLI arguments."""
     from sqlalchemy.ext.asyncio import create_async_engine  # noqa: PLC0415
 
+    _validate_target_url(args.target_url, dry_run=args.dry_run)
     source_engine: AsyncEngine | None = None
     target_engine = create_async_engine(
         args.target_url,
@@ -428,17 +462,26 @@ async def run_from_args(args: argparse.Namespace) -> MigrationResult:
 def main(arguments: Sequence[str] | None = None) -> int:
     """Run the migration CLI and return a process exit code."""
     args = parse_args(arguments)
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     try:
         result = asyncio.run(run_from_args(args))
-    except (MigrationError, ValueError) as error:
-        sys.stderr.write(f"migration failed: {error}\n")
-        return 2
+    except (MigrationError, ValueError, OSError, SQLAlchemyError) as error:
+        # Driver exceptions can contain credentials, SQL and bound inference
+        # values. Report their class, not their potentially sensitive payload.
+        detail = error_detail(error)
+        sys.stderr.write(f"migration failed: {detail}\n")
+        result = MigrationResult(status=MigrationStatus.FAILED, error=detail)
+        exit_code = 2
+    else:
+        exit_code = (
+            0
+            if result.status in {MigrationStatus.COMPLETE, MigrationStatus.DRY_RUN}
+            else 1
+        )
     sys.stdout.write(
         json.dumps(asdict(result), default=_json_default, sort_keys=True) + "\n"
     )
-    return (
-        0 if result.status in {MigrationStatus.COMPLETE, MigrationStatus.DRY_RUN} else 1
-    )
+    return exit_code
 
 
 def _json_default(value: object) -> object:

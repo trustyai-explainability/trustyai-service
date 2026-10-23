@@ -1,4 +1,4 @@
-"""Compatibility tests for the PR 334 database storage contract."""
+"""Compatibility tests for the canonical v2 SQL storage contract."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ def _descriptor(
     shape: tuple[int, ...] = (2,),
     rows: int = 0,
 ) -> DatasetDescriptor:
-    """Build a descriptor with the physical shape used by PR 334."""
+    """Build a descriptor with the canonical SQL storage shape."""
     return DatasetDescriptor(
         name=name,
         column_names=("left", "right")[: shape[0]],
@@ -36,8 +36,8 @@ def _descriptor(
 
 
 @pytest.mark.asyncio
-async def test_database_target_writes_pr334_canonical_schema(sqlite_target) -> None:
-    """The target must be readable by PR 334's SQLStorage implementation."""
+async def test_database_target_writes_canonical_v2_schema(sqlite_target) -> None:
+    """The target must be readable by the service's SQLStorage implementation."""
     from sqlalchemy import inspect, select, text
 
     target = sqlite_target
@@ -154,7 +154,7 @@ async def test_database_target_repairs_missing_existing_dataset_table(
 
 
 @pytest.mark.asyncio
-async def test_database_target_uses_pr334_partial_payload_columns(
+async def test_database_target_uses_canonical_partial_payload_columns(
     sqlite_target, partial_payload
 ) -> None:
     """Partial payloads must use the schema consumed by SQLStorage."""

@@ -132,7 +132,14 @@ class PVCSource(MigrationSource):
         """Return only files owned by PVCStorage's one-file-per-dataset layout."""
         suffix = f"_{self.data_file}"
         paths = []
-        for path in self.directory.glob(f"*{suffix}"):
+        for path in self.directory.iterdir():
+            if not path.name.endswith(suffix):
+                if path.suffix.lower() in {".hdf5", ".h5", ".csv"} or (
+                    not path.is_symlink() and path.is_file() and h5py.is_hdf5(path)
+                ):
+                    msg = f"unselected storage file '{path.name}'; isolate the complete source snapshot or correct --data-file"
+                    raise MigrationValidationError(msg)
+                continue
             if path.parent != self.directory:
                 msg = f"PVC file is outside the source directory: {path.name}"
                 raise MigrationValidationError(msg)
@@ -256,7 +263,11 @@ class PVCSource(MigrationSource):
         if descriptor.serialized:
             if len(raw) == 0:
                 return np.empty((0, len(descriptor.column_names)), dtype=object)
-            return deserialize_rows(raw)
+            try:
+                return deserialize_rows(raw)
+            except ValueError as error:
+                msg = f"unable to decode PVC dataset '{descriptor.name}' at row {start_row}"
+                raise MigrationValidationError(msg) from error
         return np.asarray(raw)
 
     def _read_partial_file(

@@ -1,8 +1,7 @@
 """Fixtures shared by storage migration contract and integration tests.
 
-The migration implementation is intentionally not imported at collection time.
-This keeps the suite readable on the pre-migration branch and produces one
-explicit failure when the implementation has not yet been added.
+Optional migration adapters are loaded lazily so dependency errors remain
+localized to migration tests.
 
 The public API specified by these tests is:
 
@@ -223,6 +222,37 @@ def target_storage(target: Any) -> Any:
     return getattr(target, "storage", target)
 
 
+async def reset_target(target):
+    """Reset only an explicitly isolated test database and its checkpoints."""
+    await target.storage.reset_for_test()
+    await target.checkpoint_storage.reset_for_test()
+
+
+def create_test_target(api, engine, *, fail_after_batches=None, **kwargs):
+    """Keep fault injection and destructive test setup out of production APIs."""
+
+    class InstrumentedTarget(api.DatabaseTarget):
+        def __init__(self):
+            super().__init__(engine, **kwargs)
+            self.remaining = fail_after_batches
+
+        async def write_batch(self, dataset, rows):
+            if self.remaining is not None:
+                if self.remaining == 0:
+                    msg = "injected target batch failure"
+                    raise api.MigrationWriteError(msg)
+                self.remaining -= 1
+            await super().write_batch(dataset, rows)
+
+        async def reset_for_test(self):
+            await reset_target(self)
+
+        def clear_failure(self):
+            self.remaining = None
+
+    return InstrumentedTarget()
+
+
 async def assert_dataset_matches(target: Any, expected: ExpectedDataset) -> None:
     """Verify data and metadata through the storage contract only."""
     storage = target_storage(target)
@@ -289,7 +319,8 @@ async def target_factory(migration_api):
             else "TRUSTYAI_MIGRATION_TEST_POSTGRES_URL"
         )
         engine = create_async_engine(url)
-        target = migration_api.DatabaseTarget(
+        target = create_test_target(
+            migration_api,
             engine,
             migration_namespace=f"test_{uuid.uuid4().hex}",
         )
@@ -312,7 +343,8 @@ async def sqlite_target(migration_api):
     from sqlalchemy.ext.asyncio import create_async_engine
 
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    target = migration_api.DatabaseTarget(
+    target = create_test_target(
+        migration_api,
         engine,
         migration_namespace="sqlite_unit",
     )
@@ -338,7 +370,8 @@ async def failing_target_factory(migration_api):
             else "TRUSTYAI_MIGRATION_TEST_POSTGRES_URL"
         )
         engine = create_async_engine(url)
-        target = migration_api.DatabaseTarget(
+        target = create_test_target(
+            migration_api,
             engine,
             migration_namespace=f"failure_{kind}_{uuid.uuid4().hex}",
             fail_after_batches=fail_after_batches,

@@ -246,11 +246,22 @@ async def test_require_existing_dataset_accepts_keyword_name() -> None:
 
 
 @pytest.mark.asyncio
-async def test_column_type_defaults_are_noops() -> None:
-    """set/get_column_types keep the interface defaults (no-op / None)."""
+async def test_column_types_survive_mapping_and_append() -> None:
+    """SQL type metadata remains available as the service updates the dataset."""
     storage = SQLiteStorage(":memory:")
-    await storage.set_column_types("ds", ["int", "float"])  # must not raise
-    assert await storage.get_column_types("ds") is None
+    try:
+        await storage.write_data("ds", np.asarray([[1, 2]]), ["a", "b"])
+        assert await storage.get_column_types("ds") is None
+        await storage.set_column_types("ds", ["INT32", "DOUBLE"])
+        await storage.apply_name_mapping("ds", {"a": "A"})
+        await storage.write_data("ds", np.asarray([[3, 4]]), ["a", "b"])
+        assert await storage.get_column_types("ds") == ["INT32", "DOUBLE"]
+        assert await storage.get_aliased_column_names("ds") == ["A", "b"]
+        with pytest.raises(ValueError, match="column"):
+            await storage.set_column_types("ds", ["STRING"])
+        assert await storage.get_column_types("ds") == ["INT32", "DOUBLE"]
+    finally:
+        storage._engine.dispose()
 
 
 @pytest.mark.asyncio

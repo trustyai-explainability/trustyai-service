@@ -6,6 +6,17 @@ import pytest
 
 
 @pytest.mark.asyncio
+async def test_pvc_source_rejects_unselected_storage_files(migration_api, pvc_fixture):
+    """A historical filename must not be silently omitted from a cutover."""
+    (pvc_fixture.directory / "other_old.hdf5").write_bytes(b"unselected")
+    source = migration_api.PVCSource(pvc_fixture.directory, quiesced=True)
+    with pytest.raises(
+        migration_api.MigrationValidationError, match="unselected storage"
+    ):
+        await source.preflight()
+
+
+@pytest.mark.asyncio
 async def test_pvc_source_builds_manifest_and_reads_logical_batches(
     migration_api, pvc_fixture
 ) -> None:

@@ -167,6 +167,43 @@ from row zero, including datasets that completed during the earlier attempt.
 It does not continue from the last successful batch. Keep the same source
 snapshot and target, and allow enough time and capacity for a full replay.
 
+A completed migration is audit-only on every subsequent invocation, including
+with `--no-resume`. If the destination has changed, the command fails without
+clearing data or changing the completed checkpoint. Never replay an old source
+over a live destination. Use a separate empty target for a deliberate new copy.
+
+`--no-resume` is retained for compatibility; it does not change these replay or
+audit rules. `--no-checksums` skips the final source re-hash, not the full
+row-by-row and metadata comparison. Leave checksums enabled for cutovers.
+
+Database and checkpoint failures return a nonzero exit code and a JSON failure
+result. Never remove the source when `safe_to_remove_source` is false. During a
+database outage, the durable checkpoint can remain `IN_PROGRESS` because the
+command cannot update an unavailable database. Preserve the command's JSON and
+stderr output, restore connectivity, and retry against the same snapshot.
+
+The command rejects unselected CSV/HDF5 storage files rather than silently
+migrating only one historical filename generation. Use a complete, isolated
+snapshot with consistent filenames. CSV fields are capped at 16,777,216 characters;
+larger cells fail validation. The parser restores the process CSV limit after
+each parsing pass.
+
+SQLite transfers require a persistent file path; in-memory targets are accepted
+only for dry runs. Close the migration process and open the destination through
+the service before deciding that a cutover is safe. SQL backends read the imported
+column types, tensor names, and recorded-inference flag from the canonical
+registry. A subsequent current-schema MariaDB migration preserves those fields.
+
+CSV transfer and verification retain a text seek cursor per dataset for linear
+sequential reads, including quoted multiline fields. Random reads may restart
+from the beginning. Migration namespaces create only run and dataset-state
+tables; service data is stored solely in the canonical `trustyai_v2_*` layout.
+
+The CLI follows the service's TLS policy: an explicitly configured CA must be
+usable, even if `DATABASE_ALLOW_INSECURE_TLS=true`. If insecure TLS is prohibited,
+a missing default CA also causes an error. These network settings do not apply
+to local SQLite targets.
+
 ## 2. Storage layouts and terminology
 
 ### PVC storage
@@ -297,7 +334,8 @@ Before starting the migration:
 - Make a recoverable backup of the PVC and the destination database.
 - Confirm that the image includes the MariaDB extra. For a local environment,
   use `uv sync --all-groups --extra mariadb`; the container build uses the
-  `mariadb` extra.
+  extras declared in `requirements.txt`, including `migration`. The standalone
+  command requires `uv sync --all-groups --extra migration` locally.
 - Ensure the destination database, credentials, and TLS settings are valid.
 - Quiesce inference writes if possible. The migration reads the PVC while the
   service can otherwise continue receiving data, and the implementation does
@@ -583,7 +621,7 @@ uv run pytest tests/service/test_health_checks.py \
   tests/service/data/test_storage_factory.py -v
 
 # Cross-database migration tests, including CSV PVC sources
-uv run --extra migration pytest tests/service/data/migrations/ -v
+uv run --extra migration pytest tests/service/data/migrations/ -v -n 0
 ```
 
 The legacy integration test expects a MariaDB instance seeded from

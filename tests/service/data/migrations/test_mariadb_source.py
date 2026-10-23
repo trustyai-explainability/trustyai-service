@@ -15,6 +15,93 @@ from .conftest import live_db_url, result_status, target_storage
 from .test_migration_contract import _runner
 
 
+@pytest.mark.asyncio
+async def test_legacy_reader_pages_complete_rows_without_binary_aggregation(
+    migration_api,
+):
+    """Large cells are intact and sequential reads never use OFFSET."""
+    from sqlalchemy import event, text
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from trustyai_service.service.data.migrations.mariadb import _LegacyDatasetSpec
+
+    from .test_java_values import serialized_legacy_string
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    statements = []
+
+    @event.listens_for(engine.sync_engine, "before_cursor_execute")
+    def record(_conn, _cursor, statement, _parameters, _context, _executemany):
+        statements.append(statement)
+
+    try:
+        async with engine.begin() as connection:
+            await connection.execute(
+                text(
+                    "CREATE TABLE DataframeRow (dbId INTEGER PRIMARY KEY, timestamp TEXT, modelId TEXT, rowId TEXT, tag TEXT)"
+                )
+            )
+            await connection.execute(
+                text(
+                    "CREATE TABLE DataframeRow_Values (DataframeRow_dbId INTEGER, order_column INTEGER, serializableObject BLOB)"
+                )
+            )
+            for row_id in [1, 5, 9]:
+                await connection.execute(
+                    text(
+                        "INSERT INTO DataframeRow VALUES (:id, 'time', 'model', :name, 'tag')"
+                    ),
+                    {"id": row_id, "name": str(row_id)},
+                )
+                for column in range(2):
+                    await connection.execute(
+                        text(
+                            "INSERT INTO DataframeRow_Values VALUES (:id, :column, :data)"
+                        ),
+                        {
+                            "id": row_id,
+                            "column": column,
+                            "data": serialized_legacy_string(
+                                f"{row_id}:{column}:" + "x" * 2_000
+                            ),
+                        },
+                    )
+        source = migration_api.MariaDBSource(engine, schema="legacy", quiesced=True)
+        source._mode = "legacy"
+        descriptor = migration_api.DatasetDescriptor(
+            name="model_inputs",
+            column_names=("x", "y"),
+            aliases=("x", "y"),
+            column_types=("UNKNOWN", "UNKNOWN"),
+            row_count=3,
+        )
+        source._legacy_specs[descriptor.name] = _LegacyDatasetSpec(
+            "model", "inputs", ("x", "y"), (0, 1), ("x", "y")
+        )
+        statements.clear()
+        for start, row_id in enumerate([1, 5, 9]):
+            rows = await source.read_rows(descriptor, start, 1)
+            assert rows.shape == (1, 2)
+            assert rows[0, 0] == f"{row_id}:0:" + "x" * 2_000
+        assert not any(
+            "GROUP_CONCAT" in statement or "OFFSET" in statement
+            for statement in statements
+        )
+        async with engine.begin() as connection:
+            await connection.execute(
+                text(
+                    "DELETE FROM DataframeRow_Values WHERE DataframeRow_dbId=1 AND order_column=1"
+                )
+            )
+        with pytest.raises(
+            migration_api.MigrationValidationError,
+            match="model 'model', row 1: incorrect column",
+        ):
+            await source.read_rows(descriptor, 0, 1)
+    finally:
+        await engine.dispose()
+
+
 @pytest_asyncio.fixture
 async def current_schema_engine(partial_payload, modelmesh_partial_payload):
     """Build a small SQLite database with the current v2 table shape."""
@@ -29,6 +116,11 @@ async def current_schema_engine(partial_payload, modelmesh_partial_payload):
         "column_names": ["age", "score"],
         "aliased_names": ["Age", "Score"],
         "column_types": ["DOUBLE", "DOUBLE"],
+        "trustyai_service": {
+            "input_tensor_name": "instances",
+            "output_tensor_name": "predictions",
+            "recorded_inferences": True,
+        },
     }
     async with engine.begin() as connection:
         await connection.execute(
@@ -128,9 +220,41 @@ async def test_current_mariadb_source_reads_canonical_rows(
     assert manifest.total_files == 1
     assert manifest.datasets[0].name == "model_inputs"
     assert manifest.datasets[0].aliases == ("Age", "Score")
+    assert manifest.datasets[0].service_metadata == {
+        "input_tensor_name": "instances",
+        "output_tensor_name": "predictions",
+        "recorded_inferences": True,
+    }
     np.testing.assert_array_equal(rows, np.asarray([[1.0, 0.5], [2.0, 0.75]]))
     with pytest.raises(ValueError, match="non-negative"):
         await source.read_rows(manifest.datasets[0], -1, 1)
+
+
+@pytest.mark.asyncio
+async def test_current_source_digest_includes_service_metadata(
+    migration_api, current_schema_engine
+) -> None:
+    """Editing tensor names without editing observations invalidates the snapshot."""
+    from sqlalchemy import text
+
+    source = migration_api.MariaDBSource(
+        current_schema_engine, schema="trustyai_v2", quiesced=True
+    )
+    before = await source.preflight()
+    async with current_schema_engine.begin() as connection:
+        metadata = json.loads(
+            (
+                await connection.execute(
+                    text("SELECT metadata FROM trustyai_v2_table_reference")
+                )
+            ).scalar_one()
+        )
+        metadata["trustyai_service"]["input_tensor_name"] = "changed"
+        await connection.execute(
+            text("UPDATE trustyai_v2_table_reference SET metadata=:metadata"),
+            {"metadata": json.dumps(metadata)},
+        )
+    assert (await source.preflight()).digest != before.digest
 
 
 @pytest.mark.asyncio

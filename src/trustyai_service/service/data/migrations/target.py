@@ -8,11 +8,10 @@ if TYPE_CHECKING:
     import numpy as np
     from sqlalchemy.ext.asyncio import AsyncEngine
 
-from trustyai_service.service.data.storage.db import DBStorage
+from trustyai_service.service.data.storage.db import MigrationStateStore
 
 from .canonical import CanonicalStorage
 from .contracts import DatasetDescriptor, MigrationTarget, PartialPayloadRecord
-from .errors import MigrationWriteError
 
 
 class DatabaseTarget(MigrationTarget):
@@ -23,15 +22,14 @@ class DatabaseTarget(MigrationTarget):
         engine: AsyncEngine,
         *,
         migration_namespace: str = "default",
-        fail_after_batches: int | None = None,
     ) -> None:
         """Initialize canonical service storage and namespaced checkpoints."""
         self.engine = engine
         self.migration_namespace = migration_namespace
         self.storage = CanonicalStorage(engine)
-        self.checkpoint_storage = DBStorage(engine, namespace=migration_namespace)
-        self._fail_after_batches = fail_after_batches
-        self._batches_written = 0
+        self.checkpoint_storage = MigrationStateStore(
+            engine, namespace=migration_namespace
+        )
 
     async def initialize(self) -> None:
         """Create target tables lazily."""
@@ -51,15 +49,8 @@ class DatabaseTarget(MigrationTarget):
         )
 
     async def write_batch(self, dataset: DatasetDescriptor, rows: np.ndarray) -> None:
-        """Append one batch, optionally injecting a deterministic test failure."""
-        if (
-            self._fail_after_batches is not None
-            and self._batches_written >= self._fail_after_batches
-        ):
-            msg = "injected target batch failure"
-            raise MigrationWriteError(msg)
+        """Append one batch to the destination dataset."""
         await self.storage.append_data(dataset.name, rows, dataset.column_names)
-        self._batches_written += 1
 
     async def rollback_dataset(self, dataset_name: str) -> None:
         """Clear rows while retaining the canonical dataset definition."""
@@ -94,17 +85,6 @@ class DatabaseTarget(MigrationTarget):
         """Write target-side dataset state."""
         await self.checkpoint_storage.save_migration_dataset_state(values)
 
-    async def reset_for_test(self) -> None:
-        """Clear canonical data and this target's checkpoints explicitly."""
-        await self.storage.reset_for_test()
-        await self.checkpoint_storage.reset_for_test()
-        self._batches_written = 0
-
     async def list_target_datasets(self) -> list[str]:
         """List service datasets for fresh-target protection."""
         return await self.storage.list_all_datasets()
-
-    def clear_failure(self) -> None:
-        """Disable deterministic failure injection for resume tests."""
-        self._fail_after_batches = None
-        self._batches_written = 0

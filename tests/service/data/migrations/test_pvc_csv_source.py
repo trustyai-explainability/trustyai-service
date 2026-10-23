@@ -303,7 +303,7 @@ async def test_pvc_csv_source_reads_bounded_offset_batches(
 
 @pytest.mark.asyncio
 async def test_pvc_csv_source_preserves_java_non_finite_floats(
-    migration_api, java_csv_pvc: Path
+    migration_api, java_csv_pvc: Path, sqlite_target
 ) -> None:
     """Java Float/Double/Tensor values include IEEE non-finite values."""
     import base64
@@ -331,6 +331,9 @@ async def test_pvc_csv_source_preserves_java_non_finite_floats(
     assert np.isneginf(inputs[1, 3])
     assert np.isposinf(outputs[0, 0])
     assert np.isneginf(outputs[1, 0])
+    result = await _runner(migration_api, source, sqlite_target).run()
+    assert result_status(result) == "COMPLETE"
+    assert result.safe_to_remove_source is True
 
 
 @pytest.mark.asyncio
@@ -338,6 +341,9 @@ async def test_pvc_csv_source_accepts_fields_above_python_default_limit(
     migration_api, java_csv_pvc: Path
 ) -> None:
     """Large strings and serialized tensors are not truncated by csv's default cap."""
+    import csv
+
+    original_limit = csv.field_size_limit()
     long_text = "x" * 150_000
     data_path = java_csv_pvc / "model-42-data.csv"
     data_path.write_text(
@@ -352,6 +358,36 @@ async def test_pvc_csv_source_accepts_fields_above_python_default_limit(
     rows = await source.read_rows(inputs, 0, 1)
 
     assert len(rows[0, 0]) == len(long_text)
+    assert csv.field_size_limit() == original_limit
+
+
+@pytest.mark.asyncio
+async def test_csv_field_limit_is_bounded_and_restored(
+    migration_api, java_csv_pvc, monkeypatch
+):
+    """Oversized cells fail and even a failed parser restores the global limit."""
+    import csv
+
+    from trustyai_service.service.data.migrations import pvc_csv
+
+    original_limit = csv.field_size_limit()
+    monkeypatch.setattr(pvc_csv, "_MAX_CSV_FIELD_SIZE", 16)
+    source = migration_api.PVCCSVSource(java_csv_pvc, quiesced=True)
+    assert csv.field_size_limit() == original_limit
+    with pytest.raises(migration_api.MigrationValidationError, match="field larger"):
+        await source.preflight()
+    assert csv.field_size_limit() == original_limit
+
+
+@pytest.mark.asyncio
+async def test_csv_source_rejects_unselected_models(migration_api, java_csv_pvc):
+    """Other filename generations cannot be omitted while claiming completion."""
+    (java_csv_pvc / "other-old.csv").write_text("unselected", encoding="utf-8")
+    source = migration_api.PVCCSVSource(java_csv_pvc, quiesced=True)
+    with pytest.raises(
+        migration_api.MigrationValidationError, match="unselected storage"
+    ):
+        await source.preflight()
 
 
 @pytest.mark.asyncio
@@ -501,6 +537,128 @@ async def test_pvc_csv_to_sqlite_preserves_data_and_java_model_metadata(
         "output_tensor_name": "predictions",
         "recorded_inferences": True,
     }
+
+
+@pytest.mark.asyncio
+async def test_csv_batches_do_not_rescan_multiline_records(
+    migration_api, java_csv_pvc, monkeypatch
+) -> None:
+    """Sequential batches parse each record once, including quoted newlines."""
+    import csv
+
+    path = java_csv_pvc / "model-42-data.csv"
+    path.write_text(path.read_text().replace("hello, world", "hello,\nworld"))
+    source = migration_api.PVCCSVSource(java_csv_pvc, quiesced=True)
+    manifest = await source.preflight()
+    dataset = next(item for item in manifest.datasets if item.name.endswith("_inputs"))
+    real_reader = csv.reader
+    records_read = 0
+
+    def counting_reader(*args, **kwargs):
+        nonlocal records_read
+        for row in real_reader(*args, **kwargs):
+            records_read += 1
+            yield row
+
+    monkeypatch.setattr(csv, "reader", counting_reader)
+    first = await source.read_rows(dataset, 0, 1)
+    second = await source.read_rows(dataset, 1, 1)
+    assert first[0, 0] == "hello,\nworld"
+    assert second[0, 0] == "bye"
+    assert records_read == 2
+    # Nonsequential reads and a new preflight must still restart correctly.
+    assert (await source.read_rows(dataset, 0, 1))[0, 0] == "hello,\nworld"
+    await source.preflight()
+    assert (await source.read_rows(dataset, 1, 1))[0, 0] == "bye"
+
+
+@pytest.mark.asyncio
+async def test_csv_migration_is_readable_by_production_service(
+    migration_api, java_csv_pvc, tmp_path, monkeypatch
+) -> None:
+    """The actual SQL reader and metadata API restore the imported contract."""
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from trustyai_service.service.data.datasources.data_source import DataSource
+    from trustyai_service.service.data.storage import GlobalStorageInterface
+    from trustyai_service.service.data.storage.sqlite.sqlite import SQLiteStorage
+
+    path = tmp_path / "cutover.sqlite"
+    engine = create_async_engine(f"sqlite+aiosqlite:///{path}")
+    target = migration_api.DatabaseTarget(engine)
+    try:
+        result = await _runner(
+            migration_api,
+            migration_api.PVCCSVSource(java_csv_pvc, quiesced=True),
+            target,
+        ).run()
+        assert result_status(result) == "COMPLETE"
+    finally:
+        await engine.dispose()
+    storage = SQLiteStorage(str(path))
+    monkeypatch.setattr(GlobalStorageInterface, "_instance", storage)
+    try:
+        assert (await storage.read_data("model-42_outputs")).tolist() == [
+            [0.75],
+            [0.25],
+        ]
+        metadata = await DataSource().get_metadata("model-42")
+        assert metadata.observations == 2
+        assert metadata.input_tensor_name == "instances"
+        assert metadata.output_tensor_name == "predictions"
+        assert metadata.recorded_inferences is True
+        assert metadata.input_schema.items["embedding"].type == "TENSOR"
+        assert metadata.input_schema.items["active"].type == "BOOL"
+        assert metadata.input_schema.items["prompt"].type == "STRING"
+        assert metadata.output_schema.items["risk"].type == "DOUBLE"
+        assert await storage.get_original_column_names("model-42_outputs") == ["score"]
+        assert await storage.get_aliased_column_names("model-42_outputs") == ["risk"]
+    finally:
+        storage._engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_csv_to_mariadb_to_postgres_preserves_public_metadata(
+    migration_api, java_csv_pvc, target_factory, monkeypatch
+) -> None:
+    """Both required live servers exercise the CSV two-hop cutover contract."""
+    from trustyai_service.service.data.datasources.data_source import DataSource
+    from trustyai_service.service.data.storage import GlobalStorageInterface
+    from trustyai_service.service.data.storage.postgres.postgres import (
+        PostgreSQLStorage,
+    )
+
+    maria = await target_factory("mariadb")
+    postgres = await target_factory("postgres")
+    first = await _runner(
+        migration_api, migration_api.PVCCSVSource(java_csv_pvc, quiesced=True), maria
+    ).run()
+    assert result_status(first) == "COMPLETE"
+    second = await _runner(
+        migration_api,
+        migration_api.MariaDBSource(maria.engine, schema="trustyai_v2", quiesced=True),
+        postgres,
+    ).run()
+    assert result_status(second) == "COMPLETE"
+    url = postgres.engine.url
+    reader = PostgreSQLStorage(
+        user=url.username or "",
+        password=url.password or "",
+        host=url.host or "",
+        port=url.port or 5432,
+        database=url.database or "",
+    )
+    monkeypatch.setattr(GlobalStorageInterface, "_instance", reader)
+    try:
+        metadata = await DataSource().get_metadata("model-42")
+        assert metadata.input_tensor_name == "instances"
+        assert metadata.output_tensor_name == "predictions"
+        assert metadata.recorded_inferences is True
+        assert metadata.input_schema.items["embedding"].type == "TENSOR"
+        assert metadata.observations == 2
+        assert (await reader.read_data("model-42_outputs")).tolist() == [[0.75], [0.25]]
+    finally:
+        reader._engine.dispose()
 
 
 @pytest.mark.asyncio

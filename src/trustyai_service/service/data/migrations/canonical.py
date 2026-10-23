@@ -1,4 +1,4 @@
-"""Adapter for the physical SQL storage contract used by PR 334.
+"""Adapter for the service's physical canonical v2 SQL storage contract.
 
 The migration bookkeeping tables are deliberately kept in ``db.schema``. This
 module writes only the service's public v2 layout so a service using the shared
@@ -10,28 +10,11 @@ from __future__ import annotations
 import asyncio
 import gzip
 import json
-import sqlite3
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-from sqlalchemy import (
-    JSON,
-    BigInteger,
-    Boolean,
-    Column,
-    Integer,
-    LargeBinary,
-    MetaData,
-    String,
-    Table,
-    delete,
-    insert,
-    select,
-    update,
-)
-from sqlalchemy.dialects import mysql, postgresql
-from sqlalchemy.exc import DBAPIError
+from sqlalchemy import MetaData, Table, delete, insert, select, update
 from sqlalchemy.schema import CreateTable
 
 from trustyai_service.endpoints.consumer import (
@@ -39,6 +22,12 @@ from trustyai_service.endpoints.consumer import (
     KServeInferenceResponse,
 )
 from trustyai_service.service.data.modelmesh_parser import PartialPayload
+from trustyai_service.service.data.storage.db.schema import create_schema
+from trustyai_service.service.data.storage.sql.schema import (
+    build_dataset_table,
+    build_partial_payload_table,
+    build_reference_table,
+)
 from trustyai_service.service.serialization import deserialize_model, serialize_model
 from trustyai_service.service.serialization.detection import safe_gzip_decompress
 from trustyai_service.service.serialization.encoders import (
@@ -51,17 +40,8 @@ if TYPE_CHECKING:
 
     from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
-_SCHEMA_CREATE_ATTEMPTS = 3
-_MARIADB_TABLE_EXISTS = 1050
 _MIN_MATRIX_DIMENSIONS = 2
 _MAX_DATASET_NAME_LENGTH = 255
-_AUTOINCREMENT_PK = BigInteger().with_variant(Integer, "sqlite")
-_BLOB = (
-    LargeBinary()
-    .with_variant(mysql.LONGBLOB(), "mysql")
-    .with_variant(mysql.LONGBLOB(), "mariadb")
-)
-_JSON = JSON().with_variant(postgresql.JSONB(), "postgresql")
 
 
 @dataclass(frozen=True)
@@ -79,69 +59,33 @@ class CanonicalTables:
 
 
 def _build_tables() -> CanonicalTables:
-    """Build the static PR 334 tables without creating them on the server."""
+    """Build the static canonical v2 tables without creating them on the server."""
     metadata = MetaData()
-    reference = Table(
-        "trustyai_v2_table_reference",
-        metadata,
-        Column("table_idx", _AUTOINCREMENT_PK, primary_key=True, autoincrement=True),
-        Column("dataset_name", String(_MAX_DATASET_NAME_LENGTH), unique=True),
-        Column("metadata", _JSON),
-        Column("n_rows", BigInteger),
-    )
-    partial_payloads = Table(
-        "trustyai_v2_partial_payloads",
-        metadata,
-        Column("payload_id", String(_MAX_DATASET_NAME_LENGTH)),
-        Column("is_input", Boolean),
-        Column("payload_data", _BLOB),
+    reference = build_reference_table(metadata, "trustyai_v2_table_reference")
+    partial_payloads = build_partial_payload_table(
+        metadata, "trustyai_v2_partial_payloads"
     )
     return CanonicalTables(metadata, reference, partial_payloads)
 
 
 def _build_dataset_table(table_idx: int, column_count: int) -> Table:
-    """Build one dynamic PR 334 dataset table from a database-generated index."""
+    """Build one dynamic canonical dataset table from a database-generated index."""
     if table_idx < 0 or column_count <= 0:
         msg = "canonical dataset table indexes and column counts must be positive"
         raise ValueError(msg)
     metadata = MetaData()
-    return Table(
-        f"trustyai_v2_dataset_{table_idx}",
+    return build_dataset_table(
         metadata,
-        Column("row_idx", _AUTOINCREMENT_PK, primary_key=True, autoincrement=True),
-        *[Column(f"column_{index}", _BLOB) for index in range(column_count)],
-    )
-
-
-def _is_concurrent_schema_error(error: DBAPIError) -> bool:
-    """Recognize duplicate-object errors from concurrent static-table creation."""
-    statement = (error.statement or "").lstrip().upper()
-    if not statement.startswith("CREATE TABLE "):
-        return False
-    original = error.orig
-    if getattr(original, "errno", None) == _MARIADB_TABLE_EXISTS:
-        return True
-    if getattr(original, "sqlstate", None) == "42P07":
-        return True
-    if getattr(original, "sqlstate", None) == "23505":
-        diagnostic = getattr(original, "diag", None)
-        return getattr(diagnostic, "constraint_name", None) in {
-            "pg_class_relname_nsp_index",
-            "pg_type_typname_nsp_index",
-        }
-    return (
-        isinstance(original, sqlite3.OperationalError)
-        and getattr(original, "sqlite_errorcode", None) == sqlite3.SQLITE_ERROR
-        and str(original).startswith("table ")
-        and str(original).endswith(" already exists")
+        f"trustyai_v2_dataset_{table_idx}",
+        [f"column_{index}" for index in range(column_count)],
     )
 
 
 class CanonicalStorage:
-    """Async SQLAlchemy adapter for PR 334's canonical v2 schema."""
+    """Async SQLAlchemy adapter for the service's canonical v2 schema."""
 
     def __init__(self, engine: AsyncEngine) -> None:
-        """Initialize a target adapter without importing PR 334 internals."""
+        """Initialize a target adapter using the shared SQL schema builders."""
         self.engine = engine
         self.tables = _build_tables()
         self.reference_table = self.tables.reference
@@ -160,19 +104,8 @@ class CanonicalStorage:
         async with self._init_lock:
             if self._initialized:
                 return
-            for attempt in range(_SCHEMA_CREATE_ATTEMPTS):
-                try:
-                    async with self.engine.begin() as connection:
-                        await connection.run_sync(self.tables.metadata.create_all)
-                except DBAPIError as error:
-                    if (
-                        attempt == _SCHEMA_CREATE_ATTEMPTS - 1
-                        or not _is_concurrent_schema_error(error)
-                    ):
-                        raise
-                else:
-                    self._initialized = True
-                    return
+            await create_schema(self.tables.metadata, self.engine)
+            self._initialized = True
 
     async def reset_for_test(self) -> None:
         """Remove all canonical data; callers must use this only for test setup."""
@@ -534,7 +467,7 @@ class CanonicalStorage:
         *,
         is_input: bool,
     ) -> None:
-        """Upsert one partial payload using PR 334's three-column table."""
+        """Upsert one partial payload using the canonical three-column table."""
         if not payload_id or len(payload_id) > _MAX_DATASET_NAME_LENGTH:
             msg = "partial payload IDs must contain 1 to 255 characters"
             raise ValueError(msg)

@@ -1,5 +1,5 @@
-"""Dialect-neutral asynchronous database storage primitives."""
+"""Namespaced checkpoint storage for explicit migrations."""
 
-from .storage import DBStorage
+from .storage import MigrationStateStore
 
-__all__ = ["DBStorage"]
+__all__ = ["MigrationStateStore"]

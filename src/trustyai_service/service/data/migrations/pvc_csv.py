@@ -11,7 +11,8 @@ import itertools
 import json
 import math
 import struct
-import sys
+import threading
+from contextlib import contextmanager
 from dataclasses import asdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -25,6 +26,7 @@ from .contracts import (
     SourceManifest,
 )
 from .errors import MigrationPreflightError, MigrationValidationError
+from .java_values import tensor_value
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -33,23 +35,25 @@ _DATA_FILE = "data.csv"
 _INTERNAL_FILE = "internal_data.csv"
 _METADATA_FILE = "metadata.json"
 _INTERNAL_COLUMN_COUNT = 3
-_MAX_TENSOR_DIMENSIONS = 32
-_JAVA_SERIALIZABLE_FLAG = 2
-_TENSOR_CLASS = "org.kie.trustyai.explainability.model.tensor.Tensor"
-_TENSOR_ELEMENTS = {
-    "java.lang.Boolean": bool,
-    "java.lang.Byte": int,
-    "java.lang.Double": float,
-    "java.lang.Float": float,
-    "java.lang.Integer": int,
-    "java.lang.Long": int,
-    "java.lang.Short": int,
-    "java.lang.String": str,
-}
+# Large enough for serialized tensors, but not an unbounded process-wide limit.
+_MAX_CSV_FIELD_SIZE = 16 * 1024 * 1024
+_CSV_LIMIT_LOCK = threading.RLock()
 _INTEGER_BOUNDS = {
     "INT32": (-(2**31), 2**31 - 1),
     "INT64": (-(2**63), 2**63 - 1),
 }
+
+
+@contextmanager
+def _bounded_csv_fields() -> Iterator[None]:
+    """Scope the stdlib's global CSV limit to one serialized parsing pass."""
+    with _CSV_LIMIT_LOCK:
+        original = csv.field_size_limit()
+        try:
+            csv.field_size_limit(_MAX_CSV_FIELD_SIZE)
+            yield
+        finally:
+            csv.field_size_limit(original)
 
 
 class PVCCSVSource(MigrationSource):
@@ -71,10 +75,11 @@ class PVCCSVSource(MigrationSource):
         self.directory = Path(directory)
         self.quiesced = quiesced
         self.data_file = data_file
-        # Python's default CSV field limit is too small for serialized tensors.
-        csv.field_size_limit(sys.maxsize)
         self._indices_by_dataset: dict[str, tuple[int, ...]] = {}
         self._types_by_dataset: dict[str, tuple[str, ...]] = {}
+        # Text seek cookies preserve CSV record boundaries, including embedded
+        # newlines. Keep only one cursor per dataset, not one offset per row.
+        self._read_cursors: dict[str, tuple[int, int]] = {}
 
     async def preflight(self) -> SourceManifest:
         """Validate Java sidecars and return a content-addressed manifest."""
@@ -116,10 +121,12 @@ class PVCCSVSource(MigrationSource):
         """CSV PVC storage has no separate partial-payload representation."""
         return ()
 
+    @_bounded_csv_fields()
     def _build_manifest(self) -> SourceManifest:
         """Discover models, validate row pairs, and hash every source file."""
         self._indices_by_dataset.clear()
         self._types_by_dataset.clear()
+        self._read_cursors.clear()
         data_paths = self._data_paths()
         if not data_paths:
             msg = f"no CSV data files ending in '-{self.data_file}' found"
@@ -205,6 +212,15 @@ class PVCCSVSource(MigrationSource):
             for path in (data_path, internal_path, metadata_path):
                 file_hashes[path.name] = self._hash_file(path)
 
+        # A successful subset must never authorize deleting a PVC containing
+        # models written under another historical filename or storage format.
+        for path in self.directory.iterdir():
+            if path.name not in file_hashes and (
+                path.suffix.lower() in {".csv", ".hdf5", ".h5"}
+                or path.name.endswith(f"-{_METADATA_FILE}")
+            ):
+                msg = f"unselected storage file '{path.name}'; isolate the complete source snapshot or correct --data-file"
+                raise MigrationValidationError(msg)
         descriptors.sort(key=lambda dataset: dataset.name)
         source_identity = hashlib.sha256(
             str(self.directory.resolve()).encode("utf-8")
@@ -399,6 +415,7 @@ class PVCCSVSource(MigrationSource):
             )
         ]
 
+    @_bounded_csv_fields()
     def _read_rows_sync(
         self,
         dataset: DatasetDescriptor,
@@ -432,26 +449,33 @@ class PVCCSVSource(MigrationSource):
 
         result = np.empty((n_rows, len(dataset.column_names)), dtype=object)
         try:
-            with (
-                data_path.open(encoding="utf-8-sig", newline="") as data_file,
-                internal_path.open(encoding="utf-8-sig", newline="") as internal_file,
-            ):
-                is_metadata = dataset.name.endswith("_metadata")
-                reader = csv.reader(
-                    internal_file if is_metadata else data_file, strict=True
-                )
+            is_metadata = dataset.name.endswith("_metadata")
+            path = internal_path if is_metadata else data_path
+            with path.open(encoding="utf-8-sig", newline="") as stream:
+                cursor = self._read_cursors.get(dataset.name)
+                skip = start_row
+                if cursor is not None and cursor[0] == start_row:
+                    stream.seek(cursor[1])
+                    skip = 0
+                # Iterating TextIOWrapper directly disables tell(); readline
+                # iteration keeps valid seek cookies after whole CSV records.
+                reader = csv.reader(iter(stream.readline, ""), strict=True)
                 rows = _read_batch_rows(
                     reader,
                     indices,
                     types,
                     model_id,
-                    start_row,
+                    skip,
                     n_rows,
                     is_metadata=is_metadata,
                 )
                 for offset, row in enumerate(rows):
                     for column, value in enumerate(row):
                         result[offset, column] = value
+                self._read_cursors[dataset.name] = (
+                    start_row + len(rows),
+                    stream.tell(),
+                )
         except MigrationValidationError:
             raise
         except (OSError, UnicodeDecodeError, csv.Error, ValueError) as error:
@@ -650,81 +674,7 @@ def _decode_tensor(value: str) -> object:
         msg = "invalid Java-serialized Tensor cell"
         raise MigrationValidationError(msg) from error
 
-    class_descriptor = getattr(tensor, "classdesc", None)
-    class_name = getattr(class_descriptor, "name", None)
-    field_names = getattr(class_descriptor, "fields_names", ())
-    expected_fields = {"dimension", "nEntries", "data", "datatype", "dimensions"}
-    if (
-        class_name != _TENSOR_CLASS
-        or getattr(class_descriptor, "flags", None) != _JAVA_SERIALIZABLE_FLAG
-        or len(field_names) != len(expected_fields)
-        or set(field_names) != expected_fields
-        or getattr(class_descriptor, "superclass", None) is not None
-        or getattr(tensor, "annotations", None)
-    ):
-        msg = "Java serialized tensor has an unexpected class"
-        raise MigrationValidationError(msg)
-    try:
-        dimensions = [int(value) for value in tensor.dimensions]
-        flat_data = list(tensor.data)
-        datatype = tensor.datatype.name
-        entries = int(tensor.nEntries)
-        dimension = int(tensor.dimension)
-    except (AttributeError, TypeError, ValueError, OverflowError) as error:
-        msg = "Java serialized Tensor has invalid fields"
-        raise MigrationValidationError(msg) from error
-    if (
-        not dimensions
-        or len(dimensions) > _MAX_TENSOR_DIMENSIONS
-        or any(size <= 0 for size in dimensions)
-        or dimension != len(dimensions)
-        or math.prod(dimensions) != entries
-        or len(flat_data) != entries
-        or datatype not in _TENSOR_ELEMENTS
-    ):
-        msg = "Java serialized Tensor has inconsistent dimensions or element count"
-        raise MigrationValidationError(msg)
-
-    scalars = [_tensor_scalar(item, datatype) for item in flat_data]
-
-    return _nest_tensor(scalars, dimensions)
-
-
-def _nest_tensor(values: list[object], shape: list[int]) -> object:
-    """Reshape row-major tensor values into the Java Tensor dimensions."""
-    if len(shape) == 1:
-        return values
-    stride = math.prod(shape[1:])
-    return [
-        _nest_tensor(values[index : index + stride], shape[1:])
-        for index in range(0, len(values), stride)
-    ]
-
-
-def _tensor_scalar(value: object, expected_class: str) -> object:
-    """Allow only matching Java boxed primitive and string Tensor elements."""
-    actual_class = getattr(getattr(value, "classdesc", None), "name", None)
-    if actual_class is None and isinstance(value, str):
-        actual_class = "java.lang.String"
-    if actual_class != expected_class:
-        msg = "Java serialized Tensor contains an unexpected element type"
-        raise MigrationValidationError(msg)
-    scalar = getattr(value, "value", value)
-    expected_type = _TENSOR_ELEMENTS[expected_class]
-    if expected_type is bool:
-        valid = isinstance(scalar, bool)
-    elif expected_type is int:
-        valid = isinstance(scalar, int) and not isinstance(scalar, bool)
-    elif expected_type is float:
-        valid = isinstance(scalar, (int, float)) and not isinstance(scalar, bool)
-        if valid:
-            scalar = float(scalar)
-    else:
-        valid = isinstance(scalar, str)
-    if not valid:
-        msg = f"Java serialized Tensor contains an invalid {expected_class} value"
-        raise MigrationValidationError(msg)
-    return scalar
+    return tensor_value(tensor)
 
 
 def _parse_internal_row(

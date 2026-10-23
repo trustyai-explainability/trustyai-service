@@ -1,10 +1,7 @@
 """End-to-end tests for legacy/current MariaDB to PostgreSQL migration.
 
-The MariaDB source is intentionally tested through a real seeded database when
-the integration URLs are supplied. The fixture is compatible with the
-existing ``tests/resources/legacy_database_dump.sql`` dataset and also leaves
-room for a current ``trustyai_v2_*`` fixture after the PostgreSQL PR is
-rebased.
+The legacy source uses ``tests/resources/legacy_database_dump.sql``. The current
+source is seeded in the same required CI database, not an optional second URL.
 """
 
 from __future__ import annotations
@@ -15,7 +12,13 @@ import numpy as np
 import pytest
 import pytest_asyncio
 
-from .conftest import live_db_url, result_status, target_storage
+from .conftest import (
+    assert_dataset_matches,
+    live_db_url,
+    reset_target,
+    result_status,
+    target_storage,
+)
 from .test_migration_contract import _runner
 
 
@@ -46,9 +49,9 @@ async def postgres_target(migration_api):
         engine,
         migration_namespace=f"maria_to_postgres_{uuid.uuid4().hex}",
     )
-    await target.reset_for_test()
+    await reset_target(target)
     yield target
-    await target.reset_for_test()
+    await reset_target(target)
     await engine.dispose()
 
 
@@ -135,24 +138,23 @@ async def test_legacy_mariadb_to_postgres_verifies_source_and_target_counts(
 
 @pytest.mark.asyncio
 async def test_current_v2_mariadb_to_postgres_path_is_explicit(
-    migration_api, postgres_target
+    migration_api, postgres_target, pvc_fixture, target_factory
 ) -> None:
-    """The suite reserves a separate test for the current trustyai_v2 schema."""
-    # No seeded v2 fixture exists yet, so this URL stays optional everywhere.
-    url = live_db_url("TRUSTYAI_MIGRATION_TEST_MARIADB_V2_URL", required=False)
-
-    pytest.importorskip("sqlalchemy")
-    from sqlalchemy.ext.asyncio import create_async_engine
-
-    source_engine = create_async_engine(url)
+    """The required live database gate covers the current schema too."""
+    maria_target = await target_factory("mariadb")
+    seeded = await _runner(
+        migration_api,
+        migration_api.PVCSource(pvc_fixture.directory, quiesced=True),
+        maria_target,
+    ).run()
+    assert result_status(seeded) == "COMPLETE"
     source = migration_api.MariaDBSource(
-        source_engine,
+        maria_target.engine,
         schema="trustyai_v2",
         quiesced=True,
     )
-    try:
-        result = await _runner(migration_api, source, postgres_target).run()
-    finally:
-        await source_engine.dispose()
+    result = await _runner(migration_api, source, postgres_target).run()
 
     assert result_status(result) == "COMPLETE"
+    for dataset in pvc_fixture.datasets:
+        await assert_dataset_matches(postgres_target, dataset)
