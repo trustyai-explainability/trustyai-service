@@ -334,6 +334,7 @@ class CanonicalStorage:
         reference = await self._get_reference(dataset_name)
         metadata = dict(reference["metadata"])
         column_count = len(metadata["column_names"])
+        shape = tuple(int(value) for value in metadata["shape"][1:])
         table = _build_dataset_table(int(reference["table_idx"]), column_count)
         query = select(table).order_by(table.c.row_idx.asc()).offset(start)
         if n_rows is not None:
@@ -360,14 +361,13 @@ class CanonicalStorage:
                         )
                         values.append(scalar)
                     else:
-                        values.append(value)
+                        has_object_cells |= len(shape) == 1
+                        values.append(decoded)
                 rows.append(values)
         if rows:
             dtype = object if has_object_cells or len(dtypes) != 1 else dtypes.pop()
-            return np.array(rows, dtype=dtype)
-        return np.empty(
-            (0, *[int(value) for value in metadata["shape"][1:]]), dtype=object
-        )
+            return _decoded_rows_array(rows, shape, dtype)
+        return np.empty((0, *shape), dtype=object)
 
     async def get_original_column_names(self, dataset_name: str) -> list[str]:
         """Return original logical column names."""
@@ -615,6 +615,19 @@ class CanonicalStorage:
                 .where(self.tables.reference.c.dataset_name == dataset_name)
                 .values(metadata=metadata)
             )
+
+
+def _decoded_rows_array(
+    rows: list[list[Any]], shape: tuple[int, ...], dtype: np.dtype[Any] | type[object]
+) -> np.ndarray:
+    """Retain opaque cells in a declared matrix without expanding their contents."""
+    if len(shape) == 1 and dtype is object:
+        batch = np.empty((len(rows), *shape), dtype=object)
+        for index, row in enumerate(rows):
+            for column, value in enumerate(row):
+                batch[index, column] = value
+        return batch
+    return np.array(rows, dtype=dtype)
 
 
 def _validate_dataset_name(dataset_name: str) -> None:

@@ -46,8 +46,8 @@ command-driven migration, not an automatic startup path.
 | Source | Destination | How it runs |
 | --- | --- | --- |
 | Python HDF5 PVC | MariaDB | Startup or `trustyai-migrate` |
-| Legacy MariaDB | Current MariaDB | Startup or CLI |
-| HDF5/CSV PVC or MariaDB | SQLite, MariaDB, PostgreSQL | CLI only |
+| Legacy MariaDB | Current MariaDB | Startup; CLI needs position keys |
+| HDF5/CSV PVC or v2 MariaDB | SQLite, MariaDB, PostgreSQL | CLI only |
 
 Startup migration requires `DATABASE_ATTEMPT_MIGRATION`; HDF5 takes priority
 over legacy MariaDB. The CLI accepts `pvc`, `pvc-csv`, and MariaDB `legacy` or
@@ -150,6 +150,22 @@ layout when only one is present. If both layouts exist, select `legacy` or
 decode it before transferring. A dry run still requires a syntactically valid
 target URL, but it does not connect to, initialize, or write to the target, so
 it does not verify target availability.
+
+**Legacy CLI compatibility is deliberately restricted.** The legacy source
+requires `DataframeMetadata_names.names_ORDER` and
+`DataframeMetadata_inputs.inputs_ORDER`. For each model, both must identify
+exactly the same contiguous, zero-based column positions as
+`DataframeRow_Values.order_column`. The CLI rejects missing, duplicate, null,
+or gapped positions before initializing or writing to the target. The original
+`tests/resources/legacy_database_dump.sql` lacks these position columns and is
+therefore rejected by the explicit migration suite.
+
+Unordered SQL results cannot establish which name or input/output flag belongs
+to a stored cell. Do not invent position values from insertion order, names,
+or independently sorted tables. Obtain an authoritative column-position mapping
+or a verified CSV export with the required metadata sidecars. The older startup
+legacy converter is unchanged; it must not be treated as a workaround that
+proves an ambiguous source safe. Current-schema MariaDB migration is unaffected.
 
 The required `--quiesced` flag is an operator confirmation, not a lock: the
 command does not stop writers or provide a distributed lock. By default, the
@@ -602,6 +618,10 @@ the migration as an operational handoff:
 - **Legacy migration has weaker observability.** It is not represented in the
   same migration tracking tables, and the readiness query can report that
   migration status is unavailable even though the legacy reader ran.
+- **The explicit CLI rejects unordered legacy metadata.** Its position-key
+  requirement is described in Section 1.2. Historical dumps without those keys
+  are not supported by this command, even if the older startup reader accepts
+  them. The command never guesses column roles from physical row order.
 - **There is no reverse migration.** Switching from MariaDB back to PVC does
   not copy the current database contents to HDF5.
 
@@ -627,6 +647,13 @@ uv run --extra migration pytest tests/service/data/migrations/ -v -n 0
 The legacy integration test expects a MariaDB instance seeded from
 `tests/resources/legacy_database_dump.sql`. The local MariaDB service
 definition is `tests/resources/compose-local-maria.yaml`.
+
+In the explicit migration suite, that original unordered dump instead exercises
+safe rejection before target writes. Ordered legacy-contract transfer tests use
+an isolated SQLite fixture with explicit, deliberately shuffled position keys;
+they do not claim support for the unordered historical MariaDB layout. The
+required live MariaDB-to-PostgreSQL path uses the current v2 schema, including
+a CSV-to-MariaDB-to-PostgreSQL tensor-only round trip.
 
 The main implementation locations are:
 

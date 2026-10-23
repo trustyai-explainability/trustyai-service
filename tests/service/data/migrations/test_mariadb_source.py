@@ -204,6 +204,68 @@ async def legacy_mariadb_engine():
 
 
 @pytest.mark.asyncio
+async def test_legacy_metadata_uses_explicit_cell_positions(
+    migration_api, ordered_legacy_engine, sqlite_target
+):
+    """Different insertion orders cannot mislabel or swap inputs and outputs."""
+    source = migration_api.MariaDBSource(
+        ordered_legacy_engine, schema="legacy", quiesced=True
+    )
+    manifest = await source.preflight()
+    datasets = {dataset.name: dataset for dataset in manifest.datasets}
+    assert datasets["model_inputs"].column_names == ("feature_a", "feature_b")
+    assert datasets["model_outputs"].column_names == ("result",)
+    result = await _runner(migration_api, source, sqlite_target, batch_size=1).run()
+    assert result_status(result) == "COMPLETE"
+    storage = target_storage(sqlite_target)
+    assert (await storage.read_data("model_inputs")).tolist() == [
+        ["a-1", "b-1"],
+        ["a-5", "b-5"],
+    ]
+    assert (await storage.read_data("model_outputs")).tolist() == [["out-1"], ["out-5"]]
+    assert await storage.get_aliased_column_names("model_inputs") == [
+        "Feature A",
+        "feature_b",
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "ALTER TABLE DataframeMetadata_names DROP COLUMN names_ORDER",
+        "ALTER TABLE DataframeMetadata_inputs DROP COLUMN inputs_ORDER",
+        "UPDATE DataframeMetadata_names SET names_ORDER=0 WHERE names_ORDER=2",
+        "UPDATE DataframeMetadata_inputs SET inputs_ORDER=3 WHERE inputs_ORDER=2",
+        "UPDATE DataframeMetadata_names SET names_ORDER=NULL WHERE names_ORDER=2",
+        "DELETE FROM DataframeMetadata_inputs WHERE inputs_ORDER=2",
+    ],
+    ids=[
+        "unordered-names",
+        "unordered-inputs",
+        "duplicate",
+        "gap",
+        "null",
+        "missing-flag",
+    ],
+)
+async def test_legacy_metadata_rejects_ambiguous_positions_before_target_writes(
+    migration_api, ordered_legacy_engine, sqlite_target, mutation
+):
+    """Missing or invalid ordering cannot yield an apparently successful migration."""
+    from sqlalchemy import text
+
+    async with ordered_legacy_engine.begin() as connection:
+        await connection.execute(text(mutation))
+    source = migration_api.MariaDBSource(
+        ordered_legacy_engine, schema="legacy", quiesced=True
+    )
+    with pytest.raises(migration_api.MigrationValidationError, match="position"):
+        await _runner(migration_api, source, sqlite_target).run()
+    assert await target_storage(sqlite_target).list_all_datasets() == []
+
+
+@pytest.mark.asyncio
 async def test_current_mariadb_source_reads_canonical_rows(
     migration_api, current_schema_engine
 ) -> None:
@@ -228,6 +290,66 @@ async def test_current_mariadb_source_reads_canonical_rows(
     np.testing.assert_array_equal(rows, np.asarray([[1.0, 0.5], [2.0, 0.75]]))
     with pytest.raises(ValueError, match="non-negative"):
         await source.read_rows(manifest.datasets[0], -1, 1)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "case",
+    [
+        ([-1, 1], ["embedding"], [[[1.25, 2.5]], [[3.75, 4.0]]], (2, 1)),
+        (
+            [-1, 2],
+            ["left", "right"],
+            [[[1, 2], [3, 4]], [[5, 6], [7, 8]]],
+            (2, 2),
+        ),
+        (
+            [-1, 2],
+            ["embedding", "label"],
+            [[[1, 2], "first"], [[3, 4], "second"]],
+            (2, 2),
+        ),
+        (
+            [-1, 2, 2],
+            ["left", "right"],
+            [[[1, 2], [3, 4]], [[5, 6], [7, 8]]],
+            (2, 2, 2),
+        ),
+    ],
+    ids=["single-tensor", "two-tensors", "mixed-cells", "dense-array"],
+)
+async def test_current_source_preserves_declared_cell_shape(
+    migration_api, current_schema_engine, case
+):
+    """List-valued cells stay opaque unless metadata declares extra dimensions."""
+    from sqlalchemy import text
+
+    shape, names, values, expected_shape = case
+    async with current_schema_engine.begin() as connection:
+        await connection.execute(
+            text("UPDATE trustyai_v2_table_reference SET metadata=:metadata"),
+            {"metadata": json.dumps({"column_names": names, "shape": shape})},
+        )
+        for index, row in enumerate(values):
+            for column, value in enumerate(row):
+                await connection.execute(
+                    text(
+                        f"UPDATE trustyai_v2_dataset_1 SET column_{column}=:value WHERE row_idx=:index"  # noqa: S608 -- index is from a fixed test fixture
+                    ),
+                    {
+                        "value": gzip.compress(json.dumps(value).encode()),
+                        "index": index,
+                    },
+                )
+    source = migration_api.MariaDBSource(
+        current_schema_engine, schema="trustyai_v2", quiesced=True
+    )
+    descriptor = (await source.preflight()).datasets[0]
+    rows = await source.read_rows(descriptor, 0, 2)
+    assert rows.shape == expected_shape
+    assert rows.tolist() == values
+    assert (await source.read_rows(descriptor, 2, 1)).shape == (0, *expected_shape[1:])
+    assert (await source.read_rows(descriptor, 0, 0)).shape == (0, *expected_shape[1:])
 
 
 @pytest.mark.asyncio
@@ -445,36 +567,18 @@ async def test_auto_mariadb_source_rejects_ambiguous_schemas(
 
 
 @pytest.mark.asyncio
-async def test_legacy_mariadb_source_transfers_java_rows_to_sqlite(
+async def test_unordered_legacy_mariadb_is_rejected_before_sqlite_writes(
     migration_api, legacy_mariadb_engine, sqlite_target
 ) -> None:
-    """The real legacy schema streams ordered Java values through the runner."""
+    """The original legacy dump has no trustworthy metadata-to-cell positions."""
     source = migration_api.MariaDBSource(
         legacy_mariadb_engine,
         schema="legacy",
         quiesced=True,
     )
 
-    manifest = await source.preflight()
-    assert len(manifest.datasets) == 12
-    assert manifest.datasets[0].row_count == 100
-
-    result = await _runner(migration_api, source, sqlite_target, batch_size=37).run()
-
-    assert result_status(result) == "COMPLETE"
-    storage = target_storage(sqlite_target)
-    np.testing.assert_array_equal(
-        await storage.read_data("model1_inputs", 0, 3),
-        np.asarray([[0, 1, 2, 3, 4]] * 3),
-    )
-    assert (await storage.read_data("model4_inputs", 0, 1))[0].tolist() == [
-        0.0,
-        "i'm text-0",
-        True,
-        0,
-    ]
-    assert await storage.get_aliased_column_names("model3_inputs") == [
-        "year mapped",
-        "make mapped",
-        "color mapped",
-    ]
+    with pytest.raises(
+        migration_api.MigrationValidationError, match="explicit column positions"
+    ):
+        await _runner(migration_api, source, sqlite_target, batch_size=37).run()
+    assert await target_storage(sqlite_target).list_all_datasets() == []

@@ -618,8 +618,11 @@ async def test_csv_migration_is_readable_by_production_service(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "tensor_only", [False, True], ids=["mixed-cells", "tensor-only"]
+)
 async def test_csv_to_mariadb_to_postgres_preserves_public_metadata(
-    migration_api, java_csv_pvc, target_factory, monkeypatch
+    migration_api, java_csv_pvc, target_factory, monkeypatch, tensor_only
 ) -> None:
     """Both required live servers exercise the CSV two-hop cutover contract."""
     from trustyai_service.service.data.datasources.data_source import DataSource
@@ -627,6 +630,21 @@ async def test_csv_to_mariadb_to_postgres_preserves_public_metadata(
     from trustyai_service.service.data.storage.postgres.postgres import (
         PostgreSQLStorage,
     )
+
+    if tensor_only:
+        metadata_path = java_csv_pvc / "model-42-metadata.json"
+        metadata = json.loads(metadata_path.read_text())
+        metadata["inputSchema"] = {
+            "items": {
+                "embedding": {"type": "TENSOR", "name": "embedding", "columnIndex": 0}
+            },
+            "nameMapping": {},
+        }
+        metadata["outputSchema"]["items"]["score"]["columnIndex"] = 1
+        metadata_path.write_text(json.dumps(metadata))
+        (java_csv_pvc / "model-42-data.csv").write_text(
+            f"{_TENSOR},0.75\n{_TENSOR},0.25\n"
+        )
 
     maria = await target_factory("mariadb")
     postgres = await target_factory("postgres")
@@ -640,6 +658,10 @@ async def test_csv_to_mariadb_to_postgres_preserves_public_metadata(
         postgres,
     ).run()
     assert result_status(second) == "COMPLETE"
+    if tensor_only:
+        rows = await target_storage(postgres).read_data("model-42_inputs")
+        assert rows.shape == (2, 1)
+        assert rows.tolist() == [[[1.25, 2.5]], [[1.25, 2.5]]]
     url = postgres.engine.url
     reader = PostgreSQLStorage(
         user=url.username or "",

@@ -1,14 +1,14 @@
-"""End-to-end tests for legacy/current MariaDB to PostgreSQL migration.
+"""Legacy-contract and live current MariaDB to PostgreSQL migration tests.
 
-The legacy source uses ``tests/resources/legacy_database_dump.sql``. The current
-source is seeded in the same required CI database, not an optional second URL.
+Ordered legacy tests use an explicit-position SQLite fixture. The real legacy
+MariaDB dump is tested for safe rejection, not treated as an ordered schema.
+The current source uses the required live MariaDB service.
 """
 
 from __future__ import annotations
 
 import uuid
 
-import numpy as np
 import pytest
 import pytest_asyncio
 
@@ -23,19 +23,13 @@ from .test_migration_contract import _runner
 
 
 @pytest_asyncio.fixture
-async def maria_source(migration_api):
-    """Create a MariaDB source from an explicitly configured test URL."""
-    pytest.importorskip("sqlalchemy")
-    from sqlalchemy.ext.asyncio import create_async_engine
-
-    engine = create_async_engine(live_db_url("TRUSTYAI_MIGRATION_TEST_MARIADB_URL"))
-    source = migration_api.MariaDBSource(
-        engine,
+async def ordered_legacy_source(migration_api, ordered_legacy_engine):
+    """Read the explicit-position legacy contract, not an unordered dump."""
+    return migration_api.MariaDBSource(
+        ordered_legacy_engine,
         schema="legacy",
         quiesced=True,
     )
-    yield source
-    await engine.dispose()
 
 
 @pytest_asyncio.fixture
@@ -56,13 +50,13 @@ async def postgres_target(migration_api):
 
 
 @pytest.mark.asyncio
-async def test_legacy_mariadb_to_postgres_preserves_all_model_datasets(
-    migration_api, maria_source, postgres_target
+async def test_ordered_legacy_to_postgres_preserves_all_model_datasets(
+    migration_api, ordered_legacy_source, postgres_target
 ) -> None:
     """Legacy Java-serialized MariaDB data becomes logical datasets."""
     result = await _runner(
         migration_api,
-        maria_source,
+        ordered_legacy_source,
         postgres_target,
         batch_size=37,
     ).run()
@@ -70,68 +64,65 @@ async def test_legacy_mariadb_to_postgres_preserves_all_model_datasets(
     assert result_status(result) == "COMPLETE"
     storage = target_storage(postgres_target)
     datasets = await storage.list_all_datasets()
-    for model_id in ("model1", "model2", "model3", "model4"):
-        for suffix in ("inputs", "outputs", "metadata"):
-            assert f"{model_id}_{suffix}" in datasets
+    assert set(datasets) == {"model_inputs", "model_outputs", "model_metadata"}
 
 
 @pytest.mark.asyncio
-async def test_legacy_mariadb_to_postgres_preserves_values_and_types(
-    migration_api, maria_source, postgres_target
+async def test_ordered_legacy_to_postgres_preserves_values_and_row_metadata(
+    migration_api, ordered_legacy_source, postgres_target
 ) -> None:
-    """Representative numeric, text, boolean, and metadata values survive."""
-    await _runner(migration_api, maria_source, postgres_target).run()
+    """Explicit cell positions preserve feature values and internal metadata."""
+    await _runner(migration_api, ordered_legacy_source, postgres_target).run()
     storage = target_storage(postgres_target)
 
-    model1_inputs = await storage.read_data("model1_inputs", 0, 100)
-    np.testing.assert_array_equal(model1_inputs, np.array([[0, 1, 2, 3, 4]] * 100))
-
-    model4_inputs = await storage.read_data("model4_inputs", 0, 5)
-    assert model4_inputs[0].tolist() == [0.0, "i'm text-0", True, 0]
-    assert model4_inputs[4].tolist() == [4.0, "i'm text-4", True, 8]
-
-    metadata = await storage.read_data("model1_metadata", 0, 1)
-    assert metadata[0][1] == "6decea54-91eb-4726-b6f8-a2f1dee8e81b"
+    assert (await storage.read_data("model_inputs")).tolist() == [
+        ["a-1", "b-1"],
+        ["a-5", "b-5"],
+    ]
+    assert (await storage.read_data("model_outputs")).tolist() == [["out-1"], ["out-5"]]
+    assert (await storage.read_data("model_metadata", 0, 1)).tolist() == [
+        ["time", "row-1", "tag"]
+    ]
 
 
 @pytest.mark.asyncio
-async def test_legacy_mariadb_to_postgres_preserves_column_aliases(
-    migration_api, maria_source, postgres_target
+async def test_ordered_legacy_to_postgres_preserves_column_aliases(
+    migration_api, ordered_legacy_source, postgres_target
 ) -> None:
     """Legacy schema mappings are translated to target aliases."""
-    await _runner(migration_api, maria_source, postgres_target).run()
+    await _runner(migration_api, ordered_legacy_source, postgres_target).run()
     aliases = await target_storage(postgres_target).get_aliased_column_names(
-        "model3_inputs"
+        "model_inputs"
     )
-    assert aliases == ["year mapped", "make mapped", "color mapped"]
+    assert aliases == ["Feature A", "feature_b"]
 
 
 @pytest.mark.asyncio
-async def test_legacy_mariadb_to_postgres_is_idempotent(
-    migration_api, maria_source, postgres_target
+async def test_ordered_legacy_to_postgres_is_idempotent(
+    migration_api, ordered_legacy_source, postgres_target
 ) -> None:
     """Rerunning a completed database migration does not duplicate rows."""
-    first = await _runner(migration_api, maria_source, postgres_target).run()
-    second = await _runner(migration_api, maria_source, postgres_target).run()
+    first = await _runner(migration_api, ordered_legacy_source, postgres_target).run()
+    second = await _runner(migration_api, ordered_legacy_source, postgres_target).run()
 
     assert result_status(first) == "COMPLETE"
     assert result_status(second) == "COMPLETE"
     assert second.rows_written == 0
-    assert await target_storage(postgres_target).dataset_rows("model1_inputs") == 100
+    assert await target_storage(postgres_target).dataset_rows("model_inputs") == 2
 
 
 @pytest.mark.asyncio
-async def test_legacy_mariadb_to_postgres_verifies_source_and_target_counts(
-    migration_api, maria_source, postgres_target
+async def test_ordered_legacy_to_postgres_verifies_source_and_target_counts(
+    migration_api, ordered_legacy_source, postgres_target
 ) -> None:
     """The result records comparable source and target counts."""
-    runner = _runner(migration_api, maria_source, postgres_target)
+    runner = _runner(migration_api, ordered_legacy_source, postgres_target)
     result = await runner.run()
     verification = await runner.verify()
 
     assert result_status(result) == "COMPLETE"
     assert verification.ok is True
-    assert verification.datasets_compared >= 12
+    assert verification.datasets_compared == 3
     assert verification.source_rows == verification.target_rows
     assert result.safe_to_remove_source is True
 
@@ -158,3 +149,22 @@ async def test_current_v2_mariadb_to_postgres_path_is_explicit(
     assert result_status(result) == "COMPLETE"
     for dataset in pvc_fixture.datasets:
         await assert_dataset_matches(postgres_target, dataset)
+
+
+@pytest.mark.asyncio
+async def test_unordered_legacy_mariadb_is_rejected_before_postgres_writes(
+    migration_api, postgres_target
+):
+    """The real unordered fixture must not be passed off as a safe legacy import."""
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    engine = create_async_engine(live_db_url("TRUSTYAI_MIGRATION_TEST_MARIADB_URL"))
+    try:
+        source = migration_api.MariaDBSource(engine, schema="legacy", quiesced=True)
+        with pytest.raises(
+            migration_api.MigrationValidationError, match="explicit column positions"
+        ):
+            await _runner(migration_api, source, postgres_target).run()
+        assert await target_storage(postgres_target).list_all_datasets() == []
+    finally:
+        await engine.dispose()

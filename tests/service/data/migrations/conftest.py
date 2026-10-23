@@ -337,6 +337,60 @@ async def target_factory(migration_api):
 
 
 @pytest_asyncio.fixture
+async def ordered_legacy_engine():
+    """Legacy contract with explicit cell positions, not inferred insertion order."""
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from .test_java_values import serialized_legacy_string
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    statements = [
+        "CREATE TABLE DataframeMetadata (id TEXT PRIMARY KEY)",
+        "CREATE TABLE DataframeMetadata_names (DataframeMetadata_id TEXT, names TEXT, names_ORDER INTEGER)",
+        "CREATE TABLE DataframeMetadata_inputs (DataframeMetadata_id TEXT, inputs INTEGER, inputs_ORDER INTEGER)",
+        "CREATE TABLE DataframeRow (dbId INTEGER PRIMARY KEY, timestamp TEXT, modelId TEXT, rowId TEXT, tag TEXT)",
+        "CREATE TABLE DataframeRow_Values (DataframeRow_dbId INTEGER, order_column INTEGER, serializableObject BLOB)",
+        "CREATE TABLE StorageMetadata_StorageSchema (StorageMetadata_modelId TEXT, schemas_id INTEGER)",
+        "CREATE TABLE storageSchema_mappedItems (Schema_id INTEGER, mappedItems_id INTEGER, mappedItems_KEY TEXT)",
+        "CREATE TABLE storageSchema_originalItems (items_id INTEGER, items_KEY TEXT)",
+        "INSERT INTO DataframeMetadata VALUES ('model')",
+        "INSERT INTO DataframeMetadata_names VALUES ('model', 'feature_b', 2), ('model', 'feature_a', 0), ('model', 'result', 1)",
+        "INSERT INTO DataframeMetadata_inputs VALUES ('model', 0, 1), ('model', 1, 2), ('model', 1, 0)",
+        "INSERT INTO StorageMetadata_StorageSchema VALUES ('model', 1)",
+        "INSERT INTO storageSchema_mappedItems VALUES (1, 1, 'Feature A')",
+        "INSERT INTO storageSchema_originalItems VALUES (1, 'feature_a')",
+    ]
+    try:
+        async with engine.begin() as connection:
+            for statement in statements:
+                await connection.execute(text(statement))
+            for row_id in [1, 5]:
+                await connection.execute(
+                    text(
+                        "INSERT INTO DataframeRow VALUES (:id, 'time', 'model', :row_id, 'tag')"
+                    ),
+                    {"id": row_id, "row_id": f"row-{row_id}"},
+                )
+                for column, value in enumerate(
+                    [f"a-{row_id}", f"out-{row_id}", f"b-{row_id}"]
+                ):
+                    await connection.execute(
+                        text(
+                            "INSERT INTO DataframeRow_Values VALUES (:id, :column, :value)"
+                        ),
+                        {
+                            "id": row_id,
+                            "column": column,
+                            "value": serialized_legacy_string(value),
+                        },
+                    )
+        yield engine
+    finally:
+        await engine.dispose()
+
+
+@pytest_asyncio.fixture
 async def sqlite_target(migration_api):
     """Provide an isolated in-memory target for fast framework tests."""
     pytest.importorskip("aiosqlite")

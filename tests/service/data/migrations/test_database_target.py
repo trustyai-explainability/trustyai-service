@@ -71,6 +71,23 @@ async def test_database_target_preserves_bytes_and_mapping_cells(sqlite_target) 
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("column_count", [1, 2])
+async def test_database_target_keeps_tensor_cells_in_the_declared_matrix(
+    sqlite_target, column_count
+):
+    """Equal-sized tensor cells must not become extra dataset dimensions."""
+    rows = np.empty((2, column_count), dtype=object)
+    for index in range(2):
+        for column in range(column_count):
+            rows[index, column] = [1.25, 2.5]
+    names = [f"tensor_{column}" for column in range(column_count)]
+    await sqlite_target.storage.write_data("tensors", rows, names)
+    actual = await sqlite_target.storage.read_data("tensors")
+    assert actual.shape == (2, column_count)
+    assert actual.tolist() == rows.tolist()
+
+
+@pytest.mark.asyncio
 async def test_database_target_preserves_serialized_metadata_on_append(
     sqlite_target,
 ) -> None:

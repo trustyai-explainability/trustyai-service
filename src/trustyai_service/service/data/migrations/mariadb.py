@@ -240,6 +240,7 @@ class MariaDBSource(MigrationSource):
         descriptors: list[DatasetDescriptor] = []
         content_digest = hashlib.sha256()
         async with self.engine.connect() as connection:
+            await connection.run_sync(_validate_legacy_position_columns)
             model_result = await connection.execute(model_query)
             model_ids = [str(row[0]) for row in model_result]
             for model_id in model_ids:
@@ -259,23 +260,30 @@ class MariaDBSource(MigrationSource):
         """Read legacy schemas and build input/output/metadata descriptors."""
         names_result = await connection.execute(
             text(
-                "SELECT names FROM DataframeMetadata_names "
-                "WHERE DataframeMetadata_id=:model_id"
+                "SELECT names_ORDER, names FROM DataframeMetadata_names "
+                "WHERE DataframeMetadata_id=:model_id ORDER BY names_ORDER"
             ),
             {"model_id": model_id},
         )
-        raw_names = [str(row[0]) for row in names_result]
+        name_rows = names_result.all()
         input_result = await connection.execute(
             text(
-                "SELECT inputs FROM DataframeMetadata_inputs "
-                "WHERE DataframeMetadata_id=:model_id"
+                "SELECT inputs_ORDER, inputs FROM DataframeMetadata_inputs "
+                "WHERE DataframeMetadata_id=:model_id ORDER BY inputs_ORDER"
             ),
             {"model_id": model_id},
         )
-        flags = [row[0] for row in input_result]
-        if len(raw_names) != len(flags):
-            msg = f"legacy dataset '{model_id}' has incomplete input metadata"
+        input_rows = input_result.all()
+        positions = list(range(len(name_rows)))
+        if (
+            not name_rows
+            or [row[0] for row in name_rows] != positions
+            or [row[0] for row in input_rows] != positions
+        ):
+            msg = f"legacy dataset '{model_id}' has incomplete or ambiguous column positions"
             raise MigrationValidationError(msg)
+        raw_names = [str(row[1]) for row in name_rows]
+        flags = [row[1] for row in input_rows]
         input_indices = tuple(
             index for index, flag in enumerate(flags) if _is_input_flag(flag)
         )
@@ -451,12 +459,12 @@ class MariaDBSource(MigrationSource):
             "WHERE row_idx > :last_row_idx ORDER BY row_idx LIMIT :n_rows"
         )
         if n_rows == 0:
-            return np.empty((0, len(descriptor.column_names)), dtype=object)
+            return np.empty((0, *descriptor.shape), dtype=object)
         last_row_idx = await self._current_read_boundary(
             table_name, descriptor.name, start_row
         )
         if last_row_idx is None:
-            return np.empty((0, len(descriptor.column_names)), dtype=object)
+            return np.empty((0, *descriptor.shape), dtype=object)
         async with self.engine.connect() as connection:
             result = await connection.execute(
                 query,
@@ -486,7 +494,7 @@ class MariaDBSource(MigrationSource):
                 next_start=start_row + len(rows),
                 last_row_idx=last_read_row_idx,
             )
-        return np.asarray(rows, dtype=object)
+        return _current_rows_array(rows, descriptor.shape)
 
     async def _current_read_boundary(
         self, table_name: str, dataset_name: str, start_row: int
@@ -648,6 +656,36 @@ class MariaDBSource(MigrationSource):
 def inspect_table_names(connection: Connection) -> list[str]:
     """Sync inspector callback kept module-level for type-checking."""
     return inspect(connection).get_table_names()
+
+
+def _validate_legacy_position_columns(connection: Connection) -> None:
+    """Require explicit positions corresponding to DataframeRow_Values.order_column."""
+    inspector = inspect(connection)
+    for table, column in (
+        ("DataframeMetadata_names", "names_ORDER"),
+        ("DataframeMetadata_inputs", "inputs_ORDER"),
+    ):
+        if not inspector.has_table(table) or column not in {
+            item["name"] for item in inspector.get_columns(table)
+        }:
+            msg = (
+                f"legacy metadata requires explicit column positions ({table}.{column}); "
+                "unordered legacy schemas cannot be migrated safely"
+            )
+            raise MigrationValidationError(msg)
+
+
+def _current_rows_array(rows: list[list[object]], shape: tuple[int, ...]) -> np.ndarray:
+    """Keep list-valued cells opaque unless metadata declares extra dimensions."""
+    if not rows:
+        return np.empty((0, *shape), dtype=object)
+    if len(shape) > 1:
+        return np.asarray(rows, dtype=object)
+    batch = np.empty((len(rows), *shape), dtype=object)
+    for index, row in enumerate(rows):
+        for column, value in enumerate(row):
+            batch[index, column] = value
+    return batch
 
 
 def _hash_values(digest: _Digest, *values: object) -> None:
