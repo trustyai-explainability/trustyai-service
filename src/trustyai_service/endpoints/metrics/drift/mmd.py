@@ -87,7 +87,7 @@ class MMDMetricRequest(BaseMetricRequest):
     def retrieve_tags(self) -> dict[str, str]:
         """Retrieve tags for this MMD metric request."""
         tags = self.retrieve_default_tags()
-        tags["batch_size"] = str(self.batch_size)
+        tags["batch_size"] = str(self.batch_size or DEFAULT_BATCH_SIZE)
         if self.reference_tag:
             tags["referenceTag"] = self.reference_tag
         if self.fit_columns:
