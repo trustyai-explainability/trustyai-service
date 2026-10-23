@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
 pytest.importorskip("sqlalchemy")
 
-from sqlalchemy import event, insert
+from sqlalchemy import event, insert, select
 from sqlalchemy.exc import IntegrityError
 
 from trustyai_service.endpoints.consumer import (
@@ -246,11 +246,94 @@ async def test_require_existing_dataset_accepts_keyword_name() -> None:
 
 
 @pytest.mark.asyncio
-async def test_column_type_defaults_are_noops() -> None:
-    """set/get_column_types keep the interface defaults (no-op / None)."""
+async def test_column_types_survive_mapping_and_append() -> None:
+    """SQL type metadata remains available as the service updates the dataset."""
     storage = SQLiteStorage(":memory:")
-    await storage.set_column_types("ds", ["int", "float"])  # must not raise
-    assert await storage.get_column_types("ds") is None
+    try:
+        await storage.write_data("ds", np.asarray([[1, 2]]), ["a", "b"])
+        assert await storage.get_column_types("ds") is None
+        await storage.set_column_types("ds", ["INT32", "DOUBLE"])
+        await storage.apply_name_mapping("ds", {"a": "A"})
+        await storage.write_data("ds", np.asarray([[3, 4]]), ["a", "b"])
+        assert await storage.get_column_types("ds") == ["INT32", "DOUBLE"]
+        assert await storage.get_aliased_column_names("ds") == ["A", "b"]
+        with pytest.raises(ValueError, match="column"):
+            await storage.set_column_types("ds", ["STRING"])
+        assert await storage.get_column_types("ds") == ["INT32", "DOUBLE"]
+    finally:
+        storage._engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("valid_column_count", [True, False])
+async def test_column_types_preserve_duplicate_reference_metadata(
+    *,
+    valid_column_count: bool,
+) -> None:
+    """Only the earliest legacy reference is updated; invalid writes change none."""
+    storage = SQLiteStorage(":memory:")
+    first_metadata = {
+        "column_names": ["a", "b"],
+        "aliased_names": ["A", "B"],
+        "shape": [-1, 2],
+        "trustyai_service": {"recorded_inferences": 3},
+    }
+    duplicate_metadata = {
+        "column_names": ["other"],
+        "aliased_names": ["Other"],
+        "shape": [-1, 1],
+        "column_types": ["STRING"],
+        "trustyai_service": {"recorded_inferences": 7},
+    }
+    try:
+        with storage._engine.begin() as conn:
+            # Existing databases can predate the dataset_name UNIQUE constraint.
+            storage._ref.drop(conn)
+            conn.exec_driver_sql(
+                "CREATE TABLE trustyai_v2_table_reference ("
+                "table_idx INTEGER PRIMARY KEY, dataset_name VARCHAR(255), "
+                "metadata JSON, n_rows BIGINT)"
+            )
+            conn.execute(
+                insert(storage._ref),
+                [
+                    {
+                        "table_idx": 20,
+                        "dataset_name": "ds",
+                        "metadata": duplicate_metadata,
+                        "n_rows": 7,
+                    },
+                    {
+                        "table_idx": 10,
+                        "dataset_name": "ds",
+                        "metadata": first_metadata,
+                        "n_rows": 3,
+                    },
+                ],
+            )
+
+        if valid_column_count:
+            await storage.set_column_types("ds", ["INT32", "DOUBLE"])
+            assert await storage.get_column_types("ds") == ["INT32", "DOUBLE"]
+        else:
+            with pytest.raises(ValueError, match="column count"):
+                await storage.set_column_types("ds", ["INT32"])
+
+        with storage._engine.connect() as conn:
+            rows = (
+                conn.execute(select(storage._ref).order_by(storage._ref.c.table_idx))
+                .mappings()
+                .all()
+            )
+        expected_first = dict(first_metadata)
+        if valid_column_count:
+            expected_first["column_types"] = ["INT32", "DOUBLE"]
+        assert [(row["table_idx"], row["metadata"], row["n_rows"]) for row in rows] == [
+            (10, expected_first, 3),
+            (20, duplicate_metadata, 7),
+        ]
+    finally:
+        storage._engine.dispose()
 
 
 @pytest.mark.asyncio
