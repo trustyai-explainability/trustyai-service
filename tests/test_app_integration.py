@@ -3,6 +3,7 @@
 import importlib
 import os
 from http import HTTPStatus
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -310,6 +311,60 @@ class TestFeatureFlagGating:
             p for p in openapi["paths"] if p.startswith("/metrics/group/fairness")
         ]
         assert legacy_paths == []
+
+
+@pytest.mark.asyncio
+async def test_required_tls_fails_before_any_listener(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Missing required TLS must not start even the health listener."""
+    monkeypatch.setenv("TLS_REQUIRED", "true")
+    monkeypatch.setenv("TLS_CERT_FILE", str(tmp_path / "missing.crt"))
+    monkeypatch.setenv("TLS_KEY_FILE", str(tmp_path / "missing.key"))
+    with patch("trustyai_service.main.serve") as serve_mock:
+        with pytest.raises(ValueError, match="required"):
+            await run_server()
+        serve_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_bad_cert_fails_before_any_listener(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Mounted but invalid certificate material cannot leave health/HTTP running."""
+    import ssl  # noqa: PLC0415
+
+    cert, key = tmp_path / "tls.crt", tmp_path / "tls.key"
+    cert.write_text("not a certificate")
+    key.write_text("not a key")
+    monkeypatch.setenv("TLS_CERT_FILE", str(cert))
+    monkeypatch.setenv("TLS_KEY_FILE", str(key))
+    with patch("trustyai_service.main.serve") as serve_mock:
+        with pytest.raises(ssl.SSLError):
+            await run_server()
+        serve_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_optional_http_uses_only_the_configured_loopback_bind(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Local HTTP mode must not accidentally retain Hypercorn's default port."""
+    monkeypatch.setenv("TLS_REQUIRED", "false")
+    monkeypatch.setenv("TLS_POLICY", "system")
+    monkeypatch.setenv("TLS_CERT_FILE", str(tmp_path / "missing.crt"))
+    monkeypatch.setenv("TLS_KEY_FILE", str(tmp_path / "missing.key"))
+    monkeypatch.setenv("HTTP_PORT", "8081")
+    with patch("trustyai_service.main.serve") as serve_mock:
+        await run_server()
+        assert serve_mock.call_count == 2
+        config = serve_mock.call_args_list[0].args[1]
+        assert config.bind == ["127.0.0.1:8081"]
+        assert config.insecure_bind == []
+        assert config.create_ssl_context() is None
 
 
 class TestPortCollisionGuard:

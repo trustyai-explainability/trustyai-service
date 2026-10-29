@@ -6,7 +6,6 @@ import os
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from http import HTTPStatus
-from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request, Response
@@ -72,7 +71,11 @@ from trustyai_service.service.health_checks import (
 from trustyai_service.service.prometheus.shared_prometheus_scheduler import (
     get_shared_prometheus_scheduler,
 )
-from trustyai_service.service.tls import PolicyAwareConfig
+from trustyai_service.service.tls import (
+    PolicyAwareConfig,
+    TLSSettings,
+    serving_certificates,
+)
 
 logging.basicConfig(
     level=logging.INFO,  # Reduce default verbosity
@@ -343,23 +346,10 @@ health_app.post(routes.CONSUMER_ROOT)(consume_cloud_event)
 def get_tls_config() -> dict[str, Any] | None:
     """Get TLS configuration for the service.
 
-    Returns SSL configuration if certificates are available, None
-    otherwise.
+    Return serving paths when available, or None for optional local HTTP.
+    Missing required or partially mounted serving material raises ValueError.
     """
-    cert_file = os.getenv("TLS_CERT_FILE", "/etc/tls/internal/tls.crt")
-    key_file = os.getenv("TLS_KEY_FILE", "/etc/tls/internal/tls.key")
-
-    cert_path = Path(cert_file)
-    key_path = Path(key_file)
-
-    if cert_path.exists() and key_path.exists():
-        logger.info("TLS certificates found at %s and %s", cert_file, key_file)
-        return {
-            "ssl_keyfile": str(key_path),
-            "ssl_certfile": str(cert_path),
-        }
-    logger.info("TLS certificates not found, running in HTTP mode")
-    return None
+    return serving_certificates(TLSSettings.from_env())
 
 
 async def run_server() -> None:
@@ -386,6 +376,7 @@ async def run_server() -> None:
 
     # Create hypercorn config
     config = PolicyAwareConfig()
+    config.tls_settings = TLSSettings.from_env()
 
     # HTTP for kube-rbac-proxy (plain HTTP on insecure_bind)
     config.insecure_bind = [f"{host_http}:{http_port}"]
@@ -403,7 +394,13 @@ async def run_server() -> None:
         logger.info("Binding HTTPS on %s:%s for direct access", host_https, ssl_port)
         logger.info("TrustyAI service running with dual HTTP/HTTPS protocol support")
     else:
+        config.bind = [f"{host_http}:{http_port}"]
+        config.insecure_bind = []
         logger.info("TLS certificates not found - running HTTP only")
+
+    # Validate policy and load serving material before either server can bind.
+    # Hypercorn constructs its own context again when starting the TLS listener.
+    config.create_ssl_context()
 
     # Configure logging
     config.accesslog = "-"  # Log to stdout
