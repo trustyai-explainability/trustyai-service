@@ -109,10 +109,15 @@ podman run -p 8080:8080 trustyai:latest
 | -------- | ------- | ----------- |
 | `SERVICE_STORAGE_FORMAT` | `PVC` | Storage backend (`PVC`, `POSTGRESQL`, `SQLITE`, or the deprecated `MARIA`) |
 | `SERVICE_METRICS_SCHEDULE` | `30` | Seconds between scheduled computations |
-| `HTTP_PORT` | `8080` | HTTP listener port |
+| `HTTP_PORT` | `8081` | Loopback HTTP listener port |
 | `SSL_PORT` | `4443` | HTTPS listener port |
 | `TLS_CERT_FILE` | `/etc/tls/internal/tls.crt` | TLS certificate path |
 | `TLS_KEY_FILE` | `/etc/tls/internal/tls.key` | TLS private key path |
+| `TLS_POLICY` | `system` | System crypto policy or explicit `configured` TLS controls |
+| `TLS_REQUIRED` | `false` | Fail startup if serving material is missing (`true`/`false`) |
+| `TLS_MIN_VERSION` | unset | Configured policy: `TLSv1.2` or `TLSv1.3` |
+| `TLS_CIPHERS` | unset | Exact colon-separated OpenSSL cipher names for configured TLS 1.2 |
+| `TLS_CURVES` | unset | Optional single OpenSSL curve name; unsupported lists fail |
 | `DATABASE_HOST` | — | Database hostname |
 | `DATABASE_PORT` | `3306` (MariaDB) / `5432` (PostgreSQL) | Database port |
 | `DATABASE_USERNAME` | — | Database username |
@@ -138,8 +143,13 @@ Invalid pool or database tuning values fail startup validation rather than
 silently falling back to defaults. Pool settings apply to PostgreSQL and the
 deprecated MariaDB backend; SQLite settings apply to SQLite connections.
 
-TLS is enabled automatically when both the certificate and key
-files are present.
+TLS is enabled automatically when both the certificate and key files are present.
+Set `TLS_REQUIRED=true` to prohibit missing-certificate HTTP fallback. Configured
+policy always requires TLS and validates its settings and serving material before
+starting either listener. System policy remains the default; it is not automatically
+the cluster TLS profile. See [server TLS configuration](docs/server-tls.md) for the
+input contract and Python's TLS 1.3 cipher/group-list limitations. Deployments needing
+unrepresentable controls must use a capable TLS terminator, not silently drop them.
 
 ### Database TLS
 
