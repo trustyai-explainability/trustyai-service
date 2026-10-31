@@ -64,6 +64,14 @@ def scalar_value(value: object, expected_class: str | None) -> object:
     return scalar
 
 
+def _integer_field(value: object) -> int:
+    """Accept parsed integer fields without truncation or bool coercion."""
+    if not isinstance(value, int) or isinstance(value, bool):
+        msg = "expected an integer Tensor field"
+        raise TypeError(msg)
+    return value
+
+
 def tensor_value(tensor: Any) -> object:  # noqa: ANN401 -- javaobj exposes dynamically parsed object fields
     """Validate a Tensor's exact structure and convert it to nested lists."""
     validate_object(
@@ -72,11 +80,11 @@ def tensor_value(tensor: Any) -> object:  # noqa: ANN401 -- javaobj exposes dyna
         {"dimension", "nEntries", "data", "datatype", "dimensions"},
     )
     try:
-        dimensions = [int(value) for value in tensor.dimensions]
+        dimensions = [_integer_field(value) for value in tensor.dimensions]
         flat_data = list(tensor.data)
         datatype = tensor.datatype.name
-        entries = int(tensor.nEntries)
-        dimension = int(tensor.dimension)
+        entries = _integer_field(tensor.nEntries)
+        dimension = _integer_field(tensor.dimension)
     except (AttributeError, TypeError, ValueError, OverflowError) as error:
         msg = "Java serialized Tensor has invalid fields"
         raise MigrationValidationError(msg) from error
