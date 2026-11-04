@@ -76,9 +76,10 @@ uv sync --all-groups
 uv run python -m src.main
 ```
 
-Once running, the API is available at `http://localhost:8080`.
+Once running, the API is available at `http://localhost:8081`.
 Interactive OpenAPI documentation is at
-`http://localhost:8080/docs`.
+`http://localhost:8081/docs`. Health probes and the KServe consumer endpoints
+are served separately on `http://localhost:8080`.
 
 ---
 
