@@ -98,6 +98,17 @@ scheduler_logger = logging.getLogger(
 scheduler_logger.setLevel(logging.DEBUG)
 logger = logging.getLogger(__name__)
 
+# Listener defaults. HTTP_PORT is load bearing beyond this service: the TrustyAI
+# operator hardcodes 8081 as the kube-rbac-proxy upstream and never sets it.
+DEFAULT_HTTP_PORT = 8081
+DEFAULT_SSL_PORT = 4443
+DEFAULT_HEALTH_PORT = 8080
+
+# kube-rbac-proxy is the only client of the plaintext API listener.
+LOOPBACK_HOST = "127.0.0.1"
+# Kubernetes service binding for the TLS API listener and the kubelet probes.
+PUBLIC_HOST = "0.0.0.0"  # noqa: S104
+
 prometheus_scheduler = get_shared_prometheus_scheduler()
 
 
@@ -352,19 +363,90 @@ def get_tls_config() -> dict[str, Any] | None:
     return serving_certificates(TLSSettings.from_env())
 
 
+def plaintext_listeners(config: PolicyAwareConfig) -> list[str]:
+    """Return the addresses Hypercorn actually serves plaintext traffic from.
+
+    Hypercorn only consults ``insecure_bind`` when TLS is enabled. A loopback
+    listener declared there alone is therefore never opened without serving
+    material, and the API silently lands on Hypercorn's own default
+    ``127.0.0.1:8000`` while a forwarding proxy keeps dialling ``HTTP_PORT``.
+    """
+    return list(config.insecure_bind) if config.ssl_enabled else list(config.bind)
+
+
+def build_api_config(
+    tls_config: dict[str, Any] | None,
+    http_port: int = DEFAULT_HTTP_PORT,
+    ssl_port: int = DEFAULT_SSL_PORT,
+) -> PolicyAwareConfig:
+    """Return the API listener layout used by the proxy and by direct TLS clients.
+
+    The plaintext listener is the loopback port kube-rbac-proxy forwards to, so
+    the address it is declared on has to follow the mode: ``bind`` without TLS,
+    ``insecure_bind`` alongside a TLS ``bind``.
+    """
+    loopback_bind = f"{LOOPBACK_HOST}:{http_port}"
+
+    config = PolicyAwareConfig()
+    config.tls_settings = TLSSettings.from_env()
+
+    # Configure for HTTP/1.1 compatibility and proper keep-alive
+    config.h11_max_incomplete_size = 16 * 1024 * 1024  # 16MB for large requests
+    config.keep_alive_timeout = float(os.getenv("KEEP_ALIVE", "75"))
+
+    # Configure logging
+    config.accesslog = "-"  # Log to stdout
+    config.errorlog = "-"  # Log to stderr
+    config.use_reloader = False  # Disable reloader in production
+
+    # Optional HTTPS (direct access on bind), with the loopback listener kept
+    # for kube-rbac-proxy.
+    if tls_config:
+        config.bind = [f"{PUBLIC_HOST}:{ssl_port}"]
+        config.insecure_bind = [loopback_bind]
+        config.certfile = tls_config["ssl_certfile"]
+        config.keyfile = tls_config["ssl_keyfile"]
+        logger.info("API TLS listener on %s", config.bind)
+    else:
+        # Without TLS, insecure_bind is ignored, so the loopback listener has to
+        # be the bind itself or the API falls back to 127.0.0.1:8000.
+        config.bind = [loopback_bind]
+        config.insecure_bind = []
+
+    listeners = plaintext_listeners(config)
+    if loopback_bind not in listeners:
+        msg = (
+            f"kube-rbac-proxy requires a plaintext listener on {loopback_bind}: "
+            "declare it on bind when TLS is disabled, insecure_bind is only "
+            "served with TLS"
+        )
+        raise ValueError(msg)
+    logger.info(
+        "API plaintext listener on %s for kube-rbac-proxy (TLS %s)",
+        listeners,
+        "enabled" if config.ssl_enabled else "disabled",
+    )
+
+    return config
+
+
+def build_health_config(health_port: int = DEFAULT_HEALTH_PORT) -> PolicyAwareConfig:
+    """Return the kubelet probe listener layout, which also carries KServe payloads."""
+    config = PolicyAwareConfig()
+    config.bind = [f"{PUBLIC_HOST}:{health_port}"]
+    config.use_reloader = False
+    logger.info("Health probe listener on %s for kubelet", config.bind)
+    return config
+
+
 async def run_server() -> None:
-    """Run hypercorn server with both HTTP and HTTPS binds."""
+    """Run the API and health Hypercorn servers with an explicit listener layout."""
     # Get TLS configuration
     tls_config = get_tls_config()
 
-    # Configure server settings
-    host_https = "0.0.0.0"  # noqa: S104  # intentional: Kubernetes service binding
-    host_http = (
-        "127.0.0.1"  # Keep loopback-only for security (kube-rbac-proxy forwards here)
-    )
-    http_port = int(os.getenv("HTTP_PORT", "8081"))
-    ssl_port = int(os.getenv("SSL_PORT", "4443"))
-    health_port = int(os.getenv("HEALTH_PORT", "8080"))
+    http_port = int(os.getenv("HTTP_PORT", str(DEFAULT_HTTP_PORT)))
+    ssl_port = int(os.getenv("SSL_PORT", str(DEFAULT_SSL_PORT)))
+    health_port = int(os.getenv("HEALTH_PORT", str(DEFAULT_HEALTH_PORT)))
 
     if health_port in (http_port, ssl_port):
         msg = f"HEALTH_PORT ({health_port}) must differ from HTTP_PORT ({http_port}) and SSL_PORT ({ssl_port})"
@@ -374,43 +456,13 @@ async def run_server() -> None:
         msg = f"HTTP_PORT ({http_port}) must differ from SSL_PORT ({ssl_port})"
         raise ValueError(msg)
 
-    # Create hypercorn config
-    config = PolicyAwareConfig()
-    config.tls_settings = TLSSettings.from_env()
-
-    # HTTP for kube-rbac-proxy (plain HTTP on insecure_bind)
-    config.insecure_bind = [f"{host_http}:{http_port}"]
-    logger.info("Binding HTTP on %s:%s for kube-rbac-proxy", host_http, http_port)
-
-    # Configure for HTTP/1.1 compatibility and proper keep-alive
-    config.h11_max_incomplete_size = 16 * 1024 * 1024  # 16MB for large requests
-    config.keep_alive_timeout = float(os.getenv("KEEP_ALIVE", "75"))
-
-    # Optional HTTPS (direct access on bind)
-    if tls_config:
-        config.bind = [f"{host_https}:{ssl_port}"]
-        config.certfile = tls_config["ssl_certfile"]
-        config.keyfile = tls_config["ssl_keyfile"]
-        logger.info("Binding HTTPS on %s:%s for direct access", host_https, ssl_port)
-        logger.info("TrustyAI service running with dual HTTP/HTTPS protocol support")
-    else:
-        config.bind = [f"{host_http}:{http_port}"]
-        config.insecure_bind = []
-        logger.info("TLS certificates not found - running HTTP only")
+    config = build_api_config(tls_config, http_port, ssl_port)
 
     # Validate policy and load serving material before either server can bind.
     # Hypercorn constructs its own context again when starting the TLS listener.
     config.create_ssl_context()
 
-    # Configure logging
-    config.accesslog = "-"  # Log to stdout
-    config.errorlog = "-"  # Log to stderr
-    config.use_reloader = False  # Disable reloader in production
-
-    health_config = PolicyAwareConfig()
-    health_config.bind = [f"0.0.0.0:{health_port}"]
-    health_config.use_reloader = False
-    logger.info("Binding health probes on 0.0.0.0:%s for kubelet", health_port)
+    health_config = build_health_config(health_port)
 
     await asyncio.gather(
         serve(app, config),  # type: ignore[arg-type]
