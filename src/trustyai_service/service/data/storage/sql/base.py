@@ -483,10 +483,11 @@ class SQLStorage(StorageInterface):
         max_attempts = 2 * len(datasets) + 1
         reference_conflicts = 0
         missing_table_conflicts = 0
+        concurrent_ddl_conflicts = 0
         for attempt in range(max_attempts):
             try:
                 self._write_data_batch_once(datasets, parameters, expected_tables)
-            except (IntegrityError, ProgrammingError) as error:
+            except (IntegrityError, ProgrammingError, OperationalError) as error:
                 if isinstance(
                     error, IntegrityError
                 ) and self._is_dataset_creation_conflict(error):
@@ -497,6 +498,13 @@ class SQLStorage(StorageInterface):
                 ) and self._is_missing_dataset_table_error(error):
                     missing_table_conflicts += 1
                     retryable = missing_table_conflicts <= len(datasets)
+                elif isinstance(
+                    error, OperationalError
+                ) and self._is_concurrent_ddl_error(error):
+                    # MariaDB skips statements against a table whose definition
+                    # a competing writer is still creating; roll back and retry.
+                    concurrent_ddl_conflicts += 1
+                    retryable = concurrent_ddl_conflicts <= len(datasets)
                 else:
                     retryable = False
                 if attempt == max_attempts - 1 or not retryable:
