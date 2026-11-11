@@ -86,6 +86,7 @@ class _DriverError(Exception):
     [
         pytest.param(_DriverError(errno=1050), id="mariadb-duplicate-table"),
         pytest.param(_DriverError(sqlstate="42P07"), id="postgres-duplicate-table"),
+        pytest.param(_DriverError(sqlstate="42710"), id="postgres-duplicate-row-type"),
         pytest.param(
             _DriverError(sqlstate="23505", constraint="pg_class_relname_nsp_index"),
             id="postgres-duplicate-relation",
