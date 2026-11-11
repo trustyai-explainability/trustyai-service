@@ -1876,7 +1876,7 @@ requires-dist = [
     { name = "aiosqlite", marker = "extra == 'migration'", specifier = ">=0.21,<1" },
     { name = "asyncmy", marker = "extra == 'migration'", specifier = ">=0.2,<1" },
     { name = "asyncpg", marker = "extra == 'migration'", specifier = ">=0.30,<1" },
-    { name = "fastapi", specifier = ">=0.116,<0.148" },
+    { name = "fastapi", specifier = ">=0.116,<0.163" },
     { name = "goodpoints", marker = "extra == 'mmd'", specifier = ">=0.6.3,<0.7" },
     { name = "h5py", specifier = ">=3.13,<4" },
     { name = "hypercorn", specifier = ">=0.18,<0.19" },
