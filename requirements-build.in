@@ -7,7 +7,7 @@
 #     --generate-hashes --prerelease=if-necessary \
 #     --no-strip-markers \
 #     -o requirements-build.txt \
-#     --index-url https://pypi.org/simple
+#     --default-index https://pypi.org/simple
 #
 # Top-level build deps:
 #   hatchling + hatch-vcs: build backend (pyproject.toml build-system.requires)
