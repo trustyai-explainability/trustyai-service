@@ -69,11 +69,12 @@ and [Open Data Hub](https://opendatahub.io/).
 ## Quickstart
 
 ```bash
-# Install
+# Install (add --extra mariadb and/or --extra mmd for optional backends)
 uv sync --all-groups
 
 # Run
-uv run python -m src.main
+uv run python -m trustyai_service.main
+
 ```
 
 Once running, the API is available at `http://localhost:8081`.
@@ -100,6 +101,7 @@ podman build \
 
 # Run
 podman run -p 8080:8080 trustyai:latest
+
 ```
 
 ---
@@ -180,9 +182,48 @@ startup when no CA is available.
 
 ## Testing
 
+`uv` installs only the default `dev` dependency group, while `pytest` and its
+plugins live in the `test` group and the optional backends are extras. A bare
+`uv run pytest` therefore fails with
+`unrecognized arguments: --dist=loadgroup -n`. Use the make targets, which pass
+the required flags:
+
 ```bash
-uv run pytest tests/ -v
-uv run pytest tests/ -v --cov=src --cov-report=xml  # with coverage
+make sync            # install all dependency groups and the CI extras
+make test            # run the suite; tests needing live databases skip
+make test-databases  # run with live SQL gates (needs local databases, see below)
+make migration-test  # run only the serial migration suite
+make check           # ruff, bandit, pyrefly
+
+```
+
+Equivalent direct invocation, if you prefer not to use make:
+
+```bash
+uv run --all-groups --extra mariadb --extra sqlite --extra migration \
+  --extra mmd pytest tests/ -v --ignore=tests/service/data/migrations
+uv run --all-groups --extra mariadb --extra sqlite --extra migration \
+  --extra mmd pytest tests/service/data/migrations -v -n 0
+
+```
+
+`make test` runs the migration suite separately and serially, as CI does. It
+leaves out the PostgreSQL driver, so the PostgreSQL storage tests skip on a
+machine without a server. `make test-databases` and
+`make migration-test` install it and set `TRUSTYAI_REQUIRE_LIVE_SQL_TESTS=1`,
+which turns skipped live-SQL tests into failures. Add
+`--cov=src --cov-report=xml` for the coverage run used by CI.
+
+Live SQL tests need running databases. Start them with the bundled compose
+files, then run the two targets CI uses, which export
+`TRUSTYAI_REQUIRE_LIVE_SQL_TESTS=1` and the migration URLs:
+
+```bash
+podman compose -f tests/resources/compose-local-postgres.yaml up -d --wait
+podman compose -f tests/resources/compose-local-maria.yaml up -d --wait
+make test-databases  # suite without migrations
+make migration-test  # migration suite, serially
+
 ```
 
 ---
