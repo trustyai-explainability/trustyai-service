@@ -18,6 +18,7 @@ from sqlalchemy.engine import URL, make_url
 from sqlalchemy.exc import SQLAlchemyError
 
 from trustyai_service.service.data.storage import (
+    INSECURE_TLS_ENV_VAR,
     _insecure_tls_allowed,
     _resolve_tls_ca,
 )
@@ -184,11 +185,12 @@ def _tls_connect_args(drivername: str) -> dict[str, object]:
     ca_path, usable_ca = _resolve_tls_ca()
     ca_configured = "DATABASE_TLS_CA_CERT" in os.environ
     if usable_ca is None:
-        if ca_configured or not _insecure_tls_allowed():
+        insecure_opt_in = INSECURE_TLS_ENV_VAR in os.environ and _insecure_tls_allowed()
+        if ca_configured or not insecure_opt_in:
             message = f"database TLS requires a usable CA certificate at '{ca_path}'"
             raise ValueError(message)
         logger.warning(
-            "Database CA is unavailable; migration connection has no configured CA verification. Mount a CA or set DATABASE_ALLOW_INSECURE_TLS=false to require one."
+            "Database CA is unavailable; migration connection has no configured CA verification, explicitly allowed by DATABASE_ALLOW_INSECURE_TLS."
         )
         return {}
     if drivername.startswith("postgresql+asyncpg"):

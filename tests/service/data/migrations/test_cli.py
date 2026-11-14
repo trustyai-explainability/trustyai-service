@@ -346,9 +346,10 @@ def test_cli_rejects_transient_targets_except_for_dry_run(url) -> None:
     assert parse_args([*arguments, "--dry-run"]).dry_run
 
 
-@pytest.mark.parametrize("insecure", ["false", "0", "off", "invalid"])
+@pytest.mark.parametrize("driver", ["mariadb+asyncmy", "postgresql+asyncpg"])
+@pytest.mark.parametrize("insecure", [None, "false", "0", "off", "invalid", ""])
 def test_cli_requires_default_ca_when_insecure_tls_is_prohibited(
-    monkeypatch, tmp_path, insecure
+    monkeypatch, tmp_path, insecure, driver
 ) -> None:
     """Strict TLS cannot fall back when the default CA mount is absent."""
     from trustyai_service.service.data import storage
@@ -358,9 +359,28 @@ def test_cli_requires_default_ca_when_insecure_tls_is_prohibited(
 
     monkeypatch.setattr(storage, "DEFAULT_TLS_CA_CERT", str(tmp_path / "missing.crt"))
     monkeypatch.delenv("DATABASE_TLS_CA_CERT", raising=False)
-    monkeypatch.setenv("DATABASE_ALLOW_INSECURE_TLS", insecure)
+    if insecure is None:
+        monkeypatch.delenv("DATABASE_ALLOW_INSECURE_TLS", raising=False)
+    else:
+        monkeypatch.setenv("DATABASE_ALLOW_INSECURE_TLS", insecure)
     with pytest.raises(ValueError, match="usable CA"):
-        engine_options_from_environment("mariadb+asyncmy://user@localhost/db")
+        engine_options_from_environment(f"{driver}://user@localhost/db")
+
+
+@pytest.mark.parametrize("driver", ["mariadb+asyncmy", "postgresql+asyncpg"])
+@pytest.mark.parametrize("insecure", ["true", "1", "yes", "on"])
+def test_cli_allows_explicit_insecure_opt_in(monkeypatch, tmp_path, driver, insecure):
+    """Local network testing without a CA requires an affirmative opt-in."""
+    from trustyai_service.service.data import storage
+    from trustyai_service.service.data.migrations.cli import (
+        engine_options_from_environment,
+    )
+
+    monkeypatch.setattr(storage, "DEFAULT_TLS_CA_CERT", str(tmp_path / "missing.crt"))
+    monkeypatch.delenv("DATABASE_TLS_CA_CERT", raising=False)
+    monkeypatch.setenv("DATABASE_ALLOW_INSECURE_TLS", insecure)
+    options = engine_options_from_environment(f"{driver}://user@localhost/db")
+    assert "ssl" not in options["connect_args"]
 
 
 def test_cli_rejects_explicit_missing_ca_even_with_insecure_opt_out(

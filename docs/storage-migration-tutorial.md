@@ -94,8 +94,20 @@ validates the data and internal CSV row counts against each other and against
 `observations` in the JSON sidecar; reads `inputSchema.items` and
 `outputSchema.items` in their declared column-index order; and preserves the
 original names, aliases, Java data types, tensor names, and recorded-inference
-flag. The internal timestamp string is retained exactly, including fractional
-nanoseconds. Java `TENSOR` cells are parsed as data with `javaobj-py3` and an
+flag. CSV and explicit legacy SQL migration create row metadata using the
+consumer's `id`, `iso_time`, `unix_timestamp`, and `tags` columns, so migrated
+models support subsequent ingestion and tag filtering. The internal timestamp
+string is retained exactly in `iso_time`, including fractional nanoseconds.
+`unix_timestamp` is derived as floating-point epoch seconds, interpreting the
+legacy local timestamp as UTC, consistent with the Java CSV parser. Its
+precision is limited by Python datetime and floating-point representation;
+the original text remains authoritative. A nonempty legacy tag becomes a
+single-element list, while an empty or null tag becomes an empty list.
+Existing destinations or checkpoints created with the experimental three-column
+metadata schema are not automatically upgraded by this change. Do not force a
+resume or overwrite a live destination; retain the source and validate a fresh,
+isolated migration target before cutover.
+Java `TENSOR` cells are parsed as data with `javaobj-py3` and an
 allowlist of the Java Tensor class and boxed scalar/string element types; the
 migration does not invoke Java `ObjectInputStream` or execute serialized Java
 classes.
@@ -215,10 +227,16 @@ sequential reads, including quoted multiline fields. Random reads may restart
 from the beginning. Migration namespaces create only run and dataset-state
 tables; service data is stored solely in the canonical `trustyai_v2_*` layout.
 
-The CLI follows the service's TLS policy: an explicitly configured CA must be
-usable, even if `DATABASE_ALLOW_INSECURE_TLS=true`. If insecure TLS is prohibited,
-a missing default CA also causes an error. These network settings do not apply
-to local SQLite targets.
+The CLI requires a usable CA for network migrations by default. Without the
+default CA mount, only an explicit `DATABASE_ALLOW_INSECURE_TLS=true` (or another
+accepted true value) permits an insecure connection. An explicitly configured
+`DATABASE_TLS_CA_CERT` must always be usable, even with that opt-in. This stricter
+migration default does not change normal service startup TLS policy and does
+not apply to local SQLite targets.
+
+HDF5 sources containing protected datasets other than the supported partial
+input/output payload stores are rejected. Such data cannot be silently skipped
+while reporting a cutover as safe for source removal.
 
 ## 2. Storage layouts and terminology
 

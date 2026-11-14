@@ -126,7 +126,9 @@ async def test_pvc_csv_source_discovers_and_decodes_java_storage(
     assert outputs.column_names == ("score",)
     assert outputs.aliases == ("risk",)
     assert outputs.column_types == ("DOUBLE",)
-    assert metadata.column_names == ("timestamp", "rowId", "tag")
+    assert metadata.column_names == ("id", "iso_time", "unix_timestamp", "tags")
+    assert metadata.aliases == metadata.column_names
+    assert metadata.shape == (4,)
 
     input_rows = await source.read_rows(inputs, 0, 2)
     assert input_rows.tolist() == [
@@ -155,10 +157,74 @@ async def test_pvc_csv_source_discovers_and_decodes_java_storage(
     np.testing.assert_allclose(output_rows.astype(float), [[0.75], [0.25]])
     metadata_rows = await source.read_rows(metadata, 0, 2)
     assert metadata_rows[0].tolist() == [
-        "2024-02-03T04:05:06.123456789",
         "id-1",
-        "organic",
+        "2024-02-03T04:05:06.123456789",
+        1706933106.123456,
+        ["organic"],
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["csv", "legacy"])
+async def test_migrated_models_accept_consumer_writes_and_tag_queries(
+    java_csv_pvc, ordered_legacy_engine, tmp_path, monkeypatch, kind
+):
+    """Cutover must support real ingestion and filtering, not just storage reads."""
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from trustyai_service.endpoints.consumer import consumer_endpoint
+    from trustyai_service.service.data import migrations as migration_api
+    from trustyai_service.service.data.datasources.data_source import DataSource
+    from trustyai_service.service.data.storage import GlobalStorageInterface
+    from trustyai_service.service.data.storage.sqlite.sqlite import SQLiteStorage
+
+    source = (
+        migration_api.PVCCSVSource(java_csv_pvc, quiesced=True)
+        if kind == "csv"
+        else migration_api.MariaDBSource(
+            ordered_legacy_engine, schema="legacy", quiesced=True
+        )
+    )
+    model = "model-42" if kind == "csv" else "model"
+    path = tmp_path / "cutover.sqlite"
+    engine = create_async_engine(f"sqlite+aiosqlite:///{path}")
+    try:
+        target = migration_api.DatabaseTarget(engine)
+        result = await _runner(migration_api, source, target).run()
+        assert result_status(result) == "COMPLETE"
+        storage = SQLiteStorage(str(path))
+        try:
+            monkeypatch.setattr(GlobalStorageInterface, "_instance", storage)
+            data_source = DataSource()
+            monkeypatch.setattr(
+                consumer_endpoint, "get_data_source", lambda: data_source
+            )
+            tag = "organic" if kind == "csv" else "tag"
+            filtered = await data_source.get_dataframe_by_tag(model, tag=tag)
+            assert len(filtered) == (1 if kind == "csv" else 2)
+            names = await storage.get_original_column_names(f"{model}_metadata")
+            assert names == ["id", "iso_time", "unix_timestamp", "tags"]
+            await consumer_endpoint.write_reconciled_data(
+                (await storage.read_data(f"{model}_inputs"))[:1],
+                await storage.get_original_column_names(f"{model}_inputs"),
+                (await storage.read_data(f"{model}_outputs"))[:1],
+                await storage.get_original_column_names(f"{model}_outputs"),
+                model,
+                ["post-cutover"],
+                "new-request",
+            )
+            rows = await storage.read_data(f"{model}_metadata")
+            assert rows.shape == (3, 4)
+            assert rows[-1, 0] == "new-request_0"
+            assert rows[-1, 3] == ["post-cutover"]
+            assert (
+                len(await data_source.get_dataframe_by_tag(model, tag="post-cutover"))
+                == 1
+            )
+        finally:
+            storage._engine.dispose()
+    finally:
+        await engine.dispose()
 
 
 @pytest.mark.asyncio

@@ -81,7 +81,7 @@ async def test_ordered_legacy_to_postgres_preserves_values_and_row_metadata(
     ]
     assert (await storage.read_data("model_outputs")).tolist() == [["out-1"], ["out-5"]]
     assert (await storage.read_data("model_metadata", 0, 1)).tolist() == [
-        ["time", "row-1", "tag"]
+        ["row-1", "2024-02-03T04:05:06.123456", 1706933106.123456, ["tag"]]
     ]
 
 

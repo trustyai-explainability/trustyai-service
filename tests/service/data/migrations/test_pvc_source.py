@@ -6,6 +6,26 @@ import pytest
 
 
 @pytest.mark.asyncio
+async def test_protected_dataset_prevents_successful_cutover(
+    migration_api, pvc_fixture_with_partial_payload, sqlite_target
+):
+    """Durable protected data must not be omitted from an otherwise complete copy."""
+    import h5py
+
+    from .test_migration_contract import _runner
+
+    directory = pvc_fixture_with_partial_payload.directory
+    name = "trustyai_internal_durable_state"
+    with h5py.File(directory / f"{name}_trustyai.hdf5", "w") as stream:
+        dataset = stream.create_dataset(name, data=[[42]])
+        dataset.attrs["column_names"] = ["value"]
+    source = migration_api.PVCSource(directory, quiesced=True)
+    with pytest.raises(migration_api.MigrationValidationError, match="protected"):
+        await _runner(migration_api, source, sqlite_target).run()
+    assert await sqlite_target.list_target_datasets() == []
+
+
+@pytest.mark.asyncio
 async def test_pvc_source_rejects_unselected_storage_files(migration_api, pvc_fixture):
     """A historical filename must not be silently omitted from a cutover."""
     (pvc_fixture.directory / "other_old.hdf5").write_bytes(b"unselected")
