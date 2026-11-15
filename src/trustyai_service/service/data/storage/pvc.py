@@ -344,10 +344,25 @@ class PVCStorage(StorageInterface):
                     dataset.attrs[BYTES_ATTRIBUTE] = is_bytes
 
     async def write_data(
-        self, dataset_name: str, new_rows: np.ndarray | list, column_names: list[str]
+        self,
+        dataset_name: str,
+        new_rows: np.ndarray | list,
+        column_names: list[str],
+        *,
+        force_serialization: bool = False,
     ) -> None:
-        """Write new data to a dataset, automatically serializing any non-numeric data."""
-        if isinstance(new_rows, np.ndarray) and not list_utils.contains_non_numeric(
+        """Write new data to a dataset, automatically serializing any non-numeric data.
+
+        ``force_serialization`` stores rows serialized even when every cell is
+        numeric, for sources whose cells can be nested (tensors) and would
+        otherwise not form a rectangular numeric array.
+        """
+        if force_serialization:
+            arr = np.array(serialize_rows(new_rows, MAX_VOID_TYPE_LENGTH))
+            if arr.ndim == 1:
+                arr = arr.reshape(-1, 1)
+            await self._write_raw_data(dataset_name, arr, column_names, is_bytes=True)
+        elif isinstance(new_rows, np.ndarray) and not list_utils.contains_non_numeric(
             new_rows
         ):
             await self._write_raw_data(dataset_name, new_rows, column_names)

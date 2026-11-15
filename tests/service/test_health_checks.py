@@ -550,7 +550,7 @@ class TestHealthCheckFunctions:
             _health_cache.cache.clear()  # Clear cache to pick up new env vars
             status, checks = perform_readiness_checks()
             assert status == STATUS_OK
-            assert len(checks) == 3
+            assert len(checks) == 4
             # Verify all checks have required fields
             assert all("name" in check and "status" in check for check in checks)
 
@@ -562,7 +562,7 @@ class TestHealthCheckFunctions:
         ):
             status, checks = perform_readiness_checks()
             assert status == STATUS_ERROR
-            assert len(checks) == 3
+            assert len(checks) == 4
             # Storage check should be DOWN
             storage_check = next(c for c in checks if c["name"] == "Storage readiness")
             assert storage_check["status"] == STATUS_ERROR
@@ -599,7 +599,7 @@ class TestHealthEndpoints:
             data = response.json()
             assert response.status_code == HTTPStatus.OK
             assert data["status"] == "ready"
-            assert len(data["checks"]) == 3
+            assert len(data["checks"]) == 4
             # Verify all checks passed
             assert all(check["status"] == STATUS_OK for check in data["checks"])
 
@@ -613,7 +613,7 @@ class TestHealthEndpoints:
             assert response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
             data = response.json()
             assert data["status"] == "not_ready"
-            assert len(data["checks"]) == 3
+            assert len(data["checks"]) == 4
 
     def test_liveness_endpoint(self, client) -> None:
         """Test /q/health/live endpoint."""

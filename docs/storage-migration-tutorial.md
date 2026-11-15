@@ -48,13 +48,16 @@ command-driven migration, not an automatic startup path.
 | Python HDF5 PVC | MariaDB | Startup or `trustyai-migrate` |
 | Legacy MariaDB | Current MariaDB | Startup; CLI needs position keys |
 | HDF5/CSV PVC or v2 MariaDB | SQLite, MariaDB, PostgreSQL | CLI only |
+| Java CSV PVC | Python HDF5 PVC | Startup (section 1.3) |
+| Java CSV PVC, or its converted HDF5 form | MariaDB, PostgreSQL, SQLite | Startup with `DATABASE_ATTEMPT_MIGRATION` (section 1.3) |
 
 Startup migration requires `DATABASE_ATTEMPT_MIGRATION`; HDF5 takes priority
 over legacy MariaDB. The CLI accepts `pvc`, `pvc-csv`, and MariaDB `legacy` or
 `trustyai_v2` sources.
 
-The CSV source is not detected by the service's automatic startup migration.
-Use `trustyai-migrate --source pvc-csv` for that layout.
+The Java CSV layout is migrated at startup as described in section 1.3. The
+CLI (`trustyai-migrate --source pvc-csv`) remains available for explicit,
+operator-driven runs.
 
 ## 1.1 Explicit CSV-on-PVC migration suite
 
@@ -101,6 +104,56 @@ migration does not invoke Java `ObjectInputStream` or execute serialized Java
 classes.
 Set `STORAGE_DATA_FILENAME` or pass `--data-file` when the source uses a name
 other than `data.csv`.
+
+## 1.3 Java PVC data at startup
+
+When the operator replaces the Java service with the Python service on an
+existing PVC, the Java CSV files would otherwise be invisible to it. At startup,
+before the API accepts traffic, the service migrates them once.
+
+| Configuration | Source folder | Destination |
+| --- | --- | --- |
+| `SERVICE_STORAGE_FORMAT=PVC` | `STORAGE_DATA_FOLDER` | HDF5 files in the same folder |
+| Database format with `DATABASE_ATTEMPT_MIGRATION` | `STORAGE_MIGRATION_CONFIG_FROM_FOLDER`, else `STORAGE_DATA_FOLDER` | The configured database |
+
+The Java data file name is `STORAGE_MIGRATION_CONFIG_FROM_FILENAME`, else
+`STORAGE_DATA_FILENAME`, else `data.csv`. A folder is treated as Java data when
+it contains a `*-internal_data.csv` file.
+
+Behavior:
+
+* An instance first upgraded in place and moved to a database later no longer
+  has Java files in the folder. The database copy then reads the converted files
+  (using `STORAGE_MIGRATION_CONFIG_FROM_FILENAME`), so rows written since the
+  upgrade are copied too.
+* The Java files are never modified or deleted. After a PVC conversion they are
+  moved unchanged into `.java-legacy/` so the Python service does not list them
+  as datasets. A database copy leaves them in place.
+* Progress lives in `.java-migration/` in the same folder. A completed
+  conversion or copy is not repeated, and data the service writes afterwards is
+  never replaced. A crash at any point is finished or restarted cleanly on the
+  next start.
+* Every dataset is verified against the source before the migration counts as
+  done. The service reports not ready (`Startup migration` readiness check)
+  while it runs. If it fails, the process exits with the reason and does not
+  serve.
+* If the folder already contains files the Python service wrote, the migration
+  stops with an error rather than merging. Move one side aside and restart.
+* Datasets with non-numeric columns use the service's fixed-width serialized
+  rows (`MAX_VOID_TYPE_LENGTH` bytes per row), so the converted files can be
+  many times larger than the CSV. The PVC holds both until you remove
+  `.java-legacy/`. Before converting, the service estimates the space needed
+  and refuses to start, with the figures in the message, if the volume is too
+  small. Nothing is changed in that case.
+* The HDF5 layout has no field for custom tensor names. A warning is logged when
+  a Java model used names other than `input` and `output`.
+* To roll back to the Java service, move the files in `.java-legacy/` back and
+  remove the converted files and `.java-migration/`. Do this only before the
+  Python service has written new data.
+
+This is a transition aid. It lives in `service/data/migrations/java_pvc.py`
+with its parsers (`pvc_csv.py`, `java_values.py`) and target (`pvc_target.py`),
+and can be removed together with them when the Java service is out of support.
 
 ## 1.2 Cross-database migration commands
 

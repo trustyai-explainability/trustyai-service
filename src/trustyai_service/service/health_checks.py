@@ -12,6 +12,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from trustyai_service.service.startup_migration_state import (
+    StartupMigrationState,
+    get_startup_migration_state,
+)
+
 logger = logging.getLogger(__name__)
 
 # Status code constants for health checks
@@ -420,6 +425,27 @@ def _check_sqlite_storage() -> HealthCheck:
     return HealthCheck("Storage readiness", STATUS_OK)
 
 
+def check_startup_migration_readiness() -> HealthCheck:
+    """Report not ready while Java PVC data is being migrated, or if that failed.
+
+    :return: HealthCheck indicating whether the startup migration is finished
+    """
+    state = get_startup_migration_state()
+    if state == StartupMigrationState.RUNNING:
+        return HealthCheck(
+            "Startup migration",
+            STATUS_ERROR,
+            {"error": "Java PVC data migration in progress"},
+        )
+    if state == StartupMigrationState.FAILED:
+        return HealthCheck(
+            "Startup migration",
+            STATUS_ERROR,
+            {"error": "Java PVC data migration failed"},
+        )
+    return HealthCheck("Startup migration", STATUS_OK)
+
+
 def check_migration_readiness() -> HealthCheck:  # noqa: PLR0911
     """Check if PVC-to-MariaDB migration is complete.
 
@@ -533,6 +559,8 @@ def perform_readiness_checks() -> tuple[str, list[dict[str, Any]]]:
         "migration", check_migration_readiness
     )
     checks.append(migration_check.to_dict())
+
+    checks.append(check_startup_migration_readiness().to_dict())
 
     http_check = check_http_server()
     checks.append(http_check.to_dict())
