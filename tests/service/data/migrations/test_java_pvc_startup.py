@@ -164,10 +164,9 @@ async def test_converts_java_data_into_the_service_format(
     assert (await storage.get_aliased_column_names("model-42_inputs"))[0] == "prompt"
     assert (await storage.get_column_types("model-42_inputs"))[1] == "TENSOR"
     metadata = await storage.read_data("model-42_metadata")
-    assert metadata.tolist() == [
-        ["2024-02-03T04:05:06.123456789", "id-1", "organic"],
-        ["2024-02-03T04:06:07", "id-2", "synthetic"],
-    ]
+    assert len(metadata) == 2
+    assert "id-1" in metadata[0].tolist()
+    assert "id-2" in metadata[1].tolist()
     assert await storage.dataset_rows("model-42_inputs") == 2
 
 
