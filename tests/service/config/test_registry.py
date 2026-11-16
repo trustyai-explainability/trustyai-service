@@ -1,11 +1,12 @@
 """Tests for router registration helpers."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 from trustyai_service.service.config import registry
 from trustyai_service.service.config.registry import (
     register_if_enabled,
     register_if_enabled_with_group,
+    register_with_legacy_prefix,
 )
 
 
@@ -134,3 +135,31 @@ class TestRegisterIfEnabledWithGroup:
         app.include_router.assert_called_once_with(
             router, tags=["Legacy DIR"], prefix="/metrics"
         )
+
+
+class TestRegisterWithLegacyPrefix:
+    """Tests for canonical plus deprecated-alias registration."""
+
+    def test_canonical_unprefixed_legacy_twice(self) -> None:
+        app, router = _make_app_and_router()
+        legacy_router = MagicMock()
+        with patch.dict(
+            registry.feature_flags.ENDPOINTS,
+            {"fairness": True, "fairness_dir": True},
+        ):
+            register_with_legacy_prefix(
+                app, router, legacy_router, "fairness", "fairness_dir", "Modern", "Old"
+            )
+        assert app.include_router.call_args_list == [
+            call(router, tags=["Modern"]),
+            call(legacy_router, tags=["Modern"]),
+            call(legacy_router, tags=["Old"], prefix="/metrics"),
+        ]
+
+    def test_disabled_flag_registers_nothing(self) -> None:
+        app, router = _make_app_and_router()
+        with patch.dict(registry.feature_flags.ENDPOINTS, {"fairness": False}):
+            register_with_legacy_prefix(
+                app, router, MagicMock(), "fairness", "fairness_dir", "M", "L"
+            )
+        app.include_router.assert_not_called()

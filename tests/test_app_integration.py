@@ -308,9 +308,88 @@ class TestFeatureFlagGating:
         response = test_client.get("/openapi.json")
         openapi = response.json()
         legacy_paths = [
-            p for p in openapi["paths"] if p.startswith("/metrics/group/fairness")
+            p
+            for p in openapi["paths"]
+            if p.startswith(
+                (
+                    "/metrics/group/fairness",
+                    "/dir",
+                    "/spd",
+                    "/metrics/dir",
+                    "/metrics/spd",
+                )
+            )
         ]
         assert legacy_paths == []
+
+
+class TestFairnessRouteRegistration:
+    """Fairness canonical and deprecated alias route registration."""
+
+    _METRICS = (
+        ("dir", routes.FAIRNESS_DIR, routes.LEGACY_DIR),
+        ("spd", routes.FAIRNESS_SPD, routes.LEGACY_SPD),
+    )
+
+    @staticmethod
+    def _suffixes(paths: routes.MetricPaths) -> tuple[str, ...]:
+        return (paths.compute, paths.definition, paths.request, paths.requests)
+
+    def test_no_double_metrics_prefix(self) -> None:
+        """No path starts with /metrics/metrics."""
+        paths = client.get("/openapi.json").json()["paths"]
+        assert [p for p in paths if p.startswith("/metrics/metrics")] == []
+
+    def test_canonical_routes_registered_once_and_not_deprecated(self) -> None:
+        """Canonical fairness routes exist unprefixed and are not deprecated."""
+        paths = client.get("/openapi.json").json()["paths"]
+        for _, canonical, _legacy in self._METRICS:
+            for path in self._suffixes(canonical):
+                assert path in paths
+                assert all(
+                    not op.get("deprecated", False) for op in paths[path].values()
+                )
+
+    def test_legacy_aliases_kept_and_deprecated(self) -> None:
+        """/dir, /spd and /metrics/{dir,spd} aliases remain, all deprecated."""
+        paths = client.get("/openapi.json").json()["paths"]
+        for _, _canonical, legacy in self._METRICS:
+            for path in self._suffixes(legacy):
+                for candidate in (path, f"/metrics{path}"):
+                    assert candidate in paths
+                    assert all(op["deprecated"] for op in paths[candidate].values())
+
+    def test_fairness_path_count(self) -> None:
+        """Fairness paths: 8 canonical + 8 unprefixed + 8 /metrics aliases."""
+        paths = client.get("/openapi.json").json()["paths"]
+        fairness = [
+            p
+            for p in paths
+            if "/fairness/" in p
+            or p.startswith(("/dir", "/spd", "/metrics/dir", "/metrics/spd"))
+        ]
+        assert len(fairness) == 24
+
+    def test_runtime_routing(self) -> None:
+        """Typo path is 404; real alias and canonical paths exist (405 on GET)."""
+        assert client.get("/metrics/metrics/group/fairness/dir").status_code == (
+            HTTPStatus.NOT_FOUND
+        )
+        for path in ("/metrics/dir", "/metrics/spd", "/dir", "/spd"):
+            assert client.get(path).status_code == HTTPStatus.METHOD_NOT_ALLOWED
+        assert client.get(routes.FAIRNESS_DIR.compute).status_code == (
+            HTTPStatus.METHOD_NOT_ALLOWED
+        )
+
+    def test_legacy_alias_tags(self) -> None:
+        """Prefixed aliases keep the legacy tag; unprefixed use the modern tag."""
+        paths = client.get("/openapi.json").json()["paths"]
+        assert paths["/metrics/dir"]["post"]["tags"] == [
+            "{Legacy}: Disparate Impact Ratio"
+        ]
+        assert paths["/dir"]["post"]["tags"] == [
+            "Fairness Metrics: Group: Disparate Impact Ratio"
+        ]
 
 
 @pytest.mark.asyncio

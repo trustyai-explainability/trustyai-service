@@ -90,35 +90,34 @@ def register_if_enabled_with_group(
 def register_with_legacy_prefix(
     app: FastAPI,
     router: APIRouter,
+    legacy_router: APIRouter,
     group_flag: str,
     metric_flag: str,
     modern_tag: str,
     legacy_tag: str,
 ) -> None:
-    """Register a router twice: once modern, once with /metrics prefix.
+    """Register a canonical router plus its deprecated aliases.
 
-    Used for endpoints that must support both the current API structure
-    and deprecated /metrics-prefixed routes for backwards compatibility.
+    The canonical router is registered once, without a prefix, because its
+    route constants already start with ``/metrics``. The legacy router holds
+    only the deprecated aliases (for example ``/dir``) and is registered
+    twice: unprefixed and with the ``/metrics`` prefix (``/metrics/dir``).
 
     :param app: FastAPI application instance.
-    :param router: Router to register.
+    :param router: Router with the canonical routes.
+    :param legacy_router: Router with only the deprecated alias routes.
     :param group_flag: Group-level feature flag name.
     :param metric_flag: Individual metric feature flag name.
-    :param modern_tag: OpenAPI tag for the modern route.
-    :param legacy_tag: OpenAPI tag for the legacy /metrics route.
+    :param modern_tag: OpenAPI tag for the canonical and unprefixed alias routes.
+    :param legacy_tag: OpenAPI tag for the legacy /metrics-prefixed alias routes.
     """
-    # Register modern route
+    register_if_enabled_with_group(app, router, group_flag, metric_flag, tag=modern_tag)
     register_if_enabled_with_group(
-        app,
-        router,
-        group_flag,
-        metric_flag,
-        tag=modern_tag,
+        app, legacy_router, group_flag, metric_flag, tag=modern_tag
     )
-    # Register deprecated /metrics route
     register_if_enabled_with_group(
         app,
-        router,
+        legacy_router,
         group_flag,
         metric_flag,
         tag=legacy_tag,
