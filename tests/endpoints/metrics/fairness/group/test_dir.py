@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 from trustyai_service.endpoints.metrics.fairness.group.dir import (
     DEFAULT_DIR_THRESHOLD_DELTA,
     DIR_FAIRNESS_TARGET,
+    legacy_router,
     router,
 )
 
@@ -30,6 +31,7 @@ from . import factory
 
 app = FastAPI()
 app.include_router(router)
+app.include_router(legacy_router)
 client = TestClient(app)
 
 # Module path used for all patches

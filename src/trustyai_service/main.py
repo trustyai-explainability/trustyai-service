@@ -46,7 +46,13 @@ from trustyai_service.endpoints.metrics.drift.kolmogorov_smirnov_streaming impor
     router as drift_ksteststreaming_router,
 )
 from trustyai_service.endpoints.metrics.drift.mmd import router as drift_mmd_router
+from trustyai_service.endpoints.metrics.fairness.group.dir import (
+    legacy_router as dir_legacy_router,
+)
 from trustyai_service.endpoints.metrics.fairness.group.dir import router as dir_router
+from trustyai_service.endpoints.metrics.fairness.group.spd import (
+    legacy_router as spd_legacy_router,
+)
 from trustyai_service.endpoints.metrics.fairness.group.spd import router as spd_router
 from trustyai_service.endpoints.metrics.metrics_info import (
     router as metrics_info_router,
@@ -192,6 +198,7 @@ app.include_router(metrics_info_router, tags=["Metrics Information Endpoint"])
 register_with_legacy_prefix(
     app,
     dir_router,
+    dir_legacy_router,
     "fairness",
     "fairness_dir",
     modern_tag="Fairness Metrics: Group: Disparate Impact Ratio",
@@ -200,6 +207,7 @@ register_with_legacy_prefix(
 register_with_legacy_prefix(
     app,
     spd_router,
+    spd_legacy_router,
     "fairness",
     "fairness_spd",
     modern_tag="Fairness Metrics: Group: Statistical Parity Difference",

@@ -326,7 +326,12 @@ async def list_spd_requests() -> dict[str, list[dict]]:
 
 
 # Deprecated SPD endpoints
-@router.post(routes.LEGACY_SPD.compute, deprecated=True)
+# Separate router: the /metrics prefix must apply only to these aliases,
+# never to the canonical /metrics/group/fairness routes.
+legacy_router = APIRouter()
+
+
+@legacy_router.post(routes.LEGACY_SPD.compute, deprecated=True)
 async def compute_spd_deprecated(
     request: GroupMetricRequest,
     delta: Annotated[float | None, Query()] = None,
@@ -339,7 +344,7 @@ async def compute_spd_deprecated(
     return await compute_spd(request, delta)
 
 
-@router.get(routes.LEGACY_SPD.definition, deprecated=True)
+@legacy_router.get(routes.LEGACY_SPD.definition, deprecated=True)
 async def get_spd_definition_deprecated() -> dict[str, str]:
     """Provide a general definition of Statistical Parity Difference metric (deprecated).
 
@@ -349,7 +354,7 @@ async def get_spd_definition_deprecated() -> dict[str, str]:
     return await get_spd_definition()
 
 
-@router.post(routes.LEGACY_SPD.definition, deprecated=True)
+@legacy_router.post(routes.LEGACY_SPD.definition, deprecated=True)
 async def interpret_spd_value_deprecated(
     request: GroupDefinitionRequest,
 ) -> dict[str, str]:
@@ -361,7 +366,7 @@ async def interpret_spd_value_deprecated(
     return await interpret_spd_value(request)
 
 
-@router.post(routes.LEGACY_SPD.request, deprecated=True)
+@legacy_router.post(routes.LEGACY_SPD.request, deprecated=True)
 async def schedule_spd_deprecated(request: GroupMetricRequest) -> dict[str, str]:
     """Schedule a recurring computation of SPD metric (deprecated).
 
@@ -371,7 +376,7 @@ async def schedule_spd_deprecated(request: GroupMetricRequest) -> dict[str, str]
     return await schedule_spd(request)
 
 
-@router.delete(routes.LEGACY_SPD.request, deprecated=True)
+@legacy_router.delete(routes.LEGACY_SPD.request, deprecated=True)
 async def delete_spd_schedule_deprecated(schedule: ScheduleId) -> dict[str, str]:
     """Delete a recurring computation of SPD metric (deprecated).
 
@@ -381,7 +386,7 @@ async def delete_spd_schedule_deprecated(schedule: ScheduleId) -> dict[str, str]
     return await delete_spd_schedule(schedule)
 
 
-@router.get(routes.LEGACY_SPD.requests, deprecated=True)
+@legacy_router.get(routes.LEGACY_SPD.requests, deprecated=True)
 async def list_spd_requests_deprecated() -> dict[str, list[dict]]:
     """List the currently scheduled computations of SPD metric (deprecated).
 
