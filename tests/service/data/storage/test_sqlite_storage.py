@@ -265,6 +265,44 @@ async def test_column_types_survive_mapping_and_append() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("changed", [False, True])
+async def test_column_type_updates_lock_only_for_changes(*, changed: bool) -> None:
+    """Repeated ingestion type updates must not take the dataset write lock."""
+    storage = SQLiteStorage(":memory:")
+    statements = []
+
+    def record(
+        _conn: object,
+        clause: object,
+        _multiparams: object,
+        _params: object,
+        _options: object,
+    ) -> None:
+        statements.append(clause)
+
+    try:
+        await storage.write_data("ds", np.asarray([[1, 2]]), ["a", "b"])
+        await storage.set_column_types("ds", ["INT32", "DOUBLE"])
+        event.listen(storage._engine, "before_execute", record)
+        requested = ["INT64", "DOUBLE"] if changed else ["INT32", "DOUBLE"]
+        await storage.set_column_types("ds", requested)
+        assert (
+            any(getattr(query, "is_update", False) for query in statements) is changed
+        )
+        assert (
+            any(
+                getattr(query, "_for_update_arg", None) is not None
+                for query in statements
+            )
+            is changed
+        )
+        assert await storage.get_column_types("ds") == requested
+    finally:
+        event.remove(storage._engine, "before_execute", record)
+        storage._engine.dispose()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("valid_column_count", [True, False])
 async def test_column_types_preserve_duplicate_reference_metadata(
     *,

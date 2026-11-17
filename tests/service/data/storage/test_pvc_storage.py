@@ -140,6 +140,32 @@ class TestPVCDatasetExists(_PVCFixture):
         assert _run(self.storage.dataset_exists("ds_b")) is False
 
 
+class TestPVCForcedSerialization(_PVCFixture):
+    """Tests for write_data(force_serialization=True)."""
+
+    def test_nested_numeric_rows_round_trip(self) -> None:
+        """Nested numeric cells (tensors) are stored serialized and read back intact."""
+        rows = [[[1.0, 2.0], 3.0], [[4.0, 5.0], 6.0]]
+        _run(
+            self.storage.write_data(
+                "nested_ds", rows, ["tensor", "scalar"], force_serialization=True
+            )
+        )
+        assert _run(self.storage.read_data("nested_ds")).tolist() == rows
+        with H5PYContext(self.storage, "nested_ds", "r") as db:
+            assert bool(db["nested_ds"].attrs[BYTES_ATTRIBUTE]) is True
+
+    def test_numeric_rows_are_serialized_when_forced(self) -> None:
+        """Plain numeric rows are also serialized when the caller forces it."""
+        _run(
+            self.storage.write_data(
+                "forced_ds", [[1.0, 2.0]], ["a", "b"], force_serialization=True
+            )
+        )
+        with H5PYContext(self.storage, "forced_ds", "r") as db:
+            assert bool(db["forced_ds"].attrs[BYTES_ATTRIBUTE]) is True
+
+
 class TestPVCListAllDatasets(_PVCFixture):
     """Tests for list_all_datasets."""
 

@@ -102,7 +102,8 @@ class PVCSource(MigrationSource):
                 partials.extend(self._read_partial_file(path, dataset_name))
                 continue
             if dataset_name.startswith(PROTECTED_DATASET_SUFFIX):
-                continue
+                msg = f"unsupported protected PVC dataset '{dataset_name}'; migration cannot safely omit durable source data"
+                raise MigrationValidationError(msg)
             datasets.append(self._describe_dataset(path, dataset_name))
 
         datasets.sort(key=lambda dataset: dataset.name)

@@ -440,7 +440,9 @@ async def test_optional_http_uses_only_the_configured_loopback_bind(
     with patch("trustyai_service.main.serve") as serve_mock:
         await run_server()
         assert serve_mock.call_count == 2
-        config = serve_mock.call_args_list[0].args[1]
+        main_module = importlib.import_module("trustyai_service.main")
+        configs = {call.args[0]: call.args[1] for call in serve_mock.call_args_list}
+        config = configs[main_module.app]
         assert config.bind == ["127.0.0.1:8081"]
         assert config.insecure_bind == []
         assert config.create_ssl_context() is None

@@ -4,7 +4,7 @@ import asyncio
 import logging
 import os
 from collections.abc import AsyncGenerator, Awaitable, Callable
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from http import HTTPStatus
 from typing import Any
 
@@ -82,6 +82,16 @@ from trustyai_service.service.tls import (
     TLSSettings,
     serving_certificates,
 )
+
+# The Java PVC migration needs the optional SQL and Java-parsing dependencies.
+try:
+    from trustyai_service.service.data.migrations.java_pvc import (
+        run_startup_migrations,
+    )
+
+    JAVA_PVC_MIGRATION_AVAILABLE = True
+except ModuleNotFoundError:
+    JAVA_PVC_MIGRATION_AVAILABLE = False
 
 logging.basicConfig(
     level=logging.INFO,  # Reduce default verbosity
@@ -472,10 +482,27 @@ async def run_server() -> None:
 
     health_config = build_health_config(health_port)
 
-    await asyncio.gather(
-        serve(app, config),  # type: ignore[arg-type]
-        serve(health_app, health_config),  # type: ignore[arg-type]
+    # Serve probes first, so the pod reports "not ready" instead of unreachable
+    # while data is migrated. The API starts only after the migration succeeds,
+    # and a failed migration ends the process rather than serving without data.
+    health_server = asyncio.create_task(
+        serve(health_app, health_config)  # type: ignore[arg-type]
     )
+    try:
+        if JAVA_PVC_MIGRATION_AVAILABLE:
+            await run_startup_migrations()
+        else:
+            logger.warning(
+                "Java PVC data migration is unavailable: optional dependencies are not installed"
+            )
+        await asyncio.gather(
+            serve(app, config),  # type: ignore[arg-type]
+            health_server,
+        )
+    finally:
+        health_server.cancel()
+        with suppress(asyncio.CancelledError):
+            await health_server
 
 
 if __name__ == "__main__":
