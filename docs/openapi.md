@@ -6,8 +6,8 @@ feature flag pinned (explainers disabled) so it does not depend on deployment
 configuration. CI fails if it is stale.
 
 ```bash
-uv run python scripts/generate_openapi.py          # regenerate
-uv run python scripts/generate_openapi.py --check  # verify (used in CI)
+make generate-openapi  # regenerate
+make check-openapi     # verify (CI runs the same check)
 ```
 
 Use Python 3.12 to 3.14 and the `dev` dependency group. Regenerate and commit

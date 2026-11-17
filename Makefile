@@ -23,7 +23,7 @@ DB_TEST_ENV := TRUSTYAI_REQUIRE_LIVE_SQL_TESTS=1 \
                TRUSTYAI_MIGRATION_TEST_POSTGRES_URL=$(MIGRATION_POSTGRES_URL)
 
 .PHONY: help sync test test-databases migration-test lint bandit typecheck check
-.PHONY: requirements requirements-build deps migrate
+.PHONY: requirements requirements-build deps migrate generate-openapi check-openapi
 
 help:
 	@printf '%s\n' \
@@ -35,6 +35,8 @@ help:
 		'bandit              bandit security scan' \
 		'typecheck           pyrefly' \
 		'check               lint + bandit + typecheck' \
+		'generate-openapi    regenerate docs/openapi.yaml from the FastAPI app' \
+		'check-openapi       fail if docs/openapi.yaml is stale' \
 		'requirements        regenerate hashed runtime requirements from uv.lock' \
 		'requirements-build  recompile hashed build requirements (bumps unpinned deps)' \
 		'deps                uv lock --upgrade, then regenerate both requirements files' \
@@ -70,6 +72,14 @@ typecheck:
 	uv run $(GROUPS) pyrefly check
 
 check: lint bandit typecheck
+
+# Endpoint flags are pinned inside the script, so output does not depend on the
+# environment. Use Python 3.12 to 3.14.
+generate-openapi:
+	uv run $(GROUPS) python scripts/generate_openapi.py
+
+check-openapi:
+	uv run $(GROUPS) python scripts/generate_openapi.py --check
 
 # --frozen exports the current lock; run `uv lock` first if pyproject changed.
 requirements:
