@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import csv
-import datetime as dt
 import hashlib
 import itertools
 import json
@@ -27,6 +26,7 @@ from .contracts import (
 )
 from .errors import MigrationPreflightError, MigrationValidationError
 from .java_values import tensor_value
+from .row_metadata import METADATA_COLUMNS, METADATA_TYPES, legacy_metadata_row
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -198,11 +198,11 @@ class PVCCSVSource(MigrationSource):
             metadata_name = f"{model_id}_metadata"
             metadata_descriptor = DatasetDescriptor(
                 name=metadata_name,
-                column_names=("timestamp", "rowId", "tag"),
-                aliases=("timestamp", "rowId", "tag"),
-                column_types=("UNKNOWN", "STRING", "STRING"),
+                column_names=METADATA_COLUMNS,
+                aliases=METADATA_COLUMNS,
+                column_types=METADATA_TYPES,
                 row_count=row_count,
-                shape=(3,),
+                shape=(len(METADATA_COLUMNS),),
                 source_file=data_path.name,
             )
             descriptors.append(metadata_descriptor)
@@ -557,10 +557,10 @@ def _read_batch_rows(  # noqa: PLR0913 -- bounded projection needs its source se
     n_rows: int,
     *,
     is_metadata: bool,
-) -> list[list[object] | tuple[str, str, str]]:
+) -> list[list[object]]:
     """Decode a bounded page from either the data or internal CSV file."""
     rows = itertools.islice(reader, start_row, start_row + n_rows)
-    decoded: list[list[object] | tuple[str, str, str]] = []
+    decoded: list[list[object]] = []
     for row_number, row in enumerate(rows, start=start_row + 1):
         if is_metadata:
             decoded.append(_parse_internal_row(row, model_id, row_number))
@@ -677,9 +677,7 @@ def _decode_tensor(value: str) -> object:
     return tensor_value(tensor)
 
 
-def _parse_internal_row(
-    row: list[str], model_id: str, row_number: int
-) -> tuple[str, str, str]:
+def _parse_internal_row(row: list[str], model_id: str, row_number: int) -> list[object]:
     """Convert Java's tag,id,local-timestamp sidecar row."""
     if len(row) != _INTERNAL_COLUMN_COUNT:
         msg = (
@@ -687,14 +685,4 @@ def _parse_internal_row(
             f"{_INTERNAL_COLUMN_COUNT} columns"
         )
         raise MigrationValidationError(msg)
-    try:
-        parsed_timestamp = dt.datetime.fromisoformat(row[2])
-    except ValueError as error:
-        msg = (
-            f"invalid timestamp in Java internal data row {row_number} for '{model_id}'"
-        )
-        raise MigrationValidationError(msg) from error
-    if parsed_timestamp.tzinfo is not None:
-        msg = f"Java internal timestamp for '{model_id}' must be local time without an offset"
-        raise MigrationValidationError(msg)
-    return row[2], row[1], row[0]
+    return legacy_metadata_row(row[2], row[1], row[0])

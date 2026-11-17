@@ -368,7 +368,7 @@ async def ordered_legacy_engine():
             for row_id in [1, 5]:
                 await connection.execute(
                     text(
-                        "INSERT INTO DataframeRow VALUES (:id, 'time', 'model', :row_id, 'tag')"
+                        "INSERT INTO DataframeRow VALUES (:id, '2024-02-03T04:05:06.123456', 'model', :row_id, 'tag')"
                     ),
                     {"id": row_id, "row_id": f"row-{row_id}"},
                 )
