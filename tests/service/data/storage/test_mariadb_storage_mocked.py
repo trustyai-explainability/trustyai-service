@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import TYPE_CHECKING, Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -288,6 +288,10 @@ class TestMariaDBStorageMocked:
             storage.dataset_reference_table = "trustyai_v2_table_reference"
             storage.partial_payload_table = "trustyai_v2_partial_payloads"
             storage.connection_manager = MagicMock()
+            storage.connection_manager.__enter__.return_value = (
+                MagicMock(),
+                MagicMock(),
+            )
             return storage
 
     @patch(
@@ -316,6 +320,56 @@ class TestMariaDBStorageMocked:
             database="testdb",
             ssl_ca="/path/to/ca.crt",
         )
+
+    def _make_legacy_storage(self) -> Any:  # noqa: ANN401 -- returns mocked MariaDBStorage
+        """Create a mocked storage with the connection settings the legacy reader needs."""
+        storage = self._make_storage()
+        storage.user = "user"
+        storage.password = "pass"  # noqa: S105  # pragma: allowlist secret
+        storage.host = "localhost"
+        storage.port = 3306
+        storage.database = "testdb"
+        storage.ssl_ca = None
+        return storage
+
+    @pytest.mark.parametrize("legacy_data_exists", [True, False])
+    @patch(
+        "trustyai_service.service.data.storage.maria.maria.LegacyMariaDBStorageReader"
+    )
+    def test_legacy_migration_records_complete_status(
+        self, mock_legacy_reader: MagicMock, *, legacy_data_exists: bool
+    ) -> None:
+        """A finished legacy migration, or nothing to migrate, records COMPLETE."""
+        storage = self._make_legacy_storage()
+        reader = mock_legacy_reader.return_value
+        reader.legacy_data_exists.return_value = legacy_data_exists
+        reader.migrate_data = AsyncMock()
+        _conn, cursor = storage.connection_manager.__enter__.return_value
+
+        _run(storage._migrate_from_legacy_db())
+
+        assert reader.migrate_data.await_count == int(legacy_data_exists)
+        insert_call = cursor.execute.call_args_list[-1]
+        assert "INSERT INTO trustyai_migration_status" in insert_call.args[0]
+        assert insert_call.args[1] == ("LEGACY_DB", "COMPLETE")
+
+    @patch(
+        "trustyai_service.service.data.storage.maria.maria.LegacyMariaDBStorageReader"
+    )
+    def test_legacy_migration_failure_records_no_status(
+        self, mock_legacy_reader: MagicMock
+    ) -> None:
+        """A failing legacy migration is not recorded as complete."""
+        storage = self._make_legacy_storage()
+        reader = mock_legacy_reader.return_value
+        reader.legacy_data_exists.return_value = True
+        reader.migrate_data = AsyncMock(side_effect=RuntimeError("boom"))
+        _conn, cursor = storage.connection_manager.__enter__.return_value
+
+        with pytest.raises(RuntimeError, match="boom"):
+            _run(storage._migrate_from_legacy_db())
+
+        cursor.execute.assert_not_called()
 
     def test_build_table_name(self) -> None:
         """_build_table_name produces the expected format."""

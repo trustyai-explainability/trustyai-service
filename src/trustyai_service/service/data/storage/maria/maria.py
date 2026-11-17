@@ -21,7 +21,11 @@ from pathlib import Path
 from trustyai_service.service.data.storage.maria.legacy_maria_reader import (
     LegacyMariaDBStorageReader,
 )
-from trustyai_service.service.data.storage.maria.pvc_migration import PVCToDBMigrator
+from trustyai_service.service.data.storage.maria.pvc_migration import (
+    MIGRATION_STATUS_COMPLETE,
+    MIGRATION_TYPE_LEGACY_DB,
+    PVCToDBMigrator,
+)
 from trustyai_service.service.data.storage.maria.utils import MariaConnectionManager
 from trustyai_service.service.data.storage.sql.base import SQLStorage
 from trustyai_service.service.data.storage.sql.engine import (
@@ -151,3 +155,22 @@ class MariaDBStorage(SQLStorage):
                 "Legacy TrustyAI v1 data exists in database, checking if a migration is necessary."
             )
             await legacy_reader.migrate_data(self)
+        self._record_legacy_migration_complete()
+
+    def _record_legacy_migration_complete(self) -> None:
+        """Record a completed legacy migration for the readiness check.
+
+        The readiness check requires a ``LEGACY_DB`` or ``PVC_TO_DB`` row in
+        ``trustyai_migration_status`` while ``DATABASE_ATTEMPT_MIGRATION`` is
+        enabled. Only the PVC migrator wrote one, so the service never became
+        ready after a legacy migration, or when there was nothing to migrate.
+        """
+        with self.connection_manager as (conn, cursor):
+            cursor.execute(PVCToDBMigrator.MIGRATION_STATUS_TABLE_SCHEMA)
+            cursor.execute(
+                "INSERT INTO trustyai_migration_status "
+                "(migration_type, status, completed_at) "
+                "VALUES (?, ?, CURRENT_TIMESTAMP)",
+                (MIGRATION_TYPE_LEGACY_DB, MIGRATION_STATUS_COMPLETE),
+            )
+            conn.commit()
