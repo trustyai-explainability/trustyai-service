@@ -353,23 +353,30 @@ class TestMariaDBStorageMocked:
         assert "INSERT INTO trustyai_migration_status" in insert_call.args[0]
         assert insert_call.args[1] == ("LEGACY_DB", "COMPLETE")
 
+    @pytest.mark.parametrize("failing_step", ["legacy_data_exists", "migrate_data"])
     @patch(
         "trustyai_service.service.data.storage.maria.maria.LegacyMariaDBStorageReader"
     )
-    def test_legacy_migration_failure_records_no_status(
-        self, mock_legacy_reader: MagicMock
+    def test_legacy_migration_failure_records_failed_status(
+        self, mock_legacy_reader: MagicMock, failing_step: str
     ) -> None:
-        """A failing legacy migration is not recorded as complete."""
+        """A failing legacy check or migration records FAILED and re-raises."""
         storage = self._make_legacy_storage()
         reader = mock_legacy_reader.return_value
         reader.legacy_data_exists.return_value = True
-        reader.migrate_data = AsyncMock(side_effect=RuntimeError("boom"))
+        reader.migrate_data = AsyncMock()
+        if failing_step == "legacy_data_exists":
+            reader.legacy_data_exists.side_effect = RuntimeError("boom")
+        else:
+            reader.migrate_data.side_effect = RuntimeError("boom")
         _conn, cursor = storage.connection_manager.__enter__.return_value
 
         with pytest.raises(RuntimeError, match="boom"):
             _run(storage._migrate_from_legacy_db())
 
-        cursor.execute.assert_not_called()
+        insert_call = cursor.execute.call_args_list[-1]
+        assert "INSERT INTO trustyai_migration_status" in insert_call.args[0]
+        assert insert_call.args[1] == ("LEGACY_DB", "FAILED")
 
     def test_build_table_name(self) -> None:
         """_build_table_name produces the expected format."""

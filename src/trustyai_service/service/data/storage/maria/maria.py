@@ -23,6 +23,7 @@ from trustyai_service.service.data.storage.maria.legacy_maria_reader import (
 )
 from trustyai_service.service.data.storage.maria.pvc_migration import (
     MIGRATION_STATUS_COMPLETE,
+    MIGRATION_STATUS_FAILED,
     MIGRATION_TYPE_LEGACY_DB,
     PVCToDBMigrator,
 )
@@ -150,20 +151,28 @@ class MariaDBStorage(SQLStorage):
             database=self.database,
             ssl_ca=self.ssl_ca,
         )
-        if legacy_reader.legacy_data_exists():
-            logger.info(
-                "Legacy TrustyAI v1 data exists in database, checking if a migration is necessary."
-            )
-            await legacy_reader.migrate_data(self)
-        self._record_legacy_migration_complete()
+        try:
+            if legacy_reader.legacy_data_exists():
+                logger.info(
+                    "Legacy TrustyAI v1 data exists in database, checking if a migration is necessary."
+                )
+                await legacy_reader.migrate_data(self)
+        except Exception:
+            self._record_legacy_migration_status(MIGRATION_STATUS_FAILED)
+            raise
+        self._record_legacy_migration_status(MIGRATION_STATUS_COMPLETE)
 
-    def _record_legacy_migration_complete(self) -> None:
-        """Record a completed legacy migration for the readiness check.
+    def _record_legacy_migration_status(self, status: str) -> None:
+        """Record the outcome of the legacy migration for the readiness check.
 
         The readiness check requires a ``LEGACY_DB`` or ``PVC_TO_DB`` row in
         ``trustyai_migration_status`` while ``DATABASE_ATTEMPT_MIGRATION`` is
-        enabled. Only the PVC migrator wrote one, so the service never became
-        ready after a legacy migration, or when there was nothing to migrate.
+        enabled, and reads the latest one. Only the PVC migrator wrote one, so
+        the service never became ready after a legacy migration, or when there
+        was nothing to migrate. A ``FAILED`` row keeps an earlier ``COMPLETE``
+        row from hiding a failed attempt.
+
+        :param status: ``COMPLETE`` or ``FAILED``
         """
         with self.connection_manager as (conn, cursor):
             cursor.execute(PVCToDBMigrator.MIGRATION_STATUS_TABLE_SCHEMA)
@@ -171,6 +180,6 @@ class MariaDBStorage(SQLStorage):
                 "INSERT INTO trustyai_migration_status "
                 "(migration_type, status, completed_at) "
                 "VALUES (?, ?, CURRENT_TIMESTAMP)",
-                (MIGRATION_TYPE_LEGACY_DB, MIGRATION_STATUS_COMPLETE),
+                (MIGRATION_TYPE_LEGACY_DB, status),
             )
             conn.commit()
