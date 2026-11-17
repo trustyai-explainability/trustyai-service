@@ -619,12 +619,15 @@ datasets exist. It does not drop the legacy tables.
 
 ### Important differences from PVC migration
 
-The legacy reader currently does not create a `LEGACY_DB` row in
-`trustyai_migration_status`, does not use the per-file tracking table, and does
-not provide the same per-batch progress and row-count validation. The readiness
-code contains `LEGACY_DB` in its query, but the legacy reader itself does not
-write that status record. Verify this migration through the target dataset
-contents and logs, and retain the legacy tables until the result is confirmed.
+The legacy reader does not use the per-file tracking table and does not provide
+the same per-batch progress and row-count validation. When the legacy check
+finishes, including when there is nothing to migrate, the service records a
+`LEGACY_DB` row with status `COMPLETE` in `trustyai_migration_status`, which the
+readiness check requires while `DATABASE_ATTEMPT_MIGRATION` is enabled. A failed
+legacy check or migration records a `FAILED` row instead, so the readiness check
+reports `Data migration failed`. Verify this migration through the target
+dataset contents and logs, and retain the legacy tables until the result is
+confirmed.
 
 If both HDF5 files and legacy tables exist, the HDF5 path wins for that startup.
 The legacy path will not run in the same migration decision after the PVC path
@@ -686,9 +689,9 @@ the migration as an operational handoff:
   helper supports a delta comparison, but the current file migration call does
   not pass an existing row count. Existing target data therefore needs explicit
   verification, especially after an interrupted write.
-- **Legacy migration has weaker observability.** It is not represented in the
-  same migration tracking tables, and the readiness query can report that
-  migration status is unavailable even though the legacy reader ran.
+- **Legacy migration has weaker observability.** It records only a final
+  `COMPLETE` or `FAILED` row in `trustyai_migration_status`, with no progress or
+  per-file tracking. Details of a failure are visible only in the logs.
 - **The explicit CLI rejects unordered legacy metadata.** Its position-key
   requirement is described in Section 1.2. Historical dumps without those keys
   are not supported by this command, even if the older startup reader accepts
