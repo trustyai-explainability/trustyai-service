@@ -1,0 +1,4037 @@
+components:
+  schemas:
+    ApproxKSTestMetricRequest:
+      additionalProperties: true
+      description: Request parameters for streaming KS test drift detection metric.
+      properties:
+        batchSize:
+          default: 100
+          title: Batchsize
+          type: integer
+        epsilon:
+          default: 0.01
+          description: 'Error parameter for GK sketch; must be in (0, 0.5]. Default: 0.01'
+          exclusiveMinimum: 0.0
+          maximum: 0.5
+          title: Epsilon
+          type: number
+        fitColumns:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Fitcolumns
+        metricName:
+          default: KSTESTSTREAMING
+          title: Metricname
+          type: string
+        modelId:
+          title: Modelid
+          type: string
+        referenceTag:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Referencetag
+        requestName:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Requestname
+        thresholdDelta:
+          default: 0.05
+          title: Thresholddelta
+          type: number
+      required:
+      - modelId
+      title: ApproxKSTestMetricRequest
+      type: object
+    BatchMeanRequest:
+      additionalProperties: true
+      description: Request parameters for the Batch Mean metric.
+      properties:
+        batchSize:
+          default: 100
+          minimum: 1.0
+          title: Batchsize
+          type: integer
+        columnName:
+          title: Columnname
+          type: string
+        lowerThreshold:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Lowerthreshold
+        metricName:
+          default: BatchMean
+          title: Metricname
+          type: string
+        modelId:
+          title: Modelid
+          type: string
+        requestName:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Requestname
+        upperThreshold:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Upperthreshold
+      required:
+      - modelId
+      - columnName
+      title: BatchMeanRequest
+      type: object
+    CompareMeansMetricRequest:
+      additionalProperties: true
+      description: Request parameters for compare means drift detection metric.
+      properties:
+        alpha:
+          default: 0.05
+          exclusiveMaximum: 1.0
+          exclusiveMinimum: 0.0
+          title: Alpha
+          type: number
+        batchSize:
+          default: 100
+          exclusiveMinimum: 0.0
+          title: Batchsize
+          type: integer
+        equalVar:
+          default: false
+          title: Equalvar
+          type: boolean
+        fitColumns:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Fitcolumns
+        metricName:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Metricname
+        modelId:
+          title: Modelid
+          type: string
+        nanPolicy:
+          default: omit
+          enum:
+          - propagate
+          - raise
+          - omit
+          title: Nanpolicy
+          type: string
+        referenceTag:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Referencetag
+        requestName:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Requestname
+      required:
+      - modelId
+      title: CompareMeansMetricRequest
+      type: object
+    DataTagging:
+      description: Per-row tags for labeling model dataset observations.
+      properties:
+        dataTagging:
+          additionalProperties:
+            items:
+              items:
+                type: integer
+              type: array
+            type: array
+          default: {}
+          title: Datatagging
+          type: object
+        modelId:
+          title: Modelid
+          type: string
+      required:
+      - modelId
+      title: DataTagging
+      type: object
+    GroupDefinitionRequest:
+      description: Request payload for defining fairness groups with camelCase fields.
+      properties:
+        batchSize:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          default: 100
+          title: Batchsize
+        favorableOutcome:
+          anyOf:
+          - $ref: '#/components/schemas/ReconcilableOutput'
+          - type: integer
+          - type: number
+          - type: string
+          title: Favorableoutcome
+        metricName:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Metricname
+        metricValue:
+          additionalProperties: true
+          title: Metricvalue
+          type: object
+        modelId:
+          title: Modelid
+          type: string
+        outcomeName:
+          title: Outcomename
+          type: string
+        privilegedAttribute:
+          anyOf:
+          - $ref: '#/components/schemas/ReconcilableFeature'
+          - type: integer
+          - type: number
+          - type: string
+          title: Privilegedattribute
+        protectedAttribute:
+          title: Protectedattribute
+          type: string
+        requestName:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Requestname
+        thresholdDelta:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Thresholddelta
+        unprivilegedAttribute:
+          anyOf:
+          - $ref: '#/components/schemas/ReconcilableFeature'
+          - type: integer
+          - type: number
+          - type: string
+          title: Unprivilegedattribute
+      required:
+      - modelId
+      - protectedAttribute
+      - outcomeName
+      - privilegedAttribute
+      - unprivilegedAttribute
+      - favorableOutcome
+      - metricValue
+      title: GroupDefinitionRequest
+      type: object
+    GroupMetricRequest:
+      additionalProperties: true
+      description: Request parameters for group fairness metric computation.
+      properties:
+        batchSize:
+          anyOf:
+          - exclusiveMinimum: 0.0
+            type: integer
+          - type: 'null'
+          default: 100
+          title: Batchsize
+        favorableOutcome:
+          anyOf:
+          - $ref: '#/components/schemas/ReconcilableOutput'
+          - type: integer
+          - type: number
+          - type: string
+          title: Favorableoutcome
+        metricName:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Metricname
+        modelId:
+          title: Modelid
+          type: string
+        outcomeName:
+          title: Outcomename
+          type: string
+        privilegedAttribute:
+          anyOf:
+          - $ref: '#/components/schemas/ReconcilableFeature'
+          - type: integer
+          - type: number
+          - type: string
+          title: Privilegedattribute
+        protectedAttribute:
+          title: Protectedattribute
+          type: string
+        requestName:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Requestname
+        thresholdDelta:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Thresholddelta
+        unprivilegedAttribute:
+          anyOf:
+          - $ref: '#/components/schemas/ReconcilableFeature'
+          - type: integer
+          - type: number
+          - type: string
+          title: Unprivilegedattribute
+      required:
+      - modelId
+      - protectedAttribute
+      - outcomeName
+      - privilegedAttribute
+      - unprivilegedAttribute
+      - favorableOutcome
+      title: GroupMetricRequest
+      type: object
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          title: Detail
+          type: array
+      title: HTTPValidationError
+      type: object
+    IdentityMetricRequest:
+      additionalProperties: true
+      description: 'Deprecated: Use BatchMeanRequest instead.'
+      properties:
+        batchSize:
+          default: 100
+          minimum: 1.0
+          title: Batchsize
+          type: integer
+        columnName:
+          title: Columnname
+          type: string
+        lowerThreshold:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Lowerthreshold
+        metricName:
+          default: BatchMean
+          title: Metricname
+          type: string
+        modelId:
+          title: Modelid
+          type: string
+        requestName:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Requestname
+        upperThreshold:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Upperthreshold
+      required:
+      - modelId
+      - columnName
+      title: IdentityMetricRequest
+      type: object
+    InferParameter:
+      description: KServe V2 inference parameter supporting bool, int, or string values.
+      properties:
+        bool_param:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Bool Param
+        int_param:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Int Param
+        string_param:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: String Param
+      title: InferParameter
+      type: object
+    InferenceIdItem:
+      description: A single inference ID with its associated timestamp.
+      properties:
+        id:
+          title: Id
+          type: string
+        timestamp:
+          title: Timestamp
+          type: string
+      required:
+      - id
+      - timestamp
+      title: InferenceIdItem
+      type: object
+    InferenceIdResponse:
+      description: Paginated response containing inference IDs for a model.
+      properties:
+        ids:
+          items:
+            $ref: '#/components/schemas/InferenceIdItem'
+          title: Ids
+          type: array
+        limit:
+          title: Limit
+          type: integer
+        offset:
+          title: Offset
+          type: integer
+        total:
+          title: Total
+          type: integer
+      required:
+      - ids
+      - total
+      - limit
+      - offset
+      title: InferenceIdResponse
+      type: object
+    InferencePartialPayload:
+      description: 'Partial inference payload for KServe agent uploads.
+
+
+        Flat structure matching the Java TrustyAI service wire format.'
+      properties:
+        data:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Data
+        id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Id
+        kind:
+          anyOf:
+          - enum:
+            - request
+            - response
+            type: string
+          - type: 'null'
+          title: Kind
+        metadata:
+          additionalProperties:
+            type: string
+          title: Metadata
+          type: object
+        modelid:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Modelid
+      title: InferencePartialPayload
+      type: object
+    JensenShannonMetricRequest:
+      additionalProperties: true
+      description: Request parameters for Jensen-Shannon divergence drift detection metric.
+      properties:
+        batchSize:
+          default: 100
+          title: Batchsize
+          type: integer
+        bins:
+          default: 64
+          title: Bins
+          type: integer
+        fitColumns:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Fitcolumns
+        gridPoints:
+          default: 256
+          title: Gridpoints
+          type: integer
+        method:
+          default: kde
+          title: Method
+          type: string
+        metricName:
+          default: JensenShannon
+          title: Metricname
+          type: string
+        modelId:
+          title: Modelid
+          type: string
+        referenceTag:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Referencetag
+        requestName:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Requestname
+        statistic:
+          default: distance
+          title: Statistic
+          type: string
+        threshold:
+          default: 0.1
+          title: Threshold
+          type: number
+      required:
+      - modelId
+      title: JensenShannonMetricRequest
+      type: object
+    KSTestMetricRequest:
+      additionalProperties: true
+      description: Request parameters for Kolmogorov-Smirnov test drift detection metric.
+      properties:
+        batchSize:
+          default: 100
+          title: Batchsize
+          type: integer
+        fitColumns:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Fitcolumns
+        metricName:
+          default: KSTest
+          title: Metricname
+          type: string
+        modelId:
+          title: Modelid
+          type: string
+        referenceTag:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Referencetag
+        requestName:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Requestname
+        thresholdDelta:
+          default: 0.05
+          title: Thresholddelta
+          type: number
+      required:
+      - modelId
+      title: KSTestMetricRequest
+      type: object
+    KServeData:
+      description: KServe tensor data with shape, type, and validation.
+      properties:
+        data:
+          items: {}
+          title: Data
+          type: array
+        datatype:
+          $ref: '#/components/schemas/KServeDataType'
+        name:
+          title: Name
+          type: string
+        parameters:
+          anyOf:
+          - additionalProperties:
+              anyOf:
+              - $ref: '#/components/schemas/InferParameter'
+              - type: string
+            type: object
+          - type: 'null'
+          title: Parameters
+        shape:
+          items:
+            type: integer
+          title: Shape
+          type: array
+      required:
+      - name
+      - shape
+      - datatype
+      - data
+      title: KServeData
+      type: object
+    KServeDataType:
+      description: KServe inference protocol data types.
+      enum:
+      - BOOL
+      - INT8
+      - INT16
+      - INT32
+      - INT64
+      - UINT8
+      - UINT16
+      - UINT32
+      - UINT64
+      - FP16
+      - FP32
+      - FP64
+      - BYTES
+      title: KServeDataType
+      type: string
+    KServeInferenceRequest:
+      description: KServe V2 inference request.
+      properties:
+        id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Id
+        inputs:
+          items:
+            $ref: '#/components/schemas/KServeData'
+          title: Inputs
+          type: array
+        outputs:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/KServeData'
+            type: array
+          - type: 'null'
+          title: Outputs
+        parameters:
+          anyOf:
+          - additionalProperties:
+              type: string
+            type: object
+          - type: 'null'
+          title: Parameters
+      required:
+      - inputs
+      title: KServeInferenceRequest
+      type: object
+    KServeInferenceResponse:
+      description: KServe V2 inference response.
+      properties:
+        id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Id
+        model_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model Name
+        model_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model Version
+        outputs:
+          items:
+            $ref: '#/components/schemas/KServeData'
+          title: Outputs
+          type: array
+        parameters:
+          anyOf:
+          - additionalProperties:
+              type: string
+            type: object
+          - type: 'null'
+          title: Parameters
+      required:
+      - outputs
+      title: KServeInferenceResponse
+      type: object
+    MMDMetricRequest:
+      additionalProperties: true
+      description: Request parameters for MMD drift detection metric.
+      properties:
+        alpha:
+          default: 0.05
+          exclusiveMaximum: 1.0
+          exclusiveMinimum: 0.0
+          title: Alpha
+          type: number
+        bandwidth:
+          default: 1.0
+          exclusiveMinimum: 0.0
+          title: Bandwidth
+          type: number
+        batchSize:
+          anyOf:
+          - exclusiveMinimum: 0.0
+            type: integer
+          - type: 'null'
+          default: 100
+          title: Batchsize
+        fitColumns:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Fitcolumns
+        kernel:
+          const: gauss
+          default: gauss
+          title: Kernel
+          type: string
+        method:
+          default: ctt
+          enum:
+          - ctt
+          - rff
+          - actt
+          title: Method
+          type: string
+        metricName:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Metricname
+        modelId:
+          title: Modelid
+          type: string
+        numPermutations:
+          default: 39
+          exclusiveMinimum: 0.0
+          title: Numpermutations
+          type: integer
+        referenceTag:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Referencetag
+        requestName:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Requestname
+        seed:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Seed
+      required:
+      - modelId
+      title: MMDMetricRequest
+      type: object
+    MeanshiftMetricRequest:
+      additionalProperties: true
+      description: 'DEPRECATED: Use CompareMeansMetricRequest instead.
+
+
+        Maintained for backward compatibility with old API clients.
+
+        This class inherits from CompareMeansMetricRequest to ensure consistency
+
+        and reduce duplication. All fields and validation behavior are inherited.'
+      properties:
+        alpha:
+          default: 0.05
+          exclusiveMaximum: 1.0
+          exclusiveMinimum: 0.0
+          title: Alpha
+          type: number
+        batchSize:
+          default: 100
+          exclusiveMinimum: 0.0
+          title: Batchsize
+          type: integer
+        equalVar:
+          default: false
+          title: Equalvar
+          type: boolean
+        fitColumns:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Fitcolumns
+        metricName:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Metricname
+        modelId:
+          title: Modelid
+          type: string
+        nanPolicy:
+          default: omit
+          enum:
+          - propagate
+          - raise
+          - omit
+          title: Nanpolicy
+          type: string
+        referenceTag:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Referencetag
+        requestName:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Requestname
+      required:
+      - modelId
+      title: MeanshiftMetricRequest
+      type: object
+    NameMapping:
+      description: Mapping of column names for model inputs and outputs.
+      properties:
+        inputMapping:
+          additionalProperties:
+            type: string
+          default: {}
+          title: Inputmapping
+          type: object
+        modelId:
+          title: Modelid
+          type: string
+        outputMapping:
+          additionalProperties:
+            type: string
+          default: {}
+          title: Outputmapping
+          type: object
+      required:
+      - modelId
+      title: NameMapping
+      type: object
+    ReconcilableFeature:
+      description: Reconcilable feature value representation for fairness metrics.
+      properties:
+        multipleValued:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Multiplevalued
+        rawValueNode:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Rawvaluenode
+        rawValueNodes:
+          anyOf:
+          - items:
+              additionalProperties: true
+              type: object
+            type: array
+          - type: 'null'
+          title: Rawvaluenodes
+        reconciledType:
+          anyOf:
+          - items:
+              additionalProperties: true
+              type: object
+            type: array
+          - type: 'null'
+          title: Reconciledtype
+      title: ReconcilableFeature
+      type: object
+    ReconcilableOutput:
+      description: Reconcilable output value representation for fairness metrics.
+      properties:
+        multipleValued:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Multiplevalued
+        rawValueNode:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Rawvaluenode
+        rawValueNodes:
+          anyOf:
+          - items:
+              additionalProperties: true
+              type: object
+            type: array
+          - type: 'null'
+          title: Rawvaluenodes
+        reconciledType:
+          anyOf:
+          - items:
+              additionalProperties: true
+              type: object
+            type: array
+          - type: 'null'
+          title: Reconciledtype
+      title: ReconcilableOutput
+      type: object
+    UploadPayload:
+      description: Payload model for uploading inference request/response pairs.
+      properties:
+        data_tag:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Data Tag
+        is_ground_truth:
+          default: false
+          title: Is Ground Truth
+          type: boolean
+        model_name:
+          title: Model Name
+          type: string
+        request:
+          $ref: '#/components/schemas/KServeInferenceRequest'
+        response:
+          $ref: '#/components/schemas/KServeInferenceResponse'
+      required:
+      - model_name
+      - request
+      - response
+      title: UploadPayload
+      type: object
+    ValidationError:
+      properties:
+        ctx:
+          title: Context
+          type: object
+        input:
+          title: Input
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          title: Location
+          type: array
+        msg:
+          title: Message
+          type: string
+        type:
+          title: Error Type
+          type: string
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+      type: object
+    trustyai_service__endpoints__metrics__batch_mean__ScheduleId:
+      description: Identifier for a scheduled metric computation.
+      properties:
+        requestId:
+          title: Requestid
+          type: string
+      required:
+      - requestId
+      title: ScheduleId
+      type: object
+    trustyai_service__endpoints__metrics__drift__compare_means__ScheduleId:
+      description: Identifier for a scheduled metric computation request.
+      properties:
+        requestId:
+          title: Requestid
+          type: string
+      required:
+      - requestId
+      title: ScheduleId
+      type: object
+    trustyai_service__endpoints__metrics__drift__jensen_shannon__ScheduleId:
+      description: Identifier for a scheduled metric computation request.
+      properties:
+        requestId:
+          title: Requestid
+          type: string
+      required:
+      - requestId
+      title: ScheduleId
+      type: object
+    trustyai_service__endpoints__metrics__drift__kolmogorov_smirnov__ScheduleId:
+      description: Identifier for a scheduled metric computation request.
+      properties:
+        requestId:
+          title: Requestid
+          type: string
+      required:
+      - requestId
+      title: ScheduleId
+      type: object
+    trustyai_service__endpoints__metrics__drift__kolmogorov_smirnov_streaming__ScheduleId:
+      description: Identifier for a scheduled metric computation request.
+      properties:
+        requestId:
+          title: Requestid
+          type: string
+      required:
+      - requestId
+      title: ScheduleId
+      type: object
+    trustyai_service__endpoints__metrics__drift__mmd__ScheduleId:
+      description: Identifier for a scheduled metric computation request.
+      properties:
+        requestId:
+          title: Requestid
+          type: string
+      required:
+      - requestId
+      title: ScheduleId
+      type: object
+    trustyai_service__endpoints__metrics__fairness__group__utils__ScheduleId:
+      description: Identifier for a scheduled metric computation request.
+      properties:
+        requestId:
+          title: Requestid
+          type: string
+      required:
+      - requestId
+      title: ScheduleId
+      type: object
+info:
+  description: TrustyAI Service API
+  title: TrustyAI Service API
+  version: 1.0.0rc0
+openapi: 3.1.0
+paths:
+  /:
+    get:
+      description: 'Root endpoint returning service welcome message.
+
+
+        :return: Dictionary with welcome message'
+      operationId: root__get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Root  Get
+                type: object
+          description: Successful Response
+      summary: Root
+    post:
+      description: 'Consume KServe v2 payloads from cloud events.
+
+
+        Handles both the KServe inference logger CloudEvent format (with ``ce-type``
+
+        and ``Inferenceservicename`` headers) and plain KServe v2 JSON.
+
+
+        Knative Eventing may strip the Content-Encoding header while leaving the
+
+        body gzip-compressed, so this endpoint detects gzip by magic bytes and
+
+        decompresses before JSON parsing.
+
+
+        :param http_request: Raw HTTP request (body may be gzip-compressed without header)
+
+        :param ce_id: Cloud event ID from header (correlation ID)
+
+        :param ce_type: Cloud event type — determines request vs response
+
+        :param inferenceservicename: Model name from KServe inference logger
+
+        :param tag: Optional tag to associate with the data
+
+        :raises HTTPException: If payload processing fails'
+      operationId: consume_cloud_event__post
+      parameters:
+      - in: query
+        name: tag
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Tag
+      - in: header
+        name: ce-id
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Ce-Id
+      - in: header
+        name: ce-type
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Ce-Type
+      - in: header
+        name: inferenceservicename
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Inferenceservicename
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Consume Cloud Event  Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Consume Cloud Event
+      tags:
+      - '{Internal Only} Inference Consumer'
+      - '{Internal Only} ModelMesh Consumer'
+  /consumer/kserve/v2:
+    post:
+      description: "Process a KServe v2 payload.\n\nThis endpoint accepts both input (request) and output\
+        \ (response) payloads from ModelMesh-served models\nand stores them for reconciliation. When both\
+        \ input and output payloads for the same ID are available,\nthey are reconciled and stored as\
+        \ data.\n\nArgs:\n    payload: The KServe v2 payload containing either request or response data\n\
+        \nReturns:\n    A JSON response indicating success or failure"
+      operationId: consume_inference_payload_consumer_kserve_v2_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InferencePartialPayload'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Consume Inference Payload Consumer Kserve V2 Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Consume Inference Payload
+      tags:
+      - '{Internal Only} Inference Consumer'
+      - '{Internal Only} ModelMesh Consumer'
+  /data/upload:
+    post:
+      description: Upload model data.
+      operationId: upload_data_upload_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadPayload'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Upload Data Upload Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Upload
+      tags:
+      - Data Upload
+  /dir:
+    post:
+      deprecated: true
+      description: 'Compute the current value of Disparate Impact Ratio metric (deprecated).
+
+
+        This endpoint is deprecated. Please use /metrics/group/fairness/dir
+
+        instead.'
+      operationId: compute_dir_deprecated_dir_post
+      parameters:
+      - in: query
+        name: delta
+        required: false
+        schema:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Delta
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupMetricRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  anyOf:
+                  - type: string
+                  - type: number
+                  - additionalProperties: true
+                    type: object
+                title: Response Compute Dir Deprecated Dir Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Compute Dir Deprecated
+      tags:
+      - 'Fairness Metrics: Group: Disparate Impact Ratio'
+  /dir/definition:
+    get:
+      deprecated: true
+      description: 'Provide a general definition of Disparate Impact Ratio metric (deprecated).
+
+
+        This endpoint is deprecated. Please use
+
+        /metrics/group/fairness/dir/definition instead.'
+      operationId: get_dir_definition_deprecated_dir_definition_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Get Dir Definition Deprecated Dir Definition Get
+                type: object
+          description: Successful Response
+      summary: Get Dir Definition Deprecated
+      tags:
+      - 'Fairness Metrics: Group: Disparate Impact Ratio'
+    post:
+      deprecated: true
+      description: 'Provide a specific interpretation of a DIR metric value (deprecated).
+
+
+        This endpoint is deprecated. Please use
+
+        /metrics/group/fairness/dir/definition instead.'
+      operationId: interpret_dir_value_deprecated_dir_definition_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupDefinitionRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Interpret Dir Value Deprecated Dir Definition Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Interpret Dir Value Deprecated
+      tags:
+      - 'Fairness Metrics: Group: Disparate Impact Ratio'
+  /dir/request:
+    delete:
+      deprecated: true
+      description: 'Delete a recurring computation of DIR metric (deprecated).
+
+
+        This endpoint is deprecated. Please use
+
+        /metrics/group/fairness/dir/request instead.'
+      operationId: delete_dir_schedule_deprecated_dir_request_delete
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/trustyai_service__endpoints__metrics__fairness__group__utils__ScheduleId'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Delete Dir Schedule Deprecated Dir Request Delete
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Delete Dir Schedule Deprecated
+      tags:
+      - 'Fairness Metrics: Group: Disparate Impact Ratio'
+    post:
+      deprecated: true
+      description: 'Schedule a recurring computation of DIR metric (deprecated).
+
+
+        This endpoint is deprecated. Please use
+
+        /metrics/group/fairness/dir/request instead.'
+      operationId: schedule_dir_deprecated_dir_request_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupMetricRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Schedule Dir Deprecated Dir Request Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Schedule Dir Deprecated
+      tags:
+      - 'Fairness Metrics: Group: Disparate Impact Ratio'
+  /dir/requests:
+    get:
+      deprecated: true
+      description: 'List the currently scheduled computations of DIR metric (deprecated).
+
+
+        This endpoint is deprecated. Please use
+
+        /metrics/group/fairness/dir/requests instead.'
+      operationId: list_dir_requests_deprecated_dir_requests_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  items:
+                    additionalProperties: true
+                    type: object
+                  type: array
+                title: Response List Dir Requests Deprecated Dir Requests Get
+                type: object
+          description: Successful Response
+      summary: List Dir Requests Deprecated
+      tags:
+      - 'Fairness Metrics: Group: Disparate Impact Ratio'
+  /info:
+    get:
+      description: 'Get a comprehensive overview of the model inference datasets collected by TrustyAI.
+
+
+        Returns metadata about the metric computations that are scheduled over those datasets.'
+      operationId: get_service_info_info_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  additionalProperties: true
+                  type: object
+                title: Response Get Service Info Info Get
+                type: object
+          description: Successful Response
+      summary: Get Service Info
+      tags:
+      - Service Metadata
+  /info/inference/ids/{model}:
+    get:
+      description: Get a list of all inference IDs within a particular model's stored data.
+      operationId: get_inference_ids_info_inference_ids__model__get
+      parameters:
+      - in: path
+        name: model
+        required: true
+        schema:
+          title: Model
+          type: string
+      - in: query
+        name: type
+        required: false
+        schema:
+          default: all
+          title: Type
+          type: string
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 100
+          maximum: 10000
+          minimum: 1
+          title: Limit
+          type: integer
+      - in: query
+        name: offset
+        required: false
+        schema:
+          default: 0
+          minimum: 0
+          title: Offset
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InferenceIdResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Get Inference Ids
+      tags:
+      - Service Metadata
+  /info/names:
+    delete:
+      description: Remove any column names that have been applied to a particular inference.
+      operationId: remove_column_names_info_names_delete
+      requestBody:
+        content:
+          application/json:
+            schema:
+              title: Model Id
+              type: string
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Remove Column Names Info Names Delete
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Remove Column Names
+      tags:
+      - Service Metadata
+    get:
+      description: Get the current name mappings for all models.
+      operationId: get_column_names_info_names_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  additionalProperties: true
+                  type: object
+                title: Response Get Column Names Info Names Get
+                type: object
+          description: Successful Response
+      summary: Get Column Names
+      tags:
+      - Service Metadata
+    post:
+      description: Apply a set of human-readable column names to a particular inference.
+      operationId: apply_column_names_info_names_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NameMapping'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Apply Column Names Info Names Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Apply Column Names
+      tags:
+      - Service Metadata
+  /info/tags:
+    get:
+      description: 'Retrieve per-tag row counts for a model''s dataset.
+
+
+        If ``modelId`` is provided, returns ``dict[str, int]`` for that model.
+
+        If omitted, returns ``dict[str, dict[str, int]]`` for every known model.'
+      operationId: get_tags_info_tags_get
+      parameters:
+      - in: query
+        name: modelId
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Modelid
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                title: Response Get Tags Info Tags Get
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Get Tags
+      tags:
+      - Service Metadata
+    post:
+      description: 'Apply per-row tags to a model dataset.
+
+
+        Tags are appended idempotently (a tag already present on a row is not
+
+        duplicated).  The ``_trustyai`` prefix is reserved for internal use.'
+      operationId: apply_tags_info_tags_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DataTagging'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                title: Response Apply Tags Info Tags Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Apply Tags
+      tags:
+      - Service Metadata
+  /metrics/all/requests:
+    get:
+      description: Retrieve a list of all currently scheduled metric computations.
+      operationId: get_all_metric_requests_metrics_all_requests_get
+      parameters:
+      - in: query
+        name: type_
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: 'Type '
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  items: {}
+                  type: array
+                title: Response Get All Metric Requests Metrics All Requests Get
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Get All Metric Requests
+      tags:
+      - Metrics Information Endpoint
+  /metrics/batchmean:
+    post:
+      description: Compute the mean of a column's last N values.
+      operationId: compute_batch_mean_metrics_batchmean_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchMeanRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                title: Response Compute Batch Mean Metrics Batchmean Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Compute Batch Mean
+      tags:
+      - 'Metrics: Batch Mean'
+  /metrics/batchmean/definition:
+    get:
+      description: Provide a general definition of the Batch Mean metric.
+      operationId: get_batch_mean_definition_metrics_batchmean_definition_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                title: Response Get Batch Mean Definition Metrics Batchmean Definition Get
+                type: object
+          description: Successful Response
+      summary: Get Batch Mean Definition
+      tags:
+      - 'Metrics: Batch Mean'
+    post:
+      description: Provide a specific, plain-english interpretation of a Batch Mean value.
+      operationId: interpret_batch_mean_value_metrics_batchmean_definition_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchMeanRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                title: Response Interpret Batch Mean Value Metrics Batchmean Definition Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Interpret Batch Mean Value
+      tags:
+      - 'Metrics: Batch Mean'
+  /metrics/batchmean/request:
+    delete:
+      description: Delete a recurring computation of Batch Mean metric.
+      operationId: delete_batch_mean_schedule_metrics_batchmean_request_delete
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/trustyai_service__endpoints__metrics__batch_mean__ScheduleId'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                title: Response Delete Batch Mean Schedule Metrics Batchmean Request Delete
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Delete Batch Mean Schedule
+      tags:
+      - 'Metrics: Batch Mean'
+    post:
+      description: Schedule a recurring computation of Batch Mean metric.
+      operationId: schedule_batch_mean_metrics_batchmean_request_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchMeanRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                title: Response Schedule Batch Mean Metrics Batchmean Request Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Schedule Batch Mean
+      tags:
+      - 'Metrics: Batch Mean'
+  /metrics/batchmean/requests:
+    get:
+      description: List the currently scheduled computations of Batch Mean metric.
+      operationId: list_batch_mean_requests_metrics_batchmean_requests_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                title: Response List Batch Mean Requests Metrics Batchmean Requests Get
+                type: object
+          description: Successful Response
+      summary: List Batch Mean Requests
+      tags:
+      - 'Metrics: Batch Mean'
+  /metrics/dir:
+    post:
+      deprecated: true
+      description: 'Compute the current value of Disparate Impact Ratio metric (deprecated).
+
+
+        This endpoint is deprecated. Please use /metrics/group/fairness/dir
+
+        instead.'
+      operationId: compute_dir_deprecated_metrics_dir_post
+      parameters:
+      - in: query
+        name: delta
+        required: false
+        schema:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Delta
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupMetricRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  anyOf:
+                  - type: string
+                  - type: number
+                  - additionalProperties: true
+                    type: object
+                title: Response Compute Dir Deprecated Metrics Dir Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Compute Dir Deprecated
+      tags:
+      - '{Legacy}: Disparate Impact Ratio'
+  /metrics/dir/definition:
+    get:
+      deprecated: true
+      description: 'Provide a general definition of Disparate Impact Ratio metric (deprecated).
+
+
+        This endpoint is deprecated. Please use
+
+        /metrics/group/fairness/dir/definition instead.'
+      operationId: get_dir_definition_deprecated_metrics_dir_definition_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Get Dir Definition Deprecated Metrics Dir Definition Get
+                type: object
+          description: Successful Response
+      summary: Get Dir Definition Deprecated
+      tags:
+      - '{Legacy}: Disparate Impact Ratio'
+    post:
+      deprecated: true
+      description: 'Provide a specific interpretation of a DIR metric value (deprecated).
+
+
+        This endpoint is deprecated. Please use
+
+        /metrics/group/fairness/dir/definition instead.'
+      operationId: interpret_dir_value_deprecated_metrics_dir_definition_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupDefinitionRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Interpret Dir Value Deprecated Metrics Dir Definition Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Interpret Dir Value Deprecated
+      tags:
+      - '{Legacy}: Disparate Impact Ratio'
+  /metrics/dir/request:
+    delete:
+      deprecated: true
+      description: 'Delete a recurring computation of DIR metric (deprecated).
+
+
+        This endpoint is deprecated. Please use
+
+        /metrics/group/fairness/dir/request instead.'
+      operationId: delete_dir_schedule_deprecated_metrics_dir_request_delete
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/trustyai_service__endpoints__metrics__fairness__group__utils__ScheduleId'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Delete Dir Schedule Deprecated Metrics Dir Request Delete
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Delete Dir Schedule Deprecated
+      tags:
+      - '{Legacy}: Disparate Impact Ratio'
+    post:
+      deprecated: true
+      description: 'Schedule a recurring computation of DIR metric (deprecated).
+
+
+        This endpoint is deprecated. Please use
+
+        /metrics/group/fairness/dir/request instead.'
+      operationId: schedule_dir_deprecated_metrics_dir_request_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupMetricRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Schedule Dir Deprecated Metrics Dir Request Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Schedule Dir Deprecated
+      tags:
+      - '{Legacy}: Disparate Impact Ratio'
+  /metrics/dir/requests:
+    get:
+      deprecated: true
+      description: 'List the currently scheduled computations of DIR metric (deprecated).
+
+
+        This endpoint is deprecated. Please use
+
+        /metrics/group/fairness/dir/requests instead.'
+      operationId: list_dir_requests_deprecated_metrics_dir_requests_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  items:
+                    additionalProperties: true
+                    type: object
+                  type: array
+                title: Response List Dir Requests Deprecated Metrics Dir Requests Get
+                type: object
+          description: Successful Response
+      summary: List Dir Requests Deprecated
+      tags:
+      - '{Legacy}: Disparate Impact Ratio'
+  /metrics/drift/approxkstest:
+    post:
+      deprecated: true
+      description: 'Compute the current value of ApproxKSTest metric (deprecated).
+
+
+        This endpoint is deprecated. Please use /metrics/drift/ksteststreaming instead.'
+      operationId: compute_approxkstest_deprecated_metrics_drift_approxkstest_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApproxKSTestMetricRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  anyOf:
+                  - type: number
+                  - type: boolean
+                  - type: string
+                  - additionalProperties:
+                      additionalProperties:
+                        type: number
+                      type: object
+                    type: object
+                title: Response Compute Approxkstest Deprecated Metrics Drift Approxkstest Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Compute Approxkstest Deprecated
+      tags:
+      - 'Drift Metrics: KSTestStreaming'
+  /metrics/drift/approxkstest/definition:
+    get:
+      deprecated: true
+      description: 'Provide a general definition of ApproxKSTest metric (deprecated).
+
+
+        This endpoint is deprecated. Please use /metrics/drift/ksteststreaming/definition instead.'
+      operationId: get_approxkstest_definition_deprecated_metrics_drift_approxkstest_definition_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Get Approxkstest Definition Deprecated Metrics Drift Approxkstest Definition
+                  Get
+                type: object
+          description: Successful Response
+      summary: Get Approxkstest Definition Deprecated
+      tags:
+      - 'Drift Metrics: KSTestStreaming'
+  /metrics/drift/approxkstest/request:
+    delete:
+      deprecated: true
+      description: 'Delete a recurring computation of ApproxKSTest metric (deprecated).
+
+
+        This endpoint is deprecated. Please use /metrics/drift/ksteststreaming/request instead.'
+      operationId: delete_approxkstest_schedule_deprecated_metrics_drift_approxkstest_request_delete
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/trustyai_service__endpoints__metrics__drift__kolmogorov_smirnov_streaming__ScheduleId'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Delete Approxkstest Schedule Deprecated Metrics Drift Approxkstest Request
+                  Delete
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Delete Approxkstest Schedule Deprecated
+      tags:
+      - 'Drift Metrics: KSTestStreaming'
+    post:
+      deprecated: true
+      description: 'Schedule a recurring computation of ApproxKSTest metric (deprecated).
+
+
+        This endpoint is deprecated. Please use /metrics/drift/ksteststreaming/request instead.'
+      operationId: schedule_approxkstest_deprecated_metrics_drift_approxkstest_request_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApproxKSTestMetricRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Schedule Approxkstest Deprecated Metrics Drift Approxkstest Request Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Schedule Approxkstest Deprecated
+      tags:
+      - 'Drift Metrics: KSTestStreaming'
+  /metrics/drift/approxkstest/requests:
+    get:
+      deprecated: true
+      description: 'List the currently scheduled computations of ApproxKSTest metric (deprecated).
+
+
+        This endpoint is deprecated. Please use /metrics/drift/ksteststreaming/requests instead.'
+      operationId: list_approxkstest_requests_deprecated_metrics_drift_approxkstest_requests_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  items:
+                    additionalProperties: true
+                    type: object
+                  type: array
+                title: Response List Approxkstest Requests Deprecated Metrics Drift Approxkstest Requests
+                  Get
+                type: object
+          description: Successful Response
+      summary: List Approxkstest Requests Deprecated
+      tags:
+      - 'Drift Metrics: KSTestStreaming'
+  /metrics/drift/comparemeans:
+    post:
+      description: Compute the current value of CompareMeans metric.
+      operationId: compute_compare_means_metrics_drift_comparemeans_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompareMeansMetricRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  anyOf:
+                  - type: number
+                  - type: boolean
+                  - type: string
+                  - additionalProperties:
+                      additionalProperties:
+                        anyOf:
+                        - type: number
+                        - type: boolean
+                      type: object
+                    type: object
+                title: Response Compute Compare Means Metrics Drift Comparemeans Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Compute Compare Means
+      tags:
+      - 'Drift Metrics: CompareMeans'
+  /metrics/drift/comparemeans/definition:
+    get:
+      description: Provide a general definition of CompareMeans metric.
+      operationId: get_compare_means_definition_metrics_drift_comparemeans_definition_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Get Compare Means Definition Metrics Drift Comparemeans Definition Get
+                type: object
+          description: Successful Response
+      summary: Get Compare Means Definition
+      tags:
+      - 'Drift Metrics: CompareMeans'
+  /metrics/drift/comparemeans/request:
+    delete:
+      description: Delete a recurring computation of CompareMeans metric.
+      operationId: delete_compare_means_schedule_metrics_drift_comparemeans_request_delete
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/trustyai_service__endpoints__metrics__drift__compare_means__ScheduleId'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Delete Compare Means Schedule Metrics Drift Comparemeans Request Delete
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Delete Compare Means Schedule
+      tags:
+      - 'Drift Metrics: CompareMeans'
+    post:
+      description: Schedule a recurring computation of CompareMeans metric.
+      operationId: schedule_compare_means_metrics_drift_comparemeans_request_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompareMeansMetricRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Schedule Compare Means Metrics Drift Comparemeans Request Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Schedule Compare Means
+      tags:
+      - 'Drift Metrics: CompareMeans'
+  /metrics/drift/comparemeans/requests:
+    get:
+      description: List the currently scheduled computations of CompareMeans metric.
+      operationId: list_compare_means_requests_metrics_drift_comparemeans_requests_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  items:
+                    additionalProperties: true
+                    type: object
+                  type: array
+                title: Response List Compare Means Requests Metrics Drift Comparemeans Requests Get
+                type: object
+          description: Successful Response
+      summary: List Compare Means Requests
+      tags:
+      - 'Drift Metrics: CompareMeans'
+  /metrics/drift/fouriermmd:
+    post:
+      deprecated: true
+      description: 'Compute the current value of FourierMMD metric (deprecated).
+
+
+        This endpoint is deprecated. Please use /metrics/drift/mmd instead.'
+      operationId: compute_fouriermmd_metrics_drift_fouriermmd_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MMDMetricRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  anyOf:
+                  - type: number
+                  - type: boolean
+                  - type: string
+                  - items:
+                      type: string
+                    type: array
+                title: Response Compute Fouriermmd Metrics Drift Fouriermmd Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Compute Fouriermmd
+      tags:
+      - 'Drift Metrics: MMD'
+  /metrics/drift/fouriermmd/definition:
+    get:
+      deprecated: true
+      description: 'Provide a general definition of FourierMMD metric (deprecated).
+
+
+        This endpoint is deprecated. Please use
+
+        /metrics/drift/mmd/definition instead.'
+      operationId: get_fouriermmd_definition_metrics_drift_fouriermmd_definition_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Get Fouriermmd Definition Metrics Drift Fouriermmd Definition Get
+                type: object
+          description: Successful Response
+      summary: Get Fouriermmd Definition
+      tags:
+      - 'Drift Metrics: MMD'
+  /metrics/drift/fouriermmd/request:
+    delete:
+      deprecated: true
+      description: 'Delete a recurring computation of FourierMMD metric (deprecated).
+
+
+        This endpoint is deprecated. Please use
+
+        /metrics/drift/mmd/request instead.'
+      operationId: delete_fouriermmd_schedule_metrics_drift_fouriermmd_request_delete
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/trustyai_service__endpoints__metrics__drift__mmd__ScheduleId'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Delete Fouriermmd Schedule Metrics Drift Fouriermmd Request Delete
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Delete Fouriermmd Schedule
+      tags:
+      - 'Drift Metrics: MMD'
+    post:
+      deprecated: true
+      description: 'Schedule a recurring computation of FourierMMD metric (deprecated).
+
+
+        This endpoint is deprecated. Please use
+
+        /metrics/drift/mmd/request instead.'
+      operationId: schedule_fouriermmd_metrics_drift_fouriermmd_request_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MMDMetricRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Schedule Fouriermmd Metrics Drift Fouriermmd Request Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Schedule Fouriermmd
+      tags:
+      - 'Drift Metrics: MMD'
+  /metrics/drift/fouriermmd/requests:
+    get:
+      deprecated: true
+      description: 'List the currently scheduled computations of FourierMMD metric (deprecated).
+
+
+        This endpoint is deprecated. Please use
+
+        /metrics/drift/mmd/requests instead.'
+      operationId: list_fouriermmd_requests_metrics_drift_fouriermmd_requests_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  items:
+                    additionalProperties: true
+                    type: object
+                  type: array
+                title: Response List Fouriermmd Requests Metrics Drift Fouriermmd Requests Get
+                type: object
+          description: Successful Response
+      summary: List Fouriermmd Requests
+      tags:
+      - 'Drift Metrics: MMD'
+  /metrics/drift/jensenshannon:
+    post:
+      description: Compute the current value of Jensen-Shannon metric.
+      operationId: compute_jensenshannon_metrics_drift_jensenshannon_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JensenShannonMetricRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  anyOf:
+                  - type: number
+                  - type: boolean
+                  - type: string
+                  - additionalProperties:
+                      additionalProperties:
+                        anyOf:
+                        - type: number
+                        - type: boolean
+                      type: object
+                    type: object
+                title: Response Compute Jensenshannon Metrics Drift Jensenshannon Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Compute Jensenshannon
+      tags:
+      - 'Drift Metrics: JensenShannon'
+  /metrics/drift/jensenshannon/definition:
+    get:
+      description: Provide a general definition of Jensen-Shannon metric.
+      operationId: get_jensenshannon_definition_metrics_drift_jensenshannon_definition_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Get Jensenshannon Definition Metrics Drift Jensenshannon Definition Get
+                type: object
+          description: Successful Response
+      summary: Get Jensenshannon Definition
+      tags:
+      - 'Drift Metrics: JensenShannon'
+  /metrics/drift/jensenshannon/request:
+    delete:
+      description: Delete a recurring computation of Jensen-Shannon metric.
+      operationId: delete_jensenshannon_schedule_metrics_drift_jensenshannon_request_delete
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/trustyai_service__endpoints__metrics__drift__jensen_shannon__ScheduleId'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Delete Jensenshannon Schedule Metrics Drift Jensenshannon Request Delete
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Delete Jensenshannon Schedule
+      tags:
+      - 'Drift Metrics: JensenShannon'
+    post:
+      description: Schedule a recurring computation of Jensen-Shannon metric.
+      operationId: schedule_jensenshannon_metrics_drift_jensenshannon_request_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JensenShannonMetricRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Schedule Jensenshannon Metrics Drift Jensenshannon Request Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Schedule Jensenshannon
+      tags:
+      - 'Drift Metrics: JensenShannon'
+  /metrics/drift/jensenshannon/requests:
+    get:
+      description: List the currently scheduled computations of Jensen-Shannon metric.
+      operationId: list_jensenshannon_requests_metrics_drift_jensenshannon_requests_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  items:
+                    additionalProperties: true
+                    type: object
+                  type: array
+                title: Response List Jensenshannon Requests Metrics Drift Jensenshannon Requests Get
+                type: object
+          description: Successful Response
+      summary: List Jensenshannon Requests
+      tags:
+      - 'Drift Metrics: JensenShannon'
+  /metrics/drift/kstest:
+    post:
+      description: Compute the current value of KSTest metric.
+      operationId: compute_kstest_metrics_drift_kstest_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KSTestMetricRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  anyOf:
+                  - type: number
+                  - type: boolean
+                  - type: string
+                  - additionalProperties:
+                      additionalProperties:
+                        type: number
+                      type: object
+                    type: object
+                title: Response Compute Kstest Metrics Drift Kstest Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Compute Kstest
+      tags:
+      - 'Drift Metrics: KSTest'
+  /metrics/drift/kstest/definition:
+    get:
+      description: Provide a general definition of KSTest metric.
+      operationId: get_kstest_definition_metrics_drift_kstest_definition_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Get Kstest Definition Metrics Drift Kstest Definition Get
+                type: object
+          description: Successful Response
+      summary: Get Kstest Definition
+      tags:
+      - 'Drift Metrics: KSTest'
+  /metrics/drift/kstest/request:
+    delete:
+      description: Delete a recurring computation of KSTest metric.
+      operationId: delete_kstest_schedule_metrics_drift_kstest_request_delete
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/trustyai_service__endpoints__metrics__drift__kolmogorov_smirnov__ScheduleId'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Delete Kstest Schedule Metrics Drift Kstest Request Delete
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Delete Kstest Schedule
+      tags:
+      - 'Drift Metrics: KSTest'
+    post:
+      description: Schedule a recurring computation of KSTest metric.
+      operationId: schedule_kstest_metrics_drift_kstest_request_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KSTestMetricRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Schedule Kstest Metrics Drift Kstest Request Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Schedule Kstest
+      tags:
+      - 'Drift Metrics: KSTest'
+  /metrics/drift/kstest/requests:
+    get:
+      description: List the currently scheduled computations of KSTest metric.
+      operationId: list_kstest_requests_metrics_drift_kstest_requests_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  items:
+                    additionalProperties: true
+                    type: object
+                  type: array
+                title: Response List Kstest Requests Metrics Drift Kstest Requests Get
+                type: object
+          description: Successful Response
+      summary: List Kstest Requests
+      tags:
+      - 'Drift Metrics: KSTest'
+  /metrics/drift/ksteststreaming:
+    post:
+      description: Compute the current value of KS Test Streaming metric.
+      operationId: compute_ksteststreaming_metrics_drift_ksteststreaming_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApproxKSTestMetricRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  anyOf:
+                  - type: number
+                  - type: boolean
+                  - type: string
+                  - additionalProperties:
+                      additionalProperties:
+                        type: number
+                      type: object
+                    type: object
+                title: Response Compute Ksteststreaming Metrics Drift Ksteststreaming Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Compute Ksteststreaming
+      tags:
+      - 'Drift Metrics: KSTestStreaming'
+  /metrics/drift/ksteststreaming/definition:
+    get:
+      description: Provide a general definition of KS Test Streaming metric.
+      operationId: get_ksteststreaming_definition_metrics_drift_ksteststreaming_definition_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Get Ksteststreaming Definition Metrics Drift Ksteststreaming Definition
+                  Get
+                type: object
+          description: Successful Response
+      summary: Get Ksteststreaming Definition
+      tags:
+      - 'Drift Metrics: KSTestStreaming'
+  /metrics/drift/ksteststreaming/request:
+    delete:
+      description: Delete a recurring computation of KS Test Streaming metric.
+      operationId: delete_ksteststreaming_schedule_metrics_drift_ksteststreaming_request_delete
+      parameters:
+      - in: query
+        name: metric_name
+        required: false
+        schema:
+          default: KSTESTSTREAMING
+          title: Metric Name
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/trustyai_service__endpoints__metrics__drift__kolmogorov_smirnov_streaming__ScheduleId'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Delete Ksteststreaming Schedule Metrics Drift Ksteststreaming Request
+                  Delete
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Delete Ksteststreaming Schedule
+      tags:
+      - 'Drift Metrics: KSTestStreaming'
+    post:
+      description: Schedule a recurring computation of KS Test Streaming metric.
+      operationId: schedule_ksteststreaming_metrics_drift_ksteststreaming_request_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApproxKSTestMetricRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Schedule Ksteststreaming Metrics Drift Ksteststreaming Request Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Schedule Ksteststreaming
+      tags:
+      - 'Drift Metrics: KSTestStreaming'
+  /metrics/drift/ksteststreaming/requests:
+    get:
+      description: List the currently scheduled computations of KS Test Streaming metric.
+      operationId: list_ksteststreaming_requests_metrics_drift_ksteststreaming_requests_get
+      parameters:
+      - in: query
+        name: metric_name
+        required: false
+        schema:
+          default: KSTESTSTREAMING
+          title: Metric Name
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  items:
+                    additionalProperties: true
+                    type: object
+                  type: array
+                title: Response List Ksteststreaming Requests Metrics Drift Ksteststreaming Requests Get
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: List Ksteststreaming Requests
+      tags:
+      - 'Drift Metrics: KSTestStreaming'
+  /metrics/drift/meanshift:
+    post:
+      deprecated: true
+      description: 'Compute the current value of Meanshift metric (deprecated).
+
+
+        This endpoint is deprecated. Please use /metrics/drift/comparemeans
+
+        instead.'
+      operationId: compute_meanshift_metrics_drift_meanshift_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MeanshiftMetricRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  anyOf:
+                  - type: number
+                  - type: boolean
+                  - type: string
+                  - additionalProperties:
+                      additionalProperties:
+                        anyOf:
+                        - type: number
+                        - type: boolean
+                      type: object
+                    type: object
+                title: Response Compute Meanshift Metrics Drift Meanshift Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Compute Meanshift
+      tags:
+      - 'Drift Metrics: CompareMeans'
+  /metrics/drift/meanshift/definition:
+    get:
+      deprecated: true
+      description: 'Provide a general definition of Meanshift metric (deprecated).
+
+
+        This endpoint is deprecated. Please use
+
+        /metrics/drift/comparemeans/definition instead.'
+      operationId: get_meanshift_definition_metrics_drift_meanshift_definition_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Get Meanshift Definition Metrics Drift Meanshift Definition Get
+                type: object
+          description: Successful Response
+      summary: Get Meanshift Definition
+      tags:
+      - 'Drift Metrics: CompareMeans'
+  /metrics/drift/meanshift/request:
+    delete:
+      deprecated: true
+      description: 'Delete a recurring computation of Meanshift metric (deprecated).
+
+
+        This endpoint is deprecated. Please use
+
+        /metrics/drift/comparemeans/request instead.'
+      operationId: delete_meanshift_schedule_metrics_drift_meanshift_request_delete
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/trustyai_service__endpoints__metrics__drift__compare_means__ScheduleId'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Delete Meanshift Schedule Metrics Drift Meanshift Request Delete
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Delete Meanshift Schedule
+      tags:
+      - 'Drift Metrics: CompareMeans'
+    post:
+      deprecated: true
+      description: 'Schedule a recurring computation of Meanshift metric (deprecated).
+
+
+        This endpoint is deprecated. Please use
+
+        /metrics/drift/comparemeans/request instead.'
+      operationId: schedule_meanshift_metrics_drift_meanshift_request_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MeanshiftMetricRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Schedule Meanshift Metrics Drift Meanshift Request Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Schedule Meanshift
+      tags:
+      - 'Drift Metrics: CompareMeans'
+  /metrics/drift/meanshift/requests:
+    get:
+      deprecated: true
+      description: 'List the currently scheduled computations of Meanshift metric (deprecated).
+
+
+        This endpoint is deprecated. Please use
+
+        /metrics/drift/comparemeans/requests instead.'
+      operationId: list_meanshift_requests_metrics_drift_meanshift_requests_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  items:
+                    additionalProperties: true
+                    type: object
+                  type: array
+                title: Response List Meanshift Requests Metrics Drift Meanshift Requests Get
+                type: object
+          description: Successful Response
+      summary: List Meanshift Requests
+      tags:
+      - 'Drift Metrics: CompareMeans'
+  /metrics/drift/mmd:
+    post:
+      description: Compute the current value of MMD metric.
+      operationId: compute_mmd_metrics_drift_mmd_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MMDMetricRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  anyOf:
+                  - type: number
+                  - type: boolean
+                  - type: string
+                  - items:
+                      type: string
+                    type: array
+                title: Response Compute Mmd Metrics Drift Mmd Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Compute Mmd
+      tags:
+      - 'Drift Metrics: MMD'
+  /metrics/drift/mmd/definition:
+    get:
+      description: Provide a general definition of MMD metric.
+      operationId: get_mmd_definition_metrics_drift_mmd_definition_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Get Mmd Definition Metrics Drift Mmd Definition Get
+                type: object
+          description: Successful Response
+      summary: Get Mmd Definition
+      tags:
+      - 'Drift Metrics: MMD'
+  /metrics/drift/mmd/request:
+    delete:
+      description: Delete a recurring computation of MMD metric.
+      operationId: delete_mmd_schedule_metrics_drift_mmd_request_delete
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/trustyai_service__endpoints__metrics__drift__mmd__ScheduleId'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Delete Mmd Schedule Metrics Drift Mmd Request Delete
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Delete Mmd Schedule
+      tags:
+      - 'Drift Metrics: MMD'
+    post:
+      description: Schedule a recurring computation of MMD metric.
+      operationId: schedule_mmd_metrics_drift_mmd_request_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MMDMetricRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Schedule Mmd Metrics Drift Mmd Request Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Schedule Mmd
+      tags:
+      - 'Drift Metrics: MMD'
+  /metrics/drift/mmd/requests:
+    get:
+      description: List the currently scheduled computations of MMD metric.
+      operationId: list_mmd_requests_metrics_drift_mmd_requests_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  items:
+                    additionalProperties: true
+                    type: object
+                  type: array
+                title: Response List Mmd Requests Metrics Drift Mmd Requests Get
+                type: object
+          description: Successful Response
+      summary: List Mmd Requests
+      tags:
+      - 'Drift Metrics: MMD'
+  /metrics/group/fairness/dir:
+    post:
+      description: Compute the current value of Disparate Impact Ratio metric.
+      operationId: compute_dir_metrics_group_fairness_dir_post
+      parameters:
+      - in: query
+        name: delta
+        required: false
+        schema:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Delta
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupMetricRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  anyOf:
+                  - type: string
+                  - type: number
+                  - additionalProperties: true
+                    type: object
+                title: Response Compute Dir Metrics Group Fairness Dir Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Compute Dir
+      tags:
+      - 'Fairness Metrics: Group: Disparate Impact Ratio'
+  /metrics/group/fairness/dir/definition:
+    get:
+      description: Provide a general definition of Disparate Impact Ratio metric.
+      operationId: get_dir_definition_metrics_group_fairness_dir_definition_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Get Dir Definition Metrics Group Fairness Dir Definition Get
+                type: object
+          description: Successful Response
+      summary: Get Dir Definition
+      tags:
+      - 'Fairness Metrics: Group: Disparate Impact Ratio'
+    post:
+      description: Provide a specific, plain-english interpretation of a specific value of DIR metric.
+      operationId: interpret_dir_value_metrics_group_fairness_dir_definition_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupDefinitionRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Interpret Dir Value Metrics Group Fairness Dir Definition Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Interpret Dir Value
+      tags:
+      - 'Fairness Metrics: Group: Disparate Impact Ratio'
+  /metrics/group/fairness/dir/request:
+    delete:
+      description: Delete a recurring computation of DIR metric.
+      operationId: delete_dir_schedule_metrics_group_fairness_dir_request_delete
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/trustyai_service__endpoints__metrics__fairness__group__utils__ScheduleId'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Delete Dir Schedule Metrics Group Fairness Dir Request Delete
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Delete Dir Schedule
+      tags:
+      - 'Fairness Metrics: Group: Disparate Impact Ratio'
+    post:
+      description: Schedule a recurring computation of DIR metric.
+      operationId: schedule_dir_metrics_group_fairness_dir_request_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupMetricRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Schedule Dir Metrics Group Fairness Dir Request Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Schedule Dir
+      tags:
+      - 'Fairness Metrics: Group: Disparate Impact Ratio'
+  /metrics/group/fairness/dir/requests:
+    get:
+      description: List the currently scheduled computations of DIR metric.
+      operationId: list_dir_requests_metrics_group_fairness_dir_requests_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  items:
+                    additionalProperties: true
+                    type: object
+                  type: array
+                title: Response List Dir Requests Metrics Group Fairness Dir Requests Get
+                type: object
+          description: Successful Response
+      summary: List Dir Requests
+      tags:
+      - 'Fairness Metrics: Group: Disparate Impact Ratio'
+  /metrics/group/fairness/spd:
+    post:
+      description: Compute the current value of Statistical Parity Difference metric.
+      operationId: compute_spd_metrics_group_fairness_spd_post
+      parameters:
+      - in: query
+        name: delta
+        required: false
+        schema:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Delta
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupMetricRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  anyOf:
+                  - type: string
+                  - type: number
+                  - additionalProperties: true
+                    type: object
+                title: Response Compute Spd Metrics Group Fairness Spd Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Compute Spd
+      tags:
+      - 'Fairness Metrics: Group: Statistical Parity Difference'
+  /metrics/group/fairness/spd/definition:
+    get:
+      description: Provide a general definition of Statistical Parity Difference metric.
+      operationId: get_spd_definition_metrics_group_fairness_spd_definition_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Get Spd Definition Metrics Group Fairness Spd Definition Get
+                type: object
+          description: Successful Response
+      summary: Get Spd Definition
+      tags:
+      - 'Fairness Metrics: Group: Statistical Parity Difference'
+    post:
+      description: Provide a specific, plain-english interpretation of a specific value of SPD metric.
+      operationId: interpret_spd_value_metrics_group_fairness_spd_definition_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupDefinitionRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Interpret Spd Value Metrics Group Fairness Spd Definition Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Interpret Spd Value
+      tags:
+      - 'Fairness Metrics: Group: Statistical Parity Difference'
+  /metrics/group/fairness/spd/request:
+    delete:
+      description: Delete a recurring computation of SPD metric.
+      operationId: delete_spd_schedule_metrics_group_fairness_spd_request_delete
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/trustyai_service__endpoints__metrics__fairness__group__utils__ScheduleId'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Delete Spd Schedule Metrics Group Fairness Spd Request Delete
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Delete Spd Schedule
+      tags:
+      - 'Fairness Metrics: Group: Statistical Parity Difference'
+    post:
+      description: Schedule a recurring computation of SPD metric.
+      operationId: schedule_spd_metrics_group_fairness_spd_request_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupMetricRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Schedule Spd Metrics Group Fairness Spd Request Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Schedule Spd
+      tags:
+      - 'Fairness Metrics: Group: Statistical Parity Difference'
+  /metrics/group/fairness/spd/requests:
+    get:
+      description: List the currently scheduled computations of SPD metric.
+      operationId: list_spd_requests_metrics_group_fairness_spd_requests_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  items:
+                    additionalProperties: true
+                    type: object
+                  type: array
+                title: Response List Spd Requests Metrics Group Fairness Spd Requests Get
+                type: object
+          description: Successful Response
+      summary: List Spd Requests
+      tags:
+      - 'Fairness Metrics: Group: Statistical Parity Difference'
+  /metrics/identity:
+    post:
+      deprecated: true
+      description: Compute identity metric (deprecated). Use /metrics/batchmean instead.
+      operationId: compute_identity_metric_metrics_identity_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdentityMetricRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                title: Response Compute Identity Metric Metrics Identity Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Compute Identity Metric
+      tags:
+      - 'Metrics: Batch Mean'
+  /metrics/identity/definition:
+    get:
+      deprecated: true
+      description: Get identity metric definition (deprecated). Use /metrics/batchmean/definition instead.
+      operationId: get_identity_definition_metrics_identity_definition_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                title: Response Get Identity Definition Metrics Identity Definition Get
+                type: object
+          description: Successful Response
+      summary: Get Identity Definition
+      tags:
+      - 'Metrics: Batch Mean'
+    post:
+      deprecated: true
+      description: Interpret identity metric value (deprecated). Use /metrics/batchmean/definition instead.
+      operationId: interpret_identity_value_metrics_identity_definition_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdentityMetricRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                title: Response Interpret Identity Value Metrics Identity Definition Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Interpret Identity Value
+      tags:
+      - 'Metrics: Batch Mean'
+  /metrics/identity/request:
+    delete:
+      deprecated: true
+      description: Delete identity metric schedule (deprecated). Use /metrics/batchmean/request instead.
+      operationId: delete_identity_schedule_metrics_identity_request_delete
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/trustyai_service__endpoints__metrics__batch_mean__ScheduleId'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                title: Response Delete Identity Schedule Metrics Identity Request Delete
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Delete Identity Schedule
+      tags:
+      - 'Metrics: Batch Mean'
+    post:
+      deprecated: true
+      description: Schedule identity metric (deprecated). Use /metrics/batchmean/request instead.
+      operationId: schedule_identity_metrics_identity_request_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdentityMetricRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                title: Response Schedule Identity Metrics Identity Request Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Schedule Identity
+      tags:
+      - 'Metrics: Batch Mean'
+  /metrics/identity/requests:
+    get:
+      deprecated: true
+      description: List identity metric schedules (deprecated). Use /metrics/batchmean/requests instead.
+      operationId: list_identity_requests_metrics_identity_requests_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                title: Response List Identity Requests Metrics Identity Requests Get
+                type: object
+          description: Successful Response
+      summary: List Identity Requests
+      tags:
+      - 'Metrics: Batch Mean'
+  /metrics/spd:
+    post:
+      deprecated: true
+      description: 'Compute the current value of Statistical Parity Difference metric (deprecated).
+
+
+        This endpoint is deprecated. Please use /metrics/group/fairness/spd
+
+        instead.'
+      operationId: compute_spd_deprecated_metrics_spd_post
+      parameters:
+      - in: query
+        name: delta
+        required: false
+        schema:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Delta
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupMetricRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  anyOf:
+                  - type: string
+                  - type: number
+                  - additionalProperties: true
+                    type: object
+                title: Response Compute Spd Deprecated Metrics Spd Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Compute Spd Deprecated
+      tags:
+      - '{Legacy}: Statistical Parity Difference'
+  /metrics/spd/definition:
+    get:
+      deprecated: true
+      description: 'Provide a general definition of Statistical Parity Difference metric (deprecated).
+
+
+        This endpoint is deprecated. Please use
+
+        /metrics/group/fairness/spd/definition instead.'
+      operationId: get_spd_definition_deprecated_metrics_spd_definition_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Get Spd Definition Deprecated Metrics Spd Definition Get
+                type: object
+          description: Successful Response
+      summary: Get Spd Definition Deprecated
+      tags:
+      - '{Legacy}: Statistical Parity Difference'
+    post:
+      deprecated: true
+      description: 'Provide a specific interpretation of a SPD metric value (deprecated).
+
+
+        This endpoint is deprecated. Please use
+
+        /metrics/group/fairness/spd/definition instead.'
+      operationId: interpret_spd_value_deprecated_metrics_spd_definition_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupDefinitionRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Interpret Spd Value Deprecated Metrics Spd Definition Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Interpret Spd Value Deprecated
+      tags:
+      - '{Legacy}: Statistical Parity Difference'
+  /metrics/spd/request:
+    delete:
+      deprecated: true
+      description: 'Delete a recurring computation of SPD metric (deprecated).
+
+
+        This endpoint is deprecated. Please use
+
+        /metrics/group/fairness/spd/request instead.'
+      operationId: delete_spd_schedule_deprecated_metrics_spd_request_delete
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/trustyai_service__endpoints__metrics__fairness__group__utils__ScheduleId'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Delete Spd Schedule Deprecated Metrics Spd Request Delete
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Delete Spd Schedule Deprecated
+      tags:
+      - '{Legacy}: Statistical Parity Difference'
+    post:
+      deprecated: true
+      description: 'Schedule a recurring computation of SPD metric (deprecated).
+
+
+        This endpoint is deprecated. Please use
+
+        /metrics/group/fairness/spd/request instead.'
+      operationId: schedule_spd_deprecated_metrics_spd_request_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupMetricRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Schedule Spd Deprecated Metrics Spd Request Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Schedule Spd Deprecated
+      tags:
+      - '{Legacy}: Statistical Parity Difference'
+  /metrics/spd/requests:
+    get:
+      deprecated: true
+      description: 'List the currently scheduled computations of SPD metric (deprecated).
+
+
+        This endpoint is deprecated. Please use
+
+        /metrics/group/fairness/spd/requests instead.'
+      operationId: list_spd_requests_deprecated_metrics_spd_requests_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  items:
+                    additionalProperties: true
+                    type: object
+                  type: array
+                title: Response List Spd Requests Deprecated Metrics Spd Requests Get
+                type: object
+          description: Successful Response
+      summary: List Spd Requests Deprecated
+      tags:
+      - '{Legacy}: Statistical Parity Difference'
+  /q/health:
+    get:
+      description: "General health endpoint combining readiness and liveness checks.\n\n:return: JSON\
+        \ response with status (\"healthy\" or \"unhealthy\")\n         HTTP 200 if healthy, HTTP 503\
+        \ if unhealthy"
+      operationId: general_health_q_health_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+      summary: General Health
+  /q/health/live:
+    get:
+      description: "Kubernetes liveness probe endpoint.\n\n:return: JSON response with status (\"alive\"\
+        )\n         HTTP 200 if alive"
+      operationId: liveness_probe_q_health_live_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+      summary: Liveness Probe
+  /q/health/ready:
+    get:
+      description: "Kubernetes readiness probe endpoint.\n\n:return: JSON response with status (\"ready\"\
+        \ or \"not_ready\")\n         HTTP 200 if ready, HTTP 503 if not ready"
+      operationId: readiness_probe_q_health_ready_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+      summary: Readiness Probe
+  /q/metrics:
+    get:
+      description: 'Prometheus metrics endpoint.
+
+
+        :param _request: FastAPI request object (unused)
+
+        :return: Prometheus metrics in text format'
+      operationId: metrics_q_metrics_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+      summary: Metrics
+  /spd:
+    post:
+      deprecated: true
+      description: 'Compute the current value of Statistical Parity Difference metric (deprecated).
+
+
+        This endpoint is deprecated. Please use /metrics/group/fairness/spd
+
+        instead.'
+      operationId: compute_spd_deprecated_spd_post
+      parameters:
+      - in: query
+        name: delta
+        required: false
+        schema:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Delta
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupMetricRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  anyOf:
+                  - type: string
+                  - type: number
+                  - additionalProperties: true
+                    type: object
+                title: Response Compute Spd Deprecated Spd Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Compute Spd Deprecated
+      tags:
+      - 'Fairness Metrics: Group: Statistical Parity Difference'
+  /spd/definition:
+    get:
+      deprecated: true
+      description: 'Provide a general definition of Statistical Parity Difference metric (deprecated).
+
+
+        This endpoint is deprecated. Please use
+
+        /metrics/group/fairness/spd/definition instead.'
+      operationId: get_spd_definition_deprecated_spd_definition_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Get Spd Definition Deprecated Spd Definition Get
+                type: object
+          description: Successful Response
+      summary: Get Spd Definition Deprecated
+      tags:
+      - 'Fairness Metrics: Group: Statistical Parity Difference'
+    post:
+      deprecated: true
+      description: 'Provide a specific interpretation of a SPD metric value (deprecated).
+
+
+        This endpoint is deprecated. Please use
+
+        /metrics/group/fairness/spd/definition instead.'
+      operationId: interpret_spd_value_deprecated_spd_definition_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupDefinitionRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Interpret Spd Value Deprecated Spd Definition Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Interpret Spd Value Deprecated
+      tags:
+      - 'Fairness Metrics: Group: Statistical Parity Difference'
+  /spd/request:
+    delete:
+      deprecated: true
+      description: 'Delete a recurring computation of SPD metric (deprecated).
+
+
+        This endpoint is deprecated. Please use
+
+        /metrics/group/fairness/spd/request instead.'
+      operationId: delete_spd_schedule_deprecated_spd_request_delete
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/trustyai_service__endpoints__metrics__fairness__group__utils__ScheduleId'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Delete Spd Schedule Deprecated Spd Request Delete
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Delete Spd Schedule Deprecated
+      tags:
+      - 'Fairness Metrics: Group: Statistical Parity Difference'
+    post:
+      deprecated: true
+      description: 'Schedule a recurring computation of SPD metric (deprecated).
+
+
+        This endpoint is deprecated. Please use
+
+        /metrics/group/fairness/spd/request instead.'
+      operationId: schedule_spd_deprecated_spd_request_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupMetricRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                title: Response Schedule Spd Deprecated Spd Request Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Schedule Spd Deprecated
+      tags:
+      - 'Fairness Metrics: Group: Statistical Parity Difference'
+  /spd/requests:
+    get:
+      deprecated: true
+      description: 'List the currently scheduled computations of SPD metric (deprecated).
+
+
+        This endpoint is deprecated. Please use
+
+        /metrics/group/fairness/spd/requests instead.'
+      operationId: list_spd_requests_deprecated_spd_requests_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  items:
+                    additionalProperties: true
+                    type: object
+                  type: array
+                title: Response List Spd Requests Deprecated Spd Requests Get
+                type: object
+          description: Successful Response
+      summary: List Spd Requests Deprecated
+      tags:
+      - 'Fairness Metrics: Group: Statistical Parity Difference'
