@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from trustyai_service.service.data.storage.sqlite.sqlite import SQLiteStorage
 
 from trustyai_service.service.data.storage.pvc import PVCStorage
+from trustyai_service.service.migration_mode import MigrationMode, get_migration_mode
 
 # Default location the operator mounts the database CA certificate at.
 DEFAULT_TLS_CA_CERT = "/etc/tls/db/ca.crt"
@@ -271,8 +272,14 @@ def get_storage_interface() -> (
                 MariaDBStorage,
             )
 
-            migration_str = os.environ.get("DATABASE_ATTEMPT_MIGRATION", "0").lower()
-            attempt_migration = migration_str in ("1", "true", "yes", "on")
+            migration_mode = get_migration_mode()
+            migration_kwargs: dict[str, bool] = {
+                "attempt_migration": migration_mode is not MigrationMode.DISABLED,
+            }
+            if migration_mode is MigrationMode.AUTO:
+                # With no explicit opt-in only the non-destructive legacy v1 copy
+                # runs; the PVC-to-DB migration still needs DATABASE_ATTEMPT_MIGRATION.
+                migration_kwargs["legacy_only"] = True
 
             config = MariaDBConfig()
             config.validate()
@@ -284,7 +291,7 @@ def get_storage_interface() -> (
                 port=config.port,
                 database=config.database,
                 ssl_ca=config.ssl_ca,
-                attempt_migration=attempt_migration,
+                **migration_kwargs,
             )
         except ImportError as e:
             msg = (

@@ -378,6 +378,36 @@ class TestMariaDBStorageMocked:
         assert "INSERT INTO trustyai_migration_status" in insert_call.args[0]
         assert insert_call.args[1] == ("LEGACY_DB", "FAILED")
 
+    @pytest.mark.parametrize(
+        ("legacy_only", "expect_pvc_migration"), [(True, False), (False, True)]
+    )
+    def test_run_migration_pvc_path_requires_explicit_opt_in(
+        self,
+        tmp_path: Any,  # noqa: ANN401 -- pytest tmp_path fixture
+        monkeypatch: pytest.MonkeyPatch,
+        *,
+        legacy_only: bool,
+        expect_pvc_migration: bool,
+    ) -> None:
+        """HDF5 files trigger the PVC migration only when migration was explicitly enabled."""
+        (tmp_path / "data.hdf5").write_bytes(b"")
+        monkeypatch.setenv("STORAGE_DATA_FOLDER", str(tmp_path))
+        storage = self._make_storage()
+        storage._legacy_only = legacy_only
+        storage._migrate_from_pvc = AsyncMock()
+        storage._migrate_from_legacy_db = AsyncMock()
+
+        _run(storage._run_migration())
+
+        assert storage._migrate_from_pvc.await_count == int(expect_pvc_migration)
+        assert storage._migrate_from_legacy_db.await_count == int(
+            not expect_pvc_migration
+        )
+
+    def test_run_migration_defaults_to_the_explicit_path(self) -> None:
+        """Storage built without legacy_only keeps the original PVC-first behavior."""
+        assert self._make_storage()._legacy_only is False
+
     def test_build_table_name(self) -> None:
         """_build_table_name produces the expected format."""
         storage = self._make_storage()

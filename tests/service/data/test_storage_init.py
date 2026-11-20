@@ -120,6 +120,59 @@ class TestStorageInterfaceEnvVars:
                 attempt_migration=False,
             )
 
+    @staticmethod
+    def _set_mariadb_env(monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("SERVICE_STORAGE_FORMAT", "MARIA")
+        monkeypatch.setenv("DATABASE_ALLOW_INSECURE_TLS", "true")
+        monkeypatch.setenv("DATABASE_USERNAME", "test_user")
+        monkeypatch.setenv("DATABASE_PASSWORD", "test_pass")  # pragma: allowlist secret
+        monkeypatch.setenv("DATABASE_HOST", "localhost")
+        monkeypatch.setenv("DATABASE_PORT", str(DEFAULT_MARIADB_PORT))
+        monkeypatch.setenv("DATABASE_DATABASE", "test_db")
+
+    @pytest.mark.skipif(not HAS_MARIADB, reason="mariadb extra not installed")
+    @patch("trustyai_service.service.data.storage.maria.maria.MariaDBStorage")
+    def test_mariadb_legacy_migration_is_automatic_when_flag_is_unset(
+        self, mock_storage: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Without DATABASE_ATTEMPT_MIGRATION only the legacy copy is attempted."""
+        self._set_mariadb_env(monkeypatch)
+        monkeypatch.delenv("DATABASE_ATTEMPT_MIGRATION", raising=False)
+
+        get_storage_interface()
+
+        mock_storage.assert_called_once_with(
+            user="test_user",
+            password="test_pass",  # noqa: S106  # pragma: allowlist secret
+            host="localhost",
+            port=DEFAULT_MARIADB_PORT,
+            database="test_db",
+            ssl_ca=None,
+            attempt_migration=True,
+            legacy_only=True,
+        )
+
+    @pytest.mark.skipif(not HAS_MARIADB, reason="mariadb extra not installed")
+    @patch("trustyai_service.service.data.storage.maria.maria.MariaDBStorage")
+    def test_mariadb_explicit_migration_flag_keeps_pvc_migration(
+        self, mock_storage: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An explicit opt-in still runs the full migration, including PVC-to-DB."""
+        self._set_mariadb_env(monkeypatch)
+        monkeypatch.setenv("DATABASE_ATTEMPT_MIGRATION", "true")
+
+        get_storage_interface()
+
+        mock_storage.assert_called_once_with(
+            user="test_user",
+            password="test_pass",  # noqa: S106  # pragma: allowlist secret
+            host="localhost",
+            port=DEFAULT_MARIADB_PORT,
+            database="test_db",
+            ssl_ca=None,
+            attempt_migration=True,
+        )
+
     @pytest.mark.skipif(not HAS_MARIADB, reason="mariadb extra not installed")
     @patch("trustyai_service.service.data.storage.maria.maria.MariaDBStorage")
     def test_mariadb_fallback_priority(self, mock_storage: MagicMock) -> None:

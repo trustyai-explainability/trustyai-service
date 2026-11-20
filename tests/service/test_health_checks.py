@@ -520,6 +520,49 @@ class TestStorageAndHealthChecks:
             assert check.status == STATUS_ERROR
             assert "in progress" in check.data["error"]
 
+    def test_check_migration_automatic_waits_for_first_migration(
+        self, mock_maria_conn, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With the flag unset the automatic legacy copy gates readiness until it records a status."""
+        _mock_init, mock_enter = mock_maria_conn
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = None
+        mock_enter.return_value = (MagicMock(), mock_cursor)
+        for key, value in _MARIA_ENV.items():
+            monkeypatch.setenv(key, value)
+        monkeypatch.delenv("DATABASE_ATTEMPT_MIGRATION", raising=False)
+
+        check = check_migration_readiness()
+
+        assert check.status == STATUS_ERROR
+        assert "not started" in check.data["error"]
+
+    def test_check_migration_automatic_complete(
+        self, mock_maria_conn, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With the flag unset a COMPLETE status makes the service ready."""
+        _mock_init, mock_enter = mock_maria_conn
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = ("COMPLETE",)
+        mock_enter.return_value = (MagicMock(), mock_cursor)
+        for key, value in _MARIA_ENV.items():
+            monkeypatch.setenv(key, value)
+        monkeypatch.delenv("DATABASE_ATTEMPT_MIGRATION", raising=False)
+
+        assert check_migration_readiness().status == STATUS_OK
+
+    def test_check_migration_explicitly_disabled(
+        self, mock_maria_conn, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An explicit falsy flag opts out and never queries the database."""
+        _mock_init, mock_enter = mock_maria_conn
+        for key, value in _MARIA_ENV.items():
+            monkeypatch.setenv(key, value)
+        monkeypatch.setenv("DATABASE_ATTEMPT_MIGRATION", "false")
+
+        assert check_migration_readiness().status == STATUS_OK
+        mock_enter.assert_not_called()
+
     def test_check_pvc_storage_production_mode(self) -> None:
         """Test PVC storage check redacts paths in production mode."""
         with patch.dict(

@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from trustyai_service.service.migration_mode import MigrationMode, get_migration_mode
 from trustyai_service.service.startup_migration_state import (
     StartupMigrationState,
     get_startup_migration_state,
@@ -447,21 +448,17 @@ def check_startup_migration_readiness() -> HealthCheck:
 
 
 def check_migration_readiness() -> HealthCheck:  # noqa: PLR0911
-    """Check if PVC-to-MariaDB migration is complete.
+    """Check if the startup MariaDB migration (legacy copy or PVC-to-DB) is complete.
 
-    Only relevant when SERVICE_STORAGE_FORMAT is MARIA/DATABASE and
-    DATABASE_ATTEMPT_MIGRATION is enabled. Returns OK when migration
-    is not configured, complete, or partially complete.
+    Only relevant when SERVICE_STORAGE_FORMAT is MARIA/DATABASE and a startup
+    migration runs: DATABASE_ATTEMPT_MIGRATION unset (automatic legacy copy) or
+    enabled. An explicit falsy value disables it. Returns OK when migration is not
+    configured, complete, or partially complete.
 
     :return: HealthCheck indicating migration readiness
     """
     storage_format = os.getenv("SERVICE_STORAGE_FORMAT", "PVC")
-    migration_enabled = os.getenv("DATABASE_ATTEMPT_MIGRATION", "0").lower() in (
-        "1",
-        "true",
-        "yes",
-        "on",
-    )
+    migration_enabled = get_migration_mode() is not MigrationMode.DISABLED
 
     if storage_format not in ("MARIA", "DATABASE") or not migration_enabled:
         return HealthCheck("Migration", STATUS_OK)

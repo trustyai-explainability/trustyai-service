@@ -48,6 +48,9 @@ class MariaDBStorage(SQLStorage):
 
     _backend_name = "MariaDB"
 
+    # Class-level default so instances built without running ``__init__`` still work.
+    _legacy_only: bool = False
+
     def __init__(
         self,
         user: str,
@@ -58,8 +61,15 @@ class MariaDBStorage(SQLStorage):
         *,
         ssl_ca: str | None = None,
         attempt_migration: bool = True,
+        legacy_only: bool = False,
     ) -> None:
-        """Initialize MariaDB storage, create schema tables, and schedule migration."""
+        """Initialize MariaDB storage, create schema tables, and schedule migration.
+
+        :param attempt_migration: Schedule a startup migration.
+        :param legacy_only: Run only the non-destructive legacy v1 schema copy and
+            never the PVC-to-DB migration. Used when migration was not explicitly
+            requested, so legacy data is picked up without any opt-in.
+        """
         logger.warning(
             "The MariaDB storage backend is DEPRECATED and will be removed in a "
             "future release. Migrate to the PostgreSQL backend "
@@ -85,6 +95,7 @@ class MariaDBStorage(SQLStorage):
         )
         self.ssl_ca = ssl_ca
 
+        self._legacy_only = legacy_only
         self._migration_task: asyncio.Task | None = None
         if attempt_migration:
             # Attempt to schedule migration to run asynchronously if event loop is available
@@ -109,15 +120,16 @@ class MariaDBStorage(SQLStorage):
         """Determine which migration to run: PVC-to-DB or legacy DB schema upgrade.
 
         Migration priority:
-        1. PVC-to-DB migration if HDF5 files exist in PVC folder
+        1. PVC-to-DB migration if HDF5 files exist in PVC folder (skipped when
+           ``legacy_only`` is set, i.e. migration was not explicitly requested)
         2. Legacy DB schema v1->v2 migration if legacy tables exist
         3. No migration if neither condition is met
         """
-        # Check for PVC data first (higher priority)
+        # Check for PVC data first (higher priority), unless only the legacy copy is wanted
         pvc_folder = os.environ.get("STORAGE_DATA_FOLDER", "/inputs")
         pvc_path = Path(pvc_folder)
 
-        if pvc_path.exists() and pvc_path.is_dir():
+        if not self._legacy_only and pvc_path.exists() and pvc_path.is_dir():
             # Check if any HDF5 files exist
             hdf5_files = list(pvc_path.glob("*.hdf5"))
             if hdf5_files:
