@@ -29,6 +29,22 @@ from trustyai_service.main import (
 HYPERCORN_DEFAULT_PORT = 8000
 
 
+@pytest.fixture(autouse=True)
+def _isolated_storage(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Keep the developer's PV out of every startup path in this module.
+
+    ``run_server()`` runs the Java PVC migration when ``STORAGE_DATA_FOLDER``
+    points at a folder holding ``*-internal_data.csv`` files. Pointing PVC
+    storage at a fresh temporary folder keeps the tests from converting (and
+    writing to) a developer's local data.
+    """
+    monkeypatch.setenv("SERVICE_STORAGE_FORMAT", "PVC")
+    monkeypatch.setenv("STORAGE_DATA_FOLDER", str(tmp_path / "storage"))
+
+
 def _free_port() -> int:
     """Return a port that was free on loopback a moment ago."""
     with closing(socket.socket()) as probe:
@@ -106,8 +122,26 @@ def test_insecure_bind_alone_would_fall_back_to_hypercorns_default() -> None:
     config = Config()
     config.insecure_bind = ["127.0.0.1:8081"]
 
-    assert plaintext_listeners(config) == ["127.0.0.1:8000"]
-    assert _bound_ports(config) == {"secure": [], "insecure": [HYPERCORN_DEFAULT_PORT]}
+    assert config.bind == [f"127.0.0.1:{HYPERCORN_DEFAULT_PORT}"]
+    assert plaintext_listeners(config) == [f"127.0.0.1:{HYPERCORN_DEFAULT_PORT}"]
+
+
+def test_insecure_bind_alone_is_never_bound_without_tls() -> None:
+    """The unopened listener is the declared one, independent of port 8000.
+
+    Binding on port 0 lets the OS assign the served port, so this test does not
+    need Hypercorn's default port to be free on the developer machine.
+    """
+    insecure_port = _free_port()
+    config = Config()
+    config.bind = ["127.0.0.1:0"]
+    config.insecure_bind = [f"127.0.0.1:{insecure_port}"]
+
+    bound = _bound_ports(config)
+
+    assert bound["secure"] == []
+    assert len(bound["insecure"]) == 1
+    assert bound["insecure"][0] != insecure_port
 
 
 def test_api_config_refuses_a_layout_without_a_plaintext_listener(
