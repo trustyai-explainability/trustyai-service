@@ -14,6 +14,9 @@ from trustyai_service.endpoints.metrics.drift.compare_means import (
 )
 from trustyai_service.endpoints.metrics.fairness.group.spd import GroupMetricRequest
 from trustyai_service.endpoints.metrics.metrics_info import router
+from trustyai_service.service.payloads.metrics.base_metric_request import (
+    BaseMetricRequest,
+)
 
 MODULE_PATH = "trustyai_service.endpoints.metrics.metrics_info"
 
@@ -147,6 +150,24 @@ class TestGetAllMetricRequests:
         scheduler = MagicMock()
         scheduler.get_all_requests.return_value = {
             "CompareMeans": {uuid.UUID(int=1): object()}
+        }
+        with patch(f"{MODULE_PATH}.get_prometheus_scheduler", return_value=scheduler):
+            response = client.get(routes.METRICS_ALL_REQUESTS)
+
+        assert response.status_code == HTTPStatus.OK
+        assert response.json() == {"requests": []}
+
+    def test_unserializable_request_is_skipped(self) -> None:
+        """A request carrying a non-JSON extra does not break the listing."""
+
+        class OddRequest(BaseMetricRequest):
+            def retrieve_tags(self) -> dict[str, str]:
+                return {}
+
+        odd = OddRequest(model_id="model", metric_name="CompareMeans", extra=object())
+        scheduler = MagicMock()
+        scheduler.get_all_requests.return_value = {
+            "CompareMeans": {uuid.UUID(int=1): odd}
         }
         with patch(f"{MODULE_PATH}.get_prometheus_scheduler", return_value=scheduler):
             response = client.get(routes.METRICS_ALL_REQUESTS)

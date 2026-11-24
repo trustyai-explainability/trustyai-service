@@ -7,6 +7,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
+from pydantic_core import PydanticSerializationError
 
 from trustyai_service.endpoints import routes
 from trustyai_service.service.payloads.metrics.base_metric_request import (
@@ -92,7 +93,16 @@ def _serialize_request(
         )
         return None
 
-    payload = request.model_dump(mode="json", by_alias=True, exclude_none=True)
+    try:
+        payload = request.model_dump(mode="json", by_alias=True, exclude_none=True)
+    except PydanticSerializationError:
+        logger.warning(
+            "Skipping unserializable %s request %s",
+            metric_name,
+            request_id,
+            exc_info=True,
+        )
+        return None
     # The metric name is what the scheduling endpoint stored, and clients (for
     # example odh-cli --metrics-skip-existing) key on it.
     payload["metricName"] = request.metric_name or metric_name
