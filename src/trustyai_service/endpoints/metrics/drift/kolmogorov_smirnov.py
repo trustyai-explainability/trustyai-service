@@ -11,6 +11,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from trustyai_service.core.metrics.drift.kolmogorov_smirnov import KolmogorovSmirnov
 from trustyai_service.endpoints import routes
+from trustyai_service.endpoints.metrics.drift.contract import (
+    DriftRequestContract,
+)
 from trustyai_service.endpoints.metrics.drift.validation import validate_drift_request
 from trustyai_service.service.data.datasources.data_source import DataSource
 from trustyai_service.service.data.shared_data_source import get_shared_data_source
@@ -46,7 +49,7 @@ class ScheduleId(BaseModel):
     requestId: str
 
 
-class KSTestMetricRequest(BaseMetricRequest):
+class KSTestMetricRequest(DriftRequestContract, BaseMetricRequest):
     """Request parameters for Kolmogorov-Smirnov test drift detection metric."""
 
     # Use field aliases to accept camelCase from API while keeping snake_case internally

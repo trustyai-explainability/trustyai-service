@@ -18,6 +18,9 @@ from trustyai_service.core.metrics.drift.jensen_shannon import (
     JensenShannon,
 )
 from trustyai_service.endpoints import routes
+from trustyai_service.endpoints.metrics.drift.contract import (
+    DriftRequestContract,
+)
 from trustyai_service.endpoints.metrics.drift.validation import validate_drift_request
 from trustyai_service.service.data.shared_data_source import (
     DataSource,
@@ -55,7 +58,7 @@ class ScheduleId(BaseModel):
     requestId: str
 
 
-class JensenShannonMetricRequest(BaseMetricRequest):
+class JensenShannonMetricRequest(DriftRequestContract, BaseMetricRequest):
     """Request parameters for Jensen-Shannon divergence drift detection metric."""
 
     # Use field aliases to accept camelCase from API while keeping snake_case internally
