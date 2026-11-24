@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from trustyai_service.core.metrics.drift.mmd import (
     DEFAULT_ACTT_NUM_PERMUTATIONS,
     DEFAULT_NUM_PERMUTATIONS,
+    MMD,
 )
 from trustyai_service.endpoints import routes
 from trustyai_service.endpoints.metrics.drift.mmd import (
@@ -596,8 +597,17 @@ class TestMMDEndpoints:
         current_df = pd.DataFrame(
             {"f1": rng.standard_normal(40), "f2": rng.standard_normal(40)}
         )
+        seen: dict[str, object] = {}
+        real_compute = MMD.compute
 
-        with patch(f"{MODULE_PATH}.get_data_source") as mock_ds:
+        def recording_compute(*args: object, **kwargs: object) -> object:
+            seen.update(kwargs)
+            return real_compute(*args, **kwargs)
+
+        with (
+            patch(f"{MODULE_PATH}.get_data_source") as mock_ds,
+            patch(f"{MODULE_PATH}.MMD.compute", side_effect=recording_compute),
+        ):
             mock_data_source = MagicMock()
             mock_data_source.get_dataframe_by_tag = AsyncMock(
                 return_value=reference_df,
@@ -620,12 +630,7 @@ class TestMMDEndpoints:
 
         assert response.status_code == HTTPStatus.OK
         # ACTT requires num_permutations > b2 (200).
-        assert (
-            MMDMetricRequest.model_validate(
-                {"modelId": "test-model", "method": "actt"}
-            ).num_permutations
-            == DEFAULT_ACTT_NUM_PERMUTATIONS
-        )
+        assert seen["num_permutations"] == DEFAULT_ACTT_NUM_PERMUTATIONS
 
     def test_helper_functions(self) -> None:
         """Test that helper functions return the correct shared instances."""
