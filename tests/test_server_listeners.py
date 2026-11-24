@@ -41,8 +41,10 @@ def _isolated_storage(
     storage at a fresh temporary folder keeps the tests from converting (and
     writing to) a developer's local data.
     """
+    storage = tmp_path / "storage"
+    storage.mkdir()
     monkeypatch.setenv("SERVICE_STORAGE_FORMAT", "PVC")
-    monkeypatch.setenv("STORAGE_DATA_FOLDER", str(tmp_path / "storage"))
+    monkeypatch.setenv("STORAGE_DATA_FOLDER", str(storage))
 
 
 def _free_port() -> int:
