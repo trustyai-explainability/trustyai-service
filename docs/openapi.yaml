@@ -1078,6 +1078,14 @@ paths:
           - type: string
           - type: 'null'
           title: Inferenceservicename
+      requestBody:
+        content:
+          application/json:
+            schema:
+              anyOf:
+              - $ref: '#/components/schemas/KServeInferenceRequest'
+              - $ref: '#/components/schemas/KServeInferenceResponse'
+        required: true
       responses:
         '200':
           content:

@@ -6,7 +6,7 @@ import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 from http import HTTPStatus
-from typing import Annotated, Never
+from typing import Annotated, Any, Never
 
 import numpy as np
 from fastapi import APIRouter, Header, HTTPException, Request
@@ -484,6 +484,23 @@ def process_payload(
 
 _kserve_payload_adapter = TypeAdapter(KServeInferenceRequest | KServeInferenceResponse)
 
+# The CloudEvent consumer reads the raw body and dispatches on the parsed model,
+# so the contract has to declare the union it accepts. anyOf matches the runtime
+# parser: a body the union accepts is processed, not rejected as ambiguous.
+CLOUD_EVENT_REQUEST_BODY: dict[str, Any] = {
+    "required": True,
+    "content": {
+        "application/json": {
+            "schema": {
+                "anyOf": [
+                    {"$ref": "#/components/schemas/KServeInferenceRequest"},
+                    {"$ref": "#/components/schemas/KServeInferenceResponse"},
+                ]
+            }
+        }
+    },
+}
+
 # CloudEvent type constants from the KServe inference logger
 CE_TYPE_REQUEST = "org.kubeflow.serving.inference.request"
 CE_TYPE_RESPONSE = "org.kubeflow.serving.inference.response"
@@ -676,7 +693,9 @@ def _parse_cloud_event_body(
         ) from e
 
 
-@router.post(routes.CONSUMER_ROOT)
+@router.post(
+    routes.CONSUMER_ROOT, openapi_extra={"requestBody": CLOUD_EVENT_REQUEST_BODY}
+)
 async def consume_cloud_event(
     http_request: Request,
     ce_id: Annotated[str | None, Header()] = None,
