@@ -99,6 +99,30 @@ class TestAppCoreEndpoints:
         ]  # OPTIONS may not be defined but CORS should process it
 
 
+class TestHealthAndMetricsContract:
+    """The OpenAPI document declares what the health and metrics handlers return."""
+
+    @pytest.mark.parametrize("path", [routes.HEALTH, routes.HEALTH_READY])
+    def test_health_routes_declare_service_unavailable(
+        self,
+        path: str,
+    ) -> None:
+        """A not-ready PVC directory answers 503, so the contract must say so."""
+        responses = app.openapi()["paths"][path]["get"]["responses"]
+
+        assert "200" in responses
+        assert "application/json" in responses["503"]["content"]
+
+    def test_prometheus_metrics_declares_prometheus_text(self) -> None:
+        """generate_latest() serves Prometheus text, not JSON."""
+        content = app.openapi()["paths"][routes.PROMETHEUS_METRICS]["get"]["responses"][
+            "200"
+        ]["content"]
+
+        assert "text/plain" in content
+        assert "application/json" not in content
+
+
 class TestKSTestMetricIntegration:
     """Integration tests for KSTest drift metric registration in main app."""
 

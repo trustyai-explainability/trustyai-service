@@ -10,7 +10,7 @@ from typing import Any
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from hypercorn.asyncio import serve
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
@@ -287,7 +287,27 @@ async def root() -> dict[str, str]:
     return {"message": "Welcome to TrustyAI Explainability Service"}
 
 
-@app.get(routes.PROMETHEUS_METRICS)
+# Health endpoints answer HTTP 503 with the same JSON body shape as HTTP 200.
+_UNAVAILABLE_RESPONSE: dict[int | str, dict[str, Any]] = {
+    HTTPStatus.SERVICE_UNAVAILABLE: {
+        "description": "The service is not healthy",
+        "content": {
+            "application/json": {
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "status": {"type": "string"},
+                        "checks": {},
+                    },
+                    "required": ["status", "checks"],
+                }
+            }
+        },
+    }
+}
+
+
+@app.get(routes.PROMETHEUS_METRICS, response_class=PlainTextResponse)
 async def metrics(_request: Request) -> Response:
     """Prometheus metrics endpoint.
 
@@ -297,7 +317,7 @@ async def metrics(_request: Request) -> Response:
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
-@app.get(routes.HEALTH)
+@app.get(routes.HEALTH, responses=_UNAVAILABLE_RESPONSE)
 def general_health() -> JSONResponse:
     """General health endpoint combining readiness and liveness checks.
 
@@ -322,7 +342,7 @@ def general_health() -> JSONResponse:
 
 
 # Readiness probe
-@app.get(routes.HEALTH_READY)
+@app.get(routes.HEALTH_READY, responses=_UNAVAILABLE_RESPONSE)
 def readiness_probe() -> JSONResponse:
     """Kubernetes readiness probe endpoint.
 

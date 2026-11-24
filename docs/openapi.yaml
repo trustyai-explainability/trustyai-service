@@ -3794,6 +3794,19 @@ paths:
             application/json:
               schema: {}
           description: Successful Response
+        '503':
+          content:
+            application/json:
+              schema:
+                properties:
+                  checks: {}
+                  status:
+                    type: string
+                required:
+                - status
+                - checks
+                type: object
+          description: The service is not healthy
       summary: General Health
   /q/health/live:
     get:
@@ -3818,6 +3831,19 @@ paths:
             application/json:
               schema: {}
           description: Successful Response
+        '503':
+          content:
+            application/json:
+              schema:
+                properties:
+                  checks: {}
+                  status:
+                    type: string
+                required:
+                - status
+                - checks
+                type: object
+          description: The service is not healthy
       summary: Readiness Probe
   /q/metrics:
     get:
@@ -3831,8 +3857,9 @@ paths:
       responses:
         '200':
           content:
-            application/json:
-              schema: {}
+            text/plain:
+              schema:
+                type: string
           description: Successful Response
       summary: Metrics
   /spd:
