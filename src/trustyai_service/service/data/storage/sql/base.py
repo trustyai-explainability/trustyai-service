@@ -25,6 +25,7 @@ import gzip
 import json
 import logging
 import sqlite3
+import time
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -60,7 +61,11 @@ _MIN_MATRIX_NDIM = 2  # Minimum number of dimensions for a 2-D matrix
 _MYSQL_DUPLICATE_KEY = 1062
 _MYSQL_CONCURRENT_DDL = 1684
 _MYSQL_NO_SUCH_TABLE = 1146
-_MAX_IMPLICIT_DDL_ATTEMPTS = 3
+# MariaDB answers 1684 immediately instead of waiting for the competing DDL's
+# metadata lock. A writer that retries without pausing can spend its whole
+# budget inside one DDL window, so retry geometrically: 5, 10, 20, 40 ms.
+_MAX_IMPLICIT_DDL_ATTEMPTS = 5
+_IMPLICIT_DDL_RETRY_BASE_DELAY = 0.005
 
 
 def require_existing_dataset[**P, R](
@@ -434,6 +439,10 @@ class SQLStorage(StorageInterface):
                     or not self._is_concurrent_ddl_error(error)
                 ):
                     raise
+                # Bounded (<75 ms total) blocking sleep: the whole storage
+                # write path is synchronous already, and waiting is the only
+                # way to let the winning writer's DDL finish.
+                time.sleep(_IMPLICIT_DDL_RETRY_BASE_DELAY * 2**attempt)
             else:
                 return table
         msg = "dataset DDL preparation exhausted its retry limit"
