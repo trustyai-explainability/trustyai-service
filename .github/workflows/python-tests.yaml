@@ -63,6 +63,35 @@ jobs:
       - name: Verify docs/openapi.yaml is up to date
         run: uv run --no-sync python scripts/generate_openapi.py --check
 
+  requirements:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      # Containerfile installs the hashed exports, not uv.lock, so a lock update
+      # without regenerating requirements.txt would build the image with stale
+      # versions. `--frozen` renders uv.lock verbatim (no resolution, no lock
+      # rewrite), so the lock must be validated first; that check also catches a
+      # pyproject.toml constraint bump that never reached the lock (the #438 bug).
+      - name: Verify uv.lock matches pyproject.toml
+        run: uv lock --check
+
+      - name: Render hashed runtime requirements from uv.lock
+        run: >-
+          uv export --frozen --format requirements.txt
+          --extra mariadb --extra postgres --extra migration --extra mmd
+          --no-dev --no-emit-project --emit-index-url
+          --output-file requirements.txt
+
+      - name: Verify requirements.txt is current
+        run: git diff --exit-code requirements.txt
+
   type-check:
     runs-on: ubuntu-latest
     steps:

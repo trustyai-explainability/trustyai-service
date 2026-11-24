@@ -1,6 +1,10 @@
 version: 2
 updates:
-  - package-ecosystem: "pip"
+  # `uv` updates pyproject.toml and uv.lock together. The `pip` ecosystem only
+  # edited pyproject.toml, leaving uv.lock stale and breaking `uv sync --locked`.
+  # requirements.txt stays generated: run `make requirements` after lock changes
+  # (enforced by the `requirements` job in python-tests.yaml).
+  - package-ecosystem: "uv"
     directory: "/"
     schedule:
       interval: "weekly"
