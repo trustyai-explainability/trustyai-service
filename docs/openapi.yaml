@@ -872,6 +872,33 @@ components:
           title: Reconciledtype
       title: ReconcilableOutput
       type: object
+    ScheduledMetricRequest:
+      description: One scheduled metric computation in the Java-compatible response shape.
+      properties:
+        id:
+          title: Id
+          type: string
+        request:
+          additionalProperties: true
+          title: Request
+          type: object
+      required:
+      - id
+      - request
+      title: ScheduledMetricRequest
+      type: object
+    ScheduledMetricRequestList:
+      description: All scheduled metric computations.
+      properties:
+        requests:
+          items:
+            $ref: '#/components/schemas/ScheduledMetricRequest'
+          title: Requests
+          type: array
+      required:
+      - requests
+      title: ScheduledMetricRequestList
+      type: object
     UploadPayload:
       description: Payload model for uploading inference request/response pairs.
       properties:
@@ -1581,24 +1608,22 @@ paths:
       description: Retrieve a list of all currently scheduled metric computations.
       operationId: get_all_metric_requests_metrics_all_requests_get
       parameters:
-      - in: query
-        name: type_
+      - description: 'Filter by metric type: ''all'' (default), ''drift'' or ''fairness''.'
+        in: query
+        name: type
         required: false
         schema:
           anyOf:
           - type: string
           - type: 'null'
-          title: 'Type '
+          description: 'Filter by metric type: ''all'' (default), ''drift'' or ''fairness''.'
+          title: Type
       responses:
         '200':
           content:
             application/json:
               schema:
-                additionalProperties:
-                  items: {}
-                  type: array
-                title: Response Get All Metric Requests Metrics All Requests Get
-                type: object
+                $ref: '#/components/schemas/ScheduledMetricRequestList'
           description: Successful Response
         '422':
           content:
