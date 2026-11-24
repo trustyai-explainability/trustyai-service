@@ -110,7 +110,7 @@ class TestHealthAndMetricsContract:
         """A not-ready PVC directory answers 503, so the contract must say so."""
         responses = app.openapi()["paths"][path]["get"]["responses"]
 
-        assert "200" in responses
+        assert "application/json" in responses["200"]["content"]
         assert "application/json" in responses["503"]["content"]
 
     def test_prometheus_metrics_declares_prometheus_text(self) -> None:
