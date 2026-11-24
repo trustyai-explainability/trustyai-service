@@ -129,19 +129,24 @@ def test_insecure_bind_alone_would_fall_back_to_hypercorns_default() -> None:
 def test_insecure_bind_alone_is_never_bound_without_tls() -> None:
     """The unopened listener is the declared one, independent of port 8000.
 
-    Binding on port 0 lets the OS assign the served port, so this test does not
-    need Hypercorn's default port to be free on the developer machine.
+    The insecure port is held by a listening socket for the duration, so
+    bind-on-port-0 cannot be assigned it and Hypercorn would fail with
+    EADDRINUSE if it tried to open the declared listener.
     """
-    insecure_port = _free_port()
     config = Config()
     config.bind = ["127.0.0.1:0"]
-    config.insecure_bind = [f"127.0.0.1:{insecure_port}"]
 
-    bound = _bound_ports(config)
+    with closing(socket.socket()) as held:
+        held.bind(("127.0.0.1", 0))
+        held.listen()
+        held_port = held.getsockname()[1]
+        config.insecure_bind = [f"127.0.0.1:{held_port}"]
+
+        bound = _bound_ports(config)
 
     assert bound["secure"] == []
     assert len(bound["insecure"]) == 1
-    assert bound["insecure"][0] != insecure_port
+    assert bound["insecure"][0] != held_port
 
 
 def test_api_config_refuses_a_layout_without_a_plaintext_listener(
