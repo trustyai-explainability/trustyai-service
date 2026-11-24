@@ -6,8 +6,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
 import pandas as pd
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from trustyai_service.core.metrics.drift.mmd import (
     DEFAULT_ACTT_NUM_PERMUTATIONS,
@@ -670,3 +672,11 @@ class TestMMDNumPermutationsDefaults:
         )
 
         assert request.num_permutations == 250
+
+    @pytest.mark.parametrize("method", ["ctt", "actt"])
+    def test_explicit_null_is_not_treated_as_omitted(self, method: str) -> None:
+        """An explicit JSON null stays a validation error for every method."""
+        with pytest.raises(ValidationError):
+            MMDMetricRequest.model_validate(
+                {**self.BASE, "method": method, "numPermutations": None}
+            )

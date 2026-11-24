@@ -98,7 +98,9 @@ class MMDMetricRequest(BaseMetricRequest):
         """
         if not isinstance(data, dict):
             return data
-        if data.get("numPermutations", data.get("num_permutations")) is not None:
+        # Only an absent key counts as omitted: an explicit null stays a
+        # validation error, for every method, as before this default.
+        if "numPermutations" in data or "num_permutations" in data:
             return data
         if data.get("method", "ctt") == "actt":
             return {**data, "numPermutations": DEFAULT_ACTT_NUM_PERMUTATIONS}
