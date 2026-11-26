@@ -370,5 +370,28 @@ class TestCloudEventReconciliationError(unittest.TestCase):
             assert "shape mismatch" in resp.json()["detail"]
 
 
+class TestCloudEventOpenAPIContract(unittest.TestCase):
+    """POST / must declare the body shape it actually parses."""
+
+    def setUp(self) -> None:
+        """Build the schema for the consumer router."""
+        app = FastAPI()
+        app.include_router(consumer_router)
+        self.operation = app.openapi()["paths"]["/"]["post"]
+
+    def test_post_root_declares_the_kserve_payload_union(self) -> None:
+        """Without a requestBody a generated client has no body parameter."""
+        schema = self.operation["requestBody"]["content"]["application/json"]["schema"]
+
+        assert {entry["$ref"] for entry in schema["anyOf"]} == {
+            "#/components/schemas/KServeInferenceRequest",
+            "#/components/schemas/KServeInferenceResponse",
+        }
+
+    def test_post_root_requires_a_body(self) -> None:
+        """An empty body is rejected with 400, so the body is required."""
+        assert self.operation["requestBody"]["required"] is True
+
+
 if __name__ == "__main__":
     unittest.main()
