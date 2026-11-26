@@ -3,10 +3,14 @@
 These tests require a running PostgreSQL instance reachable at 127.0.0.1:5432.
 Bring one up with:
     `podman compose -f tests/resources/compose-local-postgres.yaml up`
-Without a database the tests error/skip, which is expected in CI without a DB.
+Without a server the class skips, so installing the ``postgres`` extra is not
+enough to make these tests run. Set ``TRUSTYAI_REQUIRE_LIVE_SQL_TESTS=1`` to
+fail instead of skipping, as the CI live-SQL gate does.
 """
 
 import asyncio
+import os
+import socket
 import unittest
 from collections.abc import Coroutine
 from typing import Any
@@ -24,18 +28,40 @@ alphabet = "abcdefghijklmnopqrstuvwxz"  # pragma: allowlist secret
 # Test constants
 EXPECTED_SINGLE_COLUMN_ROWS = 10  # Expected rows in single column dataset test
 
+_POSTGRES_HOST = "127.0.0.1"
+_POSTGRES_PORT = 5432
+
+
+def _postgres_reachable() -> bool:
+    """Probe the port the storage tests connect to, without opening a session."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.5)
+        return sock.connect_ex((_POSTGRES_HOST, _POSTGRES_PORT)) == 0
+
 
 @pytest.mark.xdist_group("postgres")
 class TestPostgreSQLStorage(unittest.TestCase):
     """Test class for PostgreSQLStorage."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        """Skip when no server is reachable; fail when the live gate is required."""
+        if _postgres_reachable():
+            return
+        reason = (
+            f"PostgreSQL test server unavailable on {_POSTGRES_HOST}:{_POSTGRES_PORT}"
+        )
+        if os.environ.get("TRUSTYAI_REQUIRE_LIVE_SQL_TESTS") == "1":
+            pytest.fail(reason, pytrace=False)
+        raise unittest.SkipTest(reason)
 
     def setUp(self) -> None:
         """Set up PostgreSQL storage connection for testing."""
         self.storage = PostgreSQLStorage(
             "trustyai",
             "trustyai",
-            "127.0.0.1",
-            5432,
+            _POSTGRES_HOST,
+            _POSTGRES_PORT,
             "trustyai-database",
         )
         self.names = SQLTestResources()
