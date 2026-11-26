@@ -71,7 +71,10 @@ def _is_concurrent_table_creation(error: DBAPIError) -> bool:
     if getattr(original, "errno", None) == _MARIADB_TABLE_EXISTS:
         return True
     sqlstate = getattr(original, "sqlstate", None)
-    if sqlstate == "42P07":  # PostgreSQL duplicate_table
+    # PostgreSQL reports a racing CREATE TABLE as duplicate_table (42P07) or,
+    # when the winner's implicit composite row type is already visible but its
+    # relation is not, as duplicate_object (42710: type "<table>" exists).
+    if sqlstate in {"42P07", "42710"}:
         return True
     if sqlstate == "23505":  # Concurrent CREATE can collide in system catalogs.
         diagnostic = getattr(original, "diag", None)
