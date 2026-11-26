@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import sys
 import time
 from types import ModuleType
@@ -12,6 +13,7 @@ import pytest
 
 from trustyai_service.service.data.local_explanation import LocalExplanationData
 from trustyai_service.service.explainers.local import execution as execution_module
+from trustyai_service.service.explainers.local import kserve_v2_http as provider_module
 from trustyai_service.service.explainers.local.error_mapping import (
     LocalDataError,
     map_error,
@@ -43,6 +45,7 @@ def _spec(
     task: TaskType = TaskType.REGRESSION,
     input_name: str | None = None,
     output_name: str | None = None,
+    input_datatype: str = "FP64",
 ) -> execution_module.LocalExecutionSpec:
     """Build a canonical execution specification."""
     return execution_module.LocalExecutionSpec(
@@ -52,6 +55,7 @@ def _spec(
         input_name=input_name,
         output_name=output_name,
         task=task,
+        input_datatype=input_datatype,
     )
 
 
@@ -121,6 +125,7 @@ def _install_provider_import(
             transport: object,
             *,
             timeout_seconds: float,
+            fallback_metadata: object = None,
         ) -> _Provider:
             del cls
             if connect_error is not None:
@@ -130,6 +135,7 @@ def _install_provider_import(
                     spec=spec,
                     transport=transport,
                     timeout_seconds=timeout_seconds,
+                    fallback_metadata=fallback_metadata,
                 )
             return provider
 
@@ -315,10 +321,12 @@ def test_model_connect_uses_remaining_deadline_after_delayed_setup(
             transport: object,
             *,
             timeout_seconds: float,
+            fallback_metadata: object = None,
         ) -> _Provider:
             """Record the timeout supplied after model setup."""
             del cls, spec, transport
             captured["timeout_seconds"] = timeout_seconds
+            captured["fallback_metadata"] = fallback_metadata
             return provider
 
     class ModelSpec:
@@ -530,3 +538,126 @@ def test_model_requires_a_base_url_before_provider_creation(
         execution_module.create_prediction_execution(
             spec, _data(), time.monotonic() + 5, None
         )
+
+
+def test_model_execution_builds_request_fallback_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Build a complete fallback contract from stored width and request names."""
+    provider = _Provider(width=3)
+    provider.metadata_source = "request_fallback"
+    captured: dict[str, object] = {}
+    _install_provider_import(monkeypatch, provider=provider, captured=captured)
+
+    execution = execution_module.create_prediction_execution(
+        _spec(input_name="features", output_name="predict", input_datatype="FP32"),
+        _data(width=3),
+        time.monotonic() + 5.0,
+        _transport(),
+    )
+
+    try:
+        fallback = captured["fallback_metadata"]
+        assert isinstance(fallback, PredictionMetadata)
+        assert fallback.input_name == "features"
+        assert fallback.output_name == "predict"
+        assert fallback.input_shape == (-1, 3)
+        assert fallback.input_datatype == "FP32"
+        assert execution.metadata_source == "request_fallback"
+    finally:
+        execution.close()
+
+
+def test_model_execution_omits_fallback_metadata_without_both_names(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Never synthesize a contract when a request name is missing."""
+    provider = _Provider()
+    captured: dict[str, object] = {}
+    _install_provider_import(monkeypatch, provider=provider, captured=captured)
+
+    execution = execution_module.create_prediction_execution(
+        _spec(input_name="features"),
+        _data(),
+        time.monotonic() + 5.0,
+        _transport(),
+    )
+
+    try:
+        assert captured["fallback_metadata"] is None
+    finally:
+        execution.close()
+
+
+class _ClientResponse:
+    """Minimal materialized HTTP response for the real provider."""
+
+    status_code = 200
+
+    def __init__(self, payload: object) -> None:
+        self._payload = payload
+        self.content = json.dumps(payload).encode()
+
+    def json(self) -> object:
+        return self._payload
+
+
+def test_model_execution_uses_fallback_through_the_real_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exercise execution, provider activation, and fallback decoding together."""
+    posts: list[dict[str, object]] = []
+
+    class Client:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def get(self, _url: str, **_kwargs: object) -> _ClientResponse:
+            return _ClientResponse(
+                {
+                    "name": "credit-model",
+                    "versions": [],
+                    "inputs": [],
+                    "outputs": [],
+                }
+            )
+
+        def post(self, _url: str, **kwargs: object) -> _ClientResponse:
+            body = kwargs["json"]
+            assert isinstance(body, dict)
+            posts.append(body)
+            return _ClientResponse(
+                {"outputs": [{"datatype": "FP32", "shape": [1, 2], "data": [0.2, 0.8]}]}
+            )
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(provider_module, "_load_http_client", lambda: Client)
+    execution = execution_module.create_prediction_execution(
+        _spec(
+            task=TaskType.CLASSIFICATION,
+            input_name="features",
+            output_name="predict",
+            input_datatype="FP32",
+        ),
+        _data(width=2),
+        time.monotonic() + 5.0,
+        _transport(),
+    )
+
+    try:
+        result = execution.predict_fn(np.asarray([[1.0, 2.0]]))
+        assert execution.metadata.input_shape == (-1, 2)
+        assert execution.metadata_source == "request_fallback"
+        assert execution.resolved_output_name == "predict"
+    finally:
+        execution.close()
+
+    assert result.shape == (1, 2)
+    inputs = posts[0]["inputs"]
+    assert isinstance(inputs, list)
+    tensor = inputs[0]
+    assert isinstance(tensor, dict)
+    assert tensor["name"] == "features"
+    assert tensor["datatype"] == "FP32"

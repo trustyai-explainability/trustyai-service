@@ -13,11 +13,15 @@ class LocalExplanationObservability:
 
     provider_latency: float | None = None
     inference_batch_count: int | None = None
+    metadata_source: str | None = None
 
     def capture(self, value: object) -> None:
         """Capture numeric provider counters without retaining exception details."""
         provider = getattr(value, "provider", None)
         source = provider if provider is not None else value
+        metadata_source = getattr(source, "metadata_source", None)
+        if isinstance(metadata_source, str):
+            self.metadata_source = metadata_source
         latency = getattr(source, "provider_latency", None)
         if (
             isinstance(latency, Real)

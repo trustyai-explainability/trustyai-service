@@ -13,6 +13,22 @@ if TYPE_CHECKING:
 
 
 _MAX_BATCH_SIZE = 100_000
+NUMERIC_TENSOR_DATATYPES = frozenset(
+    {
+        "BOOL",
+        "UINT8",
+        "UINT16",
+        "UINT32",
+        "UINT64",
+        "INT8",
+        "INT16",
+        "INT32",
+        "INT64",
+        "FP16",
+        "FP32",
+        "FP64",
+    }
+)
 _CREDENTIAL_HEADERS = frozenset(
     {
         "authorization",
@@ -237,6 +253,14 @@ class ProviderRequestLimitError(ProviderInvalidRequestError):
 
     def __init__(self, message: str) -> None:
         """Create a request-limit error with an explicitly safe detail."""
+        super().__init__(message)
+
+
+class ProviderRequestContractError(ProviderInvalidRequestError):
+    """A request is missing information required by the model contract."""
+
+    def __init__(self, message: str) -> None:
+        """Create a request-contract error with an explicitly safe detail."""
         super().__init__(message)
 
 

@@ -7,7 +7,11 @@ HTTP adapters serialize :class:`ErrorResponse` as
 from dataclasses import dataclass
 from enum import StrEnum
 
-from .model_provider import ProviderError, ProviderRequestLimitError
+from .model_provider import (
+    ProviderError,
+    ProviderRequestContractError,
+    ProviderRequestLimitError,
+)
 
 
 class LocalErrorCode(StrEnum):
@@ -119,6 +123,8 @@ def map_error(error: Exception) -> ErrorResponse:
     code = _code_for_error(error)
     status_code, generic_detail = _MAPPED_ERRORS[code]
     detail = (
-        str(error) if isinstance(error, ProviderRequestLimitError) else generic_detail
+        str(error)
+        if isinstance(error, (ProviderRequestContractError, ProviderRequestLimitError))
+        else generic_detail
     )
     return ErrorResponse(status_code=status_code, detail=detail, code=code)

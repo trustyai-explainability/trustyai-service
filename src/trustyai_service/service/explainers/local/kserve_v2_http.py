@@ -29,6 +29,7 @@ from .model_provider import (
     ProviderError,
     ProviderInvalidRequestError,
     ProviderInvalidResponseError,
+    ProviderRequestContractError,
     ProviderUnavailableError,
 )
 from .transport_config import resolve_outbound_addresses
@@ -1264,6 +1265,8 @@ class KServeV2HttpPredictionProvider(PredictionProvider):
         base_url: str,
         max_batch_size: int,
         default_timeout: float,
+        *,
+        fallback_output: bool = False,
     ) -> None:
         """Initialize a provider that owns the supplied synchronous client."""
         self._client = client
@@ -1272,6 +1275,7 @@ class KServeV2HttpPredictionProvider(PredictionProvider):
         self._infer_url = _model_url(base_url, spec, infer=True)
         self._max_batch_size = max_batch_size
         self._default_timeout = default_timeout
+        self._fallback_output = fallback_output
         self._retire_on_inference_failure = _uses_streaming_fallback(client)
         self._closed = False
         self._metadata_latency_seconds = 0.0
@@ -1303,13 +1307,19 @@ class KServeV2HttpPredictionProvider(PredictionProvider):
         """Return metadata plus inference latency in seconds."""
         return self._metadata_latency_seconds + self._inference_latency_seconds
 
+    @property
+    def metadata_source(self) -> str:
+        """Return whether the tensor contract was declared or requested."""
+        return "request_fallback" if self._fallback_output else "declared"
+
     @classmethod
-    def connect(
+    def connect(  # noqa: C901
         cls,
         spec: KServeModelSpec,
         transport: HttpTransportConfig,
         *,
         timeout_seconds: float,
+        fallback_metadata: PredictionMetadata | None = None,
     ) -> KServeV2HttpPredictionProvider:
         """Create one client, negotiate metadata, and return its provider."""
         timeout = _validate_connect_timeout(timeout_seconds)
@@ -1365,7 +1375,17 @@ class KServeV2HttpPredictionProvider(PredictionProvider):
                 spec.model_version,
                 input_name=spec.input_name,
                 output_name=spec.output_name,
+                allow_empty=True,
             )
+            fallback_output = metadata is None
+            if fallback_output:
+                if fallback_metadata is None:
+                    message = (
+                        "Model metadata declares no tensors; "
+                        "set input_name and output_name"
+                    )
+                    raise ProviderRequestContractError(message)  # noqa: TRY301
+                metadata = fallback_metadata
             provider = cls(
                 client,
                 metadata,
@@ -1373,6 +1393,7 @@ class KServeV2HttpPredictionProvider(PredictionProvider):
                 base_url,
                 transport.max_batch_size,
                 timeout,
+                fallback_output=fallback_output,
             )
             _remaining_timeout(deadline)
             provider._metadata_latency_seconds = time.monotonic() - started
@@ -1388,7 +1409,12 @@ class KServeV2HttpPredictionProvider(PredictionProvider):
             self._metadata.input_shape
         ) or codec.requires_single_row(self._metadata.output_shape):
             return 1
-        return min(self._max_batch_size, codec.max_rows_per_request(self._metadata))
+        return min(
+            self._max_batch_size,
+            codec.max_rows_per_request(
+                self._metadata, fallback_output=self._fallback_output
+            ),
+        )
 
     def _post_inference(
         self, body: Mapping[str, object], deadline: float
@@ -1470,6 +1496,7 @@ class KServeV2HttpPredictionProvider(PredictionProvider):
                     self._spec.model_name,
                     self._spec.model_version,
                     len(chunk),
+                    fallback_output=self._fallback_output,
                 )
                 _remaining_timeout(deadline)
             except ProviderError:

@@ -15,6 +15,7 @@ from trustyai_service.service.explainers.local.model_provider import (
     ProviderDeadlineError,
     ProviderInvalidRequestError,
     ProviderInvalidResponseError,
+    ProviderRequestContractError,
     ProviderRequestLimitError,
     ProviderUnavailableError,
     ProviderUnsupportedModelError,
@@ -34,6 +35,7 @@ class UntrustedDataError(ValueError):
         (LocalDataNotFoundError("stored data is missing"), "data_missing", 404),
         (ProviderInvalidRequestError(), "invalid_request", 400),
         (ProviderRequestLimitError("request limit reached"), "invalid_request", 400),
+        (ProviderRequestContractError("contract detail"), "invalid_request", 400),
         (DependencyUnavailableError(), "dependency_unavailable", 503),
         (ProviderConfigurationError(), "configuration_invalid", 500),
         (ProviderUnavailableError(), "unavailable", 503),
@@ -144,3 +146,14 @@ def test_request_limit_errors_expose_their_safe_actionable_detail(
     assert mapped.status_code == 400
     assert mapped.detail == message
     assert mapped.as_http_detail() == {"code": "invalid_request", "message": message}
+
+
+def test_request_contract_errors_expose_their_safe_detail() -> None:
+    """Expose the explicitly safe guidance for an incomplete model contract."""
+    message = "Model metadata declares no tensors; set input_name and output_name"
+
+    mapped = map_error(ProviderRequestContractError(message))
+
+    assert mapped.status_code == 400
+    assert mapped.code == "invalid_request"
+    assert mapped.detail == message

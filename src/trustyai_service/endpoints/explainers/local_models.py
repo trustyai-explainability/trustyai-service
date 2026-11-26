@@ -2,6 +2,9 @@
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, field_validator
 
+from trustyai_service.service.explainers.local.model_provider import (
+    NUMERIC_TENSOR_DATATYPES,
+)
 from trustyai_service.service.explainers.local.types import TaskType
 
 _CONTROL_CHAR_LIMIT = 32
@@ -25,8 +28,18 @@ class LocalExplanationModelConfig(BaseModel):
     model_name: str
     model_version: str | None = None
     task: TaskType
+    input_datatype: str = "FP64"
     input_name: str | None = None
     output_name: str | None = None
+
+    @field_validator("input_datatype")
+    @classmethod
+    def validate_input_datatype(cls, value: str) -> str:
+        """Restrict the request-supplied datatype to numeric tensors."""
+        if value not in NUMERIC_TENSOR_DATATYPES:
+            msg = "input_datatype must be a supported numeric tensor datatype"
+            raise ValueError(msg)
+        return value
 
     @field_validator("model_name", "model_version", "input_name", "output_name")
     @classmethod
