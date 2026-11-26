@@ -15,6 +15,7 @@ from trustyai_service.service.explainers.local.model_provider import (
     ProviderDeadlineError,
     ProviderInvalidRequestError,
     ProviderInvalidResponseError,
+    ProviderRequestLimitError,
     ProviderUnavailableError,
     ProviderUnsupportedModelError,
 )
@@ -32,6 +33,7 @@ class UntrustedDataError(ValueError):
         (LocalDataError("invalid stored data"), "data_invalid", 400),
         (LocalDataNotFoundError("stored data is missing"), "data_missing", 404),
         (ProviderInvalidRequestError(), "invalid_request", 400),
+        (ProviderRequestLimitError("request limit reached"), "invalid_request", 400),
         (DependencyUnavailableError(), "dependency_unavailable", 503),
         (ProviderConfigurationError(), "configuration_invalid", 500),
         (ProviderUnavailableError(), "unavailable", 503),
@@ -123,3 +125,16 @@ def test_typed_errors_use_allowlisted_messages(
     assert mapped.detail == detail
     assert str(error) not in mapped.detail
     assert mapped.as_http_detail() == {"code": code, "message": detail}
+
+
+def test_request_limit_errors_expose_only_their_actionable_detail() -> None:
+    """Expose the explicitly safe guidance for deterministic request limits."""
+    detail = (
+        "LIME request exceeds the memory budget; reduce num_samples or n_training_rows"
+    )
+    mapped = map_error(ProviderRequestLimitError(detail))
+
+    assert mapped.code == "invalid_request"
+    assert mapped.status_code == 400
+    assert mapped.detail == detail
+    assert mapped.as_http_detail() == {"code": "invalid_request", "message": detail}

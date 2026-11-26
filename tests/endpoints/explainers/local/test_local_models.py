@@ -305,6 +305,7 @@ def test_main_does_not_reflect_credentials_from_invalid_local_model_inputs(
             "-c",
             """
 import os
+import sys
 
 from fastapi.testclient import TestClient
 from fastapi import APIRouter
@@ -497,10 +498,19 @@ assert valid_model_response.json() == {"model": "credit-model"}
 placeholder_response = TestClient(app).post(
     "/explainers/local/lime", json={"predictionId": "target", **safe_payload}
 )
-assert placeholder_response.status_code == 501
-assert placeholder_response.json() == {
-    "detail": "Local LIME explanation is not yet implemented"
-}
+if "trustyai_service.endpoints.explainers.local_lime" in sys.modules:
+    assert placeholder_response.status_code == 404
+    assert placeholder_response.json() == {
+        "detail": {
+            "code": "data_missing",
+            "message": "Local explanation data was not found",
+        }
+    }
+else:
+    assert placeholder_response.status_code == 501
+    assert placeholder_response.json() == {
+        "detail": "Local LIME explanation is not yet implemented"
+    }
 
 unrelated_response = TestClient(app).post(
     "/test-unrelated-validation",
