@@ -17,6 +17,19 @@ def _generate_self_signed_cert(tmp_path: Path) -> tuple[str, str]:
     """Generate a self-signed cert and key for testing."""
     cert_file = tmp_path / "tls.crt"
     key_file = tmp_path / "tls.key"
+    config_file = tmp_path / "openssl.cnf"
+    config_file.write_text(
+        "[req]\n"
+        "distinguished_name = dn\n"
+        "x509_extensions = v3_req\n"
+        "prompt = no\n"
+        "[dn]\n"
+        "CN = localhost\n"
+        "[v3_req]\n"
+        "subjectAltName = DNS:localhost\n"
+        "basicConstraints = critical, CA:TRUE\n",
+        encoding="utf-8",
+    )
     subprocess.run(  # noqa: S603
         [  # noqa: S607
             "openssl",
@@ -31,8 +44,8 @@ def _generate_self_signed_cert(tmp_path: Path) -> tuple[str, str]:
             "-days",
             "1",
             "-nodes",
-            "-subj",
-            "/CN=localhost",
+            "-config",
+            str(config_file),
         ],
         check=True,
         capture_output=True,
