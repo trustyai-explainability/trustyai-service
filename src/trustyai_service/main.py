@@ -9,6 +9,10 @@ from http import HTTPStatus
 from typing import Any
 
 from fastapi import FastAPI, Request, Response
+from fastapi.exception_handlers import (
+    request_validation_exception_handler as default_request_validation_exception_handler,
+)
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from hypercorn.asyncio import serve
@@ -29,7 +33,12 @@ from trustyai_service.endpoints.explainers.global_explainer import (
     router as explainers_global_router,
 )
 from trustyai_service.endpoints.explainers.local_explainer import (
-    router as explainers_local_router,
+    build_router as build_local_explainers_router,
+)
+from trustyai_service.endpoints.explainers.local_validation import (
+    contains_sensitive_validation_error,
+    is_local_explainer_path,
+    sanitize_validation_errors,
 )
 from trustyai_service.endpoints.metadata import router as metadata_router
 from trustyai_service.endpoints.metrics.batch_mean import router as batch_mean_router
@@ -126,6 +135,7 @@ LOOPBACK_HOST = "127.0.0.1"
 PUBLIC_HOST = "0.0.0.0"  # noqa: S104
 
 prometheus_scheduler = get_shared_prometheus_scheduler()
+explainers_local_router = build_local_explainers_router()
 
 
 async def schedule_metrics_calculation() -> None:
@@ -169,6 +179,24 @@ app = FastAPI(
     description="TrustyAI Service API",
     lifespan=lifespan,
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def local_request_validation_exception_handler(
+    request: Request,
+    exc: RequestValidationError,
+) -> JSONResponse:
+    """Avoid reflecting credential-bearing local model URLs in 422 responses."""
+    errors = exc.errors()
+    if not is_local_explainer_path(
+        request.url.path
+    ) or not contains_sensitive_validation_error(errors):
+        return await default_request_validation_exception_handler(request, exc)
+    return JSONResponse(
+        status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
+        content={"detail": sanitize_validation_errors(errors)},
+    )
+
 
 # CORS (added first, runs last)
 app.add_middleware(
