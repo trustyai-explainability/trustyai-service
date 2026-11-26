@@ -60,6 +60,7 @@ migration = [
     "javaobj-py3>=0.5,<0.7",
 ]
 mmd = ["goodpoints>=0.6.3,<0.7"]
+lime = ["lime>=0.2,<0.3"]
 
 [tool.hatch.version]
 source = "vcs"
