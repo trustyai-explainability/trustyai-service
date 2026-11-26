@@ -29,6 +29,24 @@ from trustyai_service.main import (
 HYPERCORN_DEFAULT_PORT = 8000
 
 
+@pytest.fixture(autouse=True)
+def _isolated_storage(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Keep the developer's PV out of every startup path in this module.
+
+    ``run_server()`` runs the Java PVC migration when ``STORAGE_DATA_FOLDER``
+    points at a folder holding ``*-internal_data.csv`` files. Pointing PVC
+    storage at a fresh temporary folder keeps the tests from converting (and
+    writing to) a developer's local data.
+    """
+    storage = tmp_path / "storage"
+    storage.mkdir()
+    monkeypatch.setenv("SERVICE_STORAGE_FORMAT", "PVC")
+    monkeypatch.setenv("STORAGE_DATA_FOLDER", str(storage))
+
+
 def _free_port() -> int:
     """Return a port that was free on loopback a moment ago."""
     with closing(socket.socket()) as probe:
@@ -106,8 +124,31 @@ def test_insecure_bind_alone_would_fall_back_to_hypercorns_default() -> None:
     config = Config()
     config.insecure_bind = ["127.0.0.1:8081"]
 
-    assert plaintext_listeners(config) == ["127.0.0.1:8000"]
-    assert _bound_ports(config) == {"secure": [], "insecure": [HYPERCORN_DEFAULT_PORT]}
+    assert config.bind == [f"127.0.0.1:{HYPERCORN_DEFAULT_PORT}"]
+    assert plaintext_listeners(config) == [f"127.0.0.1:{HYPERCORN_DEFAULT_PORT}"]
+
+
+def test_insecure_bind_alone_is_never_bound_without_tls() -> None:
+    """The unopened listener is the declared one, independent of port 8000.
+
+    The insecure port is held by a listening socket for the duration, so
+    bind-on-port-0 cannot be assigned it and Hypercorn would fail with
+    EADDRINUSE if it tried to open the declared listener.
+    """
+    config = Config()
+    config.bind = ["127.0.0.1:0"]
+
+    with closing(socket.socket()) as held:
+        held.bind(("127.0.0.1", 0))
+        held.listen()
+        held_port = held.getsockname()[1]
+        config.insecure_bind = [f"127.0.0.1:{held_port}"]
+
+        bound = _bound_ports(config)
+
+    assert bound["secure"] == []
+    assert len(bound["insecure"]) == 1
+    assert bound["insecure"][0] != held_port
 
 
 def test_api_config_refuses_a_layout_without_a_plaintext_listener(
