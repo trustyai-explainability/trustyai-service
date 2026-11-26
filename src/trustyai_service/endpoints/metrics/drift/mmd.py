@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from trustyai_service.core.metrics.drift.mmd import (
+    DEFAULT_ACTT_NUM_PERMUTATIONS,
     DEFAULT_ALPHA,
     DEFAULT_BANDWIDTH,
     DEFAULT_KERNEL,
@@ -71,12 +72,39 @@ class MMDMetricRequest(BaseMetricRequest):
     # MMD-specific parameters
     method: Method = Field(default="ctt")
     num_permutations: int = Field(
-        default=DEFAULT_NUM_PERMUTATIONS, alias="numPermutations", gt=0
+        default=DEFAULT_NUM_PERMUTATIONS,
+        alias="numPermutations",
+        gt=0,
+        description=(
+            "Number of permutations. When method is 'actt' the value must exceed "
+            "b2 (200); an omitted value resolves to "
+            f"{DEFAULT_ACTT_NUM_PERMUTATIONS} for 'actt' and "
+            f"{DEFAULT_NUM_PERMUTATIONS} for 'ctt'/'rff'."
+        ),
     )
     bandwidth: float = Field(default=DEFAULT_BANDWIDTH, gt=0)
     kernel: Literal["gauss"] = Field(default=DEFAULT_KERNEL)
     alpha: float = Field(default=DEFAULT_ALPHA, gt=0, lt=1)
     seed: int | None = Field(default=None)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _resolve_num_permutations(cls, data: Any) -> Any:  # noqa: ANN401
+        """Default the permutation count to one the selected method accepts.
+
+        ACTT requires ``num_permutations > b2`` (200) and rejects the CTT/RFF
+        default of 39, so an omitted value must resolve per method. An explicit
+        value is validated by the ACTT implementation as before.
+        """
+        if not isinstance(data, dict):
+            return data
+        # Only an absent key counts as omitted: an explicit null stays a
+        # validation error, for every method, as before this default.
+        if "numPermutations" in data or "num_permutations" in data:
+            return data
+        if data.get("method", "ctt") == "actt":
+            return {**data, "numPermutations": DEFAULT_ACTT_NUM_PERMUTATIONS}
+        return data
 
     @model_validator(mode="after")
     def _set_default_metric_name(self) -> "MMDMetricRequest":

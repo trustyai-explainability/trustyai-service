@@ -1,13 +1,21 @@
 """Tests for MMD drift detection endpoint."""
 
 from http import HTTPStatus
+from typing import ClassVar
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
 import pandas as pd
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
+from trustyai_service.core.metrics.drift.mmd import (
+    DEFAULT_ACTT_NUM_PERMUTATIONS,
+    DEFAULT_NUM_PERMUTATIONS,
+    MMD,
+)
 from trustyai_service.endpoints import routes
 from trustyai_service.endpoints.metrics.drift.mmd import (
     MMDMetricRequest,
@@ -582,6 +590,50 @@ class TestMMDEndpoints:
             # Verify metricName is FourierMMD, not MMD
             assert data["requests"][0]["metricName"] == "FourierMMD"
 
+    def test_actt_with_omitted_num_permutations_succeeds(self) -> None:
+        """ACTT rejects the 39 default, so omission must resolve per method."""
+        rng = np.random.default_rng(3)
+        reference_df = pd.DataFrame(
+            {"f1": rng.standard_normal(40), "f2": rng.standard_normal(40)}
+        )
+        current_df = pd.DataFrame(
+            {"f1": rng.standard_normal(40), "f2": rng.standard_normal(40)}
+        )
+        seen: dict[str, object] = {}
+        real_compute = MMD.compute
+
+        def recording_compute(*args: object, **kwargs: object) -> object:
+            seen.update(kwargs)
+            return real_compute(*args, **kwargs)
+
+        with (
+            patch(f"{MODULE_PATH}.get_data_source") as mock_ds,
+            patch(f"{MODULE_PATH}.MMD.compute", side_effect=recording_compute),
+        ):
+            mock_data_source = MagicMock()
+            mock_data_source.get_dataframe_by_tag = AsyncMock(
+                return_value=reference_df,
+            )
+            mock_data_source.get_organic_dataframe = AsyncMock(
+                return_value=current_df,
+            )
+            mock_ds.return_value = mock_data_source
+
+            response = client.post(
+                routes.DRIFT_MMD.compute,
+                json={
+                    "modelId": "test-model",
+                    "referenceTag": "baseline",
+                    "fitColumns": ["f1", "f2"],
+                    "method": "actt",
+                    "seed": 3,
+                },
+            )
+
+        assert response.status_code == HTTPStatus.OK
+        # ACTT requires num_permutations > b2 (200).
+        assert seen["num_permutations"] == DEFAULT_ACTT_NUM_PERMUTATIONS
+
     def test_helper_functions(self) -> None:
         """Test that helper functions return the correct shared instances."""
         data_source = get_data_source()
@@ -589,3 +641,42 @@ class TestMMDEndpoints:
 
         assert data_source is not None
         _ = scheduler
+
+
+class TestMMDNumPermutationsDefaults:
+    """An omitted numPermutations resolves to a value the method accepts."""
+
+    BASE: ClassVar[dict[str, str]] = {
+        "modelId": "test-model",
+        "referenceTag": "baseline",
+    }
+
+    def test_omitted_default_follows_the_method(self) -> None:
+        """CTT and RFF keep 39; ACTT gets a value above its bound."""
+        for method in (None, "ctt", "rff"):
+            payload = (
+                dict(self.BASE) if method is None else {**self.BASE, "method": method}
+            )
+            request = MMDMetricRequest.model_validate(payload)
+
+            assert request.num_permutations == DEFAULT_NUM_PERMUTATIONS
+
+        actt = MMDMetricRequest.model_validate({**self.BASE, "method": "actt"})
+        assert actt.num_permutations == DEFAULT_ACTT_NUM_PERMUTATIONS
+        assert actt.num_permutations > 200
+
+    def test_explicit_value_is_preserved(self) -> None:
+        """An explicit numPermutations is never overridden."""
+        request = MMDMetricRequest.model_validate(
+            {**self.BASE, "method": "actt", "numPermutations": 250}
+        )
+
+        assert request.num_permutations == 250
+
+    @pytest.mark.parametrize("method", ["ctt", "actt"])
+    def test_explicit_null_is_not_treated_as_omitted(self, method: str) -> None:
+        """An explicit JSON null stays a validation error for every method."""
+        with pytest.raises(ValidationError):
+            MMDMetricRequest.model_validate(
+                {**self.BASE, "method": method, "numPermutations": None}
+            )

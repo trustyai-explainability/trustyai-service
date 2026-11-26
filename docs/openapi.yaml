@@ -701,6 +701,8 @@ components:
           type: string
         numPermutations:
           default: 39
+          description: Number of permutations. When method is 'actt' the value must exceed b2 (200); an
+            omitted value resolves to 299 for 'actt' and 39 for 'ctt'/'rff'.
           exclusiveMinimum: 0.0
           title: Numpermutations
           type: integer
