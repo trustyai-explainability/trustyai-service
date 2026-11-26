@@ -5,6 +5,8 @@ from typing import Any, Literal
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic.json_schema import GetJsonSchemaHandler, JsonSchemaValue
+from pydantic_core import CoreSchema
 
 from trustyai_service.service.payloads.values.data_type import DataType
 
@@ -22,6 +24,26 @@ class InferencePartialPayload(BaseModel):
     metadata: dict[str, str] = Field(default_factory=dict)
     data: str | None = None
     modelid: str | None = None
+
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls,
+        core_schema: CoreSchema,
+        handler: GetJsonSchemaHandler,
+    ) -> JsonSchemaValue:
+        """Declare the fields the handler rejects when they are absent.
+
+        ``consume_inference_payload`` answers HTTP 400 for a falsy ``id``,
+        ``kind``, ``modelid`` or ``data``. Marking the Pydantic fields required
+        would make FastAPI answer 422 first and change the API, so the constraint
+        is declared in the schema only. ``metadata`` stays optional.
+        """
+        json_schema: dict[str, Any] = handler(core_schema)
+        required = json_schema.setdefault("required", [])
+        for name in ("id", "kind", "modelid", "data"):
+            if name not in required:
+                required.append(name)
+        return json_schema
 
 
 class KServeDataType(StrEnum):

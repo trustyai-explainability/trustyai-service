@@ -17,6 +17,9 @@ from trustyai_service.core.metrics.drift.compare_means import (
     NanPolicy,
 )
 from trustyai_service.endpoints import routes
+from trustyai_service.endpoints.metrics.drift.contract import (
+    DriftRequestContract,
+)
 from trustyai_service.endpoints.metrics.drift.validation import validate_drift_request
 from trustyai_service.service.data.datasources.data_source import DataSource
 from trustyai_service.service.data.shared_data_source import get_shared_data_source
@@ -59,7 +62,7 @@ class ScheduleId(BaseModel):
     requestId: str
 
 
-class CompareMeansMetricRequest(BaseMetricRequest):
+class CompareMeansMetricRequest(DriftRequestContract, BaseMetricRequest):
     """Request parameters for compare means drift detection metric."""
 
     # Use field aliases to accept camelCase from API while keeping snake_case internally

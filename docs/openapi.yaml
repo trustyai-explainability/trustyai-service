@@ -19,6 +19,7 @@ components:
           anyOf:
           - items:
               type: string
+            minItems: 1
             type: array
           - type: 'null'
           title: Fitcolumns
@@ -45,6 +46,7 @@ components:
           type: number
       required:
       - modelId
+      - referenceTag
       title: ApproxKSTestMetricRequest
       type: object
     BatchMeanRequest:
@@ -109,6 +111,7 @@ components:
           anyOf:
           - items:
               type: string
+            minItems: 1
             type: array
           - type: 'null'
           title: Fitcolumns
@@ -140,6 +143,7 @@ components:
           title: Requestname
       required:
       - modelId
+      - referenceTag
       title: CompareMeansMetricRequest
       type: object
     DataTagging:
@@ -435,6 +439,11 @@ components:
           - type: string
           - type: 'null'
           title: Modelid
+      required:
+      - id
+      - kind
+      - modelid
+      - data
       title: InferencePartialPayload
       type: object
     JensenShannonMetricRequest:
@@ -453,6 +462,7 @@ components:
           anyOf:
           - items:
               type: string
+            minItems: 1
             type: array
           - type: 'null'
           title: Fitcolumns
@@ -491,6 +501,7 @@ components:
           type: number
       required:
       - modelId
+      - referenceTag
       title: JensenShannonMetricRequest
       type: object
     KSTestMetricRequest:
@@ -505,6 +516,7 @@ components:
           anyOf:
           - items:
               type: string
+            minItems: 1
             type: array
           - type: 'null'
           title: Fitcolumns
@@ -531,6 +543,7 @@ components:
           type: number
       required:
       - modelId
+      - referenceTag
       title: KSTestMetricRequest
       type: object
     KServeData:
@@ -675,6 +688,7 @@ components:
           anyOf:
           - items:
               type: string
+            minItems: 1
             type: array
           - type: 'null'
           title: Fitcolumns
@@ -721,6 +735,7 @@ components:
           title: Seed
       required:
       - modelId
+      - referenceTag
       title: MMDMetricRequest
       type: object
     MeanshiftMetricRequest:
@@ -753,6 +768,7 @@ components:
           anyOf:
           - items:
               type: string
+            minItems: 1
             type: array
           - type: 'null'
           title: Fitcolumns
@@ -784,6 +800,7 @@ components:
           title: Requestname
       required:
       - modelId
+      - referenceTag
       title: MeanshiftMetricRequest
       type: object
     NameMapping:

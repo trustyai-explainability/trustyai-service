@@ -15,6 +15,9 @@ from trustyai_service.core.metrics.drift.greenwald_khanna_quantile_sketch import
 from trustyai_service.core.metrics.drift.kolmogorov_smirnov_streaming import (
     KolmogorovSmirnovStreaming,
 )
+from trustyai_service.endpoints.metrics.drift.contract import (
+    DriftRequestContract,
+)
 from trustyai_service.endpoints.metrics.drift.validation import validate_drift_request
 from trustyai_service.service.data.datasources.data_source import DataSource
 from trustyai_service.service.data.shared_data_source import get_shared_data_source
@@ -52,7 +55,7 @@ class ScheduleId(BaseModel):
     requestId: str
 
 
-class ApproxKSTestMetricRequest(BaseMetricRequest):
+class ApproxKSTestMetricRequest(DriftRequestContract, BaseMetricRequest):
     """Request parameters for streaming KS test drift detection metric."""
 
     # Use field aliases to accept camelCase from API while keeping snake_case internally
