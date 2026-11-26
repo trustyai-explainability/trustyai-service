@@ -936,3 +936,24 @@ def test_worker_cleanup_runs_when_lime_core_fails(
     assert response.status_code == HTTPStatus.INTERNAL_SERVER_ERROR
     assert "private LIME failure" not in response.text
     assert execution.close_calls == 1
+
+
+def test_success_log_reports_the_metadata_source(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Carry the request-fallback marker into the completion log."""
+    execution = _FakeExecution()
+    execution.metadata_source = "request_fallback"
+    _install_successful_worker(monkeypatch, execution=execution)
+    caplog.set_level(logging.INFO, logger=local_lime.__name__)
+
+    response = TestClient(_app()).post("/explainers/local/lime", json=_payload())
+
+    assert response.status_code == HTTPStatus.OK, response.text
+    complete = next(
+        record
+        for record in caplog.records
+        if record.getMessage() == "local_explanation_complete"
+    )
+    assert complete.metadata_source == "request_fallback"

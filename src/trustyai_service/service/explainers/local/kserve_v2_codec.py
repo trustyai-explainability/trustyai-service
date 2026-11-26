@@ -10,6 +10,7 @@ from typing import Literal, NoReturn, Protocol, cast
 import numpy as np
 
 from .model_provider import (
+    NUMERIC_TENSOR_DATATYPES,
     PredictionMetadata,
     ProviderInvalidRequestError,
     ProviderInvalidResponseError,
@@ -17,22 +18,7 @@ from .model_provider import (
     ProviderUnsupportedModelError,
 )
 
-_NUMERIC_DATATYPES = frozenset(
-    {
-        "BOOL",
-        "UINT8",
-        "UINT16",
-        "UINT32",
-        "UINT64",
-        "INT8",
-        "INT16",
-        "INT32",
-        "INT64",
-        "FP16",
-        "FP32",
-        "FP64",
-    }
-)
+_NUMERIC_DATATYPES = NUMERIC_TENSOR_DATATYPES
 _MAX_REQUEST_ELEMENTS = 10_000_000
 _MAX_RESPONSE_ELEMENTS = 10_000_000
 _MAX_RESPONSE_BYTES = 64 * 1024 * 1024
@@ -164,7 +150,10 @@ def _select_tensor(
 
 
 def _validate_advertised_versions(
-    payload: Mapping[str, object], model_version: str | None
+    payload: Mapping[str, object],
+    model_version: str | None,
+    *,
+    allow_empty: bool = False,
 ) -> None:
     """Validate an optional model version advertisement and requested selector."""
     if "versions" not in payload:
@@ -174,26 +163,36 @@ def _validate_advertised_versions(
         not isinstance(version, str) or not version for version in versions
     ):
         _unsupported_model("Model metadata versions must be a list")
+    if allow_empty and not versions:
+        return
     if model_version is not None and model_version not in versions:
         _invalid_request("Requested model version was not found")
 
 
-def parse_metadata(
+def parse_metadata(  # noqa: PLR0913
     payload: object,
     model_name: str,
     model_version: str | None = None,
     input_name: str | None = None,
     output_name: str | None = None,
-) -> PredictionMetadata:
-    """Parse and validate one selected numeric KServe V2 model contract."""
+    *,
+    allow_empty: bool = False,
+) -> PredictionMetadata | None:
+    """Parse one numeric KServe V2 model contract, or no contract when allowed."""
     if not isinstance(payload, Mapping):
         _invalid_response("model metadata must be a JSON object")
     if payload.get("name") != model_name:
         _unsupported_model("Model metadata name does not match the request")
-    _validate_advertised_versions(payload, model_version)
+    _validate_advertised_versions(payload, model_version, allow_empty=allow_empty)
 
     inputs = _tensor_list(payload, "inputs", allow_missing=True)
     outputs = _tensor_list(payload, "outputs", allow_missing=True)
+    if not inputs and not outputs:
+        if allow_empty:
+            return None
+        _unsupported_model(
+            "Model input metadata is ambiguous or has multiple required inputs"
+        )
     if len(inputs) != 1:
         _unsupported_model(
             "Model input metadata is ambiguous or has multiple required inputs"
@@ -391,15 +390,21 @@ def _row_width(shape: tuple[int, ...]) -> int:
     return shape[1]
 
 
-def max_rows_per_request(metadata: PredictionMetadata) -> int:
+def max_rows_per_request(
+    metadata: PredictionMetadata, *, fallback_output: bool = False
+) -> int:
     """Return the largest row count that stays within one tensor budget.
 
     Batching must respect the encoded request element cap, the decoded response
-    element cap, and the decoded response byte cap. The byte cap uses the widest
-    JSON representation of the declared output datatype, because the response
-    size cannot be known before the model answers.
+    element cap, and the decoded response byte cap. When the model declares no
+    output contract, use the input width as the response width estimate and the
+    widest JSON element representation.
     """
-    output_width = _row_width(metadata.output_shape)
+    output_width = (
+        max(1, _row_width(metadata.input_shape))
+        if fallback_output
+        else _row_width(metadata.output_shape)
+    )
     response_element_bytes = _JSON_ELEMENT_BYTES.get(
         metadata.output_datatype, _JSON_FALLBACK_ELEMENT_BYTES
     )
@@ -619,12 +624,70 @@ def _decode_output_tensor(
     )
 
 
-def decode_response(
+def _select_fallback_output(
+    outputs: list[Mapping[str, object]], requested_name: str
+) -> Mapping[str, object]:
+    """Select the sole output, or the named output when the model returns many."""
+    if len(outputs) == 1:
+        return outputs[0]
+    selected = [output for output in outputs if output.get("name") == requested_name]
+    if len(selected) != 1:
+        _invalid_response("selected output is missing or duplicated")
+    return selected[0]
+
+
+def _decode_fallback_output_tensor(  # noqa: C901
+    selected: Mapping[str, object], chunk_size: int
+) -> np.ndarray:
+    """Decode a response for a model that declares no output contract."""
+    datatype = selected.get("datatype")
+    _validate_numeric_datatype(datatype, direction="response")
+    actual_shape = _parse_response_shape(selected.get("shape"))
+    raw_data = selected.get("data")
+    element_count = _count_json_elements(raw_data)
+    expected_count = _bounded_product(actual_shape)
+    if element_count != expected_count:
+        _invalid_response("output shape mismatch")
+    _validate_preconversion_values(raw_data, datatype, direction="response")
+
+    try:
+        data = np.asarray(raw_data)
+    except (TypeError, ValueError) as exc:
+        message = "model output must be numeric"
+        raise ProviderInvalidResponseError(message) from exc
+    if data.size > _MAX_RESPONSE_ELEMENTS:
+        _invalid_response("model output is too large")
+    if data.dtype.kind not in "bfiu":
+        _invalid_response("model output must be numeric")
+    if data.ndim != 1 and tuple(data.shape) != actual_shape:
+        _invalid_response("output shape mismatch")
+    _validate_numeric_values(data, datatype, direction="response")
+    normalized = data.astype(float, copy=False)
+    if not np.isfinite(normalized).all():
+        _invalid_response("model output must be finite")
+
+    if len(actual_shape) == 1:
+        if actual_shape[0] == chunk_size:
+            width = 1
+        elif chunk_size == 1:
+            width = actual_shape[0]
+        else:
+            _invalid_response("output shape mismatch")
+    else:
+        if actual_shape[0] != chunk_size:
+            _invalid_response("output shape mismatch")
+        width = actual_shape[1]
+    return normalized.reshape(chunk_size, width)
+
+
+def decode_response(  # noqa: C901, PLR0913
     response: BoundedResponse,
     metadata: PredictionMetadata,
     model_name: str,
     model_version: str | None,
     chunk_size: int,
+    *,
+    fallback_output: bool = False,
 ) -> np.ndarray:
     """Decode one bounded KServe V2 response into a normalized NumPy matrix."""
     if (
@@ -639,15 +702,34 @@ def decode_response(
         payload = response.json()
         if not isinstance(payload, Mapping):
             _invalid_response("model inference response must be a JSON object")
-        if payload.get("model_name") != model_name:
+        response_model_name = payload.get("model_name")
+        if fallback_output:
+            if (
+                response_model_name not in (None, "")
+                and response_model_name != model_name
+            ):
+                _invalid_response("response model name mismatch")
+        elif response_model_name != model_name:
             _invalid_response("response model name mismatch")
-        if (
+        response_model_version = payload.get("model_version")
+        if fallback_output:
+            if (
+                model_version is not None
+                and response_model_version not in (None, "")
+                and response_model_version != model_version
+            ):
+                _invalid_response("response model version mismatch")
+        elif (
             model_version is not None
             and "model_version" in payload
-            and payload["model_version"] != model_version
+            and response_model_version != model_version
         ):
             _invalid_response("response model version mismatch")
         outputs = _tensor_list(payload, "outputs", allow_missing=False)
+        if fallback_output:
+            return _decode_fallback_output_tensor(
+                _select_fallback_output(outputs, metadata.output_name), chunk_size
+            )
         selected_outputs = [
             output for output in outputs if output.get("name") == metadata.output_name
         ]

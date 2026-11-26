@@ -215,6 +215,7 @@ class _SHAPWorkerResult:
     feature_names: tuple[str, ...]
     provider_latency: float | None
     inference_batch_count: int | None
+    metadata_source: str | None = None
 
 
 def _remaining(deadline: float) -> float:
@@ -429,6 +430,7 @@ def _worker(
                 input_name=model.input_name,
                 output_name=model.output_name,
                 task=model.task,
+                input_datatype=model.input_datatype,
             ),
             data,
             deadline,
@@ -481,6 +483,7 @@ def _worker(
             feature_names=tuple(data.feature_names),
             provider_latency=provider_latency,
             inference_batch_count=inference_batch_count,
+            metadata_source=getattr(execution, "metadata_source", None),
         )
     finally:
         if execution is not None:
@@ -544,6 +547,7 @@ def _log_failure(
             "latency_seconds": time.monotonic() - started,
             "provider_latency": observability.provider_latency,
             "inference_batch_count": observability.inference_batch_count,
+            "metadata_source": observability.metadata_source,
         },
     )
 
@@ -615,6 +619,7 @@ async def local_shap_explanation(
             "latency_seconds": time.monotonic() - started,
             "provider_latency": worker_result.provider_latency,
             "inference_batch_count": worker_result.inference_batch_count,
+            "metadata_source": worker_result.metadata_source,
             "final_status": HTTPStatus.OK,
             "error_code": None,
         },

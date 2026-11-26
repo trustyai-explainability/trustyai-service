@@ -35,6 +35,7 @@ from trustyai_service.service.explainers.local.model_provider import (
     ProviderDeadlineError,
     ProviderInvalidRequestError,
     ProviderInvalidResponseError,
+    ProviderRequestContractError,
     ProviderUnavailableError,
     ProviderUnsupportedModelError,
 )
@@ -2966,3 +2967,245 @@ def test_inference_contract_statuses_are_mapped_by_the_codec(
     with pytest.raises(ProviderUnavailableError):
         provider.predict(np.ones((1, 3)))
     provider.close()
+
+
+def test_parse_metadata_can_report_an_empty_contract() -> None:
+    """Return no contract only when the caller explicitly allows an empty one."""
+    payload = {"name": "model", "versions": ["v1"], "inputs": [], "outputs": []}
+
+    assert parse_metadata(payload, "model", allow_empty=True) is None
+    with pytest.raises(ProviderUnsupportedModelError):
+        parse_metadata(payload, "model")
+
+
+def test_fallback_decode_accepts_unnamed_outputs_and_numeric_datatypes() -> None:
+    """Decode a fallback response without a declared output name or datatype."""
+    metadata = _metadata(input_shape=(-1, 2), output_shape=(-1,))
+    cases = {"FP32": [0.2, 0.8], "INT32": [1, 2], "BOOL": [0, 1]}
+
+    for datatype, data in cases.items():
+        payload = {
+            "model_name": "model",
+            "outputs": [{"datatype": datatype, "shape": [1, 2], "data": data}],
+        }
+        result = decode_response(
+            _Response(payload), metadata, "model", None, 1, fallback_output=True
+        )
+        assert result.shape == (1, 2)
+
+
+def test_fallback_decode_selects_the_named_output_and_normalizes_scalars() -> None:
+    """Use a named output when several exist, and normalize a scalar response."""
+    metadata = _metadata(input_shape=(-1, 2), output_shape=(-1,))
+    payload = {
+        "model_name": "model",
+        "outputs": [
+            {"name": "other", "datatype": "FP32", "shape": [2], "data": [1.0, 2.0]},
+            {
+                "name": "prediction",
+                "datatype": "FP32",
+                "shape": [2],
+                "data": [3.0, 4.0],
+            },
+        ],
+    }
+
+    result = decode_response(
+        _Response(payload), metadata, "model", None, 2, fallback_output=True
+    )
+
+    assert result.shape == (2, 1)
+    np.testing.assert_allclose(result, [[3.0], [4.0]])
+
+
+def test_fallback_decode_rejects_non_numeric_malformed_or_mismatched_outputs() -> None:
+    """Keep fallback decoding as strict as the declared contract elsewhere."""
+    metadata = _metadata(input_shape=(-1, 2), output_shape=(-1,))
+
+    with pytest.raises(ProviderInvalidResponseError):
+        decode_response(
+            _Response(
+                {
+                    "model_name": "model",
+                    "outputs": [
+                        {
+                            "datatype": "BYTES",
+                            "shape": [1],
+                            "data": ["a"],
+                        }
+                    ],
+                }
+            ),
+            metadata,
+            "model",
+            None,
+            1,
+            fallback_output=True,
+        )
+
+    with pytest.raises(ProviderInvalidResponseError):
+        decode_response(
+            _Response(
+                {
+                    "model_name": "model",
+                    "outputs": [{"datatype": "FP32", "shape": [2], "data": [1.0]}],
+                }
+            ),
+            metadata,
+            "model",
+            None,
+            1,
+            fallback_output=True,
+        )
+
+    with pytest.raises(ProviderInvalidResponseError):
+        decode_response(
+            _Response(
+                {
+                    "model_name": "other",
+                    "outputs": [{"datatype": "FP32", "shape": [1], "data": [1.0]}],
+                }
+            ),
+            metadata,
+            "model",
+            None,
+            1,
+            fallback_output=True,
+        )
+
+
+def test_connect_uses_fallback_metadata_for_empty_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Use a complete request-supplied contract when metadata declares no tensors."""
+    posts: list[dict[str, object]] = []
+
+    class Client:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def get(self, _url: str, **_kwargs: object) -> _ProviderResponse:
+            return _ProviderResponse(
+                {"name": "model", "versions": ["v1"], "inputs": [], "outputs": []}
+            )
+
+        def post(self, _url: str, **kwargs: object) -> _ProviderResponse:
+            posts.append(cast("dict[str, object]", kwargs["json"]))
+            return _ProviderResponse(
+                {
+                    "model_name": "model",
+                    "outputs": [
+                        {
+                            "datatype": "FP32",
+                            "shape": [1, 2],
+                            "data": [0.2, 0.8],
+                        }
+                    ],
+                }
+            )
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(provider_module, "_load_http_client", lambda: Client)
+    fallback = PredictionMetadata("features", "predict", "FP64", "FP64", (-1, 2), (-1,))
+    provider = KServeV2HttpPredictionProvider.connect(
+        _provider_spec(input_name="features", output_name="predict"),
+        _provider_transport(),
+        timeout_seconds=2.0,
+        fallback_metadata=fallback,
+    )
+
+    try:
+        assert provider.metadata_source == "request_fallback"
+        result = provider.predict(np.asarray([[1.0, 2.0]]), timeout_seconds=1.0)
+    finally:
+        provider.close()
+
+    assert result.shape == (1, 2)
+    inputs = cast("list[dict[str, object]]", posts[0]["inputs"])
+    assert inputs[0]["name"] == "features"
+    assert inputs[0]["datatype"] == "FP64"
+
+
+def test_connect_reports_missing_names_for_empty_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Return a safe contract error when the request cannot supply the names."""
+
+    class Client:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def get(self, _url: str, **_kwargs: object) -> _ProviderResponse:
+            return _ProviderResponse(
+                {"name": "model", "versions": ["v1"], "inputs": [], "outputs": []}
+            )
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(provider_module, "_load_http_client", lambda: Client)
+
+    with pytest.raises(ProviderRequestContractError, match="input_name"):
+        KServeV2HttpPredictionProvider.connect(
+            _provider_spec(), _provider_transport(), timeout_seconds=2.0
+        )
+
+
+def test_parse_metadata_allow_empty_tolerates_an_empty_version_list() -> None:
+    """Let the fallback use an empty-version advertisement for a default model."""
+    payload = {"name": "model", "versions": [], "inputs": [], "outputs": []}
+
+    assert parse_metadata(payload, "model", "v1", allow_empty=True) is None
+    with pytest.raises(ProviderInvalidRequestError):
+        parse_metadata(payload, "model", "v1")
+
+
+def test_fallback_decode_tolerates_a_missing_model_name() -> None:
+    """Accept a fallback response that omits model_name but keep a mismatch fatal."""
+    metadata = _metadata(input_shape=(-1, 1), output_shape=(-1,))
+    payload = {
+        "outputs": [{"datatype": "FP32", "shape": [1], "data": [1.0]}],
+    }
+    result = decode_response(
+        _Response(payload), metadata, "model", None, 1, fallback_output=True
+    )
+    assert result.shape == (1, 1)
+
+    payload["model_name"] = "other"
+    with pytest.raises(ProviderInvalidResponseError):
+        decode_response(
+            _Response(payload), metadata, "model", None, 1, fallback_output=True
+        )
+
+
+def test_fallback_decode_tolerates_empty_response_identity_fields() -> None:
+    """Treat an empty model name or version as unset in fallback mode."""
+    metadata = _metadata(input_shape=(-1, 1), output_shape=(-1,))
+    payload = {
+        "model_name": "",
+        "model_version": "",
+        "outputs": [{"datatype": "FP32", "shape": [1], "data": [1.0]}],
+    }
+
+    result = decode_response(
+        _Response(payload), metadata, "model", "v1", 1, fallback_output=True
+    )
+    assert result.shape == (1, 1)
+
+    payload["model_version"] = "v2"
+    with pytest.raises(ProviderInvalidResponseError):
+        decode_response(
+            _Response(payload), metadata, "model", "v1", 1, fallback_output=True
+        )
+
+
+def test_fallback_batch_size_uses_the_input_width_as_a_response_estimate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Budget fallback responses from the known input width and widest element."""
+    monkeypatch.setattr(codec, "_MAX_RESPONSE_BYTES", 100)
+    metadata = _metadata(input_shape=(-1, 2), output_shape=(-1,))
+
+    assert codec.max_rows_per_request(metadata, fallback_output=True) == 2

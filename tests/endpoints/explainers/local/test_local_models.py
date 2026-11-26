@@ -537,3 +537,25 @@ for path in (
     )
 
     assert result.returncode == 0, result.stderr
+
+
+def test_input_datatype_defaults_to_fp64_and_rejects_non_numeric() -> None:
+    """Expose a numeric datatype override for models without metadata."""
+    models = importlib.import_module(
+        "trustyai_service.endpoints.explainers.local_models"
+    )
+
+    config = models.LocalExplanationModelConfig(
+        base_url="https://inference.example",
+        model_name="credit-model",
+        task=TaskType.REGRESSION,
+    )
+    assert config.input_datatype == "FP64"
+
+    with pytest.raises(ValidationError, match="input_datatype"):
+        models.LocalExplanationModelConfig(
+            base_url="https://inference.example",
+            model_name="credit-model",
+            task=TaskType.REGRESSION,
+            input_datatype="BYTES",
+        )
