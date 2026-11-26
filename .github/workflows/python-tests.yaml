@@ -86,7 +86,7 @@ jobs:
         run: >-
           uv export --frozen --format requirements.txt
           --extra mariadb --extra postgres --extra migration --extra mmd
-          --extra lime
+          --extra lime --extra shap
           --no-dev --no-emit-project --emit-index-url
           --output-file requirements.txt
 
@@ -166,7 +166,7 @@ jobs:
           sudo apt-get install -y libmariadb3 libmariadb-dev mariadb-client protobuf-compiler
 
       - name: Install Python dependencies
-        run: uv sync --all-groups --extra mariadb --extra postgres --extra sqlite --extra migration --extra mmd --extra lime
+        run: uv sync --all-groups --extra mariadb --extra postgres --extra sqlite --extra migration --extra mmd --extra lime --extra shap
 
       - name: Generate protobuf stubs
         run: bash scripts/generate_protos.sh
