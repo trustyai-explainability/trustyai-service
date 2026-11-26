@@ -45,6 +45,9 @@ def render() -> str:
         os.environ[f"TRUSTYAI_ENABLE_{name.upper()}"] = "true" if enabled else "false"
     # Isolate from the caller's storage configuration: PVC needs no extras.
     os.environ["SERVICE_STORAGE_FORMAT"] = "PVC"
+    # The scheduler parses this at import time; an exported-but-empty value
+    # (or a non-numeric one) raises ValueError before the schema renders.
+    os.environ["SERVICE_BATCH_SIZE"] = "100"
 
     with tempfile.TemporaryDirectory() as storage_dir:
         os.environ["STORAGE_DATA_FOLDER"] = storage_dir
