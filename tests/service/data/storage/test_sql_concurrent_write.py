@@ -252,6 +252,46 @@ async def test_prepare_retries_only_concurrent_ddl_in_a_fresh_transaction(
         storage._engine.dispose()
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("errno", "should_retry"),
+    [(1684, True), (1205, False)],
+    ids=["concurrent-ddl", "lock-wait-timeout"],
+)
+async def test_write_batch_retries_only_concurrent_ddl(
+    monkeypatch: pytest.MonkeyPatch, *, errno: int, should_retry: bool
+) -> None:
+    """MariaDB can skip a row statement while a competing writer creates the table."""
+    storage = SQLiteStorage()
+    try:
+        await storage.write_data("model_inputs", np.array([[0]]), ["input"])
+        storage._engine.dialect.name = "mariadb"
+        calls = []
+        write_once = storage._write_data_batch_once
+
+        def fail_first_write(*args: object, **kwargs: object) -> None:
+            calls.append(True)
+            if len(calls) == 1:
+                statement = "INSERT INTO trustyai_v2_dataset_0"
+                raise OperationalError(statement, {}, Exception(errno))
+            write_once(*args, **kwargs)
+
+        monkeypatch.setattr(storage, "_write_data_batch_once", fail_first_write)
+        batch = [("model_inputs", np.array([[1]]), ["input"])]
+        if should_retry:
+            await storage.write_data_batch(batch)
+            assert len(calls) == 2
+            np.testing.assert_array_equal(
+                await storage.read_data("model_inputs"), np.array([[0], [1]])
+            )
+        else:
+            with pytest.raises(OperationalError):
+                await storage.write_data_batch(batch)
+            assert len(calls) == 1
+    finally:
+        storage._engine.dispose()
+
+
 def _integrity_error(dialect: str, key: str = "dataset_name") -> IntegrityError:
     """Construct driver diagnostics without requiring optional client libraries."""
     reference = "trustyai_v2_table_reference"
