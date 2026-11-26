@@ -127,14 +127,20 @@ def test_typed_errors_use_allowlisted_messages(
     assert mapped.as_http_detail() == {"code": code, "message": detail}
 
 
-def test_request_limit_errors_expose_only_their_actionable_detail() -> None:
-    """Expose the explicitly safe guidance for deterministic request limits."""
-    detail = (
-        "LIME request exceeds the memory budget; reduce num_samples or n_training_rows"
-    )
-    mapped = map_error(ProviderRequestLimitError(detail))
+@pytest.mark.parametrize(
+    "message",
+    [
+        "LIME request exceeds the memory budget; reduce num_samples or n_training_rows",
+        "SHAP request exceeds the memory budget; reduce n_samples or n_training_rows",
+    ],
+)
+def test_request_limit_errors_expose_their_safe_actionable_detail(
+    message: str,
+) -> None:
+    """Expose only explicitly designated request-limit guidance to clients."""
+    mapped = map_error(ProviderRequestLimitError(message))
 
     assert mapped.code == "invalid_request"
     assert mapped.status_code == 400
-    assert mapped.detail == detail
-    assert mapped.as_http_detail() == {"code": "invalid_request", "message": detail}
+    assert mapped.detail == message
+    assert mapped.as_http_detail() == {"code": "invalid_request", "message": message}
